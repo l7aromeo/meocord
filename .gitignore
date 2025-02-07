@@ -1,13 +1,41 @@
+# Node.js dependencies
+node_modules/
+
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
-
-# Swap the comments on the following lines if you wish to use zero-installs
-# In that case, don't forget to run `yarn config set enableGlobalCache false`!
-# Documentation here: https://yarnpkg.com/features/caching#zero-installs
-
-#!.yarn/cache
 .pnp.*
+
+# Build outputs
+dist/
+
+# Environment files
+.env.*
+!.env.example
+
+# JetBrains IDE settings
+.idea/
+
+# Logs
+*.log
+yarn-error.log
+
+# Cache and temporary files
+.prettier_cache/
+.eslintcache
+*.tmp
+*.swp
+
+# Testing outputs
+coverage/
+.jest/
+
+# TypeScript build info
+*.tsbuildinfo
+
+# System files
+.DS_Store
+Thumbs.db

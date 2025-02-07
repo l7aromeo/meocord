@@ -1,4 +1,100 @@
 {
-  "name": "core",
-  "packageManager": "yarn@4.6.0"
+  "name": "meocord",
+  "version": "1.0.0-alpha.2",
+  "packageManager": "yarn@4.6.0",
+  "type": "commonjs",
+  "scripts": {
+    "build": "babel src --out-dir dist --extensions \".ts,.js\" && copyfiles -u 1 \"src/**/*.template\" dist"
+  },
+  "bin": "./dist/bin/meocord.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/l7aromeo/meocord.git"
+  },
+  "homepage": "https://github.com/l7aromeo/meocord#readme",
+  "bugs": {
+    "url": "https://github.com/l7aromeo/meocord/issues"
+  },
+  "exports": {
+    "./core": {
+      "import": "./dist/core/index.js",
+      "require": "./dist/core/index.js",
+      "types": "./dist/core/index.d.ts"
+    },
+    "./decorator": {
+      "import": "./dist/decorator/index.js",
+      "require": "./dist/decorator/index.js",
+      "types": "./dist/decorator/index.d.ts"
+    },
+    "./common": {
+      "import": "./dist/common/index.js",
+      "require": "./dist/common/index.js",
+      "types": "./dist/common/index.d.ts"
+    },
+    "./interface": {
+      "import": "./dist/interface/index.js",
+      "require": "./dist/interface/index.js",
+      "types": "./dist/interface/index.d.ts"
+    },
+    "./enum": {
+      "import": "./dist/enum/index.js",
+      "require": "./dist/enum/index.js",
+      "types": "./dist/enum/index.d.ts"
+    }
+  },
+  "files": [
+    "dist/**/*",
+    "webpack.config.js",
+    "package.json",
+    "LICENSE",
+    "AUTHOR.md",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@babel/cli": "^7.26.4",
+    "@babel/core": "^7.26.7",
+    "@babel/preset-env": "^7.26.7",
+    "@babel/preset-typescript": "^7.26.0",
+    "@eslint/js": "^9.19.0",
+    "@types/copyfiles": "^2",
+    "@types/lodash": "^4.17.15",
+    "@typescript-eslint/parser": "^8.23.0",
+    "babel-plugin-module-resolver": "^5.0.2",
+    "copyfiles": "^2.4.1",
+    "eslint": "^9.19.0",
+    "eslint-config-prettier": "^10.0.1",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-prettier": "^5.2.3",
+    "eslint-plugin-unused-imports": "^4.1.4",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.23.0"
+  },
+  "peerDependencies": {
+    "discord.js": "^14.17.3"
+  },
+  "dependencies": {
+    "@colors/colors": "^1.6.0",
+    "cli-table3": "^0.6.5",
+    "commander": "^13.1.0",
+    "dayjs": "^1.11.13",
+    "discord.js": "^14.17.3",
+    "file-loader": "^6.2.0",
+    "inversify": "^6.2.2",
+    "lodash": "^4.17.21",
+    "nodemon": "^3.1.9",
+    "raw-loader": "^4.0.2",
+    "reflect-metadata": "^0.2.2",
+    "terser-webpack-plugin": "^5.3.11",
+    "ts-loader": "^9.5.2",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths-webpack-plugin": "^4.2.0",
+    "webpack": "^5.97.1",
+    "webpack-node-externals": "^3.0.0"
+  },
+  "_moduleAliases": {
+    "@src": "./dist"
+  },
+  "stableVersion": "0.1.0"
 }

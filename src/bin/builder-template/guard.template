@@ -1,0 +1,11 @@
+import { Guard } from 'meocord/decorator'
+import { GuardInterface } from 'meocord/interface'
+import { BaseInteraction } from 'discord.js'
+
+@Guard()
+export class {{className}}Guard implements GuardInterface {
+  async canActivate(interaction: BaseInteraction): Promise<boolean> {
+    // TODO: Implement the guard logic to determine if the interaction is allowed
+    return true
+  }
+}
