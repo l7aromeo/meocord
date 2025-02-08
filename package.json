@@ -1,10 +1,10 @@
 {
   "name": "meocord",
-  "version": "1.0.0-alpha.2",
+  "version": "1.0.0-alpha.3",
   "packageManager": "yarn@4.6.0",
   "type": "commonjs",
   "scripts": {
-    "build": "babel src --out-dir dist --extensions \".ts,.js\" && copyfiles -u 1 \"src/**/*.template\" dist"
+    "build": "rm -rf ./dist && babel src --out-dir dist --extensions \".ts,.js\" && tsc && copyfiles -u 1 \"src/**/*.template\" dist"
   },
   "bin": "./dist/bin/meocord.js",
   "repository": {
@@ -72,7 +72,8 @@
     "typescript-eslint": "^8.23.0"
   },
   "peerDependencies": {
-    "discord.js": "^14.17.3"
+    "discord.js": "^14.17.3",
+    "dotenv": "^16.4.7"
   },
   "dependencies": {
     "@colors/colors": "^1.6.0",
@@ -80,6 +81,7 @@
     "commander": "^13.1.0",
     "dayjs": "^1.11.13",
     "discord.js": "^14.17.3",
+    "dotenv": "^16.4.7",
     "file-loader": "^6.2.0",
     "inversify": "^6.2.2",
     "lodash": "^4.17.21",
@@ -89,6 +91,7 @@
     "terser-webpack-plugin": "^5.3.11",
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
+    "tsc-alias": "^1.8.10",
     "tsconfig-paths-webpack-plugin": "^4.2.0",
     "webpack": "^5.97.1",
     "webpack-node-externals": "^3.0.0"
