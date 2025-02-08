@@ -35,17 +35,16 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 
 ## Installation
 
-Install the `meocord` module in your project using either Yarn or npm.
+To get started, you'll need to install the required dependencies for your project. Begin by adding `discord.js` and
+`meocord` to your project using the following command.
 
-### Using Yarn
-```textmate
-yarn add meocord
+### Install with Yarn
+
+```shell
+yarn add discord.js meocord
 ```
 
-### Using npm
-```textmate
-npm install meocord
-```
+This ensures you have the core libraries necessary to build robust Discord applications with MeoCord.
 
 ---
 
@@ -55,14 +54,51 @@ To begin building your application with **MeoCord**, follow these steps:
 
 ---
 
-### 1. In the `main.ts`
+### 1. In the `meocord.config.ts`
+
+The **configuration file** (`meocord.config.ts`) is responsible for defining the application-wide settings. It provides essential configurations such as the app name and Discord token.
+
+Below is an example setup for `meocord.config.ts`:
+
+```typescript
+import '@src/common/utils/load-env.util'
+import { MeoCordConfig } from 'meocord/interface'
+
+export default {
+  appName: 'DJS ChuTao',
+  discordToken: process.env.TOKEN!,
+  webpack: config => {
+    config.module.rules.push({
+      // Add your custom webpack rule
+    })
+
+    return config
+  }
+} satisfies MeoCordConfig
+```
+
+- **Line-by-Line Explanation**:
+    1. **Environment Variable Loading**: The `load-env.util` ensures that environment variables from `.env` files are
+       loaded before executing the app.
+    2. **Import Configuration Interface**: Imports the `MeoCordConfig` interface to enforce type safety on the
+       configuration object.
+    3. **Application Name**: `appName` defines the name of the bot or application.
+    4. **Discord Token**: The `discordToken` property retrieves the bot's token from the environment variables, ensuring
+       security and flexibility.
+    5. **Custom Webpack Configuration**: Adds an optional function to modify and extend the default Webpack
+       configuration, including custom module rules or plugins.
+    6. **Return Configuration**: Ensures the final configuration satisfies the `MeoCordConfig` type, guaranteeing that
+       all required properties are correctly defined.
+
+---
+
+### 2. In the `main.ts`
 
 The **main entry file** (`main.ts`) is responsible for bootstrapping your MeoCord app and starting its execution. It utilizes the `MeoCordFactory` to initialize the application and provides built-in logging support via the `Logger`.
 
 Below is an example setup for `main.ts`:
 
 ```typescript
-import '@src/common/utils/load-env.util';
 import App from '@src/app';
 import { Logger } from 'meocord/common';
 import { MeoCordFactory } from 'meocord/core';
@@ -82,18 +118,16 @@ bootstrap().catch((error) =>
 ```
 
 - **Line-by-Line Explanation**:
-    1. **Environment Variables Loading**:
-        - `load-env.util` ensures environmental configurations (e.g., `.env` files) are loaded before the app starts.
-    2. **Import Core App Class**:
+    1. **Import Core App Class**:
         - `App` is the decorated base class where controllers and services are registered.
-    3. **Initialize Framework**:
+    2. **Initialize Framework**:
         - `MeoCordFactory.create(App)` creates and returns an instance of the app, initialized with registered components.
-    4. **Bootstrap Logic**:
+    3. **Bootstrap Logic**:
         - Logs are emitted during startup, and potential errors during initialization are handled via `catch()`.
 
 ---
 
-### 2. Define the `app.ts`
+### 3. Define the `app.ts`
 
 The `app.ts` file is the **heart of your application**, acting as the centralized configuration point for registering all controllers, services, intents, and activities. Each **controller** must be explicitly registered here using the `@MeoCord` decorator.
 
