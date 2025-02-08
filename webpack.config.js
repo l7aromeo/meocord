@@ -1,14 +1,10 @@
-require('ts-node').register()
 const path = require('path')
 const NodeExternals = require('webpack-node-externals')
 const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin')
 const TerserPlugin = require('terser-webpack-plugin')
-const { existsSync } = require('fs')
-
-const prepareModifiedTsConfig = require('./src/util/tsconfig.util')
-const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
-const meocordConfig = existsSync(meocordConfigPath) ? require(meocordConfigPath).default : null
-
+const { loadMeoCordConfig } = require(path.resolve(__dirname, 'dist/util/meocord-config-loader.util'))
+const meocordConfig = loadMeoCordConfig()
+const { prepareModifiedTsConfig } = require(path.resolve(__dirname, 'dist/util/tsconfig.util'))
 const tsConfigPath = prepareModifiedTsConfig()
 
 const baseRules = [
@@ -23,7 +19,7 @@ const baseRules = [
     exclude: /node_modules/,
     use: {
       loader: 'file-loader',
-      options: { name: '[path][name].[ext]' },
+      options: { name: '[path][name].[ext]', context: path.resolve(process.cwd(), 'src') },
     },
   },
   {
@@ -36,42 +32,46 @@ const baseRules = [
  * Generates the base Webpack configuration for the project.
  * Uses `tsconfig` for resolving paths and applies custom `meocord` configuration if available.
  *
- * @param {Object} [config={}] - Custom overrides for the base configuration.
- * @param {Object} [config.module] - Additional module configuration (like rules).
- * @param {string} [config.mode] - Webpack mode (e.g., development or production).
- * @returns {Object} The Webpack configuration object.
+ * @param {import('webpack').Configuration} [config={}] Custom overrides for the base configuration.
+ * @returns {import('webpack').Configuration} The Webpack configuration object.
  */
 const baseConfig = (config = {}) => ({
+  ...config,
   mode: config.mode || (process.env.NODE_ENV === 'production' ? 'production' : 'development'),
-  entry: path.resolve(process.cwd(), 'src/main.ts'),
+  entry: path.resolve(process.cwd(), config.entry || 'src/main.ts'),
   target: 'node',
   optimization: {
-    minimize: process.env.NODE_ENV === 'production',
+    ...config?.optimization,
+    minimize: config?.optimization?.minimize || true,
     minimizer: [
       new TerserPlugin({
         terserOptions: { keep_classnames: true },
       }),
+      ...(config?.optimization?.minimizer || []),
     ],
   },
-  externals: [NodeExternals()],
+  externals: [NodeExternals(), ...(config?.externals || [])],
   module: {
-    ...config.module,
-    rules: [...baseRules, ...(config.module?.rules || [])],
+    ...config?.module,
+    rules: [...baseRules, ...(config?.module?.rules || [])],
   },
   resolve: {
-    extensions: ['.ts', '.js'],
+    ...config?.resolve,
+    extensions: ['.ts', '.js', ...(config?.resolve?.extensions || [])],
     plugins: [
       new TsconfigPathsPlugin({
         configFile: tsConfigPath,
       }),
+      ...(config?.resolve?.plugins || []),
     ],
   },
   output: {
     filename: 'main.js',
     path: path.resolve(process.cwd(), 'dist'),
     publicPath: 'dist/',
+    ...config?.output,
   },
-  stats: 'errors-only',
+  stats: config?.stats || 'errors-only',
 })
 
-module.exports = meocordConfig?.webpack?.(baseConfig) || baseConfig()
+module.exports = meocordConfig?.webpack?.(baseConfig()) || baseConfig()
