@@ -122,11 +122,13 @@ For full license details, refer to:
     program
       .command('start')
       .description('Start the application')
+      .option('-b, --build', 'Pre-build before starting')
       .option('-d, --dev', 'Start in development mode')
       .option('-p, --prod', 'Start in production mode')
       .action(async options => {
-        if (options.prod) {
-          await this.build('production')
+        if (options.build) {
+          const mode = options.prod ? 'production' : 'development'
+          await this.build(mode)
         }
         options.prod ? await this.startProd() : await this.startDev()
       })
@@ -145,7 +147,9 @@ For full license details, refer to:
    */
   async build(mode: 'production' | 'development') {
     try {
-      process.env.NODE_ENV = mode
+      if (!process.env.NODE_ENV) {
+        process.env.NODE_ENV = mode
+      }
       this.clearConsole()
       compileMeoCordConfig()
       this.logger.info(`Building ${mode} version...`)
@@ -193,7 +197,9 @@ For full license details, refer to:
    */
   async startDev() {
     try {
-      process.env.NODE_ENV = 'development'
+      if (!process.env.NODE_ENV) {
+        process.env.NODE_ENV = 'development'
+      }
       this.clearConsole()
       compileMeoCordConfig()
       this.logger.log('Starting watch mode...')
@@ -266,7 +272,9 @@ For full license details, refer to:
    */
   async startProd() {
     try {
-      process.env.NODE_ENV = 'production'
+      if (!process.env.NODE_ENV) {
+        process.env.NODE_ENV = 'production'
+      }
       this.clearConsole()
       compileMeoCordConfig()
       this.logger.log('Starting...')
