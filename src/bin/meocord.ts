@@ -60,7 +60,7 @@ class MeoCordCLI {
    * Configures and runs the MeoCord CLI.
    */
   async run() {
-    await this.ensureRunningInRootDirectory()
+    await this.ensureReady()
     let program = new Command()
 
     program
@@ -116,6 +116,10 @@ For full license details, refer to:
       .option('-p, --prod', 'Build in production mode')
       .action(async options => {
         const mode = options.prod ? 'production' : 'development'
+        if (!process.env.NODE_ENV) {
+          process.env.NODE_ENV = mode
+        }
+
         await this.build(mode)
       })
 
@@ -126,10 +130,23 @@ For full license details, refer to:
       .option('-d, --dev', 'Start in development mode')
       .option('-p, --prod', 'Start in production mode')
       .action(async options => {
+        const mode = options.prod ? 'production' : 'development'
+        if (!process.env.NODE_ENV) {
+          process.env.NODE_ENV = mode
+        }
+
+        compileMeoCordConfig()
+        const meocordConfig = loadMeoCordConfig()
+        if (!meocordConfig?.discordToken) {
+          this.logger.error('Discord token is missing!')
+          await wait(100)
+          process.exit(1)
+        }
+
         if (options.build) {
-          const mode = options.prod ? 'production' : 'development'
           await this.build(mode)
         }
+
         options.prod ? await this.startProd() : await this.startDev()
       })
 
@@ -147,9 +164,6 @@ For full license details, refer to:
    */
   async build(mode: 'production' | 'development') {
     try {
-      if (!process.env.NODE_ENV) {
-        process.env.NODE_ENV = mode
-      }
       this.clearConsole()
       compileMeoCordConfig()
       this.logger.info(`Building ${mode} version...`)
@@ -197,11 +211,7 @@ For full license details, refer to:
    */
   async startDev() {
     try {
-      if (!process.env.NODE_ENV) {
-        process.env.NODE_ENV = 'development'
-      }
       this.clearConsole()
-      compileMeoCordConfig()
       this.logger.log('Starting watch mode...')
       const webpackConfig = (await import(this.webpackConfigPath)).default
       const compiler = webpack({ ...webpackConfig, mode: 'development' })
@@ -272,11 +282,7 @@ For full license details, refer to:
    */
   async startProd() {
     try {
-      if (!process.env.NODE_ENV) {
-        process.env.NODE_ENV = 'production'
-      }
       this.clearConsole()
-      compileMeoCordConfig()
       this.logger.log('Starting...')
       const start = spawn(`node ${this.mainJSPath}`, {
         shell: true,
@@ -297,9 +303,10 @@ For full license details, refer to:
 
   /**
    * Ensures that the script is being run from the root directory of the project.
-   * If not, it logs an error message and terminates the process.
+   * Validates the existence of required files, dependencies, and configuration.
+   * If validation fails, it logs an error message and terminates the process.
    */
-  private async ensureRunningInRootDirectory() {
+  private async ensureReady() {
     const meocordPath = findModulePackageDir('meocord')
     const packageJsonPath = path.resolve(process.cwd(), 'package.json')
     const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
@@ -310,16 +317,9 @@ For full license details, refer to:
         throw new Error('package.json not found. This script must be run from the root directory of the project.')
       }
 
-      // Ensure the MeoCord config file is exist
+      // Ensure the MeoCord config file exists
       if (!fs.existsSync(meocordConfigPath)) {
         throw new Error('Configuration file "meocord.config.ts" is missing!')
-      }
-
-      compileMeoCordConfig()
-      const meocordConfig = loadMeoCordConfig()
-
-      if (!meocordConfig?.discordToken) {
-        throw new Error('Discord token is missing!')
       }
 
       // Ensure the MeoCord package directory is found
