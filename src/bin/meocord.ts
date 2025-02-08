@@ -166,7 +166,7 @@ For full license details, refer to:
           }
 
           if (stats?.hasErrors()) {
-            this.logger.error('Build failed due to errors in the compilation process.')
+            this.logger.error('Build failed due to errors in the compilation process:', stats.compilation.errors)
           } else {
             this.logger.info(`${capitalize(mode)} build completed successfully.`)
           }
@@ -211,7 +211,7 @@ For full license details, refer to:
           }
 
           if (stats?.hasErrors()) {
-            this.logger.error('Build failed with errors.')
+            this.logger.error('Build failed due to errors in the compilation process:', stats.compilation.errors)
           } else {
             if (nodemonProcess) {
               nodemonProcess.kill()
