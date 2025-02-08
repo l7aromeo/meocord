@@ -30,6 +30,7 @@ import * as fs from 'node:fs'
 import { findModulePackageDir } from '@src/util/common.util'
 import { Argument, Command, Help, Option } from 'commander'
 import CliTable3 from 'cli-table3'
+import { compileMeoCordConfig, loadMeoCordConfig } from '@src/util/meocord-config-loader.util'
 
 /**
  * A Command Line Interface (CLI) for managing the MeoCord application.
@@ -40,7 +41,6 @@ class MeoCordCLI {
   private readonly mainJSPath: string
   private readonly webpackConfigPath: string
   private readonly logger: Logger
-
   private readonly generatorCLI: GeneratorCLI
 
   /**
@@ -122,13 +122,11 @@ For full license details, refer to:
     program
       .command('start')
       .description('Start the application')
-      .option('-b, --build', 'Build before starting')
       .option('-d, --dev', 'Start in development mode')
       .option('-p, --prod', 'Start in production mode')
       .action(async options => {
-        if (options.build && !options.prod) {
-          const mode = options.prod ? 'production' : 'development'
-          await this.build(mode)
+        if (options.prod) {
+          await this.build('production')
         }
         options.prod ? await this.startProd() : await this.startDev()
       })
@@ -147,8 +145,11 @@ For full license details, refer to:
    */
   async build(mode: 'production' | 'development') {
     try {
+      process.env.NODE_ENV = mode
       this.clearConsole()
+      compileMeoCordConfig()
       this.logger.info(`Building ${mode} version...`)
+
       const webpackConfig = (await import(this.webpackConfigPath)).default
 
       const compiler = webpack({
@@ -156,26 +157,34 @@ For full license details, refer to:
         mode,
       })
 
-      compiler.run((err, stats) => {
-        if (err) {
-          this.logger.error(`Build encountered an error: ${err.message}`)
-          return
-        }
-
-        if (stats?.hasErrors()) {
-          this.logger.error('Build failed due to errors in the compilation process.')
-        } else {
-          this.logger.info(`${capitalize(mode)} build completed successfully.`)
-        }
-
-        compiler.close(closeErr => {
-          if (closeErr) {
-            this.logger.error(`Error occurred while closing the compiler: ${closeErr.message}`)
+      await new Promise<void>((resolve, reject) => {
+        compiler.run((err, stats) => {
+          if (err) {
+            this.logger.error(`Build encountered an error: ${err.message}`)
+            reject(`Build encountered an error: ${err.message}`)
+            return
           }
+
+          if (stats?.hasErrors()) {
+            this.logger.error('Build failed due to errors in the compilation process.')
+          } else {
+            this.logger.info(`${capitalize(mode)} build completed successfully.`)
+          }
+
+          compiler.close(closeErr => {
+            if (closeErr) {
+              this.logger.error(`Error occurred while closing the compiler: ${closeErr.message}`)
+              reject(`Error occurred while closing the compiler: ${closeErr.message}`)
+              return
+            }
+            resolve()
+          })
         })
       })
     } catch (error: any) {
       this.logger.error(`Build process failed: ${error.message}`)
+      await wait(100) // Ensure that `wait` is defined or imported correctly
+      process.exit(1)
     }
   }
 
@@ -184,39 +193,66 @@ For full license details, refer to:
    */
   async startDev() {
     try {
+      process.env.NODE_ENV = 'development'
       this.clearConsole()
+      compileMeoCordConfig()
       this.logger.log('Starting watch mode...')
       const webpackConfig = (await import(this.webpackConfigPath)).default
       const compiler = webpack({ ...webpackConfig, mode: 'development' })
 
       let nodemonProcess: ChildProcess | null = null
+      let isRunning = false
 
-      compiler.watch({}, (err, stats) => {
-        if (err) {
-          this.logger.error(`Webpack Error: ${err.message}`)
-          return
-        }
-
-        if (stats?.hasErrors()) {
-          this.logger.error('Build failed with errors.')
-        } else {
-          if (nodemonProcess) {
-            nodemonProcess.kill()
-            nodemonProcess = null
+      const watch = () =>
+        compiler.watch({}, (err, stats) => {
+          if (err) {
+            this.logger.error(`Webpack Error: ${err.message}`)
+            return
           }
 
-          nodemonProcess = spawn('nodemon', ['-q', this.mainJSPath], {
-            shell: true,
-            cwd: this.projectRoot,
-            stdio: 'inherit',
-          })
-        }
+          if (stats?.hasErrors()) {
+            this.logger.error('Build failed with errors.')
+          } else {
+            if (nodemonProcess) {
+              nodemonProcess.kill()
+              nodemonProcess = null
+            }
+
+            nodemonProcess = spawn('nodemon', ['-q', this.mainJSPath], {
+              shell: true,
+              cwd: this.projectRoot,
+              stdio: 'inherit',
+            })
+
+            isRunning = true
+          }
+        })
+      watch()
+
+      let debounceWatcher: NodeJS.Timeout
+
+      const fsWatcher = fs.watch(path.resolve(process.cwd(), 'meocord.config.ts'), () => {
+        clearTimeout(debounceWatcher)
+        debounceWatcher = setTimeout(async () => {
+          if (isRunning && nodemonProcess) {
+            isRunning = false
+            this.logger.log('MeoCord config change detected, recompiling config...')
+            if (nodemonProcess && !nodemonProcess.killed) {
+              nodemonProcess.kill()
+              nodemonProcess = null
+            }
+            await new Promise(resolve => compiler.close(resolve))
+            compileMeoCordConfig()
+            watch()
+          }
+        }, 300)
       })
 
       process.on('SIGINT', async () => {
         await wait(1000)
         if (nodemonProcess && !nodemonProcess.killed) nodemonProcess.kill()
         await new Promise(resolve => compiler.close(resolve))
+        fsWatcher.close()
         await wait(100)
         process.exit(0)
       })
@@ -230,7 +266,9 @@ For full license details, refer to:
    */
   async startProd() {
     try {
+      process.env.NODE_ENV = 'production'
       this.clearConsole()
+      compileMeoCordConfig()
       this.logger.log('Starting...')
       const start = spawn(`node ${this.mainJSPath}`, {
         shell: true,
@@ -254,13 +292,26 @@ For full license details, refer to:
    * If not, it logs an error message and terminates the process.
    */
   private async ensureRunningInRootDirectory() {
-    const packageJsonPath = path.join(process.cwd(), 'package.json')
     const meocordPath = findModulePackageDir('meocord')
+    const packageJsonPath = path.resolve(process.cwd(), 'package.json')
+    const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
 
     try {
       // Ensure the root package.json exists
       if (!fs.existsSync(packageJsonPath)) {
         throw new Error('package.json not found. This script must be run from the root directory of the project.')
+      }
+
+      // Ensure the MeoCord config file is exist
+      if (!fs.existsSync(meocordConfigPath)) {
+        throw new Error('Configuration file "meocord.config.ts" is missing!')
+      }
+
+      compileMeoCordConfig()
+      const meocordConfig = loadMeoCordConfig()
+
+      if (!meocordConfig?.discordToken) {
+        throw new Error('Discord token is missing!')
       }
 
       // Ensure the MeoCord package directory is found
