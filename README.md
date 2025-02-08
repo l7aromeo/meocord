@@ -208,15 +208,15 @@ export default class App {}
 Use the CLI to start your application.
 
 - **Development Mode**:
-  Run your application in development mode:
+  Run in development mode:
 ```shell script
 meocord start --dev
 ```
 
 - **Production Mode**:
-  Build and run in production:
+  Run in production mode:
 ```shell script
-meocord start --build --prod
+meocord start --prod
 ```
 
 ---
@@ -266,8 +266,8 @@ Builds the application in **production** or **development** mode.
 
 **Usage:**
 ```shell
-meocord build -p       # Build for production
-meocord build --dev    # Build for development
+meocord build --prod       # Build for production
+meocord build --dev        # Build for development
 ```
 
 #### `meocord start`
@@ -275,8 +275,8 @@ Starts the application with options for either a **production** or **development
 
 **Usage:**
 ```shell
-meocord start --build --prod  # Start in production mode with a fresh build
-meocord start --dev           # Quick start in development mode
+meocord start --prod          # Start in production mode (will always fresh build)
+meocord start --dev           # Start in development mode (will always fresh build)
 ```
 
 #### `meocord generate` (Alias: `meocord g`)
