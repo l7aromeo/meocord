@@ -17,7 +17,7 @@
  */
 
 import { BaseInteraction } from 'discord.js'
-import { Configuration } from 'webpack'
+import { Configuration, RuleSetRule } from 'webpack'
 
 /**
  * Interface for Guard classes.
@@ -34,6 +34,43 @@ export interface GuardInterface {
    *          or a `boolean` value directly.
    */
   canActivate(interaction: BaseInteraction, ...args: any[]): Promise<boolean> | boolean
+}
+
+/**
+ * Interface representing the Webpack configuration for MeoCord.
+ * Extends the base Webpack Configuration interface with additional properties.
+ */
+export interface MeoCordWebpackConfig extends Configuration {
+  /** The mode in which Webpack should run: 'development', 'production', or 'none'. */
+  mode: Configuration['mode']
+  /** The entry point for the application. */
+  entry: string
+  optimization: Configuration['optimization'] & {
+    /** Whether to minimize the output. */
+    minimize: boolean
+    /** Array of minimizer plugins to use. */
+    minimizer: NonNullable<Configuration['optimization']>['minimizer']
+  }
+  externals: Configuration['externals']
+  module: Configuration['module'] & {
+    /** Array of rules for module resolution. */
+    rules: RuleSetRule[]
+  }
+  resolve: Configuration['resolve'] & {
+    /** Array of file extensions to resolve. */
+    extensions: NonNullable<NonNullable<Configuration['resolve']>['extensions']>
+    /** Array of plugins to use for resolving modules. */
+    plugins: NonNullable<NonNullable<Configuration['resolve']>['plugins']>
+  }
+  output: Configuration['output'] & {
+    /** The name of the output file. */
+    filename: string
+    /** The output directory as an absolute path. */
+    path: string
+    /** The public URL of the output directory when referenced in a browser. */
+    publicPath: string
+  }
+  stats: Configuration['stats']
 }
 
 /**
@@ -57,5 +94,5 @@ export interface MeoCordConfig {
    * @param config - A callback function to modify the existing Webpack configuration.
    * @returns A modified Webpack configuration or `undefined` if no customization is needed.
    */
-  webpack?: (config?: (config?: Configuration) => Configuration) => Configuration | undefined
+  webpack?: (config: MeoCordWebpackConfig) => Configuration | undefined
 }
