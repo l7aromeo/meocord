@@ -16,5 +16,5 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { Logger } from './logger'
-export { Theme } from './theme'
+export { Logger } from '@src/common/logger'
+export { Theme } from '@src/common/theme'

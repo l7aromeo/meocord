@@ -21,20 +21,12 @@ import colors from '@colors/colors'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
-import path from 'path'
-import { existsSync } from 'fs'
-import { MeoCordConfig } from '@src/interface'
+import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
 
-const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
-
 export class Logger {
-  private meocordConfig: MeoCordConfig = {
-    appName: 'MeoCord',
-  }
-
   private readonly colorMap: Record<string, (msg: string) => string> = {
     LOG: colors.green,
     INFO: colors.cyan,
@@ -83,27 +75,24 @@ export class Logger {
     return (this.colorMap[logType] || (msg => msg))(message)
   }
 
-  private async logWithContext(method: string, args: any[]): Promise<void> {
-    ;(await import('ts-node')).register()
-    if (existsSync(meocordConfigPath)) {
-      this.meocordConfig = (await import(meocordConfigPath)).default as MeoCordConfig
-    }
+  private logWithContext(logLevel: string, messages: any[]): void {
+    if (messages.length === 0) return
 
-    if (args.length === 0) return
+    const config = loadMeoCordConfig()
+    const appName = config?.appName || 'MeoCord'
+    const logType = logLevel.toUpperCase()
+    const applyColor = this.colorMap[logType] || (msg => msg)
+    const formattedMessages = messages.map(message => this.formatMessage(message, logType))
 
-    const logType = method.toUpperCase()
-    const colorize = this.colorMap[logType] || (msg => msg)
-    const formattedMessages = args.map(arg => this.formatMessage(arg, logType))
-
-    const appName = colorize(colors.bold(`[${this.meocordConfig.appName}]`))
-    const datetime = colors.bold(dayjs().format('dddd, MMMM D, YYYY HH:mm:ss [UTC]Z')).reset
-    const logMethod = colorize(colors.bold(`[${logType}]`))
-    const context = this.context ? colors.bold(`[${this.context}]`).yellow : ''
+    const coloredAppName = applyColor(colors.bold(`[${appName}]`))
+    const timestamp = colors.bold(dayjs().format('dddd, MMMM D, YYYY HH:mm:ss [UTC]Z')).reset
+    const coloredLogLevel = applyColor(colors.bold(`[${logType}]`))
+    const coloredContext = this.context ? colors.bold(`[${this.context}]`).yellow : ''
 
     if (this.context) {
-      console[method](appName, datetime, logMethod, context, ...formattedMessages)
+      console[logLevel](coloredAppName, timestamp, coloredLogLevel, coloredContext, ...formattedMessages)
     } else {
-      console[method](appName, datetime, logMethod, ...formattedMessages)
+      console[logLevel](coloredAppName, timestamp, coloredLogLevel, ...formattedMessages)
     }
   }
 }
