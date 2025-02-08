@@ -20,6 +20,7 @@ import 'reflect-metadata'
 import { Container, injectable, interfaces } from 'inversify'
 import { Client, ClientOptions } from 'discord.js'
 import { MeoCordApp, AppActivity } from '@src/core/meocord.app'
+import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util'
 
 type ServiceIdentifier = interfaces.ServiceIdentifier
 
@@ -48,37 +49,43 @@ export function MeoCord(options: {
   activities?: AppActivity[]
   services?: ServiceIdentifier[]
 }) {
-  return function (target: any): void {
+  return (target: any): void => {
     if (!Reflect.hasMetadata('inversify:injectable', target)) {
-      injectable()(target)
+      injectable()(target) // Make target injectable (inversify-specific)
     }
+
+    const meocordConfig = loadMeoCordConfig()
+    if (!meocordConfig) return
 
     const discordClient = new Client(options.clientOptions)
     mainContainer.bind(Client).toConstantValue(discordClient)
 
-    // Bind controllers and services to container
+    // Bind controllers and services to the container
     ;[...options.controllers, ...(options.services || [])].forEach(dep => {
       bindDependencies(mainContainer, dep)
     })
 
-    // Bind static values
+    // Bind other static values to the container
     mainContainer.bind(target).toConstantValue(options.clientOptions)
+
     if (options.activities) {
       mainContainer.bind(target).toConstantValue(options.activities)
     }
+
     if (options.services) {
       mainContainer.bind(target).toConstantValue(options.services.map(s => mainContainer.get(s)))
     }
 
-    const meoCordApp = new MeoCordApp(
+    const meocordApp = new MeoCordApp(
       options.controllers.map(c => mainContainer.get(c)),
       discordClient,
+      meocordConfig.discordToken,
       options?.activities,
     )
 
-    mainContainer.bind(MeoCordApp).toConstantValue(meoCordApp)
+    mainContainer.bind(MeoCordApp).toConstantValue(meocordApp)
 
-    // Bind the App class dynamically with all resolved dependencies
+    // Bind the App class dynamically with resolved dependencies
     mainContainer
       .bind(target)
       .toDynamicValue(() => {
