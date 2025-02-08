@@ -52,6 +52,7 @@ export class MeoCordApp {
   constructor(
     private readonly controllers: any[],
     private readonly discordClient: Client,
+    private discordToken: string,
     private activities?: AppActivity[],
   ) {
     this.bot = this.discordClient
@@ -87,7 +88,7 @@ export class MeoCordApp {
         await this.handleReaction(reaction, user, 'remove')
       })
 
-      await this.bot.login(process.env.TOKEN)
+      await this.bot.login(this.discordToken)
       this.logger.log('Bot is online!')
     } catch (error) {
       this.logger.error('Error during bot startup:', error)
