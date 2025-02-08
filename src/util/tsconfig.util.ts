@@ -16,12 +16,11 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-require('ts-node').register()
-const path = require('path')
-const { existsSync, readFileSync, writeFileSync } = require('fs')
-
-const { Logger } = require('../common')
-const { tmpdir } = require('os')
+import path from 'path'
+import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { Logger } from '@src/common'
+import { tmpdir } from 'os'
+import { fixJSON } from '@src/util/json.util'
 
 const logger = new Logger()
 
@@ -36,7 +35,7 @@ const logger = new Logger()
  * @returns {string} The absolute path to the generated temporary `tsconfig.json`.
  * @throws {Error} When `tsconfig.json` is missing or cannot be fixed/parsing fails.
  */
-module.exports = function prepareModifiedTsConfig() {
+export function prepareModifiedTsConfig(): string {
   const tsConfigPath = path.resolve(process.cwd(), 'tsconfig.json')
 
   // Ensure tsconfig.json exists
@@ -46,24 +45,7 @@ module.exports = function prepareModifiedTsConfig() {
 
   const tsConfigContent = readFileSync(tsConfigPath, 'utf-8')
 
-  /**
-   * Helper function to fix common JSON formatting issues in tsconfig.json, such as:
-   * - Removing single-line comments.
-   * - Removing trailing commas.
-   * - Stripping newlines.
-   *
-   * @param {string} jsonString - The raw JSON string to fix.
-   * @returns {string} The corrected JSON string.
-   */
-  function fixJSON(jsonString) {
-    return jsonString
-      .replace(/\/\/.*$/gm, '') // Remove single-line comments
-      .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas before } or ]
-      .replace(/,\s*$/, '') // Remove trailing commas at the end of the file
-      .replace(/^\s*[\r\n]/gm, '') // Replace empty lines only
-  }
-
-  let parsedConfig
+  let parsedConfig: any
   try {
     parsedConfig = JSON.parse(tsConfigContent)
   } catch (error) {
@@ -76,7 +58,9 @@ module.exports = function prepareModifiedTsConfig() {
       logger.info('Fixed and updated tsconfig.json successfully.')
     } catch (fixError) {
       throw new Error(
-        `Failed to parse tsconfig.json, even after attempting to fix: ${fixError instanceof Error ? fixError.message : fixError}`,
+        `Failed to parse tsconfig.json, even after attempting to fix: ${
+          fixError instanceof Error ? fixError.message : fixError
+        }`,
       )
     }
   }
@@ -97,14 +81,14 @@ module.exports = function prepareModifiedTsConfig() {
     // Convert relative paths to absolute paths in additional keys
     additionalKeys.forEach(key => {
       if (parsedConfig[key]) {
-        parsedConfig[key] = parsedConfig[key].map(p => path.resolve(process.cwd(), p))
+        parsedConfig[key] = parsedConfig[key].map((p: string) => path.resolve(process.cwd(), p))
       }
     })
 
     // Resolve path mappings in `paths` if present
     if (parsedConfig.compilerOptions.paths) {
       Object.keys(parsedConfig.compilerOptions.paths).forEach(alias => {
-        parsedConfig.compilerOptions.paths[alias] = parsedConfig.compilerOptions.paths[alias].map(p =>
+        parsedConfig.compilerOptions.paths[alias] = parsedConfig.compilerOptions.paths[alias].map((p: string) =>
           path.resolve(process.cwd(), p),
         )
       })
