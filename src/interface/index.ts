@@ -39,19 +39,23 @@ export interface GuardInterface {
 /**
  * Configuration interface for the MeoCord application.
  * This interface defines optional configurations for the application, including
- * application metadata and Webpack configuration overrides.
+ * metadata, authentication tokens, and Webpack configuration overrides.
  */
 export interface MeoCordConfig {
   /**
    * The name of the application.
-   * Defaults to 'MeoCord' if not specified.
+   * If not specified, it defaults to 'MeoCord'.
    */
   appName?: string
   /**
+   * The Discord bot token used for authenticating with the Discord API.
+   */
+  discordToken: string
+  /**
    * Function to customize the Webpack configuration.
-   * Provides the ability to override and extend the default Webpack setup.
-   * @param config - Optional callback function to modify the Webpack configuration.
-   * @returns A modified Webpack configuration or undefined.
+   * Allows overriding and extending the default Webpack setup for the application.
+   * @param config - A callback function to modify the existing Webpack configuration.
+   * @returns A modified Webpack configuration or `undefined` if no customization is needed.
    */
   webpack?: (config?: (config?: Configuration) => Configuration) => Configuration | undefined
 }
