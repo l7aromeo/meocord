@@ -120,6 +120,21 @@ For full license details, refer to:
           process.env.NODE_ENV = mode
         }
 
+        const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
+        // Ensure the MeoCord config file exists
+        if (!fs.existsSync(meocordConfigPath)) {
+          this.logger.error('Configuration file "meocord.config.ts" is missing!')
+          await wait(100)
+          process.exit(1)
+        }
+        compileMeoCordConfig()
+        const meocordConfig = loadMeoCordConfig()
+        if (!meocordConfig?.discordToken) {
+          this.logger.error('Discord token is missing!')
+          await wait(100)
+          process.exit(1)
+        }
+
         await this.build(mode)
       })
 
@@ -135,15 +150,23 @@ For full license details, refer to:
           process.env.NODE_ENV = mode
         }
 
-        compileMeoCordConfig()
-        const meocordConfig = loadMeoCordConfig()
-        if (!meocordConfig?.discordToken) {
-          this.logger.error('Discord token is missing!')
-          await wait(100)
-          process.exit(1)
-        }
-
         if (options.build) {
+          const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
+          // Ensure the MeoCord config file exists
+          if (!fs.existsSync(meocordConfigPath)) {
+            this.logger.error('Configuration file "meocord.config.ts" is missing!')
+            await wait(100)
+            process.exit(1)
+          }
+
+          compileMeoCordConfig()
+          const meocordConfig = loadMeoCordConfig()
+          if (!meocordConfig?.discordToken) {
+            this.logger.error('Discord token is missing!')
+            await wait(100)
+            process.exit(1)
+          }
+
           await this.build(mode)
         }
 
@@ -165,7 +188,6 @@ For full license details, refer to:
   async build(mode: 'production' | 'development') {
     try {
       this.clearConsole()
-      compileMeoCordConfig()
       this.logger.info(`Building ${mode} version...`)
 
       const webpackConfig = (await import(this.webpackConfigPath)).default
@@ -309,17 +331,11 @@ For full license details, refer to:
   private async ensureReady() {
     const meocordPath = findModulePackageDir('meocord')
     const packageJsonPath = path.resolve(process.cwd(), 'package.json')
-    const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
 
     try {
       // Ensure the root package.json exists
       if (!fs.existsSync(packageJsonPath)) {
         throw new Error('package.json not found. This script must be run from the root directory of the project.')
-      }
-
-      // Ensure the MeoCord config file exists
-      if (!fs.existsSync(meocordConfigPath)) {
-        throw new Error('Configuration file "meocord.config.ts" is missing!')
       }
 
       // Ensure the MeoCord package directory is found

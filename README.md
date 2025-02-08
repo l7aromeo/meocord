@@ -48,6 +48,12 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 To get started, you'll need to install the required dependencies for your project. Begin by adding `discord.js` and
 `meocord` to your project using the following command.
 
+### Enable corepack and set yarn version to the stable version
+
+```shell
+corepack enable && yarn set version stable
+```
+
 ### Install with Yarn
 
 ```shell
@@ -470,7 +476,7 @@ This will provide command-specific help and options.
 
 - **Node.js**: Ensure you have version **22.x** or higher, as it’s the current LTS release.
 - **TypeScript**: Version **5.x** or above is required for compatibility with modern features.
-- **Yarn**: Strongly recommended for managing dependencies and smooth builds.
+- **Yarn**: Version stable (`corepack enable && yarn set version stable`) Strongly recommended for managing dependencies and smooth builds.
 
 ### Running Your Application
 
@@ -523,7 +529,6 @@ Ensure the following essential files and folders are prepared for deployment on 
 ├── .env (if applicable, ensure it contains necessary variables)
 ├── .yarn (optional: exclude cache if not required)
 ├── .yarnrc.yml
-├── meocord.config.ts
 ├── package.json
 └── yarn.lock
 ```
