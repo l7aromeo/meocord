@@ -1,6 +1,6 @@
 {
   "name": "meocord",
-  "version": "1.0.0-alpha.4",
+  "version": "1.0.0-alpha.5",
   "packageManager": "yarn@4.6.0",
   "type": "commonjs",
   "scripts": {
