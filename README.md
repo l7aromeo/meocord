@@ -15,7 +15,6 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 - [Application Structure](#application-structure)
     - [Example Structure](#example-structure)
     - [Key Components](#key-components)
-- [Configuration](#configuration)
 - [Development Guide](#development-guide)
 - [Contributing](#contributing)
 - [License](#license)
@@ -377,28 +376,6 @@ This structure ensures clear separation of concerns and scalable project archite
 
 6. **Assets** (`src/assets`):
     - Fonts, images, and other static files for your application.
-
----
-
-## Configuration
-
-MeoCord uses a central configuration file called `meocord.config.ts` to define application-level settings.
-
-### Example `meocord.config.ts` File:
-
-```typescript
-import { Configuration } from 'webpack';
-
-export default {
-  appName: 'MyApp',
-  webpack: (config?: Configuration) => ({
-    ...config,
-    mode: 'development',
-  }),
-};
-```
-
-Add or customize options as needed for your application.
 
 ---
 
