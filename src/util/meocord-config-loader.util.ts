@@ -23,6 +23,20 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { MeoCordConfig } from '@src/interface'
 import { fixJSON } from '@src/util/json.util'
 
+const rootTsConfigPath = path.resolve(process.cwd(), 'tsconfig.json')
+
+// Ensure tsconfig.json exists
+if (!existsSync(rootTsConfigPath)) {
+  throw new Error(`tsconfig.json not found in: ${process.cwd()}`)
+}
+
+const rootTsConfigContent = JSON.parse(fixJSON(readFileSync(rootTsConfigPath, 'utf-8')))
+const tempOutputDir = path.resolve(
+  process.cwd(),
+  rootTsConfigContent?.compilerOptions?.outDir || 'dist',
+  '.meocord-temp',
+)
+
 /**
  * Compiles the TypeScript configuration file (meocord.config.ts) to JavaScript
  * and stores it in the temporary directory.
@@ -34,15 +48,6 @@ export function compileMeoCordConfig(): boolean {
   if (!meocordModulePath) return false
 
   const buildTsConfigTempPath = path.resolve(process.cwd(), 'tsconfig.build.json')
-  const tempOutputDir = path.resolve(meocordModulePath, '.temp')
-  const rootTsConfigPath = path.resolve(process.cwd(), 'tsconfig.json')
-
-  // Ensure tsconfig.json exists
-  if (!existsSync(rootTsConfigPath)) {
-    throw new Error(`tsconfig.json not found in: ${process.cwd()}`)
-  }
-
-  const rootTsConfigContent = JSON.parse(fixJSON(readFileSync(rootTsConfigPath, 'utf-8')))
 
   const removeUndefinedKeys = (obj: any): void => {
     Object.keys(obj).forEach(key => {
@@ -70,6 +75,7 @@ export function compileMeoCordConfig(): boolean {
       sourceMap: false,
       baseUrl: '.',
       rootDir: '.',
+      outDir: tempOutputDir,
       paths: rootTsConfigContent?.compilerOptions?.paths,
       skipLibCheck: true,
       noImplicitAny: false,
@@ -96,12 +102,9 @@ export function compileMeoCordConfig(): boolean {
 
   try {
     // Run TypeScript build and alias transformation
-    execSync(
-      `npx -y tsc -p "${buildTsConfigTempPath}" --outDir "${tempOutputDir}" && npx -y tsc-alias -p "${buildTsConfigTempPath}" --outDir "${tempOutputDir}"`,
-      {
-        stdio: 'inherit',
-      },
-    )
+    execSync(`npx -y tsc -p "${buildTsConfigTempPath}" && npx -y tsc-alias -p "${buildTsConfigTempPath}"`, {
+      stdio: 'inherit',
+    })
     return true
   } catch (error) {
     if (error instanceof Error) {
@@ -125,7 +128,6 @@ export function loadMeoCordConfig(): MeoCordConfig | undefined {
   const meocordModulePath = findModulePackageDir('meocord')
   if (!meocordModulePath) return undefined
 
-  const tempOutputDir = path.resolve(meocordModulePath, '.temp')
   const tempConfigFilePath = path.join(tempOutputDir, 'meocord.config.js')
 
   if (existsSync(tempConfigFilePath)) {

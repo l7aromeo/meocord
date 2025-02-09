@@ -150,7 +150,7 @@ For full license details, refer to:
           process.env.NODE_ENV = mode
         }
 
-        if (options.build) {
+        if (options.build || options.dev) {
           const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
           // Ensure the MeoCord config file exists
           if (!fs.existsSync(meocordConfigPath)) {
@@ -166,7 +166,9 @@ For full license details, refer to:
             await wait(100)
             process.exit(1)
           }
+        }
 
+        if (options.build) {
           await this.build(mode)
         }
 
