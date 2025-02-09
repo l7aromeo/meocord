@@ -1,6 +1,6 @@
 {
   "name": "meocord",
-  "version": "1.0.0-alpha.10",
+  "version": "1.0.0-alpha.11",
   "packageManager": "yarn@4.6.0",
   "type": "commonjs",
   "scripts": {
@@ -99,5 +99,17 @@
   "_moduleAliases": {
     "@src": "./dist"
   },
-  "stableVersion": "0.1.0"
+  "stableVersion": "0.1.0",
+  "keywords": [
+    "discord",
+    "discord-bot",
+    "discord.js",
+    "typescript",
+    "bot-framework",
+    "modular",
+    "cli-tools",
+    "meocord",
+    "scalable-bots",
+    "dynamic-status"
+  ]
 }
