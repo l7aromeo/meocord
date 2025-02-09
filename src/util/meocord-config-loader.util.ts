@@ -97,7 +97,7 @@ export function compileMeoCordConfig(): boolean {
   try {
     // Run TypeScript build and alias transformation
     execSync(
-      `tsc -p "${buildTsConfigTempPath}" --outDir "${tempOutputDir}" && tsc-alias -p "${buildTsConfigTempPath}" --outDir "${tempOutputDir}"`,
+      `npx -y tsc -p "${buildTsConfigTempPath}" --outDir "${tempOutputDir}" && npx -y tsc-alias -p "${buildTsConfigTempPath}" --outDir "${tempOutputDir}"`,
       {
         stdio: 'inherit',
       },

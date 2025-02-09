@@ -1,6 +1,6 @@
 {
   "name": "meocord",
-  "version": "1.0.0-alpha.8",
+  "version": "1.0.0-alpha.9",
   "packageManager": "yarn@4.6.0",
   "type": "commonjs",
   "scripts": {
@@ -91,7 +91,6 @@
     "terser-webpack-plugin": "^5.3.11",
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
-    "tsc-alias": "^1.8.10",
     "tsconfig-paths-webpack-plugin": "^4.2.0",
     "webpack": "^5.97.1",
     "webpack-node-externals": "^3.0.0"
