@@ -1,6 +1,6 @@
 {
   "name": "meocord",
-  "version": "1.0.0-alpha.15",
+  "version": "1.0.0-alpha.16",
   "packageManager": "yarn@4.6.0",
   "type": "commonjs",
   "scripts": {
@@ -64,6 +64,7 @@
     "@types/lodash": "^4.17.15",
     "@typescript-eslint/parser": "^8.23.0",
     "babel-plugin-module-resolver": "^5.0.2",
+    "babel-preset-minify": "^0.5.2",
     "copyfiles": "^2.4.1",
     "eslint": "^9.19.0",
     "eslint-config-prettier": "^10.0.1",
