@@ -12,6 +12,11 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 - [Installation](#installation)
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
+  - [TS Config](#1-recommended-tsconfigjson)
+  - [ESLint Config](#2-eslint-configuration-eslintconfigmjs)
+  - [MeoCord Config](#3-in-the-meocordconfigts)
+  - [App.ts File](#4-define-the-appts)
+  - [Main Entry File](#5-in-the-maints)
 - [CLI Usage](#cli-usage)
     - [Example Structure](#example-structure)
     - [Key Components](#key-components)
@@ -166,7 +171,65 @@ To begin building your application with **MeoCord**, follow these steps:
 
 ---
 
-### 2. In the `meocord.config.ts`
+### 2. Eslint Configuration `eslint.config.mjs`
+
+MeoCord provides a built-in ESLint configuration to streamline your linting setup. **Note: MeoCord's built-in ESLint
+configuration requires ESLint version 9 or higher.** Here's how you can integrate it:
+
+#### Install Required Packages
+
+Run the following command to install the necessary dependencies:
+
+```shell
+yarn add -D eslint @typescript-eslint/eslint-plugin @typescript-eslint/parser eslint-plugin-import eslint-config-prettier eslint-plugin-prettier eslint-plugin-unused-imports globals
+```
+
+#### Use the Default MeoCord ESLint Config
+
+Add the following to your `eslint.config.mjs`:
+
+```javascript
+import meocordEslint from 'meocord/eslint';
+
+export default meocordEslint;
+```
+
+#### Customize the ESLint Configuration
+
+If needed, you can extend or modify the default configuration to fit your project's requirements:
+
+```javascript
+import unusedImports from 'eslint-plugin-unused-imports';
+import meocordEslint, { typescriptConfig } from 'meocord/eslint';
+
+const customConfig = {
+  ...typescriptConfig,
+  plugins: {
+    ...typescriptConfig.plugins,
+    'unused-imports': unusedImports,
+  },
+  rules: {
+    ...typescriptConfig.rules,
+    'unused-imports/no-unused-imports': 'error', // Ensure no unused imports
+    'unused-imports/no-unused-vars': [
+      'error',
+      {
+        vars: 'all',
+        varsIgnorePattern: '^_', // Allow variables starting with `_`
+        args: 'after-used',
+        argsIgnorePattern: '^_',
+      },
+    ],
+    // Add or override additional rules here
+  },
+};
+
+export default [...meocordEslint, customConfig];
+```
+
+---
+
+### 3. In the `meocord.config.ts`
 
 The **configuration file** (`meocord.config.ts`) is responsible for defining the application-wide settings. It provides essential configurations such as the app name and Discord token.
 
@@ -235,41 +298,6 @@ export default {
 
 ---
 
-### 3. In the `main.ts`
-
-The **main entry file** (`main.ts`) is responsible for bootstrapping your MeoCord app and starting its execution. It utilizes the `MeoCordFactory` to initialize the application and provides built-in logging support via the `Logger`.
-
-Below is an example setup for `main.ts`:
-
-```typescript
-import App from '@src/app';
-import { Logger } from 'meocord/common';
-import { MeoCordFactory } from 'meocord/core';
-
-const logger = new Logger();
-const app = MeoCordFactory.create(App);
-
-async function bootstrap() {
-  logger.log('Starting application');
-  await app.start();
-  logger.log('Application started');
-}
-
-bootstrap().catch((error) =>
-  logger.error('Error during startup:', error)
-);
-```
-
-- **Line-by-Line Explanation**:
-    1. **Import Core App Class**:
-        - `App` is the decorated base class where controllers and services are registered.
-    2. **Initialize Framework**:
-        - `MeoCordFactory.create(App)` creates and returns an instance of the app, initialized with registered components.
-    3. **Bootstrap Logic**:
-        - Logs are emitted during startup, and potential errors during initialization are handled via `catch()`.
-
----
-
 ### 4. Define the `app.ts`
 
 The `app.ts` file is the **heart of your application**, acting as the centralized configuration point for registering all controllers, services, intents, and activities. Each **controller** must be explicitly registered here using the `@MeoCord` decorator.
@@ -321,6 +349,41 @@ import { SampleReactionController } from '@src/controllers/reaction/sample.react
 export default class App {}
 ```
 
+### 5. In the `main.ts`
+
+The **main entry file** (`main.ts`) is responsible for bootstrapping your MeoCord app and starting its execution. It utilizes the `MeoCordFactory` to initialize the application and provides built-in logging support via the `Logger`.
+
+Below is an example setup for `main.ts`:
+
+```typescript
+import App from '@src/app';
+import { Logger } from 'meocord/common';
+import { MeoCordFactory } from 'meocord/core';
+
+const logger = new Logger();
+const app = MeoCordFactory.create(App);
+
+async function bootstrap() {
+  logger.log('Starting application');
+  await app.start();
+  logger.log('Application started');
+}
+
+bootstrap().catch((error) =>
+  logger.error('Error during startup:', error)
+);
+```
+
+- **Line-by-Line Explanation**:
+    1. **Import Core App Class**:
+        - `App` is the decorated base class where controllers and services are registered.
+    2. **Initialize Framework**:
+        - `MeoCordFactory.create(App)` creates and returns an instance of the app, initialized with registered components.
+    3. **Bootstrap Logic**:
+        - Logs are emitted during startup, and potential errors during initialization are handled via `catch()`.
+
+---
+
 - **Key Responsibilities of `app.ts`**:
 
     1. **Register Controllers**  
@@ -346,7 +409,7 @@ export default class App {}
 
 ---
 
-### 5. Run the Application
+### 6. Run the Application
 
 Use the CLI to start your application.
 

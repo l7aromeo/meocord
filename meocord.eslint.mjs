@@ -1,14 +1,11 @@
 import importPlugin from 'eslint-plugin-import'
 import globals from 'globals'
 import tsParser from '@typescript-eslint/parser'
-import eslintJs from '@eslint/js'
 import eslintTs from 'typescript-eslint'
 import eslintConfigPrettier from 'eslint-config-prettier'
 import eslintPluginPrettier from 'eslint-plugin-prettier'
-import unusedImports from 'eslint-plugin-unused-imports'
 
 const tsFiles = ['**/*.ts']
-const jsFiles = ['**/*.js']
 
 const languageOptions = {
   globals: {
@@ -22,12 +19,11 @@ const languageOptions = {
   },
 }
 
-const typescriptConfig = {
+export const typescriptConfig = {
   files: tsFiles,
   plugins: {
     import: importPlugin,
     prettier: eslintPluginPrettier,
-    'unused-imports': unusedImports,
   },
   languageOptions: {
     ...languageOptions,
@@ -50,34 +46,8 @@ const typescriptConfig = {
     '@typescript-eslint/no-explicit-any': 'off',
     '@typescript-eslint/ban-ts-comment': 'off',
     '@typescript-eslint/no-var-requires': 'warn',
-    'unused-imports/no-unused-imports': 'error',
     '@typescript-eslint/no-unused-expressions': 'off',
     '@typescript-eslint/no-unused-vars': [
-      'error',
-      {
-        ignoreRestSiblings: true,
-        args: 'none',
-      },
-    ],
-  },
-}
-
-const javaScriptConfig = {
-  files: jsFiles,
-  plugins: {
-    import: importPlugin,
-    prettier: eslintPluginPrettier,
-    'unused-imports': unusedImports,
-  },
-  languageOptions,
-  rules: {
-    ...eslintJs.configs.recommended,
-    ...importPlugin.configs.recommended.rules,
-    'prettier/prettier': 'error',
-    'unused-imports/no-unused-imports': 'error',
-    'no-var': 'error',
-    'prefer-const': 'warn',
-    'no-unused-vars': [
       'error',
       {
         ignoreRestSiblings: true,
@@ -99,9 +69,8 @@ const recommendedTypeScriptConfigs = [
 ]
 
 export default [
-  { ignores: ['dist/*'] },
+  { ignores: ['docs/*', 'build/*', 'lib/*', 'dist/*', 'meocord.config.ts', 'jest.config.ts'] },
   ...recommendedTypeScriptConfigs,
   eslintConfigPrettier,
   typescriptConfig,
-  javaScriptConfig,
 ]

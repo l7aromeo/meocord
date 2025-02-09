@@ -42,7 +42,8 @@
       "import": "./dist/enum/index.js",
       "require": "./dist/enum/index.js",
       "types": "./dist/enum/index.d.ts"
-    }
+    },
+    "./eslint": "./meocord.eslint.mjs"
   },
   "files": [
     "dist/**/*",
