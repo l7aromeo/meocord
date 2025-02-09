@@ -23,19 +23,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { MeoCordConfig } from '@src/interface'
 import { fixJSON } from '@src/util/json.util'
 
-const rootTsConfigPath = path.resolve(process.cwd(), 'tsconfig.json')
-
-// Ensure tsconfig.json exists
-if (!existsSync(rootTsConfigPath)) {
-  throw new Error(`tsconfig.json not found in: ${process.cwd()}`)
-}
-
-const rootTsConfigContent = JSON.parse(fixJSON(readFileSync(rootTsConfigPath, 'utf-8')))
-const tempOutputDir = path.resolve(
-  process.cwd(),
-  rootTsConfigContent?.compilerOptions?.outDir || 'dist',
-  '.meocord-temp',
-)
+const tempOutputDir = path.resolve(process.cwd(), 'dist', '.meocord-temp')
 
 /**
  * Compiles the TypeScript configuration file (meocord.config.ts) to JavaScript
@@ -48,6 +36,15 @@ export function compileMeoCordConfig(): boolean {
   if (!meocordModulePath) return false
 
   const buildTsConfigTempPath = path.resolve(process.cwd(), 'tsconfig.build.json')
+
+  const rootTsConfigPath = path.resolve(process.cwd(), 'tsconfig.json')
+
+  // Ensure tsconfig.json exists
+  if (!existsSync(rootTsConfigPath)) {
+    throw new Error(`tsconfig.json not found in: ${process.cwd()}`)
+  }
+
+  const rootTsConfigContent = JSON.parse(fixJSON(readFileSync(rootTsConfigPath, 'utf-8')))
 
   const removeUndefinedKeys = (obj: any): void => {
     Object.keys(obj).forEach(key => {
