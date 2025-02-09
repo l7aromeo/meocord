@@ -62,14 +62,8 @@ export interface MeoCordWebpackConfig extends Configuration {
     /** Array of plugins to use for resolving modules. */
     plugins: NonNullable<NonNullable<Configuration['resolve']>['plugins']>
   }
-  output: Configuration['output'] & {
-    /** The name of the output file. */
-    filename: string
-    /** The output directory as an absolute path. */
-    path: string
-    /** The public URL of the output directory when referenced in a browser. */
-    publicPath: string
-  }
+  /** Output configuration for Webpack. Excludes 'path', 'publicPath', and 'filename' to prevent overwriting. */
+  output: Omit<NonNullable<Configuration['output']>, 'path' | 'publicPath' | 'filename'>
   stats: Configuration['stats']
 }
 

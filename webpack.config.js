@@ -62,10 +62,10 @@ const baseConfig = (config = {}) => ({
     ...config?.optimization,
     minimize: config?.optimization?.minimize || true,
     minimizer: [
+      ...(config?.optimization?.minimizer || []),
       new TerserPlugin({
         terserOptions: { keep_classnames: true },
       }),
-      ...(config?.optimization?.minimizer || []),
     ],
   },
   externals: [NodeExternals(), ...(config?.externals || [])],
@@ -84,10 +84,10 @@ const baseConfig = (config = {}) => ({
     ],
   },
   output: {
+    ...config?.output,
     filename: 'main.js',
     path: path.resolve(process.cwd(), 'dist'),
     publicPath: 'dist/',
-    ...config?.output,
   },
   stats: config?.stats || 'errors-only',
 })
