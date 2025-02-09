@@ -48,6 +48,7 @@
   "files": [
     "dist/**/*",
     "webpack.config.js",
+    "meocord.eslint.mjs",
     "package.json",
     "LICENSE",
     "AUTHOR.md",
