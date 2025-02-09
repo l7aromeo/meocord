@@ -28,23 +28,39 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 ---
 
 ## Features
-- **Powerful CLI Tools**
-  Easily manage, build, and run projects using an intuitive CLI. Simplifies tasks such as scaffolding components, building applications, or starting bots in development/production modes.
-- **Highly Modular Design**
-  MeoCord emphasizes modularity by clearly separating concerns such as decorators, controllers, services, and utilities. This promotes scalability and maintainability in your projects.
-- **Built-in Decorators**
-  Simplify and extend bot behavior through MeoCord's robust decorator system. Leverage built-in decorators.
-- **Specialized Services**
-  MeoCord allows you to register specialized services using the `@MeoCord` decorator. These services are designed to focus on specific, isolated functionalities within your application. For example, you can add a RabbitMQ service to listen for events and trigger appropriate actions, such as sending messages to Discord. This approach promotes modularity and flexibility, enabling the integration of custom services to extend the application's capabilities without tightly coupling them to other components.
-- **Seamless Discord.js Integration**
-  MeoCord is built on top of Discord.js, providing full support for Discord API with added features like activity management, intents, partials, and custom client options.
-- **TypeScript First Approach**
-  Designed with TypeScript in mind, offering strict type safety, interfaces, and decorators to empower developers with a modern development experience.
-- **Extensible Webpack Integration**
-  Customize your build process with ease using the exposed Webpack configuration hook. This allows you to add rules, plugins, or modify existing setups to match your project's unique requirements.
-- **Dynamic Activity Support**
-  Manage bot presence dynamically, such as setting activities (e.g., "Playing X with Y") or linking bot status to real-time events.
 
+- **Powerful CLI Tools**  
+  Easily manage, build, and run projects using an intuitive CLI. Simplify tasks such as scaffolding components, building
+  applications, and starting bots in development/production modes.
+
+- **Modular Design**  
+  Embrace modularity by organizing application logic into distinct components like controllers and services. This
+  approach enhances scalability, improves maintainability, and simplifies future development.
+
+- **Built-in Decorators**  
+  Simplify and extend bot behavior through a robust decorator system. Leverage built-in decorators for streamlined
+  functionality.
+
+- **Specialized Services**  
+  Register specialized services using the `@MeoCord` decorator. For example, add a RabbitMQ service to listen for events
+  and trigger actions, such as sending Discord messages. This promotes modularity, flexibility, and seamless integration
+  of custom services.
+
+- **Seamless Discord.js Integration**  
+  Built on top of Discord.js to provide full support for the Discord API, with added features like activity management,
+  intents, partials, and custom client options.
+
+- **TypeScript-First Approach**  
+  Designed with TypeScript in mind, offering strict type safety, interfaces, and decorators to empower modern
+  development workflows.
+
+- **Extensible Webpack Integration**  
+  Easily customize your build process using an exposed Webpack configuration hook. Add rules, plugins, or modify setups
+  to match your project's requirements.
+
+- **Dynamic Activity Support**  
+  Manage bot presence dynamically, such as setting activities (e.g., "Playing X with Y") or linking bot status to
+  real-time events.
 
 ---
 
