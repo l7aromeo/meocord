@@ -21,7 +21,24 @@ import { CommandBuilderBase } from '@src/decorator'
 import { injectable } from 'inversify'
 import { CommandType } from '@src/enum'
 
-// Custom decorator to define the command type
+/**
+ * This decorator is used to mark a class as a Discord command builder that later can be registered on the `@Command` decorator.
+ * It defines the command type using metadata and dynamically makes the class injectable if it isn't already.
+ *
+ * @example
+ * ```typescript
+ * @CommandBuilder(CommandType.SLASH)
+ * export class MySlashCommand implements CommandBuilderBase {
+ *   build(commandName: string): SlashCommandBuilder {
+ *     return new SlashCommandBuilder().setName(commandName).setDescription('A sample slash command')
+ *   }
+ * }
+ *```
+ *
+ * @param commandType - The type of the command, specified from the `CommandType` enum.
+ * @returns A decorator function that makes the target class injectable
+ *          and assigns the `commandType` metadata.
+ */
 export function CommandBuilder(commandType: CommandType) {
   return function (target: new () => CommandBuilderBase) {
     // Check if the class is already injectable; if not, make it injectable dynamically
@@ -29,6 +46,7 @@ export function CommandBuilder(commandType: CommandType) {
       injectable()(target)
     }
 
+    // Define the command type metadata for the target class
     Reflect.defineMetadata(
       'commandType',
       commandType,

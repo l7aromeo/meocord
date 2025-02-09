@@ -24,6 +24,12 @@ import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util'
 
 type ServiceIdentifier = interfaces.ServiceIdentifier
 
+/**
+ * Binds a class and its dependencies to the Inversify container in singleton scope.
+ *
+ * @param {Container} container - The Inversify container instance.
+ * @param {any} cls - The class to be bound to the container.
+ */
 function bindDependencies(container: Container, cls: any): void {
   if (!container.isBound(cls)) {
     container.bind(cls).toSelf().inSingletonScope()
@@ -33,6 +39,13 @@ function bindDependencies(container: Container, cls: any): void {
   }
 }
 
+/**
+ * Resolves dependencies for a given class by binding them to the container and returning the resolved instances.
+ *
+ * @param {Container} container - The Inversify container instance.
+ * @param {any} target - The target class whose dependencies are to be resolved.
+ * @returns {any[]} - An array of resolved instances of the target's dependencies.
+ */
 function resolveDependencies(container: Container, target: any): any[] {
   const injectables = Reflect.getMetadata('design:paramtypes', target) || []
   return injectables.map((dep: any) => {
@@ -41,14 +54,48 @@ function resolveDependencies(container: Container, target: any): any[] {
   })
 }
 
+/** The main Inversify container for managing dependencies. */
 export const mainContainer = new Container()
 
+/**
+ * `@MeoCord()` decorator for initializing and setting up the MeoCord application.
+ *
+ * @param {Object} options - The decorator options.
+ * @param {ServiceIdentifier[]} options.controllers - The list of controllers to be registered.
+ * @param {ClientOptions} options.clientOptions - The Discord client options for initializing the bot.
+ * @param {AppActivity[]} [options.activities] - Optional activities for the bot.
+ * @param {ServiceIdentifier[]} [options.services] - Optional services to be registered.
+ *
+ * @example
+ * ```typescript
+ * @MeoCord({
+ *   controllers: [PingSlashController],
+ *   clientOptions: {
+ *     intents: [
+ *       GatewayIntentBits.Guilds,
+ *       GatewayIntentBits.GuildMembers,
+ *       GatewayIntentBits.GuildMessages,
+ *       GatewayIntentBits.GuildMessageReactions,
+ *       GatewayIntentBits.MessageContent,
+ *     ],
+ *     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+ *   },
+ *   activities: [{
+ *       name: `${sample(['Genshin', 'ZZZ'])} with Romeo`,
+ *       type: ActivityType.Playing,
+ *       url: 'https://enka.network/u/824957678/',
+ *   }],
+ *   services: [MyStandaloneService],
+ * })
+ * class MyApp {}
+ * ```
+ **/
 export function MeoCord(options: {
   controllers: ServiceIdentifier[]
   clientOptions: ClientOptions
   activities?: AppActivity[]
   services?: ServiceIdentifier[]
-}) {
+}): (target: any) => void {
   return (target: any): void => {
     if (!Reflect.hasMetadata('inversify:injectable', target)) {
       injectable()(target) // Make target injectable (inversify-specific)

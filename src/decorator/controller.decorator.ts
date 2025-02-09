@@ -1,7 +1,3 @@
-import { injectable } from 'inversify'
-import 'reflect-metadata'
-import { mainContainer } from '@src/decorator'
-import { BaseInteraction, Message, ContextMenuCommandBuilder, SlashCommandBuilder } from 'discord.js'
 /*
  * MeoCord Framework
  * Copyright (C) 2025 Ukasyah Rahmatullah Zada
@@ -20,12 +16,19 @@ import { BaseInteraction, Message, ContextMenuCommandBuilder, SlashCommandBuilde
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { injectable } from 'inversify'
+import 'reflect-metadata'
+import { mainContainer } from '@src/decorator'
+import { BaseInteraction, Message, ContextMenuCommandBuilder, SlashCommandBuilder } from 'discord.js'
 import { CommandType } from '@src/enum'
 
 const COMMAND_METADATA_KEY = Symbol('commands')
 const MESSAGE_HANDLER_METADATA_KEY = Symbol('message_handlers')
 const REACTION_HANDLER_METADATA_KEY = Symbol('reaction_handlers')
 
+/**
+ * Decorator to register message handlers in the controller.
+ */
 export function MessageHandler() {
   return function (target: any, propertyKey: string) {
     const handlers: string[] = Reflect.getMetadata(MESSAGE_HANDLER_METADATA_KEY, target) || []
@@ -34,6 +37,11 @@ export function MessageHandler() {
   }
 }
 
+/**
+ * Decorator to register reaction handlers in the controller.
+ *
+ * @param emoji - Optional emoji name to filter reactions this handler should respond to.
+ */
 export function ReactionHandler(emoji?: string) {
   return function (target: any, propertyKey: string) {
     const handlers: { emoji: string | undefined; method: string }[] =
@@ -43,18 +51,42 @@ export function ReactionHandler(emoji?: string) {
   }
 }
 
+/**
+ * Retrieves reaction handlers metadata from a given controller.
+ *
+ * @param controller - The controller class instance.
+ * @returns An array of reaction handler metadata objects.
+ */
 export function getReactionHandlers(controller: any): { emoji: string | undefined; method: string }[] {
   return Reflect.getMetadata(REACTION_HANDLER_METADATA_KEY, controller) || []
 }
 
+/**
+ * Retrieves message handlers metadata from a given controller.
+ *
+ * @param controller - The controller class instance.
+ * @returns An array of message handler method names.
+ */
 export function getMessageHandlers(controller: any): string[] {
   return Reflect.getMetadata(MESSAGE_HANDLER_METADATA_KEY, controller) || []
 }
 
+/**
+ * Base interface for a command builder.
+ */
 export interface CommandBuilderBase {
+  /**
+   * Builds the command structure using the specified command name.
+   *
+   * @param commandName - The name of the command.
+   * @returns A SlashCommandBuilder or ContextMenuCommandBuilder instance.
+   */
   build: (commandName: string) => SlashCommandBuilder | ContextMenuCommandBuilder
 }
 
+/**
+ * Command metadata describing a registered command method.
+ */
 export interface CommandMetadata {
   methodName: string
   builder: SlashCommandBuilder | ContextMenuCommandBuilder | undefined
@@ -63,7 +95,12 @@ export interface CommandMetadata {
   dynamicParams?: string[]
 }
 
-// Helper function to create a regex from a pattern
+/**
+ * Helper function to create regex and parameter mappings from a pattern string.
+ *
+ * @param pattern - The pattern string to parse.
+ * @returns An object containing the generated regex and parameter names.
+ */
 function createRegexFromPattern(pattern: string): { regex: RegExp; params: string[] } {
   const params: string[] = []
 
@@ -84,7 +121,26 @@ function createRegexFromPattern(pattern: string): { regex: RegExp; params: strin
   return { regex, params }
 }
 
-// Decorator to register command methods
+/**
+ * Decorator to register command methods in a controller.
+ *
+ * @param commandName - The name or pattern of the command.
+ * @param builderOrType - A command builder class or a command type from `CommandType`.
+ *
+ * @example
+ * ```typescript
+ * @Command('help', CommandType.SLASH)
+ * public async handleHelp(interaction: ChatInputCommandInteraction) {
+ *   await interaction.reply('This is the help command!')
+ * }
+ *
+ * @Command('stats-{id}', CommandType.MESSAGE)
+ * public async handleStats(message: Message, params: { id: string }) {
+ *   const statsId = params.id;
+ *   await message.reply(`Fetching stats for ID: ${statsId}`);
+ * }
+ * ```
+ */
 export function Command(commandName: string, builderOrType: (new () => CommandBuilderBase) | CommandType) {
   return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
     const originalMethod = descriptor.value
@@ -132,14 +188,35 @@ export function Command(commandName: string, builderOrType: (new () => CommandBu
   }
 }
 
-// Retrieve the command map from the class
+/**
+ * Retrieves the command map for a given controller.
+ *
+ * @param controller - The controller class instance.
+ * @returns A record containing command metadata indexed by command names.
+ */
 export function getCommandMap(controller: any): Record<string, CommandMetadata> {
   return Reflect.getMetadata(COMMAND_METADATA_KEY, controller)
 }
 
+/**
+ * Decorator to mark a class as a controller that can later be registered to the App class `(app.ts)` using the `@MeoCord` decorator.
+ *
+ * @example
+ * ```typescript
+ * @Controller()
+ * export class PingSlashController {
+ *   constructor(private pingService: PingService) {}
+ *
+ *   @Command('ping', PingCommandBuilder)
+ *   async ping(interaction: ChatInputCommandInteraction) {
+ *     const response = await this.pingService.handlePing()
+ *     await interaction.reply(response)
+ *   }
+ * }
+ * ```
+ */
 export function Controller() {
   return function (target: any) {
-    // Check if the class is already injectable; if not, make it injectable dynamically
     if (!Reflect.hasMetadata('inversify:injectable', target)) {
       injectable()(target)
     }
@@ -147,7 +224,6 @@ export function Controller() {
     const injectables = Reflect.getMetadata('design:paramtypes', target) || []
     injectables.map((dep: any) => {
       if (!mainContainer.isBound(dep)) {
-        // Check if the class is already injectable; if not, make it injectable dynamically
         if (!Reflect.hasMetadata('inversify:injectable', dep)) {
           injectable()(dep)
         }

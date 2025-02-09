@@ -23,15 +23,32 @@ import { BaseInteraction, Interaction } from 'discord.js'
 import { GuardInterface } from '@src/interface'
 
 /**
- * @Guard() decorator to mark a class as a Guard.
- * Automatically binds the guard class to the Dependency Injection (DI) container.
- * This decorator makes sure the guard is injectable and its dependencies are resolved and bound to the container.
+ * `@Guard()` decorator to mark a class as a Guard that later can be added on `@UseGuard` decorator.
  *
  * @example
+ * ```typescript
  * @Guard()
- * class SomeGuard implements GuardInterface {
- *   // Guard implementation...
+ * export class ButtonInteractionGuard implements GuardInterface {
+ *   private readonly logger = new Logger(ButtonInteractionGuard.name)
+ *
+ *   async canActivate(interaction: ButtonInteraction, { ownerId }: { ownerId: string }): Promise<boolean> {
+ *     if (interaction.user.id !== ownerId) {
+ *       this.logger.error(
+ *         `User with id ${interaction.user.id} is not allowed to use this command that initiated by user with id ${ownerId}.`,
+ *       )
+ *       const embed = generateErrorEmbed(
+ *         `Hi <@${interaction.user.id}>, this command can only be used by the person who initiated it: <@${ownerId}>.`,
+ *       )
+ *       await interaction.reply({
+ *         embeds: [embed],
+ *         flags: MessageFlagsBitField.Flags.Ephemeral,
+ *       })
+ *       return false
+ *     }
+ *     return true
+ *   }
  * }
+ * ```
  */
 export function Guard() {
   return function (target: any) {
@@ -80,19 +97,30 @@ function isGuardWithParams(guard: any): guard is GuardWithParams {
 }
 
 /**
- * @UseGuard() decorator to apply one or more guards to methods.
- * This decorator allows methods to specify the guards that must be passed
- * before the method is executed, ensuring that all guards pass the validation check.
+ * `@UseGuard()` decorator to apply one or more guards to methods.
+ * Guards are used to handle permission checks before executing a method.
+ * Each guard must use `@Guard` decorator and implement the `canActivate` method, which determines
+ * whether the method should be allowed to execute based on the provided interaction and arguments.
+ * This decorator ensures that all guards pass validation before calling the original method.
  * Supports guards that are parameterized (accepting additional parameters).
  *
  * @param guards - One or more guard classes to apply. These can be regular guards or guards with additional parameters.
+ *                 - If providing a guard with parameters, it should be an object with:
+ *                   - `provide`: The guard class to instantiate. Must implement `GuardInterface`.
+ *                   - `params`: A record of key-value pairs to be passed as additional properties to the guard instance.
  * @returns A method decorator function that applies the guards to the method.
  *
  * @example
- * @UseGuard(SomeGuard)
- * async someMethod(interaction: any) {
- *   // Method implementation...
+ * ```typescript
+ * @Command('profile-{id}', CommandType.BUTTON)
+ * @UseGuard(
+ *   { provide: RateLimiterGuard, params: { limit: 2, window: 3000 } },
+ *   ButtonInteractionGuard
+ * )
+ * async showProfileById(interaction: ButtonInteraction, { id }: { id: string }) {
+ *   await interaction.reply(`Profile ID: ${id}`)
  * }
+ * ```
  */
 export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | GuardWithParams)[]): MethodDecorator {
   return function (target: any, propertyKey: string | symbol, descriptor: PropertyDescriptor) {
