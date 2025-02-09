@@ -1,6 +1,6 @@
 {
   "name": "meocord",
-  "version": "1.0.0-alpha.11",
+  "version": "1.0.0-alpha.12",
   "packageManager": "yarn@4.6.0",
   "type": "commonjs",
   "scripts": {
@@ -109,7 +109,6 @@
     "modular",
     "cli-tools",
     "meocord",
-    "scalable-bots",
-    "dynamic-status"
+    "scalable-bots"
   ]
 }
