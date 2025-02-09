@@ -4,7 +4,8 @@
   "packageManager": "yarn@4.6.0",
   "type": "commonjs",
   "scripts": {
-    "build": "rm -rf ./dist && babel src --out-dir dist --extensions \".ts,.js\" && tsc && copyfiles -u 1 \"src/**/*.template\" dist"
+    "build": "rm -rf ./dist && babel src --out-dir dist --extensions \".ts,.js\" && tsc && copyfiles -u 1 \"src/**/*.template\" dist",
+    "push": "yarn build && yarn npm publish"
   },
   "bin": "./dist/bin/meocord.js",
   "repository": {
