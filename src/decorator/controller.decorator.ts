@@ -19,8 +19,17 @@
 import { injectable } from 'inversify'
 import 'reflect-metadata'
 import { mainContainer } from '@src/decorator'
-import { BaseInteraction, Message, ContextMenuCommandBuilder, SlashCommandBuilder } from 'discord.js'
+import {
+  BaseInteraction,
+  Message,
+  ContextMenuCommandBuilder,
+  SlashCommandBuilder,
+  MessageReaction,
+  PartialMessageReaction,
+  PartialMessage,
+} from 'discord.js'
 import { CommandType } from '@src/enum'
+import { ReactionHandlerOptions } from '@src/interface'
 
 const COMMAND_METADATA_KEY = Symbol('commands')
 const MESSAGE_HANDLER_METADATA_KEY = Symbol('message_handlers')
@@ -28,11 +37,30 @@ const REACTION_HANDLER_METADATA_KEY = Symbol('reaction_handlers')
 
 /**
  * Decorator to register message handlers in the controller.
+ *
+ * @param keyword - An optional keyword to filter messages this handler should respond to.
+ *
+ * @example
+ * ```typescript
+ * @MessageHandler('hello')
+ * async handleHelloMessage(message: Message) {
+ *   await message.reply('Hello! How can I help you?');
+ * }
+ *
+ * @MessageHandler()
+ * async handleAnyMessage(message: Message) {
+ *   console.log(`Received a message: ${message.content}`);
+ * }
+ * ```
  */
-export function MessageHandler() {
-  return function (target: any, propertyKey: string) {
-    const handlers: string[] = Reflect.getMetadata(MESSAGE_HANDLER_METADATA_KEY, target) || []
-    handlers.push(propertyKey)
+export function MessageHandler<T extends Message | PartialMessage, R extends void | Promise<void>>(keyword?: string) {
+  return function (
+    target: object,
+    propertyKey: string | symbol,
+    descriptor: TypedPropertyDescriptor<(message: T) => R>,
+  ) {
+    const handlers = Reflect.getMetadata(MESSAGE_HANDLER_METADATA_KEY, target) || []
+    handlers.push({ keyword, method: propertyKey.toString() })
     Reflect.defineMetadata(MESSAGE_HANDLER_METADATA_KEY, handlers, target)
   }
 }
@@ -41,12 +69,30 @@ export function MessageHandler() {
  * Decorator to register reaction handlers in the controller.
  *
  * @param emoji - Optional emoji name to filter reactions this handler should respond to.
+ *
+ * @example
+ * ```typescript
+ * @ReactionHandler('👍')
+ * async handleThumbsUpReaction(reaction: MessageReaction, { user }: ReactionHandlerOptions) {
+ *   console.log(`User ${user.username} reacted with 👍`);
+ * }
+ *
+ * @ReactionHandler()
+ * async handleAnyReaction(reaction: MessageReaction, { user }: ReactionHandlerOptions) {
+ *   console.log(`User ${user.username} reacted with ${reaction.emoji.name}`);
+ * }
+ * ```
  */
-export function ReactionHandler(emoji?: string) {
-  return function (target: any, propertyKey: string) {
-    const handlers: { emoji: string | undefined; method: string }[] =
-      Reflect.getMetadata(REACTION_HANDLER_METADATA_KEY, target) || []
-    handlers.push({ emoji, method: propertyKey })
+export function ReactionHandler<T extends MessageReaction | PartialMessageReaction, R extends void | Promise<void>>(
+  emoji?: string,
+) {
+  return function (
+    target: object,
+    propertyKey: string | symbol,
+    descriptor: TypedPropertyDescriptor<(reaction: T, options?: ReactionHandlerOptions) => R>,
+  ) {
+    const handlers = Reflect.getMetadata(REACTION_HANDLER_METADATA_KEY, target) || []
+    handlers.push({ emoji, method: propertyKey.toString() })
     Reflect.defineMetadata(REACTION_HANDLER_METADATA_KEY, handlers, target)
   }
 }
@@ -67,7 +113,7 @@ export function getReactionHandlers(controller: any): { emoji: string | undefine
  * @param controller - The controller class instance.
  * @returns An array of message handler method names.
  */
-export function getMessageHandlers(controller: any): string[] {
+export function getMessageHandlers(controller: any): { keyword: string | undefined; method: string }[] {
   return Reflect.getMetadata(MESSAGE_HANDLER_METADATA_KEY, controller) || []
 }
 

@@ -26,9 +26,7 @@ import {
   MessageFlagsBitField,
   MessageReaction,
   PartialMessageReaction,
-  PartialUser,
   SlashCommandBuilder,
-  User,
 } from 'discord.js'
 import { Logger } from '@src/common'
 import { CommandMetadata, getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator'
@@ -36,6 +34,8 @@ import { sample, size } from 'lodash'
 import { EmbedUtil } from '@src/util'
 import wait from '@src/util/wait.util'
 import { CommandType } from '@src/enum'
+import { ReactionHandlerAction } from '@src/enum/controller.enum'
+import { ReactionHandlerOptions } from '@src/interface'
 
 export interface AppActivity {
   name: string
@@ -48,6 +48,7 @@ export class MeoCordApp {
   private readonly logger = new Logger(MeoCordApp.name)
   private readonly bot: Client
   private isShuttingDown = false
+  private controllerInstancesCache = new Map()
 
   constructor(
     private readonly controllers: any[],
@@ -81,11 +82,11 @@ export class MeoCordApp {
       })
 
       this.bot.on('messageReactionAdd', async (reaction, user) => {
-        await this.handleReaction(reaction, user, 'add')
+        await this.handleReaction(reaction, { user, action: ReactionHandlerAction.ADD })
       })
 
       this.bot.on('messageReactionRemove', async (reaction, user) => {
-        await this.handleReaction(reaction, user, 'remove')
+        await this.handleReaction(reaction, { user, action: ReactionHandlerAction.REMOVE })
       })
 
       await this.bot.login(this.discordToken)
@@ -135,6 +136,14 @@ export class MeoCordApp {
 
   private async handleInteraction(interaction: Interaction<CacheType>) {
     for (const controller of this.controllers) {
+      // Check if the controller instance is already cached
+      let controllerInstance = this.controllerInstancesCache.get(controller.constructor)
+      if (!controllerInstance) {
+        const container = Reflect.getMetadata('inversify:container', controller.constructor)
+        controllerInstance = container.resolve(controller.constructor)
+        this.controllerInstancesCache.set(controller.constructor, controllerInstance)
+      }
+
       const commandMap = getCommandMap(controller)
 
       let commandMetadata: CommandMetadata | undefined = undefined
@@ -183,7 +192,7 @@ export class MeoCordApp {
               dynamicParams = (interaction as any).dynamicParams || {}
             }
 
-            await controller[methodName](interaction, dynamicParams)
+            await controllerInstance[methodName](interaction, dynamicParams)
           } else {
             this.logger.warn(
               `Interaction type mismatch for command "${commandIdentifier}". Interaction type: ${interaction.type}.`,
@@ -211,35 +220,40 @@ export class MeoCordApp {
     }
   }
 
-  private async handleMessage(message: Message<boolean>) {
+  private async handleMessage(message: Message) {
     if (message.author.bot || !message.content?.trim()) return
 
-    for (const controller of this.controllers) {
-      const commandMap = getCommandMap(controller)
+    const messageContent = message.content.trim()
 
-      // Handle specific message commands
-      if (commandMap) {
-        const commandMetadata = commandMap[message.content.toLowerCase()]
-        if (commandMetadata && commandMetadata.type === CommandType.MESSAGE) {
-          try {
-            const { methodName } = commandMetadata
-            this.logger.log('[MESSAGE]', `[${methodName}]`, `Executing message command: ${message.content}`)
-            await controller[methodName](message)
-          } catch (error) {
-            this.logger.error(`Error executing message command "${message.content}":`, error)
-            await message.reply('An error occurred while processing your command.')
-          }
-        }
+    const relevantControllers = this.controllers.filter(controller => {
+      const messageHandlers = getMessageHandlers(controller)
+      return messageHandlers.some(handler => !handler.keyword || handler.keyword === messageContent)
+    })
+
+    for (const controller of relevantControllers) {
+      let controllerInstance = this.controllerInstancesCache.get(controller.constructor)
+      if (!controllerInstance) {
+        const container = Reflect.getMetadata('inversify:container', controller.constructor)
+        controllerInstance = container.resolve(controller.constructor)
+        this.controllerInstancesCache.set(controller.constructor, controllerInstance)
       }
 
-      // Handle general message handlers
-      const messageHandlers = getMessageHandlers(controller)
-      if (messageHandlers) {
-        for (const handlerMethod of messageHandlers) {
+      let messageHandlers = getMessageHandlers(controller)
+
+      messageHandlers = messageHandlers.sort((a, b) => {
+        if (a.keyword && !b.keyword) return -1
+        if (!a.keyword && b.keyword) return 1
+        return 0
+      })
+
+      for (const handler of messageHandlers) {
+        const { keyword, method } = handler
+
+        if (!keyword || keyword === messageContent) {
           try {
-            await controller[handlerMethod](message)
+            await controllerInstance[method](message)
           } catch (error) {
-            this.logger.error(`Error in message handler "${handlerMethod}":`, error)
+            this.logger.error(`Error handling message "${messageContent}" for method "${method}":`, error)
           }
         }
       }
@@ -248,25 +262,37 @@ export class MeoCordApp {
 
   private async handleReaction(
     reaction: MessageReaction | PartialMessageReaction,
-    user: User | PartialUser,
-    action: 'add' | 'remove',
+    { user, action }: ReactionHandlerOptions,
   ) {
     await reaction.message.fetch()
-    if (!reaction.message.content?.trim()) return
 
-    for (const controller of this.controllers) {
-      const container = Reflect.getMetadata('inversify:container', controller.constructor)
-      const controllerInstance = container.resolve(controller.constructor)
-
+    const relevantControllers = this.controllers.filter(controller => {
       const reactionHandlers = getReactionHandlers(controller)
+      return reactionHandlers.some(handler => !handler.emoji || handler.emoji === reaction.emoji.name)
+    })
+
+    for (const controller of relevantControllers) {
+      let controllerInstance = this.controllerInstancesCache.get(controller.constructor)
+      if (!controllerInstance) {
+        const container = Reflect.getMetadata('inversify:container', controller.constructor)
+        controllerInstance = container.resolve(controller.constructor)
+        this.controllerInstancesCache.set(controller.constructor, controllerInstance)
+      }
+
+      let reactionHandlers = getReactionHandlers(controller)
+
+      reactionHandlers = reactionHandlers.sort((a, b) => {
+        if (a.emoji && !b.emoji) return -1
+        if (!a.emoji && b.emoji) return 1
+        return 0
+      })
 
       for (const handler of reactionHandlers) {
         const { emoji, method } = handler
 
         if (!emoji || emoji === reaction.emoji.name) {
           try {
-            this.logger.log(`[REACTION]`, `[${action}]`, `Emoji: ${reaction.emoji.name}, User: ${user.tag}`)
-            await controllerInstance[method](reaction, user, action)
+            await controllerInstance[method](reaction, { user, action })
           } catch (error) {
             this.logger.error(`Error handling reaction "${reaction.emoji.name}" for method "${method}":`, error)
           }

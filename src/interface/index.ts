@@ -16,8 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { BaseInteraction } from 'discord.js'
+import { BaseInteraction, PartialUser, User } from 'discord.js'
 import { Configuration, RuleSetRule } from 'webpack'
+import { ReactionHandlerAction } from '@src/enum/controller.enum'
 
 /**
  * Interface for Guard classes.
@@ -34,6 +35,16 @@ export interface GuardInterface {
    *          or a `boolean` value directly.
    */
   canActivate(interaction: BaseInteraction, ...args: any[]): Promise<boolean> | boolean
+}
+
+/**
+ * Interface for handling reactions in a Discord message.
+ */
+export interface ReactionHandlerOptions {
+  /** The user object, which can be either a full or partial user. */
+  user: User | PartialUser
+  /** The action performed on the reaction, such as adding or removing it. */
+  action: ReactionHandlerAction
 }
 
 /**
