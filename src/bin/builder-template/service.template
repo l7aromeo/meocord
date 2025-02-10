@@ -4,6 +4,6 @@ import { Service } from 'meocord/decorator'
 export class {{className}}Service {
   async handleInteraction() {
     // TODO: Implement service logic
-    return '${className}Service is working!';
+    return '{{className}}Service is working!';
   }
 }
