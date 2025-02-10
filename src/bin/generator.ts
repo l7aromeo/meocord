@@ -32,7 +32,7 @@ export class GeneratorCLI {
 
   constructor(private appName: string) {
     this.logger = new Logger(this.appName)
-    this.controllerGeneratorHelper = new ControllerGeneratorHelper(this.appName)
+    this.controllerGeneratorHelper = new ControllerGeneratorHelper()
     this.serviceGeneratorHelper = new ServiceGeneratorHelper(this.appName)
     this.guardGeneratorHelper = new GuardGeneratorHelper(this.appName)
   }

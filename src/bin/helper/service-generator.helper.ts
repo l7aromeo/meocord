@@ -16,10 +16,14 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import fs from 'fs'
 import path from 'path'
-import _ from 'lodash'
 import { Logger } from '@src/common/logger'
+import {
+  buildTemplate,
+  createDirectoryIfNotExists,
+  generateFile,
+  validateAndFormatName,
+} from '@src/util/generator.util'
 
 export class ServiceGeneratorHelper {
   private readonly logger: Logger
@@ -28,87 +32,29 @@ export class ServiceGeneratorHelper {
     this.logger = new Logger(this.appName)
   }
 
-  async toClassName(originalName: string): Promise<string> {
-    const className = _.startCase(_.camelCase(originalName)).replace(/\s/g, '')
-
-    const classNameRegex = /^[A-Z][A-Za-z0-9]*$/
-    if (!classNameRegex.test(className)) {
-      this.logger.error(
-        `Invalid class name "${originalName}". Must start with a letter and contain alphanumeric characters.`,
-      )
-      process.exit(1)
-    }
-
-    return className
-  }
-
-  async validateAndFormatName(originalName?: string): Promise<{
-    parts: string[]
-    kebabCaseName: string
-    className: string
-  }> {
-    if (!originalName) {
-      this.logger.error('Service name is required.')
-      process.exit(1)
-    }
-
-    const parts = originalName.split('/')
-    const fileName = parts.pop()
-    if (!fileName) {
-      this.logger.error('Invalid service name.')
-      process.exit(1)
-    }
-
-    const kebabCaseName = _.kebabCase(fileName)
-    const className = await this.toClassName(fileName)
-
-    return { parts, kebabCaseName, className }
-  }
-
-  createDirectoryIfNotExists(directory: string): void {
-    if (!fs.existsSync(directory)) {
-      fs.mkdirSync(directory, { recursive: true })
-    }
-  }
-
-  generateFile(filePath: string, content: string): void {
-    try {
-      fs.writeFileSync(filePath, content)
-      this.logger.log(`Service file created at: ${path.relative(process.cwd(), filePath)}`)
-    } catch (error) {
-      this.logger.error(`Failed to create service file at ${filePath}`, error)
-    }
-  }
-
-  async generateService(serviceName?: string): Promise<void> {
+  /**
+   * Generates a service file based on the provided service name.
+   * Validates and formats the service name, creates the necessary directories,
+   * and generates the service file using a predefined template.
+   *
+   * @param serviceName - The name of the service to generate.
+   *                      It can include slashes for nested paths.
+   * @throws Exits the process if the service name is not provided or invalid.
+   */
+  generateService(serviceName?: string): void {
     if (!serviceName) {
       this.logger.error('Service name is required.')
       process.exit(1)
     }
 
-    const { parts, kebabCaseName, className } = await this.validateAndFormatName(serviceName)
+    const { parts, kebabCaseName, className } = validateAndFormatName(serviceName)
 
     const serviceDir = path.join(process.cwd(), 'src', 'services', ...parts)
     const serviceFile = path.join(serviceDir, `${kebabCaseName}.service.ts`)
 
-    const serviceTemplate = this.buildServiceTemplate(className)
+    const serviceTemplate = buildTemplate(className, 'service.template')
 
-    this.createDirectoryIfNotExists(serviceDir)
-    this.generateFile(serviceFile, serviceTemplate)
-  }
-
-  buildServiceTemplate(className: string): string {
-    const filePath = path.resolve(__dirname, '..', 'builder-template', 'service.template')
-    let template = fs.readFileSync(filePath, 'utf-8')
-
-    const variables = {
-      className,
-    }
-
-    for (const [key, value] of Object.entries(variables)) {
-      template = template.replaceAll(`{{${key}}}`, value)
-    }
-
-    return template
+    createDirectoryIfNotExists(serviceDir)
+    generateFile(serviceFile, serviceTemplate)
   }
 }

@@ -16,10 +16,14 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import fs from 'fs'
 import path from 'path'
-import _ from 'lodash'
 import { Logger } from '@src/common/logger'
+import {
+  buildTemplate,
+  createDirectoryIfNotExists,
+  generateFile,
+  validateAndFormatName,
+} from '@src/util/generator.util'
 
 export class GuardGeneratorHelper {
   private readonly logger: Logger
@@ -28,87 +32,29 @@ export class GuardGeneratorHelper {
     this.logger = new Logger(this.appName)
   }
 
-  async toClassName(originalName: string): Promise<string> {
-    const className = _.startCase(_.camelCase(originalName)).replace(/\s/g, '')
-
-    const classNameRegex = /^[A-Z][A-Za-z0-9]*$/
-    if (!classNameRegex.test(className)) {
-      this.logger.error(
-        `Invalid class name "${originalName}". Must start with a letter and contain alphanumeric characters.`,
-      )
-      process.exit(1)
-    }
-
-    return className
-  }
-
-  async validateAndFormatName(originalName?: string): Promise<{
-    parts: string[]
-    kebabCaseName: string
-    className: string
-  }> {
-    if (!originalName) {
-      this.logger.error('Guard name is required.')
-      process.exit(1)
-    }
-
-    const parts = originalName.split('/')
-    const fileName = parts.pop()
-    if (!fileName) {
-      this.logger.error('Invalid guard name.')
-      process.exit(1)
-    }
-
-    const kebabCaseName = _.kebabCase(fileName)
-    const className = await this.toClassName(fileName)
-
-    return { parts, kebabCaseName, className }
-  }
-
-  createDirectoryIfNotExists(directory: string): void {
-    if (!fs.existsSync(directory)) {
-      fs.mkdirSync(directory, { recursive: true })
-    }
-  }
-
-  generateFile(filePath: string, content: string): void {
-    try {
-      fs.writeFileSync(filePath, content)
-      this.logger.log(`Guard file created at: ${path.relative(process.cwd(), filePath)}`)
-    } catch (error) {
-      this.logger.error(`Failed to create guard file at ${filePath}`, error)
-    }
-  }
-
-  async generateGuard(guardName?: string): Promise<void> {
+  /**
+   * Generates a guard file based on the provided guard name.
+   * Validates and formats the guard name, creates the necessary directories,
+   * and generates the guard file using a predefined template.
+   *
+   * @param guardName - The name of the guard to generate.
+   *                      It can include slashes for nested paths.
+   * @throws Exits the process if the guard name is not provided or invalid.
+   */
+  generateGuard(guardName?: string): void {
     if (!guardName) {
       this.logger.error('Guard name is required.')
       process.exit(1)
     }
 
-    const { parts, kebabCaseName, className } = await this.validateAndFormatName(guardName)
+    const { parts, kebabCaseName, className } = validateAndFormatName(guardName)
 
     const guardDir = path.join(process.cwd(), 'src', 'guards', ...parts)
     const guardFile = path.join(guardDir, `${kebabCaseName}.guard.ts`)
 
-    const guardTemplate = this.buildGuardTemplate(className)
+    const guardTemplate = buildTemplate(className, 'guard.template')
 
-    this.createDirectoryIfNotExists(guardDir)
-    this.generateFile(guardFile, guardTemplate)
-  }
-
-  buildGuardTemplate(className: string): string {
-    const filePath = path.resolve(__dirname, '..', 'builder-template', 'guard.template')
-    let template = fs.readFileSync(filePath, 'utf-8')
-
-    const variables = {
-      className,
-    }
-
-    for (const [key, value] of Object.entries(variables)) {
-      template = template.replaceAll(`{{${key}}}`, value)
-    }
-
-    return template
+    createDirectoryIfNotExists(guardDir)
+    generateFile(guardFile, guardTemplate)
   }
 }

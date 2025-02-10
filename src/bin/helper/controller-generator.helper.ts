@@ -16,149 +16,76 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import fs from 'fs'
 import path from 'path'
-import { exec } from 'child_process'
-import { Logger } from '@src/common'
-import _ from 'lodash'
-import wait from '@src/util/wait.util'
 import { ControllerType } from '@src/enum/controller.enum'
+import {
+  createDirectoryIfNotExists,
+  generateFile,
+  populateTemplate,
+  validateAndFormatName,
+} from '@src/util/generator.util'
 
 export class ControllerGeneratorHelper {
-  private logger: Logger
-
-  constructor(private appName: string) {
-    this.logger = new Logger(this.appName)
-  }
-
-  async toClassName(originalName: string): Promise<string> {
-    const className = _.startCase(_.camelCase(originalName)).replace(/\s/g, '')
-
-    const classNameRegex = /^[A-Z][A-Za-z0-9]*$/
-    if (!classNameRegex.test(className)) {
-      this.logger.error(
-        `Invalid class name "${originalName}". It must start with a letter and contain only alphanumeric characters.`,
-      )
-      await wait(100)
-      process.exit(1)
-    }
-
-    return className
-  }
-
-  async validateAndFormatName(originalName?: string): Promise<{
-    parts: string[]
-    kebabCaseName: string
-    className: string
-  }> {
-    if (!originalName) {
-      this.logger.error('Controller name is required')
-      process.exit(1)
-    }
-
-    const parts = _.split(originalName, '/')
-    const fileName = parts.pop()
-    if (!fileName) {
-      this.logger.error('Invalid controller name')
-      process.exit(1)
-    }
-
-    const kebabCaseName = _.kebabCase(fileName)
-    const className = await this.toClassName(fileName)
-
-    if (!className) {
-      this.logger.error('Invalid controller name')
-      await wait(100)
-      process.exit(1)
-    }
-
-    return { parts, kebabCaseName, className }
-  }
-
-  createDirectoryIfNotExists(directory: string): void {
-    if (!fs.existsSync(directory)) {
-      fs.mkdirSync(directory, { recursive: true })
-    }
-  }
-
-  generateFileWithESLintFix(filePath: string, template: string): void {
-    try {
-      fs.writeFileSync(filePath, template)
-      this.logger.log(`File created at ${path.relative(process.cwd(), filePath)}`)
-      exec(`npx eslint --fix ${filePath}`)
-    } catch (error) {
-      this.logger.error(`Error creating file at ${filePath}`, error)
-      process.exit(1)
-    }
-  }
-
-  async generateController(args: { controllerName: string | undefined }, type: ControllerType): Promise<void> {
-    const { parts, kebabCaseName, className } = await this.validateAndFormatName(args.controllerName)
-
-    const controllerDir = this.generateControllerPaths(parts, type)
-    const template = await this.buildControllerTemplate(className, type)
+  /**
+   * Generates a new controller file and an associated structure based on the provided arguments and controller type.
+   * @param args - The arguments for generating the controller, including the optional controller name.
+   * @param type - The type of the controller to generate, defined in the `ControllerType` enum.
+   * @throws Will throw an error if the controller name is invalid or if the controller type is unsupported.
+   */
+  generateController(args: { controllerName: string | undefined }, type: ControllerType): void {
+    const { parts, kebabCaseName, className } = validateAndFormatName(args.controllerName)
+    const controllerDir = path.join(process.cwd(), 'src', 'controllers', type, ...parts)
+    const template = this.buildControllerTemplate(className, type)
 
     this.generateControllerStructure(controllerDir, kebabCaseName, className, type, template)
   }
 
-  generateControllerPaths(parts: string[], type: string): string {
-    return path.join(process.cwd(), 'src', 'controllers', type, ...parts)
-  }
-
-  generateControllerFile(controllerDir: string, type: string, kebabCaseName: string): string {
-    return path.join(controllerDir, `${kebabCaseName}.${type}.controller.ts`)
-  }
-
-  async buildControllerTemplate(className: string, type: ControllerType): Promise<string> {
-    const templateFilePaths: Record<ControllerType, { template: string; variables: Record<string, string> }> = {
-      [ControllerType.BUTTON]: {
-        template: path.resolve(__dirname, '..', 'builder-template', 'button.controller.template'),
-        variables: { className },
-      },
-      [ControllerType.MODAL_SUBMIT]: {
-        template: path.resolve(__dirname, '..', 'builder-template', 'modal-submit.controller.template'),
-        variables: { className },
-      },
-      [ControllerType.SELECT_MENU]: {
-        template: path.resolve(__dirname, '..', 'builder-template', 'select-menu.controller.template'),
-        variables: { className },
-      },
-      [ControllerType.REACTION]: {
-        template: path.resolve(__dirname, '..', 'builder-template', 'reaction.controller.template'),
-        variables: { className },
-      },
-      [ControllerType.MESSAGE]: {
-        template: path.resolve(__dirname, '..', 'builder-template', 'message.controller.template'),
-        variables: { className },
-      },
-      [ControllerType.CONTEXT_MENU]: {
-        template: path.resolve(__dirname, '..', 'builder-template', 'context-menu.controller.template'),
-        variables: { className },
-      },
-      [ControllerType.SLASH]: {
-        template: path.resolve(__dirname, '..', 'builder-template', 'slash.controller.template'),
-        variables: { className },
-      },
-    }
-
-    const template = templateFilePaths[type]?.template
-    const variables = templateFilePaths[type]?.variables
-    if (!template) {
+  /**
+   * Builds the controller template content by populating a template with variables.
+   * @param className - The name of the controller class.
+   * @param type - The type of the controller, defined in the `ControllerType` enum.
+   * @returns The populated template string for the controller.
+   * @throws Will throw an error if the controller type is unsupported.
+   */
+  buildControllerTemplate(className: string, type: ControllerType): string {
+    const templateConfig = this.getTemplateConfig(type, className)
+    if (!templateConfig) {
       throw new Error(`Unsupported controller type: ${type}`)
     }
-
-    return this.populateTemplate(template, variables)
+    return populateTemplate(templateConfig.template, templateConfig.variables)
   }
 
-  private populateTemplate(filePath: string, variables: Record<string, string>): string {
-    let template = fs.readFileSync(filePath, 'utf-8')
-    for (const [key, value] of Object.entries(variables)) {
-      template = template.replaceAll(`{{${key}}}`, value)
+  /**
+   * Retrieves the template configuration for a specific controller type and class name.
+   * @param type - The type of the controller, defined in the `ControllerType` enum.
+   * @param className - The name of the controller class.
+   * @returns An object containing the template path and variables, or `undefined` if not found.
+   */
+  private getTemplateConfig(type: ControllerType, className: string) {
+    const baseDir = path.resolve(__dirname, '..', 'builder-template')
+    const templates: Record<ControllerType, string> = {
+      [ControllerType.BUTTON]: 'button.controller.template',
+      [ControllerType.MODAL_SUBMIT]: 'modal-submit.controller.template',
+      [ControllerType.SELECT_MENU]: 'select-menu.controller.template',
+      [ControllerType.REACTION]: 'reaction.controller.template',
+      [ControllerType.MESSAGE]: 'message.controller.template',
+      [ControllerType.CONTEXT_MENU]: 'context-menu.controller.template',
+      [ControllerType.SLASH]: 'slash.controller.template',
     }
-    return template
+
+    const template = templates[type] ? path.resolve(baseDir, templates[type]) : undefined
+    return template ? { template, variables: { className } } : undefined
   }
 
-  generateControllerStructure(
+  /**
+   * Generates the controller file and its associated structure (e.g., builder files, directories).
+   * @param controllerDir - The absolute path to the controller directory.
+   * @param kebabCaseName - The kebab-case name of the controller file.
+   * @param className - The name of the controller class.
+   * @param type - The type of the controller, defined in the `ControllerType` enum.
+   * @param controllerTemplate - The populated template string for the controller file.
+   */
+  private generateControllerStructure(
     controllerDir: string,
     kebabCaseName: string,
     className: string,
@@ -166,33 +93,43 @@ export class ControllerGeneratorHelper {
     controllerTemplate: string,
   ): void {
     this.generateBuilderFile(className, type, controllerDir)
-    this.createDirectoryIfNotExists(controllerDir)
-    const controllerFile = this.generateControllerFile(controllerDir, type, kebabCaseName)
-    this.generateFileWithESLintFix(controllerFile, controllerTemplate)
+    createDirectoryIfNotExists(controllerDir)
+    const controllerFilePath = path.join(controllerDir, `${kebabCaseName}.${type}.controller.ts`)
+    generateFile(controllerFilePath, controllerTemplate)
   }
 
-  generateBuilderFile(className: string, type: ControllerType, controllerDir: string): void {
-    const templateFilePaths: Record<
-      ControllerType.SLASH | ControllerType.CONTEXT_MENU,
-      { template: string; variables: Record<string, string> }
-    > = {
-      [ControllerType.CONTEXT_MENU]: {
-        template: path.resolve(__dirname, '..', 'builder-template', 'context-menu.builder.template'),
-        variables: { className },
-      },
-      [ControllerType.SLASH]: {
-        template: path.resolve(__dirname, '..', 'builder-template', 'slash.builder.template'),
-        variables: { className },
-      },
+  /**
+   * Generates a builder file for the specified controller type and stores it in the controller directory.
+   * @param className - The name of the controller class.
+   * @param type - The type of the controller, defined in the `ControllerType` enum.
+   * @param controllerDir - The absolute path to the controller directory.
+   */
+  private generateBuilderFile(className: string, type: ControllerType, controllerDir: string): void {
+    const builderConfig = this.getBuilderConfig(type, className)
+    if (!builderConfig) return
+
+    const builderTemplate = populateTemplate(builderConfig.template, builderConfig.variables)
+    const buildersDir = path.join(controllerDir, 'builders')
+    createDirectoryIfNotExists(buildersDir)
+
+    const builderFilePath = path.join(buildersDir, 'sample.builder.ts')
+    generateFile(builderFilePath, builderTemplate)
+  }
+
+  /**
+   * Retrieves the configuration for generating a builder file based on the controller type and class name.
+   * @param type - The type of the controller, defined in the `ControllerType` enum.
+   * @param className - The name of the controller class.
+   * @returns An object containing the builder template path and variables, or `undefined` if not found.
+   */
+  private getBuilderConfig(type: ControllerType, className: string) {
+    const baseDir = path.resolve(__dirname, '..', 'builder-template')
+    const templates: Partial<Record<ControllerType, string>> = {
+      [ControllerType.CONTEXT_MENU]: 'context-menu.builder.template',
+      [ControllerType.SLASH]: 'slash.builder.template',
     }
 
-    const template = templateFilePaths[type]?.template
-    const variables = templateFilePaths[type]?.variables
-    if (!template) return
-
-    const builderTemplate = this.populateTemplate(template, variables)
-    const builderFilePath = path.join(controllerDir, 'builders', `sample.builder.ts`)
-    this.createDirectoryIfNotExists(path.join(controllerDir, 'builders'))
-    this.generateFileWithESLintFix(builderFilePath, builderTemplate)
+    const template = templates[type] ? path.resolve(baseDir, templates[type]) : undefined
+    return template ? { template, variables: { className } } : undefined
   }
 }
