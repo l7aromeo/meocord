@@ -19,6 +19,8 @@
 import fs from 'fs'
 import path from 'path'
 import { Logger } from '@src/common'
+import { compileMeoCordConfig, loadMeoCordConfig } from '@src/util/meocord-config-loader.util'
+import wait from '@src/util/wait.util'
 
 /**
  * Finds the package directory for the given module name
@@ -28,7 +30,6 @@ import { Logger } from '@src/common'
  */
 export const findModulePackageDir = (moduleName: string, baseDir: string = process.cwd()): string | null => {
   const logger = new Logger('MeoCord')
-
   try {
     // Resolve the node_modules directory from the base directory
     let currentDir = baseDir
@@ -53,5 +54,43 @@ export const findModulePackageDir = (moduleName: string, baseDir: string = proce
       logger.error(`Error finding package directory for ${moduleName}:`, error)
     }
     return null
+  }
+}
+
+/**
+ * Compiles and validates the MeoCord configuration file.
+ * Ensures that `meocord.config.ts` exists, compiles it, and checks
+ * the presence of essential configuration properties like `discordToken`.
+ *
+ * @throws Will exit the process if the `meocord.config.ts` file is missing or
+ *         if the `discordToken` property is not found in the configuration.
+ */
+export async function compileAndValidateConfig() {
+  const logger = new Logger('MeoCord')
+  const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
+  if (!fs.existsSync(meocordConfigPath)) {
+    logger.error('Configuration file "meocord.config.ts" is missing!')
+    await wait(100)
+    process.exit(1)
+  }
+
+  compileMeoCordConfig()
+  const meocordConfig = loadMeoCordConfig()
+  if (!meocordConfig?.discordToken) {
+    logger.error('Discord token is missing!')
+    await wait(100)
+    process.exit(1)
+  }
+}
+
+/**
+ * Sets the environment mode for the application.
+ * Assigns the provided mode to `process.env.NODE_ENV` if it hasn't been set already.
+ *
+ * @param {'production' | 'development'} mode - The desired environment mode.
+ */
+export function setEnvironment(mode: 'production' | 'development') {
+  if (!process.env.NODE_ENV) {
+    process.env.NODE_ENV = mode
   }
 }

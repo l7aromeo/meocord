@@ -27,34 +27,21 @@ import { capitalize } from 'lodash'
 import wait from '@src/util/wait.util'
 import { GeneratorCLI } from '@src/bin/generator'
 import * as fs from 'node:fs'
-import { findModulePackageDir } from '@src/util/common.util'
+import { compileAndValidateConfig, findModulePackageDir, setEnvironment } from '@src/util/common.util'
 import { Argument, Command, Help, Option } from 'commander'
 import CliTable3 from 'cli-table3'
-import { compileMeoCordConfig, loadMeoCordConfig } from '@src/util/meocord-config-loader.util'
+import { compileMeoCordConfig } from '@src/util/meocord-config-loader.util'
 
 /**
  * A Command Line Interface (CLI) for managing the MeoCord application.
  */
 class MeoCordCLI {
-  private readonly appName: string
-  private readonly projectRoot: string
-  private readonly mainJSPath: string
-  private readonly webpackConfigPath: string
-  private readonly logger: Logger
-  private readonly generatorCLI: GeneratorCLI
-
-  /**
-   * Initializes the MeoCordCLI instance.
-   */
-  constructor() {
-    this.appName = 'MeoCord'
-    this.projectRoot = process.cwd()
-    this.mainJSPath = path.join(this.projectRoot, 'dist', 'main.js')
-    this.webpackConfigPath = path.resolve(__dirname, '..', '..', 'webpack.config.js')
-    this.logger = new Logger(this.appName)
-
-    this.generatorCLI = new GeneratorCLI(this.appName)
-  }
+  private readonly appName = 'MeoCord'
+  readonly logger = new Logger(this.appName)
+  private readonly projectRoot = process.cwd()
+  private readonly mainJSPath = path.join(this.projectRoot, 'dist', 'main.js')
+  private readonly webpackConfigPath = path.resolve(__dirname, '..', '..', 'webpack.config.js')
+  private readonly generatorCLI = new GeneratorCLI(this.appName)
 
   /**
    * Configures and runs the MeoCord CLI.
@@ -116,24 +103,9 @@ For full license details, refer to:
       .option('-p, --prod', 'Build in production mode')
       .action(async options => {
         const mode = options.prod ? 'production' : 'development'
-        if (!process.env.NODE_ENV) {
-          process.env.NODE_ENV = mode
-        }
+        setEnvironment(mode)
 
-        const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
-        // Ensure the MeoCord config file exists
-        if (!fs.existsSync(meocordConfigPath)) {
-          this.logger.error('Configuration file "meocord.config.ts" is missing!')
-          await wait(100)
-          process.exit(1)
-        }
-        compileMeoCordConfig()
-        const meocordConfig = loadMeoCordConfig()
-        if (!meocordConfig?.discordToken) {
-          this.logger.error('Discord token is missing!')
-          await wait(100)
-          process.exit(1)
-        }
+        await compileAndValidateConfig()
 
         await this.build(mode)
       })
@@ -146,26 +118,10 @@ For full license details, refer to:
       .option('-p, --prod', 'Start in production mode')
       .action(async options => {
         const mode = options.prod ? 'production' : 'development'
-        if (!process.env.NODE_ENV) {
-          process.env.NODE_ENV = mode
-        }
+        setEnvironment(mode)
 
         if (options.build || options.dev) {
-          const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
-          // Ensure the MeoCord config file exists
-          if (!fs.existsSync(meocordConfigPath)) {
-            this.logger.error('Configuration file "meocord.config.ts" is missing!')
-            await wait(100)
-            process.exit(1)
-          }
-
-          compileMeoCordConfig()
-          const meocordConfig = loadMeoCordConfig()
-          if (!meocordConfig?.discordToken) {
-            this.logger.error('Discord token is missing!')
-            await wait(100)
-            process.exit(1)
-          }
+          await compileAndValidateConfig()
         }
 
         if (options.build) {
@@ -408,7 +364,6 @@ For full license details, refer to:
     helpText += `${helper.commandDescription(cmd)}\n\n`
 
     if (cmd.registeredArguments.length > 0) {
-      helpText += 'Available Arguments:\n'
       helpText += this.generateArgumentsTable(cmd.registeredArguments)
       helpText += '\n\n'
     }
@@ -466,22 +421,57 @@ For full license details, refer to:
   }
 
   /**
-   * Generates a table of arguments for a command.
+   * Generates a formatted table of arguments for the specified command.
    *
-   * @param args - The arguments for the command.
-   * @returns The formatted table of arguments.
+   * This method creates two tables:
+   * 1. A table displaying argument names and their descriptions.
+   * 2. (If applicable) A table showing available choices for arguments with predefined choices.
+   *
+   * @param args - The list of arguments for the command.
+   * @returns A string representation of the formatted tables, including available arguments and their choices.
    */
   private generateArgumentsTable(args: readonly Argument[]): string {
     const table = new CliTable3({
       head: ['Argument', 'Description'],
     })
 
-    args.forEach(arg => table.push([arg.name(), arg.description || 'No description provided']))
+    const choiceTable = new CliTable3({
+      head: ['Choice'],
+    })
 
-    return table.toString()
+    let hasChoices = false
+
+    args.forEach(arg => {
+      if (arg.argChoices) {
+        hasChoices = true
+        arg.argChoices.map(choice => {
+          choiceTable.push([choice])
+        })
+      }
+      table.push([arg.name(), arg.description || 'No description provided'])
+    })
+
+    let text = ''
+
+    if (hasChoices) {
+      text += 'Available Choices:\n'
+      text += choiceTable.toString()
+      text += '\n\n'
+    } else {
+      text += 'No available choices.\n\n'
+    }
+
+    text += 'Available Arguments:\n'
+    text += table.toString()
+
+    return text
   }
 }
 
 // Create an instance of the CLI and run it
 const cli = new MeoCordCLI()
-cli.run()
+cli.run().catch(async error => {
+  cli.logger.error('Failed to initialize CLI:', error?.message || error)
+  await wait(100)
+  process.exit(1)
+})
