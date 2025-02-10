@@ -197,7 +197,15 @@ configuration requires ESLint version 9 or higher.** Here's how you can integrat
 Run the following command to install the necessary dependencies:
 
 ```shell
-yarn add -D eslint typescript-eslint @typescript-eslint/parser eslint-plugin-import eslint-config-prettier eslint-plugin-prettier eslint-plugin-unused-imports globals
+yarn add -D eslint \
+    prettier \
+    eslint-config-prettier \
+    eslint-plugin-prettier \
+    typescript-eslint \
+    @typescript-eslint/parser \
+    eslint-plugin-import \
+    eslint-plugin-unused-imports \
+    globals
 ```
 
 #### Use the Default MeoCord ESLint Config
