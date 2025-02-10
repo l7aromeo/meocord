@@ -444,7 +444,7 @@ For full license details, refer to:
     args.forEach(arg => {
       if (arg.argChoices) {
         hasChoices = true
-        arg.argChoices.map(choice => {
+        arg.argChoices.forEach(choice => {
           choiceTable.push([choice])
         })
       }
