@@ -22,7 +22,6 @@ import { exec } from 'child_process'
 import { Logger } from '@src/common'
 import _ from 'lodash'
 import wait from '@src/util/wait.util'
-import { CommandType } from '@src/enum'
 import { ControllerType } from '@src/enum/controller.enum'
 
 export class ControllerGeneratorHelper {
@@ -93,19 +92,13 @@ export class ControllerGeneratorHelper {
     }
   }
 
-  async generateController(
-    args: { controllerName: string | undefined },
-    type: ControllerType,
-    interactionType: string[],
-    commandType?: CommandType,
-    hasBuilder = false,
-  ): Promise<void> {
+  async generateController(args: { controllerName: string | undefined }, type: ControllerType): Promise<void> {
     const { parts, kebabCaseName, className } = await this.validateAndFormatName(args.controllerName)
 
     const controllerDir = this.generateControllerPaths(parts, type)
-    const template = await this.buildControllerTemplate(className, type, interactionType, commandType, hasBuilder)
+    const template = await this.buildControllerTemplate(className, type)
 
-    this.generateControllerStructure(controllerDir, hasBuilder, kebabCaseName, type, template)
+    this.generateControllerStructure(controllerDir, kebabCaseName, className, type, template)
   }
 
   generateControllerPaths(parts: string[], type: string): string {
@@ -116,163 +109,90 @@ export class ControllerGeneratorHelper {
     return path.join(controllerDir, `${kebabCaseName}.${type}.controller.ts`)
   }
 
-  async buildControllerTemplate(
-    className: string,
-    type: ControllerType,
-    interactionType: string[],
-    commandType?: CommandType,
-    hasBuilder = false,
-  ): Promise<string> {
-    if (hasBuilder) {
-      return `import { ${interactionType} } from 'discord.js'
-import { Controller, Command } from 'meocord/decorator'
-import { SampleCommandBuilder } from '@src/controllers/${type}/builders/sample.builder'
-
-@Controller()
-export class ${className}${await this.toClassName(type)}Controller {
-
-  @Command('sample', SampleCommandBuilder)
-  async sample(interaction: ${interactionType.join(' | ')}) {
-    await interaction.reply('This is sample reply of ${type} command')
-  }
-}
-`
-    } else {
-      switch (type) {
-        case ControllerType.BUTTON:
-          return `import { ${interactionType.join(', ')} } from 'discord.js'
-import { Controller, Command } from 'meocord/decorator'
-import { CommandType } from 'meocord/enum'
-
-@Controller()
-export class ${className}ButtonController {
-
-  @Command('button-click', CommandType.BUTTON)
-  async handleButton(interaction: ${interactionType.join(' | ')}) {
-    await interaction.reply('Button clicked!')
-  }
-}`
-        case ControllerType.MODAL_SUBMIT:
-          return `import { ${interactionType.join(', ')} } from 'discord.js'
-import { Controller, Command } from 'meocord/decorator'
-import { CommandType } from 'meocord/enum'
-
-@Controller()
-export class ${className}ModalController {
-
-  @Command('submit-modal', CommandType.MODAL_SUBMIT)
-  async handleModal(interaction: ${interactionType.join(' | ')}) {
-    await interaction.reply('Modal submitted!')
-  }
-}`
-        case ControllerType.SELECT_MENU:
-          return `import { ${interactionType.join(', ')} } from 'discord.js'
-import { Controller, Command } from 'meocord/decorator'
-import { CommandType } from 'meocord/enum'
-
-@Controller()
-export class ${className}SelectMenuController {
-
-  @Command('select-menu', CommandType.SELECT_MENU)
-  async handleSelectMenu(interaction: ${interactionType.join(' | ')}) {
-    await interaction.reply('Select menu used!')
-  }
-}`
-        case ControllerType.REACTION:
-          return `import { ${interactionType.join(', ')}, User } from 'discord.js'
-import { Controller, ReactionHandler } from 'meocord/decorator'
-import { Logger } from 'meocord/common'
-import { CommandType } from 'meocord/enum'
-
-@Controller()
-export class HelloReactionController {
-  private readonly logger = new Logger(HelloReactionController.name)
-
-  @ReactionHandler()
-  async handleAnyReaction(reaction: ${interactionType.join(' | ')}, user: User) {
-    this.logger.log('Reaction detected!')
-    if (reaction.message) {
-      await reaction.message.reply(\`\${user.username} reacted!\`)
+  async buildControllerTemplate(className: string, type: ControllerType): Promise<string> {
+    const templateFilePaths: Record<ControllerType, { template: string; variables: Record<string, string> }> = {
+      [ControllerType.BUTTON]: {
+        template: path.resolve(__dirname, '..', 'builder-template', 'button.controller.template'),
+        variables: { className },
+      },
+      [ControllerType.MODAL_SUBMIT]: {
+        template: path.resolve(__dirname, '..', 'builder-template', 'modal-submit.controller.template'),
+        variables: { className },
+      },
+      [ControllerType.SELECT_MENU]: {
+        template: path.resolve(__dirname, '..', 'builder-template', 'select-menu.controller.template'),
+        variables: { className },
+      },
+      [ControllerType.REACTION]: {
+        template: path.resolve(__dirname, '..', 'builder-template', 'reaction.controller.template'),
+        variables: { className },
+      },
+      [ControllerType.MESSAGE]: {
+        template: path.resolve(__dirname, '..', 'builder-template', 'message.controller.template'),
+        variables: { className },
+      },
+      [ControllerType.CONTEXT_MENU]: {
+        template: path.resolve(__dirname, '..', 'builder-template', 'context-menu.controller.template'),
+        variables: { className },
+      },
+      [ControllerType.SLASH]: {
+        template: path.resolve(__dirname, '..', 'builder-template', 'slash.controller.template'),
+        variables: { className },
+      },
     }
-  }
 
-  @ReactionHandler('😋')
-  async handleReaction(reaction: ${interactionType.join(' | ')}, user: User) {
-    this.logger.log('Reaction 😋 detected!')
-    if (reaction.message) {
-      await reaction.message.reply(\`\${user.username} reacted with 😋!\`)
+    const template = templateFilePaths[type]?.template
+    const variables = templateFilePaths[type]?.variables
+    if (!template) {
+      throw new Error(`Unsupported controller type: ${type}`)
     }
+
+    return this.populateTemplate(template, variables)
   }
-}
-`
-        case ControllerType.SLASH:
-          return `import { ${interactionType.join(', ')} } from 'discord.js'
-import { Controller, Command, CommandType } from 'meocord/decorator'
 
-@Controller()
-export class ${className}SlashController {
-
-  @Command('ping', CommandType.SLASH)
-  async replyWithPong(interaction: ${interactionType.join(' | ')}) {
-    await interaction.reply('Pong!')
-  }
-}`
-        case ControllerType.CONTEXT_MENU:
-          return `import { ${interactionType.join(', ')}, ApplicationCommandType } from 'discord.js'
-import { Controller, Command, CommandType } from 'meocord/decorator'
-
-@Controller()
-export class ${className}ContextMenuController {
-
-  @Command('custom-context-menu', CommandType.CONTEXT_MENU)
-  async handleContextMenu(interaction: ${interactionType.join(' | ')}) {
-    await interaction.reply('Context menu selected!')
-  }
-}`
-        default:
-          throw new Error(`Unsupported controller type: ${type}`)
-      }
+  private populateTemplate(filePath: string, variables: Record<string, string>): string {
+    let template = fs.readFileSync(filePath, 'utf-8')
+    for (const [key, value] of Object.entries(variables)) {
+      template = template.replaceAll(`{{${key}}}`, value)
     }
+    return template
   }
 
   generateControllerStructure(
     controllerDir: string,
-    hasBuilder: boolean,
     kebabCaseName: string,
-    type: string,
+    className: string,
+    type: ControllerType,
     controllerTemplate: string,
   ): void {
+    this.generateBuilderFile(className, type, controllerDir)
     this.createDirectoryIfNotExists(controllerDir)
-    if (hasBuilder) {
-      const builderFile = path.join(controllerDir, 'builders', `sample.builder.ts`)
-      const builderTemplate = this.buildBuilderTemplate(type)
-      this.createDirectoryIfNotExists(path.join(controllerDir, 'builders'))
-      this.generateFileWithESLintFix(builderFile, builderTemplate)
-    }
-
     const controllerFile = this.generateControllerFile(controllerDir, type, kebabCaseName)
     this.generateFileWithESLintFix(controllerFile, controllerTemplate)
   }
 
-  buildBuilderTemplate(type: string): string {
-    const isSlashCommand = type === 'slash'
-    const importBuilder = isSlashCommand
-      ? 'SlashCommandBuilder'
-      : ['ApplicationCommandType', 'ContextMenuCommandBuilder'].join(', ')
-    const builderClass = isSlashCommand ? 'SlashCommandBuilder()' : 'ContextMenuCommandBuilder()'
-    const contextMenuSetting = type === 'context-menu' ? '.setType(ApplicationCommandType.User)' : ''
+  generateBuilderFile(className: string, type: ControllerType, controllerDir: string): void {
+    const templateFilePaths: Record<
+      ControllerType.SLASH | ControllerType.CONTEXT_MENU,
+      { template: string; variables: Record<string, string> }
+    > = {
+      [ControllerType.CONTEXT_MENU]: {
+        template: path.resolve(__dirname, '..', 'builder-template', 'context-menu.builder.template'),
+        variables: { className },
+      },
+      [ControllerType.SLASH]: {
+        template: path.resolve(__dirname, '..', 'builder-template', 'slash.builder.template'),
+        variables: { className },
+      },
+    }
 
-    return `import { ${importBuilder} } from 'discord.js'
-import { CommandBuilder } from 'meocord/decorator'
-import { CommandType } from 'meocord/enum'
+    const template = templateFilePaths[type]?.template
+    const variables = templateFilePaths[type]?.variables
+    if (!template) return
 
-@CommandBuilder(CommandType.${type.toUpperCase().replace('-', '_')})
-export class SampleCommandBuilder {
-  build() {
-    return new ${builderClass}
-      .setName('sample')${contextMenuSetting}
-  }
-}
-`
+    const builderTemplate = this.populateTemplate(template, variables)
+    const builderFilePath = path.join(controllerDir, 'builders', `sample.builder.ts`)
+    this.createDirectoryIfNotExists(path.join(controllerDir, 'builders'))
+    this.generateFileWithESLintFix(builderFilePath, builderTemplate)
   }
 }

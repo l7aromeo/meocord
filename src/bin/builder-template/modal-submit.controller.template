@@ -1,0 +1,12 @@
+import { ModalSubmitInteraction } from 'discord.js'
+import { Controller, Command } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+
+@Controller()
+export class {{className}}ModalController {
+
+  @Command('submit-modal', CommandType.MODAL_SUBMIT)
+  async handleModal(interaction: ModalSubmitInteraction) {
+    await interaction.reply('Modal submitted!')
+  }
+}

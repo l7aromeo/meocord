@@ -1,0 +1,12 @@
+import { StringSelectMenuInteraction } from 'discord.js'
+import { Controller, Command } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+
+@Controller()
+export class {{className}}SelectMenuController {
+
+  @Command('select-menu', CommandType.SELECT_MENU)
+  async handleSelectMenu(interaction: StringSelectMenuInteraction) {
+    await interaction.reply('Select menu used!')
+  }
+}

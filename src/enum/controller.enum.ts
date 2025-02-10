@@ -21,6 +21,7 @@ export enum ControllerType {
   MODAL_SUBMIT = 'modal-submit',
   SELECT_MENU = 'select-menu',
   REACTION = 'reaction',
+  MESSAGE = 'message',
   SLASH = 'slash',
   CONTEXT_MENU = 'context-menu',
 }
@@ -32,4 +33,14 @@ export enum CommandType {
   SELECT_MENU = 'SELECT_MENU',
   MESSAGE = 'MESSAGE',
   MODAL_SUBMIT = 'MODAL_SUBMIT',
+}
+
+/**
+ * Enum representing actions that can be performed on a message reaction.
+ */
+export enum ReactionHandlerAction {
+  /** Reaction added to a message. */
+  ADD = 'ADD',
+  /** Reaction removed from a message. */
+  REMOVE = 'REMOVE',
 }

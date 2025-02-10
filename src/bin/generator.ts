@@ -17,11 +17,12 @@
  */
 
 import { Argument, Command } from 'commander'
-import { ControllerType, CommandType } from '@src/enum/controller.enum'
+import { ControllerType } from '@src/enum/controller.enum'
 import { ControllerGeneratorHelper } from '@src/bin/helper/controller-generator.helper'
 import { Logger } from '@src/common'
 import { ServiceGeneratorHelper } from '@src/bin/helper/service-generator.helper'
 import { GuardGeneratorHelper } from '@src/bin/helper/guard-generator.helper'
+import wait from '@src/util/wait.util'
 
 export class GeneratorCLI {
   private logger: Logger
@@ -98,13 +99,17 @@ export class GeneratorCLI {
     const { component, name, type } = args
 
     if (!name) {
-      throw new Error('Name is required')
+      this.logger.error('Name is required')
+      await wait(100)
+      process.exit(1)
     }
 
     switch (component) {
       case 'controller':
         if (!type) {
-          throw new Error('Type is required for controllers')
+          this.logger.error('Type is required for controllers')
+          await wait(100)
+          process.exit(1)
         }
         await this.handleGenerateController({ name, type })
         break
@@ -118,43 +123,22 @@ export class GeneratorCLI {
         break
 
       default:
-        throw new Error(`Unsupported component type: ${component}`)
+        this.logger.error(`Unsupported component type: ${component}`)
+        await wait(100)
+        process.exit(1)
     }
   }
 
   private async handleGenerateController(args: { name: string; type: ControllerType }): Promise<void> {
-    const typeMap: Record<
-      ControllerType,
-      { interactionType: string[]; commandType?: CommandType; hasBuilder?: boolean }
-    > = {
-      [ControllerType.BUTTON]: { interactionType: ['ButtonInteraction'], commandType: CommandType.BUTTON },
-      [ControllerType.MODAL_SUBMIT]: {
-        interactionType: ['ModalSubmitInteraction'],
-        commandType: CommandType.MODAL_SUBMIT,
-      },
-      [ControllerType.SELECT_MENU]: {
-        interactionType: ['StringSelectMenuInteraction'],
-        commandType: CommandType.SELECT_MENU,
-      },
-      [ControllerType.REACTION]: { interactionType: ['MessageReaction'] },
-      [ControllerType.SLASH]: { interactionType: ['ChatInputCommandInteraction'], hasBuilder: true },
-      [ControllerType.CONTEXT_MENU]: {
-        interactionType: ['UserContextMenuCommandInteraction', 'MessageContextMenuCommandInteraction'],
-        hasBuilder: true,
-      },
+    try {
+      await this.controllerGeneratorHelper.generateController(
+        { controllerName: args.name },
+        args.type as ControllerType,
+      )
+    } catch (error) {
+      this.logger.error(`Error generating controller: ${error instanceof Error ? error.message : String(error)}`)
+      await wait(100)
+      process.exit(1)
     }
-
-    const config = typeMap[args.type]
-    if (!config) {
-      throw new Error(`Unsupported controller type: ${args.type}`)
-    }
-
-    await this.controllerGeneratorHelper.generateController(
-      { controllerName: args.name },
-      args.type as ControllerType,
-      config.interactionType,
-      config.commandType,
-      config.hasBuilder,
-    )
   }
 }

@@ -106,7 +106,7 @@ export class GuardGeneratorHelper {
     }
 
     for (const [key, value] of Object.entries(variables)) {
-      template = template.replace(`{{${key}}}`, value)
+      template = template.replaceAll(`{{${key}}}`, value)
     }
 
     return template

@@ -1,0 +1,12 @@
+import { ButtonInteraction } from 'discord.js'
+import { Controller, Command } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+
+@Controller()
+export class {{className}}ButtonController {
+
+  @Command('button-click', CommandType.BUTTON)
+  async handleButton(interaction: ButtonInteraction) {
+    await interaction.reply('Button clicked!')
+  }
+}
