@@ -17,9 +17,9 @@
  */
 
 import 'reflect-metadata'
-import { CommandBuilderBase } from '@src/decorator'
 import { injectable } from 'inversify'
 import { CommandType } from '@src/enum'
+import { CommandBuilderBase } from '@src/interface/command-decorator.interface'
 
 /**
  * This decorator is used to mark a class as a Discord command builder that later can be registered on the `@Command` decorator.

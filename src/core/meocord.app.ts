@@ -20,7 +20,6 @@ import {
   ActivityType,
   CacheType,
   Client,
-  ContextMenuCommandBuilder,
   Interaction,
   Message,
   MessageFlagsBitField,
@@ -29,13 +28,14 @@ import {
   SlashCommandBuilder,
 } from 'discord.js'
 import { Logger } from '@src/common'
-import { CommandMetadata, getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator'
+import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator'
 import { sample, size } from 'lodash'
 import { EmbedUtil } from '@src/util'
 import wait from '@src/util/wait.util'
 import { CommandType } from '@src/enum'
 import { ReactionHandlerAction } from '@src/enum/controller.enum'
 import { ReactionHandlerOptions } from '@src/interface'
+import { CommandMetadata } from '@src/interface/command-decorator.interface'
 
 export interface AppActivity {
   name: string
@@ -97,7 +97,7 @@ export class MeoCordApp {
   }
 
   async registerCommands() {
-    const builders: (SlashCommandBuilder | ContextMenuCommandBuilder)[] = []
+    const builders: NonNullable<CommandMetadata['builder']>[] = []
 
     for (const controller of this.controllers) {
       const commandMap = getCommandMap(controller)
@@ -146,13 +146,13 @@ export class MeoCordApp {
 
       const commandMap = getCommandMap(controller)
 
-      let commandMetadata: CommandMetadata | undefined = undefined
+      let commandMetadata: CommandMetadata<string> | undefined = undefined
       let commandIdentifier: string | undefined = undefined
 
       if (interaction.isChatInputCommand()) {
         commandIdentifier = interaction.commandName
         commandMetadata = commandMap[commandIdentifier]
-      } else if (interaction.isButton() || interaction.isStringSelectMenu()) {
+      } else if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
         commandIdentifier = interaction.customId
         commandMetadata = Object.values(commandMap).find(meta => {
           if (!meta.regex || !commandIdentifier) return false
@@ -177,7 +177,9 @@ export class MeoCordApp {
             (type === CommandType.SLASH && interaction.isChatInputCommand()) ||
             (type === CommandType.BUTTON && interaction.isButton()) ||
             (type === CommandType.SELECT_MENU && interaction.isStringSelectMenu()) ||
-            (type === CommandType.CONTEXT_MENU && interaction.isContextMenuCommand())
+            (type === CommandType.CONTEXT_MENU && interaction.isUserContextMenuCommand()) ||
+            (type === CommandType.CONTEXT_MENU && interaction.isMessageContextMenuCommand()) ||
+            (type === CommandType.MODAL_SUBMIT && interaction.isModalSubmit())
           ) {
             this.logger.log('[INTERACTION]', `[${CommandType[type]}]`, `[${methodName}]`)
 

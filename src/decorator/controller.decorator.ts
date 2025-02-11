@@ -20,16 +20,21 @@ import { injectable } from 'inversify'
 import 'reflect-metadata'
 import { mainContainer } from '@src/decorator'
 import {
-  BaseInteraction,
-  Message,
+  ButtonInteraction,
+  ChatInputCommandInteraction,
   ContextMenuCommandBuilder,
-  SlashCommandBuilder,
+  ContextMenuCommandInteraction,
+  Message,
   MessageReaction,
-  PartialMessageReaction,
+  ModalSubmitInteraction,
   PartialMessage,
+  PartialMessageReaction,
+  SlashCommandBuilder,
+  StringSelectMenuInteraction,
 } from 'discord.js'
 import { CommandType } from '@src/enum'
 import { ReactionHandlerOptions } from '@src/interface'
+import { CommandBuilderBase, CommandInteractionType, CommandMetadata } from '@src/interface/command-decorator.interface'
 
 const COMMAND_METADATA_KEY = Symbol('commands')
 const MESSAGE_HANDLER_METADATA_KEY = Symbol('message_handlers')
@@ -54,11 +59,7 @@ const REACTION_HANDLER_METADATA_KEY = Symbol('reaction_handlers')
  * ```
  */
 export function MessageHandler<T extends Message | PartialMessage, R extends void | Promise<void>>(keyword?: string) {
-  return function (
-    target: object,
-    propertyKey: string | symbol,
-    descriptor: TypedPropertyDescriptor<(message: T) => R>,
-  ) {
+  return function (target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(message: T) => R>) {
     const handlers = Reflect.getMetadata(MESSAGE_HANDLER_METADATA_KEY, target) || []
     handlers.push({ keyword, method: propertyKey.toString() })
     Reflect.defineMetadata(MESSAGE_HANDLER_METADATA_KEY, handlers, target)
@@ -88,7 +89,7 @@ export function ReactionHandler<T extends MessageReaction | PartialMessageReacti
 ) {
   return function (
     target: object,
-    propertyKey: string | symbol,
+    propertyKey: string,
     descriptor: TypedPropertyDescriptor<(reaction: T, options?: ReactionHandlerOptions) => R>,
   ) {
     const handlers = Reflect.getMetadata(REACTION_HANDLER_METADATA_KEY, target) || []
@@ -118,30 +119,6 @@ export function getMessageHandlers(controller: any): { keyword: string | undefin
 }
 
 /**
- * Base interface for a command builder.
- */
-export interface CommandBuilderBase {
-  /**
-   * Builds the command structure using the specified command name.
-   *
-   * @param commandName - The name of the command.
-   * @returns A SlashCommandBuilder or ContextMenuCommandBuilder instance.
-   */
-  build: (commandName: string) => SlashCommandBuilder | ContextMenuCommandBuilder
-}
-
-/**
- * Command metadata describing a registered command method.
- */
-export interface CommandMetadata {
-  methodName: string
-  builder: SlashCommandBuilder | ContextMenuCommandBuilder | undefined
-  type: CommandType
-  regex?: RegExp
-  dynamicParams?: string[]
-}
-
-/**
  * Helper function to create regex and parameter mappings from a pattern string.
  *
  * @param pattern - The pattern string to parse.
@@ -153,16 +130,15 @@ function createRegexFromPattern(pattern: string): { regex: RegExp; params: strin
   // Escape special characters outside placeholders
   const escapedPattern = pattern.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')
 
-  // Replace placeholders with strict named capturing groups
+  // Replace placeholders with named capturing groups
   const regexPattern = escapedPattern.replace(/\\{(\w+)\\}/g, (_, param) => {
     if (!/^\w+$/.test(param)) {
       throw new Error(`Invalid parameter name: ${param}. Parameter names must be alphanumeric.`)
     }
     params.push(param)
-    return `(?<${param}>\\d+)` // Adjusted to match digits only for IDs
+    return `(?<${param}>\\d+)` // Adjust as needed for matching specific patterns
   })
 
-  // Create the final regex
   const regex = new RegExp(`^${regexPattern}$`)
   return { regex, params }
 }
@@ -180,31 +156,53 @@ function createRegexFromPattern(pattern: string): { regex: RegExp; params: strin
  *   await interaction.reply('This is the help command!')
  * }
  *
- * @Command('stats-{id}', CommandType.MESSAGE)
- * public async handleStats(message: Message, params: { id: string }) {
- *   const statsId = params.id;
- *   await message.reply(`Fetching stats for ID: ${statsId}`);
+ * @Command('stats-{id}', CommandType.BUTTON)
+ * public async handleStats(message: ButtonInteraction, { id }) {
+ *   await message.reply(`Fetching stats for ID: ${id}`);
  * }
  * ```
  */
-export function Command(commandName: string, builderOrType: (new () => CommandBuilderBase) | CommandType) {
-  return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+
+// Base implementation
+export function Command<T extends CommandType>(commandName: string, builderOrType: (new () => CommandBuilderBase) | T) {
+  return function <P extends Record<string, any>, R extends Promise<void> | void>(
+    target: object,
+    propertyKey: string,
+    descriptor:
+      | TypedPropertyDescriptor<(interaction: CommandInteractionType<T>, params: P) => R>
+      | TypedPropertyDescriptor<(interaction: CommandInteractionType<T>) => R>,
+  ) {
     const originalMethod = descriptor.value
-    descriptor.value = function (...args: any[]) {
-      const interactionOrMessage = args[0]
-      if (!(interactionOrMessage instanceof BaseInteraction || interactionOrMessage instanceof Message)) {
-        throw new Error(`The first argument of ${propertyKey} must be an instance of BaseInteraction or Message.`)
-      }
-      return originalMethod.apply(this, args)
+    if (!originalMethod) {
+      throw new Error(`Missing implementation for method ${propertyKey}`)
     }
 
+    // Replace the original method with a decorator wrapper
+    descriptor.value = function (interaction, params) {
+      // Apply the original method implementation
+      const expectedInteraction =
+        (commandType === CommandType.BUTTON && interaction instanceof ButtonInteraction) ||
+        (commandType === CommandType.SELECT_MENU && interaction instanceof StringSelectMenuInteraction) ||
+        (commandType === CommandType.SLASH && interaction instanceof ChatInputCommandInteraction) ||
+        (commandType === CommandType.CONTEXT_MENU && interaction instanceof ContextMenuCommandInteraction) ||
+        (commandType === CommandType.MODAL_SUBMIT && interaction instanceof ModalSubmitInteraction)
+
+      if (!expectedInteraction) {
+        throw new Error(`Invalid interaction type passed to @Command for method: ${propertyKey}`)
+      }
+
+      return originalMethod.apply(this, [interaction, params])
+    }
+
+    // Retrieve or initialize metadata
     const commands: Record<string, CommandMetadata> = Reflect.getMetadata(COMMAND_METADATA_KEY, target) || {}
 
     let builderInstance: SlashCommandBuilder | ContextMenuCommandBuilder | undefined
     let commandType: CommandType
     let regex: RegExp | undefined
-    let dynamicParams: string[] | undefined
+    let dynamicParams: string[] = []
 
+    // Handle CommandBuilderBase or CommandType logic
     if (typeof builderOrType === 'function') {
       const builderObj = new builderOrType() as CommandBuilderBase
       builderInstance = builderObj.build(commandName)
@@ -216,12 +214,14 @@ export function Command(commandName: string, builderOrType: (new () => CommandBu
       commandType = builderOrType
     }
 
-    if (commandType !== CommandType.SLASH) {
+    // Handle non-SLASH and non-CONTEXT_MENU commands
+    if (commandType !== CommandType.SLASH && commandType !== CommandType.CONTEXT_MENU) {
       const { regex: generatedRegex, params } = createRegexFromPattern(commandName)
       regex = generatedRegex
       dynamicParams = params
     }
 
+    // Store command metadata
     commands[commandName] = {
       methodName: propertyKey,
       builder: builderInstance,
@@ -240,7 +240,7 @@ export function Command(commandName: string, builderOrType: (new () => CommandBu
  * @param controller - The controller class instance.
  * @returns A record containing command metadata indexed by command names.
  */
-export function getCommandMap(controller: any): Record<string, CommandMetadata> {
+export function getCommandMap<T extends string>(controller: any): Record<string, CommandMetadata<T>> {
   return Reflect.getMetadata(COMMAND_METADATA_KEY, controller)
 }
 
