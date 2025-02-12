@@ -9,4 +9,9 @@ export class {{className}}ButtonController {
   async handleButton(interaction: ButtonInteraction) {
     await interaction.reply('Button clicked!')
   }
+
+  @Command('button-with-{id}', CommandType.BUTTON)
+  async handleButtonWithId(interaction: ButtonInteraction, { id }) {
+    await interaction.reply(`Button with id: ${id} clicked!`)
+  }
 }
