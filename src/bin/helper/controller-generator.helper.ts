@@ -62,7 +62,7 @@ export class ControllerGeneratorHelper {
    * @returns An object containing the template path and variables, or `undefined` if not found.
    */
   private getTemplateConfig(type: ControllerType, className: string) {
-    const baseDir = path.resolve(__dirname, '..', 'builder-template')
+    const baseDir = path.resolve(__dirname, '..', 'builder-template', 'controller')
     const templates: Record<ControllerType, string> = {
       [ControllerType.BUTTON]: 'button.controller.template',
       [ControllerType.MODAL_SUBMIT]: 'modal-submit.controller.template',
@@ -123,7 +123,7 @@ export class ControllerGeneratorHelper {
    * @returns An object containing the builder template path and variables, or `undefined` if not found.
    */
   private getBuilderConfig(type: ControllerType, className: string) {
-    const baseDir = path.resolve(__dirname, '..', 'builder-template')
+    const baseDir = path.resolve(__dirname, '..', 'builder-template', 'builder')
     const templates: Partial<Record<ControllerType, string>> = {
       [ControllerType.CONTEXT_MENU]: 'context-menu.builder.template',
       [ControllerType.SLASH]: 'slash.builder.template',

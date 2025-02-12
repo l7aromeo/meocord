@@ -115,11 +115,11 @@ export class GeneratorCLI {
         break
 
       case 'service':
-        await this.serviceGeneratorHelper.generateService(name)
+        this.serviceGeneratorHelper.generateService(name)
         break
 
       case 'guard':
-        await this.guardGeneratorHelper.generateGuard(name)
+        this.guardGeneratorHelper.generateGuard(name)
         break
 
       default:
@@ -131,10 +131,7 @@ export class GeneratorCLI {
 
   private async handleGenerateController(args: { name: string; type: ControllerType }): Promise<void> {
     try {
-      await this.controllerGeneratorHelper.generateController(
-        { controllerName: args.name },
-        args.type as ControllerType,
-      )
+      this.controllerGeneratorHelper.generateController({ controllerName: args.name }, args.type as ControllerType)
     } catch (error) {
       this.logger.error(`Error generating controller: ${error instanceof Error ? error.message : String(error)}`)
       await wait(100)
