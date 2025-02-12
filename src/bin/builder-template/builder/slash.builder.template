@@ -5,6 +5,6 @@ import { CommandType } from 'meocord/enum'
 @CommandBuilder(CommandType.SLASH)
 export class SampleCommandBuilder {
   build() {
-    return new SlashCommandBuilder().setName('sample-slash')
+    return new SlashCommandBuilder().setName('sample-slash').setDescription('This is a sample slash command')
   }
 }
