@@ -268,7 +268,7 @@ For full license details, refer to:
               nodemonProcess = null
             }
 
-            nodemonProcess = spawn('nodemon', ['-q', this.mainJSPath], {
+            nodemonProcess = spawn('npx -y nodemon', ['-q', this.mainJSPath], {
               shell: true,
               cwd: this.projectRoot,
               stdio: 'inherit',
