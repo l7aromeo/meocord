@@ -9,14 +9,10 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 ## Table of Contents
 
 - [Features](#features)
-- [Installation](#installation)
-- [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
-  - [TS Config](#1-recommended-tsconfigjson)
-  - [ESLint Config](#2-eslint-configuration-eslintconfigmjs)
-  - [MeoCord Config](#3-in-the-meocordconfigts)
-  - [App.ts File](#4-define-the-appts)
-  - [Main Entry File](#5-in-the-maints)
+- [Project Structure](#project-structure)
+- [Configuration](#configuration)
+- [Getting Started](#getting-started)
 - [CLI Usage](#cli-usage)
     - [Example Structure](#example-structure)
     - [Key Components](#key-components)
@@ -64,24 +60,52 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 
 ---
 
-## Installation
+## Getting Started
 
-To get started, you'll need to install the required dependencies for your project. Begin by adding `discord.js` and
-`meocord` to your project using the following command.
+To begin building your application with **MeoCord**, follow these steps:
 
-### Enable corepack and set yarn version to the stable version
+---
 
-```shell
-corepack enable && yarn set version stable
+### 1. Create a fresh MeoCord Application
+
+Use the CLI to generate your application.
+
+```shell script
+npx meocord create <your-app-name>
 ```
 
-### Install with Yarn
+---
 
-```shell
-yarn add discord.js meocord
+### 2. Configure `meocord.config.ts`
+
+Edit `meocord.config.ts` to add required discord token:
+
+```typescript
+import { MeoCordConfig } from 'meocord/interface'
+
+export default {
+  appName: 'DJS ChuTao',
+  discordToken: '<add-your-token-here>',
+} satisfies MeoCordConfig
 ```
 
-This ensures you have the core libraries necessary to build robust Discord applications with MeoCord.
+---
+
+### 3. Run the Application
+
+Use the CLI to start your application.
+
+- **Development Mode**:
+  Run in development mode:
+```shell script
+yarn meocord start --dev
+```
+
+- **Production Mode**:
+  Run in production mode with fresh production build:
+```shell script
+yarn meocord start --build --prod
+```
 
 ---
 
@@ -92,27 +116,15 @@ When using MeoCord, the expected project structure is as follows:
 ### Example Structure
 ```
 .
-├── .gitattributes
+.
 ├── .gitignore
-├── .prettierrc.cjs
+├── .prettierrc.mjs
 ├── .yarnrc.yml
-├── README.md
-├── compose.yaml
 ├── eslint.config.mjs
 ├── meocord.config.ts
 ├── package.json
 ├── src
 │   ├── app.ts
-│   ├── assets
-│   │   ├── font
-│   │   ├── gif
-│   │   └── png
-│   ├── common
-│   │   ├── constants
-│   │   ├── json
-│   │   ├── services
-│   │   ├── types
-│   │   ├── utils
 │   ├── controllers
 │   │   ├── button
 │   │   ├── context-menu
@@ -121,15 +133,11 @@ When using MeoCord, the expected project structure is as follows:
 │   │   ├── reaction
 │   │   ├── select-menu
 │   │   └── slash
-│   ├── declarations
-│   │   ├── assets.d.ts
 │   ├── guards
-│   │   └── rate-limiter.guard.ts
-│   ├── http-services
-│   │   └── game.http-service.ts
+│   │   └── rate-limit.guard.ts
 │   ├── main.ts
 │   └── services
-│       ├── ping.service.ts
+│       └── sample.service.ts
 ├── tsconfig.json
 └── yarn.lock
 ```
@@ -138,87 +146,9 @@ This structure ensures clear separation of concerns and scalable project archite
 
 ---
 
-## Getting Started
+## Configuration
 
-To begin building your application with **MeoCord**, follow these steps:
-
----
-
-### 1. Recommended `tsconfig.json`
-
-```json
-{
-  "compilerOptions": {
-    "tsBuildInfoFile": null,
-    "strict": true,
-    "module": "NodeNext",
-    "target": "ESNext",
-    "moduleResolution": "NodeNext",
-    "esModuleInterop": true,
-    "declaration": true,
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
-    "resolveJsonModule": true,
-    "allowSyntheticDefaultImports": true,
-    "sourceMap": false,
-    "outDir": "./dist",
-    "baseUrl": "./",
-    "rootDir": "./src",
-    "paths": {
-      "@src/*": [
-        "src/*"
-      ]
-    },
-    "skipLibCheck": true,
-    "noImplicitAny": false,
-    "forceConsistentCasingInFileNames": true
-  },
-  "include": [
-    "src/**/*.ts"
-  ],
-  "exclude": [
-    "meocord.config.ts",
-    "dist",
-    "jest.config.ts",
-    "node_modules"
-  ]
-}
-```
-
----
-
-### 2. Eslint Configuration `eslint.config.mjs`
-
-MeoCord provides a built-in ESLint configuration to streamline your linting setup. **Note: MeoCord's built-in ESLint
-configuration requires ESLint version 9 or higher.** Here's how you can integrate it:
-
-#### Install Required Packages
-
-Run the following command to install the necessary dependencies:
-
-```shell
-yarn add -D eslint \
-    prettier \
-    eslint-config-prettier \
-    eslint-plugin-prettier \
-    typescript-eslint \
-    @typescript-eslint/parser \
-    eslint-plugin-import \
-    eslint-plugin-unused-imports \
-    globals
-```
-
-#### Use the Default MeoCord ESLint Config
-
-Add the following to your `eslint.config.mjs`:
-
-```javascript
-import meocordEslint from 'meocord/eslint';
-
-export default meocordEslint;
-```
-
-#### Customize the ESLint Configuration
+### Customize the ESLint Configuration
 
 If needed, you can extend or modify the default configuration to fit your project's requirements:
 
@@ -253,7 +183,7 @@ export default [...meocordEslint, customConfig];
 
 ---
 
-### 3. In the `meocord.config.ts`
+### Customize the `meocord.config.ts`
 
 The **configuration file** (`meocord.config.ts`) is responsible for defining the application-wide settings. It provides essential configurations such as the app name and Discord token.
 
@@ -322,135 +252,6 @@ export default {
 
 ---
 
-### 4. Define the `app.ts`
-
-The `app.ts` file is the **heart of your application**, acting as the centralized configuration point for registering all controllers, services, intents, and activities. Each **controller** must be explicitly registered here using the `@MeoCord` decorator.
-
-Below is an example `app.ts`:
-
-```typescript
-import { GatewayIntentBits, Partials, ActivityType } from 'discord.js';
-import { sample } from 'lodash';
-import { MeoCord } from 'meocord/decorator';
-import { RabbitMQService } from '@src/common/services/rabbitmq.service';
-import { SampleSlashController } from '@src/controllers/slash/sample.slash.controller';
-import { SampleSelectMenuController } from '@src/controllers/select-menu/sample.select-menu.controller';
-import { SampleButtonController } from '@src/controllers/button/sample.button.controller';
-import { SampleMessageController } from '@src/controllers/message/sample.message.controller';
-import { SampleReactionController } from '@src/controllers/reaction/sample.reaction.controller';
-
-@MeoCord({
-  controllers: [
-    // Slash Commands
-    SampleSlashController,
-    // Select Menu
-    SampleSelectMenuController,
-    // Buttons
-    SampleButtonController,
-    // Message
-    SampleMessageController,
-    // Reactions
-    SampleReactionController,
-  ],
-  clientOptions: {
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildMessages,
-      GatewayIntentBits.GuildMessageReactions,
-      GatewayIntentBits.MessageContent,
-    ],
-    partials: [Partials.Message, Partials.Reaction],
-  },
-  activities: [
-    {
-      name: `${sample(['Genshin', 'ZZZ'])} with Romeo`,
-      type: ActivityType.Playing,
-      url: 'https://discord.gg/chocotao',
-    },
-  ],
-  services: [RabbitMQService],
-})
-export default class App {}
-```
-
-### 5. In the `main.ts`
-
-The **main entry file** (`main.ts`) is responsible for bootstrapping your MeoCord app and starting its execution. It utilizes the `MeoCordFactory` to initialize the application and provides built-in logging support via the `Logger`.
-
-Below is an example setup for `main.ts`:
-
-```typescript
-import App from '@src/app';
-import { Logger } from 'meocord/common';
-import { MeoCordFactory } from 'meocord/core';
-
-const logger = new Logger();
-const app = MeoCordFactory.create(App);
-
-async function bootstrap() {
-  logger.log('Starting application');
-  await app.start();
-  logger.log('Application started');
-}
-
-bootstrap().catch((error) =>
-  logger.error('Error during startup:', error)
-);
-```
-
-- **Line-by-Line Explanation**:
-    1. **Import Core App Class**:
-        - `App` is the decorated base class where controllers and services are registered.
-    2. **Initialize Framework**:
-        - `MeoCordFactory.create(App)` creates and returns an instance of the app, initialized with registered components.
-    3. **Bootstrap Logic**:
-        - Logs are emitted during startup, and potential errors during initialization are handled via `catch()`.
-
----
-
-- **Key Responsibilities of `app.ts`**:
-
-    1. **Register Controllers**  
-       Add all your logic handlers (such as commands, event processors, or other bot logic) to the `controllers` array.
-        - Each controller **must** use the `@Controller` decorator to ensure they are properly recognized and registered
-          by the framework.
-        - Controllers must be explicitly imported and defined here for central management.
-
-    2. **Define Client Options**  
-       Configure Discord client **intents** and **partials** within the `clientOptions` property.
-        - **Intents**: Control what events the bot listens to.
-        - **Partials**: Allow access to incomplete data structures from Discord, ensuring a flexible and efficient
-          event-processing setup.
-
-    3. **Register Services**  
-       Use the `services` array to define application special services (such as `RabbitMQService`).
-        - These services are designed to focus on specific, isolated functionalities within your application. For example, you can add a RabbitMQ service to listen for events and trigger appropriate actions, such as sending messages to Discord.
-
-    4. **Bot Activities**  
-       Define your bot's presence or dynamic status using the `activities` property.
-        - This enhances the user experience by showing real-time activities, such as the bot "*playing a game*" or
-          performing actions for added engagement.
-
----
-
-### 6. Run the Application
-
-Use the CLI to start your application.
-
-- **Development Mode**:
-  Run in development mode:
-```shell script
-meocord start --dev
-```
-
-- **Production Mode**:
-  Run in production mode with fresh production build:
-```shell script
-meocord start --build --prod
-```
-
----
-
 ## CLI Usage
 ### Overview
 The **MeoCord CLI** is designed to help you manage, build, and run your application seamlessly. It provides essential commands and options to streamline your workflow.
@@ -459,13 +260,13 @@ The **MeoCord CLI** is designed to help you manage, build, and run your applicat
 To ensure you see the most accurate and complete list of commands and options, always refer to the help menu by running:
 
 ```shell
-meocord --help
+yarn meocord --help
 ```
 
 Below is an example of the help display output:
 
 ```shell
-❯ meocord --help
+❯ yarn meocord --help
 meocord [options] [command]
 CLI for managing the MeoCord application
 
@@ -496,8 +297,8 @@ Builds the application in **production** or **development** mode.
 
 **Usage:**
 ```shell
-meocord build --prod       # Build for production
-meocord build --dev        # Build for development
+yarn meocord build --prod       # Build for production
+yarn meocord build --dev        # Build for development
 ```
 
 #### `meocord start`
@@ -505,8 +306,8 @@ Starts the application with options for either a **production** or **development
 
 **Usage:**
 ```shell
-meocord start --build --prod          # Start in production mode with fresh production build
-meocord start --dev                   # Start in development mode (will always fresh build)
+yarn meocord start --build --prod          # Start in production mode with fresh production build
+yarn meocord start --dev                   # Start in development mode (will always fresh build)
 ```
 
 #### `meocord generate` (Alias: `meocord g`)
@@ -514,12 +315,12 @@ Scaffolds application components such as controllers, services, and other elemen
 
 **Usage:**
 ```text
-meocord generate|g [options] [command]
+yarn meocord generate|g [options] [command]
 ```
 
 **Example:**
 ```shell
-meocord g co slash "user"
+yarn meocord g co slash "user"
 ```
 This command will generate a `user` slash controller.
 
@@ -527,7 +328,7 @@ This command will generate a `user` slash controller.
 
 For detailed usage of any particular command, append the `--help` flag to it. For instance:
 ```shell
-meocord g --help
+yarn meocord g --help
 ```
 
 This will provide command-specific help and options.
