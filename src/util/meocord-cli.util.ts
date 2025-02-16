@@ -5,6 +5,11 @@
  */
 import { Argument, Command, Help, Option } from 'commander'
 import CliTable3 from 'cli-table3'
+import { findModulePackageDir } from '@src/util/common.util'
+import path from 'node:path'
+import fs from 'node:fs'
+import wait from '@src/util/wait.util'
+import chalk from '@src/lib/chalk'
 
 export function configureCommandHelp(command: Command) {
   command.configureHelp({
@@ -137,4 +142,43 @@ export function generateArgumentsTable(args: readonly Argument[]): string {
   text += table.toString()
 
   return text
+}
+
+/**
+ * Ensures that the script is being run from the root directory of the project.
+ * Validates the existence of required files, dependencies, and configuration.
+ * If validation fails, it logs an error message and terminates the process.
+ */
+export async function ensureReady() {
+  const meocordPath = findModulePackageDir('meocord')
+  const packageJsonPath = path.resolve(process.cwd(), 'package.json')
+
+  try {
+    // Ensure the root package.json exists
+    if (!fs.existsSync(packageJsonPath)) {
+      throw new Error('package.json not found. This script must be run from the root directory of the project.')
+    }
+
+    // Ensure the MeoCord package directory is found
+    if (!meocordPath) {
+      throw new Error('Cannot locate the "MeoCord" package directory.')
+    }
+
+    // Read and parse the root package.json
+    const { dependencies } = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
+
+    // Read and parse the MeoCord package.json
+    const internalPackageJsonPath = path.join(meocordPath, 'package.json')
+    const { name: internalPackageName } = JSON.parse(fs.readFileSync(internalPackageJsonPath, 'utf-8'))
+
+    // Validate that MeoCord is listed as a dependency in the root package.json
+    if (!dependencies?.[internalPackageName]) {
+      throw new Error('The package.json does not list "MeoCord" as a dependency. Ensure you are in the root directory.')
+    }
+  } catch (error) {
+    // Log the error and exit the process
+    console.error(chalk.red(error instanceof Error ? error.message : 'An unknown error occurred during validation.'))
+    await wait(100)
+    process.exit(1)
+  }
 }

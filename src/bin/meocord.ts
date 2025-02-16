@@ -27,13 +27,13 @@ import { capitalize } from 'lodash'
 import wait from '@src/util/wait.util'
 import { GeneratorCLI } from '@src/bin/generator'
 import * as fs from 'node:fs'
-import { compileAndValidateConfig, findModulePackageDir, setEnvironment } from '@src/util/common.util'
+import { compileAndValidateConfig, setEnvironment } from '@src/util/common.util'
 import { Command } from 'commander'
 import { compileMeoCordConfig } from '@src/util/meocord-config-loader.util'
 import simpleGit from 'simple-git'
 import chalk from '@src/lib/chalk'
 import { execSync } from 'child_process'
-import { configureCommandHelp } from '@src/util/meocord-cli.util'
+import { configureCommandHelp, ensureReady } from '@src/util/meocord-cli.util'
 
 /**
  * A Command Line Interface (CLI) for managing the MeoCord application.
@@ -50,7 +50,6 @@ class MeoCordCLI {
    * Configures and runs the MeoCord CLI.
    */
   async run() {
-    await this.ensureReady()
     let program = new Command()
 
     program
@@ -110,6 +109,8 @@ For full license details, refer to:
       .option('-d, --dev', 'Build in development mode')
       .option('-p, --prod', 'Build in production mode')
       .action(async options => {
+        await ensureReady()
+
         const mode = options.prod ? 'production' : 'development'
         setEnvironment(mode)
 
@@ -125,6 +126,8 @@ For full license details, refer to:
       .option('-d, --dev', 'Start in development mode')
       .option('-p, --prod', 'Start in production mode')
       .action(async options => {
+        await ensureReady()
+
         const mode = options.prod ? 'production' : 'development'
         setEnvironment(mode)
 
@@ -327,47 +330,6 @@ For full license details, refer to:
       })
     } catch (error: any) {
       this.logger.error('Failed to start:', error?.message)
-    }
-  }
-
-  /**
-   * Ensures that the script is being run from the root directory of the project.
-   * Validates the existence of required files, dependencies, and configuration.
-   * If validation fails, it logs an error message and terminates the process.
-   */
-  private async ensureReady() {
-    const meocordPath = findModulePackageDir('meocord')
-    const packageJsonPath = path.resolve(process.cwd(), 'package.json')
-
-    try {
-      // Ensure the root package.json exists
-      if (!fs.existsSync(packageJsonPath)) {
-        throw new Error('package.json not found. This script must be run from the root directory of the project.')
-      }
-
-      // Ensure the MeoCord package directory is found
-      if (!meocordPath) {
-        throw new Error('Cannot locate the "MeoCord" package directory.')
-      }
-
-      // Read and parse the root package.json
-      const { dependencies } = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
-
-      // Read and parse the MeoCord package.json
-      const internalPackageJsonPath = path.join(meocordPath, 'package.json')
-      const { name: internalPackageName } = JSON.parse(fs.readFileSync(internalPackageJsonPath, 'utf-8'))
-
-      // Validate that MeoCord is listed as a dependency in the root package.json
-      if (!dependencies?.[internalPackageName]) {
-        throw new Error(
-          'The package.json does not list "MeoCord" as a dependency. Ensure you are in the root directory.',
-        )
-      }
-    } catch (error) {
-      // Log the error and exit the process
-      this.logger.error(error instanceof Error ? error.message : 'An unknown error occurred during validation.')
-      await wait(100)
-      process.exit(1)
     }
   }
 
