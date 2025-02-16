@@ -23,7 +23,7 @@ import {
   generateFile,
   populateTemplate,
   validateAndFormatName,
-} from '@src/util/generator.util'
+} from '@src/util/generator-cli.util'
 
 export class ControllerGeneratorHelper {
   /**

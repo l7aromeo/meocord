@@ -23,7 +23,7 @@ import {
   createDirectoryIfNotExists,
   generateFile,
   validateAndFormatName,
-} from '@src/util/generator.util'
+} from '@src/util/generator-cli.util'
 
 export class GuardGeneratorHelper {
   private readonly logger: Logger
