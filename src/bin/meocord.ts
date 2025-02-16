@@ -34,6 +34,7 @@ import simpleGit from 'simple-git'
 import chalk from '@src/lib/chalk'
 import { execSync } from 'child_process'
 import { configureCommandHelp, ensureReady } from '@src/util/meocord-cli.util'
+import packageJson from '../../package.json'
 
 /**
  * A Command Line Interface (CLI) for managing the MeoCord application.
@@ -45,6 +46,7 @@ class MeoCordCLI {
   private readonly mainJSPath = path.join(this.projectRoot, 'dist', 'main.js')
   private readonly webpackConfigPath = path.resolve(__dirname, '..', '..', 'webpack.config.js')
   private readonly generatorCLI = new GeneratorCLI(this.appName)
+  private readonly version = packageJson.version
 
   /**
    * Configures and runs the MeoCord CLI.
@@ -55,7 +57,7 @@ class MeoCordCLI {
     program
       .name(this.appName.toLowerCase())
       .description(`CLI for managing the ${this.appName} application`)
-      .version('1.0.0')
+      .version(this.version)
 
     program
       .command('show')
