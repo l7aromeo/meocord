@@ -18,9 +18,9 @@
 
 import fs from 'fs'
 import path from 'path'
-import { Logger } from '@src/common'
 import { compileMeoCordConfig, loadMeoCordConfig } from '@src/util/meocord-config-loader.util'
 import wait from '@src/util/wait.util'
+import chalk from '@src/lib/chalk'
 
 /**
  * Finds the package directory for the given module name
@@ -29,7 +29,6 @@ import wait from '@src/util/wait.util'
  * @returns {string} - The directory path where the module's package.json is located
  */
 export const findModulePackageDir = (moduleName: string, baseDir: string = process.cwd()): string | null => {
-  const logger = new Logger('MeoCord')
   try {
     // Resolve the node_modules directory from the base directory
     let currentDir = baseDir
@@ -49,9 +48,9 @@ export const findModulePackageDir = (moduleName: string, baseDir: string = proce
     throw new Error(`Module ${moduleName} not found in node_modules.`)
   } catch (error) {
     if (error instanceof Error) {
-      logger.error(`Error finding package directory for ${moduleName}:`, error.message)
+      console.error(chalk.red(`Error finding package directory for ${moduleName}:`, error.message))
     } else {
-      logger.error(`Error finding package directory for ${moduleName}:`, error)
+      console.error(chalk.red(`Error finding package directory for ${moduleName}:`, error))
     }
     return null
   }
@@ -66,10 +65,9 @@ export const findModulePackageDir = (moduleName: string, baseDir: string = proce
  *         if the `discordToken` property is not found in the configuration.
  */
 export async function compileAndValidateConfig() {
-  const logger = new Logger('MeoCord')
   const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
   if (!fs.existsSync(meocordConfigPath)) {
-    logger.error('Configuration file "meocord.config.ts" is missing!')
+    console.error(chalk.red('Configuration file "meocord.config.ts" is missing!'))
     await wait(100)
     process.exit(1)
   }
@@ -77,7 +75,7 @@ export async function compileAndValidateConfig() {
   compileMeoCordConfig()
   const meocordConfig = loadMeoCordConfig()
   if (!meocordConfig?.discordToken) {
-    logger.error('Discord token is missing!')
+    console.error(chalk.red('Discord token is missing!'))
     await wait(100)
     process.exit(1)
   }
