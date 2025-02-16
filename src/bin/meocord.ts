@@ -316,8 +316,18 @@ For full license details, refer to:
    */
   async startProd() {
     try {
+      // Check if mainJS exists before proceeding
+      if (!fs.existsSync(this.mainJSPath)) {
+        this.logger.error(
+          `Main entry file (main.js) not found! You might need to build before running in production mode.`,
+        )
+        await wait(100)
+        process.exit(1)
+      }
+
       this.clearConsole()
       this.logger.log('Starting...')
+
       const start = spawn(`node ${this.mainJSPath}`, {
         shell: true,
         cwd: this.projectRoot,
@@ -330,8 +340,10 @@ For full license details, refer to:
         await wait(100)
         process.exit(0)
       })
-    } catch (error: any) {
-      this.logger.error('Failed to start:', error?.message)
+    } catch (error) {
+      this.logger.error('Failed to start:', error instanceof Error ? error.message : String(error))
+      await wait(100)
+      process.exit(1)
     }
   }
 
