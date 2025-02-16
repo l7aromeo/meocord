@@ -98,13 +98,13 @@ Use the CLI to start your application.
 - **Development Mode**:
   Run in development mode:
 ```shell script
-yarn meocord start --dev
+yarn start:dev
 ```
 
 - **Production Mode**:
   Run in production mode with fresh production build:
 ```shell script
-yarn meocord start --build --prod
+yarn start:prod --build   # use arg `--build` if not built yet or use `yarn build:prod` first
 ```
 
 ---
