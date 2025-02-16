@@ -129,7 +129,7 @@ export function loadMeoCordConfig(): MeoCordConfig | undefined {
 
   if (existsSync(tempConfigFilePath)) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+      // eslint-disable-next-line @typescript-eslint/no-require-imports,@typescript-eslint/no-var-requires
       return require(tempConfigFilePath).default as MeoCordConfig
     } catch (error) {
       if (error instanceof Error) {

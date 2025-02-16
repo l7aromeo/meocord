@@ -31,6 +31,9 @@ import { compileAndValidateConfig, findModulePackageDir, setEnvironment } from '
 import { Argument, Command, Help, Option } from 'commander'
 import CliTable3 from 'cli-table3'
 import { compileMeoCordConfig } from '@src/util/meocord-config-loader.util'
+import simpleGit from 'simple-git'
+import chalk from '@src/lib/chalk'
+import { execSync } from 'child_process'
 
 /**
  * A Command Line Interface (CLI) for managing the MeoCord application.
@@ -97,6 +100,11 @@ For full license details, refer to:
       })
 
     program
+      .command('create <app-name>')
+      .description('Create a new MeoCord application')
+      .action(appName => this.createApp(appName))
+
+    program
       .command('build')
       .description('Build the application')
       .option('-d, --dev', 'Build in development mode')
@@ -136,6 +144,47 @@ For full license details, refer to:
     this.configureCommandHelp(program)
 
     program.showHelpAfterError().parse(process.argv)
+  }
+
+  async createApp(appName: string) {
+    const appPath = path.resolve(process.cwd(), appName)
+    const gitRepo = 'https://github.com/l7aromeo/meocord-template.git'
+
+    this.logger.info(chalk.blueBright(`🚀 Creating a new MeoCord app: ${chalk.bold(appName)}`))
+
+    try {
+      // Validate if directory already exists
+      if (fs.existsSync(appPath)) {
+        this.logger.error(chalk.red(`❌ Directory "${chalk.bold(appName)}" already exists.`))
+        process.exit(1)
+      }
+
+      // Clone the template repository
+      this.logger.info(chalk.blueBright('📦 Fetching template...'))
+      await simpleGit().clone(gitRepo, appPath)
+      this.logger.log(chalk.green(`✔ App successfully created at: ${chalk.bold(appPath)}`))
+
+      // Remove .git history from template
+      fs.rmSync(path.join(appPath, '.git'), { recursive: true, force: true })
+
+      // Initialize a new Git repository
+      this.logger.info(chalk.blueBright('🔧 Initializing Git repository...'))
+      const git = simpleGit(appPath)
+      await git.init()
+      await git.add('./*')
+      await git.commit('Initial commit')
+      this.logger.log(chalk.green('✔ Git repository initialized.'))
+
+      // Install dependencies
+      this.logger.info(chalk.blueBright('📦 Installing dependencies...'))
+      execSync(`cd ${appName} && yarn install`, { stdio: 'inherit' })
+      this.logger.log(chalk.green('✔ Dependencies installed successfully.'))
+
+      this.logger.log(chalk.greenBright(`🎉 MeoCord app "${chalk.bold(appName)}" is ready!`))
+    } catch (error) {
+      this.logger.error(chalk.red(`❌ Failed to create app: ${error instanceof Error ? error.message : String(error)}`))
+      process.exit(1)
+    }
   }
 
   /**
