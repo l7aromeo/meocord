@@ -30,11 +30,17 @@ import {
   OmitPartialGroupDMChannel,
   PartialMessageReaction,
   SlashCommandBuilder,
+  SlashCommandSubcommandsOnlyBuilder,
   StringSelectMenuInteraction,
 } from 'discord.js'
 import { CommandType } from '@src/enum'
 import { ReactionHandlerOptions } from '@src/interface'
-import { CommandBuilderBase, CommandInteractionType, CommandMetadata } from '@src/interface/command-decorator.interface'
+import {
+  CommandBuilderBase,
+  CommandBuilderConstructor,
+  CommandInteractionType,
+  CommandMetadata,
+} from '@src/interface/command-decorator.interface'
 
 const COMMAND_METADATA_KEY = Symbol('commands')
 const MESSAGE_HANDLER_METADATA_KEY = Symbol('message_handlers')
@@ -92,7 +98,9 @@ export function ReactionHandler<T extends MessageReaction | PartialMessageReacti
   return function (
     target: object,
     propertyKey: string,
-    descriptor: TypedPropertyDescriptor<(reaction: T, options?: ReactionHandlerOptions) => R>,
+    descriptor:
+      | TypedPropertyDescriptor<(reaction: T, options: ReactionHandlerOptions) => R>
+      | TypedPropertyDescriptor<(reaction: T) => R>,
   ) {
     const handlers = Reflect.getMetadata(REACTION_HANDLER_METADATA_KEY, target) || []
     handlers.push({ emoji, method: propertyKey.toString() })
@@ -164,15 +172,16 @@ function createRegexFromPattern(pattern: string): { regex: RegExp; params: strin
  * }
  * ```
  */
-
-// Base implementation
-export function Command<T extends CommandType>(commandName: string, builderOrType: (new () => CommandBuilderBase) | T) {
+export function Command<
+  CBC extends CommandType.SLASH | CommandType.CONTEXT_MENU,
+  T extends CommandBuilderConstructor<CBC> | CommandType,
+>(commandName: string, builderOrType: T) {
   return function <P extends Record<string, any>, R extends Promise<void> | void>(
     target: object,
     propertyKey: string,
     descriptor:
-      | TypedPropertyDescriptor<(interaction: CommandInteractionType<T>, params: P) => R>
-      | TypedPropertyDescriptor<(interaction: CommandInteractionType<T>) => R>,
+      | TypedPropertyDescriptor<(interaction: CommandInteractionType<CBC, T>, params: P) => R>
+      | TypedPropertyDescriptor<(interaction: CommandInteractionType<CBC, T>) => R>,
   ) {
     const originalMethod = descriptor.value
     if (!originalMethod) {
@@ -199,7 +208,11 @@ export function Command<T extends CommandType>(commandName: string, builderOrTyp
     // Retrieve or initialize metadata
     const commands: Record<string, CommandMetadata> = Reflect.getMetadata(COMMAND_METADATA_KEY, target) || {}
 
-    let builderInstance: SlashCommandBuilder | ContextMenuCommandBuilder | undefined
+    let builderInstance:
+      | SlashCommandBuilder
+      | SlashCommandSubcommandsOnlyBuilder
+      | ContextMenuCommandBuilder
+      | undefined
     let commandType: CommandType
     let regex: RegExp | undefined
     let dynamicParams: string[] = []

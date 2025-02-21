@@ -2,10 +2,10 @@ import {
   ButtonInteraction,
   ChatInputCommandInteraction,
   ContextMenuCommandBuilder,
-  ContextMenuCommandInteraction,
   MessageContextMenuCommandInteraction,
   ModalSubmitInteraction,
   SlashCommandBuilder,
+  SlashCommandSubcommandsOnlyBuilder,
   StringSelectMenuInteraction,
   UserContextMenuCommandInteraction,
 } from 'discord.js'
@@ -14,15 +14,26 @@ import { CommandType } from '@src/enum'
 /**
  * Base interface for a command builder.
  */
-export interface CommandBuilderBase {
+export interface CommandBuilderBase<
+  T extends CommandType.SLASH | CommandType.CONTEXT_MENU = CommandType.SLASH | CommandType.CONTEXT_MENU,
+> {
   /**
    * Builds the command structure using the specified command name.
    *
    * @param commandName - The name of the command.
    * @returns A SlashCommandBuilder or ContextMenuCommandBuilder instance.
    */
-  build: (commandName: string) => SlashCommandBuilder | ContextMenuCommandBuilder
+  build: (
+    commandName: string,
+  ) => T extends CommandType.SLASH
+    ? SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder
+    : T extends CommandType.CONTEXT_MENU
+      ? ContextMenuCommandBuilder
+      : never
 }
+
+export type CommandBuilderConstructor<T extends CommandType.SLASH | CommandType.CONTEXT_MENU> =
+  new () => CommandBuilderBase<T>
 
 /**
  * Command metadata describing a registered command method.
@@ -35,14 +46,17 @@ export interface CommandMetadata<T extends string = string> {
   dynamicParams?: T[]
 }
 
-export type CommandInteractionType<T extends CommandType> = T extends CommandType.BUTTON
+export type CommandInteractionType<
+  CBC extends CommandType.SLASH | CommandType.CONTEXT_MENU,
+  T extends CommandBuilderConstructor<CBC> | CommandType,
+> = T extends CommandType.BUTTON
   ? ButtonInteraction
   : T extends CommandType.SELECT_MENU
     ? StringSelectMenuInteraction
-    : T extends CommandType.SLASH
+    : T extends CommandBuilderConstructor<CommandType.SLASH>
       ? ChatInputCommandInteraction
-      : T extends CommandType.CONTEXT_MENU
-        ? ContextMenuCommandInteraction | UserContextMenuCommandInteraction | MessageContextMenuCommandInteraction
+      : T extends CommandBuilderConstructor<CommandType.CONTEXT_MENU>
+        ? UserContextMenuCommandInteraction | MessageContextMenuCommandInteraction
         : T extends CommandType.MODAL_SUBMIT
           ? ModalSubmitInteraction
           : never

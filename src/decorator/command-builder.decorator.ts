@@ -39,8 +39,8 @@ import { CommandBuilderBase } from '@src/interface/command-decorator.interface'
  * @returns A decorator function that makes the target class injectable
  *          and assigns the `commandType` metadata.
  */
-export function CommandBuilder(commandType: CommandType) {
-  return function (target: new () => CommandBuilderBase) {
+export function CommandBuilder<T extends CommandType.SLASH | CommandType.CONTEXT_MENU>(commandType: T) {
+  return function (target: new () => CommandBuilderBase<T>) {
     // Check if the class is already injectable; if not, make it injectable dynamically
     if (!Reflect.hasMetadata('inversify:injectable', target)) {
       injectable()(target)
@@ -50,7 +50,7 @@ export function CommandBuilder(commandType: CommandType) {
     Reflect.defineMetadata(
       'commandType',
       commandType,
-      target as unknown as CommandBuilderBase & { commandType: string },
+      target as unknown as CommandBuilderBase<T> & { commandType: string },
     )
   }
 }
