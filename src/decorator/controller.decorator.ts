@@ -27,7 +27,7 @@ import {
   Message,
   MessageReaction,
   ModalSubmitInteraction,
-  PartialMessage,
+  OmitPartialGroupDMChannel,
   PartialMessageReaction,
   SlashCommandBuilder,
   StringSelectMenuInteraction,
@@ -58,7 +58,9 @@ const REACTION_HANDLER_METADATA_KEY = Symbol('reaction_handlers')
  * }
  * ```
  */
-export function MessageHandler<T extends Message | PartialMessage, R extends void | Promise<void>>(keyword?: string) {
+export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boolean>>, R extends void | Promise<void>>(
+  keyword?: string,
+) {
   return function (target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(message: T) => R>) {
     const handlers = Reflect.getMetadata(MESSAGE_HANDLER_METADATA_KEY, target) || []
     handlers.push({ keyword, method: propertyKey.toString() })
