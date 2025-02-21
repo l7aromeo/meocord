@@ -431,29 +431,46 @@ yarn meocord start --prod
 
 ## Contributing
 
-Contributions are welcome! Since the repository is currently private, please follow these steps:
+We welcome contributions to improve **MeoCord**. Here's how you can get started:
 
-1. Contact the [author](./AUTHOR.md) or maintainers to request access to the repository.
-2. Once access is granted, fork the repository.
-3. Create a feature branch:
+1. **Fork the Repository**:  
+   Click the "Fork" button in the top-right corner of the repository page to create your copy of the project.
 
-```textmate
-git checkout -b feature/my-new-feature
-```
+2. **Create a Feature Branch**:  
+   Use the following command to create a branch for your changes:
 
-4. Commit your changes with a clear and descriptive message:
+   ```textmate
+   git checkout -b feature/your-feature-name
+   ```
 
-```textmate
-git commit -m "feat: add my new feature"
-```
+3. **Make Meaningful Commits**:  
+   Commit your changes with clear, descriptive, and concise messages that explain what your changes do:
 
-5. Push your branch to your fork:
+   ```textmate
+   git commit -m "feat: add [brief description of your feature or fix]"
+   ```
 
-```textmate
-git push origin feature/my-new-feature
-```
+4. **Push Your Changes**:  
+   Push your branch to your forked repository with this command:
 
-6. Open a Pull Request and provide detailed information about your changes.Markdown
+   ```textmate
+   git push origin feature/your-feature-name
+   ```
+
+5. **Open a Pull Request (PR)**:
+    - Navigate to the original **MeoCord** repository.
+    - Click "Compare & Pull Request."
+    - Provide a descriptive title and a detailed description of your changes.
+
+   Be sure to include:
+    - The purpose of your changes.
+    - Any relevant details or links.
+    - Steps to reproduce/test the changes, if applicable.
+
+6. **Engage in Reviews**:  
+   Work with maintainers to address any feedback or changes they request.
+
+Thank you for helping make **MeoCord** better!
 
 ---
 
