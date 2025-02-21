@@ -17,7 +17,7 @@
  */
 
 import { BaseInteraction, PartialUser, User } from 'discord.js'
-import { Configuration, RuleSetRule } from 'webpack'
+import { Configuration } from 'webpack'
 import { ReactionHandlerAction } from '@src/enum/controller.enum'
 
 /**
@@ -48,34 +48,46 @@ export interface ReactionHandlerOptions {
 }
 
 /**
- * Interface representing the Webpack configuration for MeoCord.
- * Extends the base Webpack Configuration interface with additional properties.
+ * Interface representing the Webpack configuration for the MeoCord framework.
+ * This interface extends the base Webpack Configuration and provides stricter type definitions
+ * with additional required properties to ensure a complete and valid Webpack setup.
  */
 export interface MeoCordWebpackConfig extends Configuration {
-  /** The mode in which Webpack should run: 'development', 'production', or 'none'. */
-  mode: Configuration['mode']
-  /** The entry point for the application. */
+  /** Defines the mode of the Webpack build process (e.g., 'development' or 'production'). */
+  mode: NonNullable<Configuration['mode']>
+
+  /** The entry point file path(s) for the application. Represents the starting point(s) of the build. */
   entry: string
-  optimization: Configuration['optimization'] & {
-    /** Whether to minimize the output. */
-    minimize: boolean
-    /** Array of minimizer plugins to use. */
-    minimizer: NonNullable<Configuration['optimization']>['minimizer']
-  }
-  externals: Configuration['externals']
-  module: Configuration['module'] & {
-    /** Array of rules for module resolution. */
-    rules: RuleSetRule[]
-  }
-  resolve: Configuration['resolve'] & {
-    /** Array of file extensions to resolve. */
-    extensions: NonNullable<NonNullable<Configuration['resolve']>['extensions']>
-    /** Array of plugins to use for resolving modules. */
-    plugins: NonNullable<NonNullable<Configuration['resolve']>['plugins']>
-  }
-  /** Output configuration for Webpack. Excludes 'path', 'publicPath', and 'filename' to prevent overwriting. */
+
+  /** Configuration for build optimization settings, such as code splitting and minimization. */
+  optimization: NonNullable<Configuration['optimization']>
+
+  /**
+   * Specifies external dependencies to exclude from the output bundle.
+   * Can be used to exclude libraries from being bundled, like `node_modules`.
+   */
+  externals: NonNullable<Configuration['externals']>
+
+  /**
+   * Rules and configurations for handling module files during the build process.
+   * Includes loaders for processing various file types.
+   */
+  module: NonNullable<Configuration['module']>
+
+  /**
+   * Configuration for module resolution, including resolving extensions and alias paths.
+   * Determines how imported files are resolved.
+   */
+  resolve: NonNullable<Configuration['resolve']>
+
+  /**
+   * Specifies output settings for the Webpack build, excluding path, publicPath, and filename.
+   * Defines properties like asset management and global settings.
+   */
   output: Omit<NonNullable<Configuration['output']>, 'path' | 'publicPath' | 'filename'>
-  stats: Configuration['stats']
+
+  /** Configures the stats object to control the output of build process logs. */
+  stats: NonNullable<Configuration['stats']>
 }
 
 /**
