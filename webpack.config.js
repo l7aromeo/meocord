@@ -92,4 +92,5 @@ const baseConfig = (config = {}) => ({
   stats: config?.stats || 'errors-only',
 })
 
-module.exports = meocordConfig?.webpack?.(baseConfig()) || baseConfig()
+const userConfig = meocordConfig?.webpack?.(baseConfig())
+module.exports = baseConfig(userConfig)
