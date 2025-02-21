@@ -11,11 +11,11 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 - [Features](#features)
 - [Getting Started](#getting-started)
 - [Project Structure](#project-structure)
+    - [Example Structure](#example-structure)
+    - [Key Components](#key-components)
 - [Configuration](#configuration)
 - [Getting Started](#getting-started)
 - [CLI Usage](#cli-usage)
-    - [Example Structure](#example-structure)
-    - [Key Components](#key-components)
 - [Development Guide](#development-guide)
 - [Deployment Guide](#deployment-guide)
 - [Contributing](#contributing)
@@ -146,6 +146,29 @@ This structure ensures clear separation of concerns and scalable project archite
 
 ---
 
+### Key Components
+
+1. **Entry Point** (`src/main.ts`):
+    - The main application logic, where you initialize and run the app.
+
+2. **Application Configuration** (`src/app.ts`):
+    - Acts as the central configuration point, where controllers, services, client options, and other metadata are defined.
+    - Ties all modular components (controllers, specialized services, activities, etc.) together to define the core structure of the app.
+
+3. **Controllers** (`src/controllers`):
+    - Build feature-specific logic (e.g., context menus, message handling in bots).
+
+4. **Services** (`src/services`):
+    - Core business logic and reusable service definitions.
+
+5. **Guards** (`src/guards`):
+    - Middleware-like services for pre-execution logic (e.g., rate-limiting, authorization).
+
+6. **Assets** (`src/assets`):
+    - Fonts, images, and other static files for your application.
+
+---
+
 ## Configuration
 
 ### Customize the ESLint Configuration
@@ -265,9 +288,15 @@ yarn meocord --help
 
 Below is an example of the help display output:
 
-```shell
+```textmate
 ❯ yarn meocord --help
+MeoCord Copyright (C) 2025  Ukasyah Rahmatullah Zada
+    This program comes with ABSOLUTELY NO WARRANTY; for details type `meocord show -w'.
+    This is free software, and you are welcome to redistribute it
+    under certain conditions; type `meocord show -c' for details.
+
 meocord [options] [command]
+
 CLI for managing the MeoCord application
 
 Available Options:
@@ -278,15 +307,19 @@ Available Options:
 └───────────────┴───────────────────────────┘
 
 Available Commands:
-┌──────────┬───────┬───────────────────────┐
-│ Command  │ Alias │ Description           │
-├──────────┼───────┼───────────────────────┤
-│ build    │ —     │ Build the application │
-├──────────┼───────┼───────────────────────┤
-│ start    │ —     │ Start the application │
-├──────────┼───────┼───────────────────────┤
-│ generate │ g     │ Generate components   │
-└──────────┴───────┴───────────────────────┘
+┌──────────┬───────┬──────────────────────────────────┐
+│ Command  │ Alias │ Description                      │
+├──────────┼───────┼──────────────────────────────────┤
+│ show     │ —     │ Display information              │
+├──────────┼───────┼──────────────────────────────────┤
+│ create   │ —     │ Create a new MeoCord application │
+├──────────┼───────┼──────────────────────────────────┤
+│ build    │ —     │ Build the application            │
+├──────────┼───────┼──────────────────────────────────┤
+│ start    │ —     │ Start the application            │
+├──────────┼───────┼──────────────────────────────────┤
+│ generate │ g     │ Generate components              │
+└──────────┴───────┴──────────────────────────────────┘
 ```
 
 ### Key Commands Overview
@@ -332,29 +365,6 @@ yarn meocord g --help
 ```
 
 This will provide command-specific help and options.
-
----
-
-### Key Components
-
-1. **Entry Point** (`src/main.ts`):
-    - The main application logic, where you initialize and run the app.
-
-2. **Application Configuration** (`src/app.ts`):
-    - Acts as the central configuration point, where controllers, services, client options, and other metadata are defined.
-    - Ties all modular components (controllers, specialized services, activities, etc.) together to define the core structure of the app.
-
-3. **Controllers** (`src/controllers`):
-    - Build feature-specific logic (e.g., context menus, message handling in bots).
-
-4. **Services** (`src/services`):
-    - Core business logic and reusable service definitions.
-
-5. **Guards** (`src/guards`):
-    - Middleware-like services for pre-execution logic (e.g., rate-limiting, authorization).
-
-6. **Assets** (`src/assets`):
-    - Fonts, images, and other static files for your application.
 
 ---
 
