@@ -220,7 +220,7 @@ export default {
   appName: 'DJS ChuTao',
   discordToken: process.env.TOKEN!,
   webpack: config => {
-    config.module.rules.push({
+    config.module.rules?.push({
       // Add your custom webpack rule
     })
 
