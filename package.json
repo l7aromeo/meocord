@@ -6,7 +6,9 @@
   "type": "commonjs",
   "scripts": {
     "build": "rm -rf ./dist && babel src --out-dir dist --extensions \".ts,.js\" && tsc && copyfiles -u 1 \"src/**/*.template\" dist",
-    "push": "yarn build && yarn npm publish"
+    "push": "yarn build && yarn npm publish",
+    "lint": "eslint --fix . && tsc",
+    "prepare": "husky"
   },
   "bin": "./dist/bin/meocord.js",
   "repository": {
@@ -73,6 +75,7 @@
     "eslint-plugin-prettier": "^5.2.3",
     "eslint-plugin-unused-imports": "^4.1.4",
     "globals": "^15.15.0",
+    "husky": "^9.1.7",
     "prettier": "^3.5.1",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.24.0"

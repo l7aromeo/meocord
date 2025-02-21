@@ -89,7 +89,7 @@ const javaScriptConfig = {
   },
   languageOptions,
   rules: {
-    ...eslintJs.configs.recommended,
+    ...eslintJs.configs.recommended.rules,
     ...importPlugin.configs.recommended.rules,
     'prettier/prettier': 'error',
     'unused-imports/no-unused-imports': 'error',
