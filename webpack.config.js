@@ -60,28 +60,25 @@ const baseConfig = (config = {}) => ({
   target: 'node',
   optimization: {
     ...config?.optimization,
-    minimize: config?.optimization?.minimize || true,
-    minimizer: [
-      ...(config?.optimization?.minimizer || []),
-      new TerserPlugin({
-        terserOptions: { keep_classnames: true },
-      }),
-    ],
+    minimize: config?.optimization?.minimize ?? true,
+    minimizer: Array.from(
+      new Set([
+        ...(config?.optimization?.minimizer || []),
+        new TerserPlugin({ terserOptions: { keep_classnames: true } }),
+      ]),
+    ),
   },
-  externals: [NodeExternals(), ...(config?.externals || [])],
+  externals: Array.from(new Set([NodeExternals(), ...(config?.externals || [])])),
   module: {
     ...config?.module,
-    rules: [...baseRules, ...(config?.module?.rules || [])],
+    rules: Array.from(new Set([...baseRules, ...(config?.module?.rules || [])])),
   },
   resolve: {
     ...config?.resolve,
-    extensions: ['.ts', '.js', ...(config?.resolve?.extensions || [])],
-    plugins: [
-      new TsconfigPathsPlugin({
-        configFile: tsConfigPath,
-      }),
-      ...(config?.resolve?.plugins || []),
-    ],
+    extensions: Array.from(new Set(['.ts', '.js', ...(config?.resolve?.extensions || [])])),
+    plugins: Array.from(
+      new Set([new TsconfigPathsPlugin({ configFile: tsConfigPath }), ...(config?.resolve?.plugins || [])]),
+    ),
   },
   output: {
     ...config?.output,
