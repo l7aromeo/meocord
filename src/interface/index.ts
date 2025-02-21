@@ -52,7 +52,7 @@ export interface ReactionHandlerOptions {
  * This interface extends the base Webpack Configuration and provides stricter type definitions
  * with additional required properties to ensure a complete and valid Webpack setup.
  */
-export interface MeoCordWebpackConfig extends Configuration {
+export interface MeoCordWebpackConfig extends Omit<Configuration, 'externals'> {
   /** Defines the mode of the Webpack build process (e.g., 'development' or 'production'). */
   mode: NonNullable<Configuration['mode']>
 
@@ -66,7 +66,7 @@ export interface MeoCordWebpackConfig extends Configuration {
    * Specifies external dependencies to exclude from the output bundle.
    * Can be used to exclude libraries from being bundled, like `node_modules`.
    */
-  externals: NonNullable<Configuration['externals']>
+  externals: Extract<NonNullable<Configuration['externals']>, any[]>
 
   /**
    * Rules and configurations for handling module files during the build process.
@@ -111,5 +111,5 @@ export interface MeoCordConfig {
    * @param config - A callback function to modify the existing Webpack configuration.
    * @returns A modified Webpack configuration or `undefined` if no customization is needed.
    */
-  webpack?: (config: MeoCordWebpackConfig) => Configuration | undefined
+  webpack?: (config: MeoCordWebpackConfig) => MeoCordWebpackConfig | undefined
 }
