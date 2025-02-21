@@ -17,7 +17,7 @@
  */
 
 import {
-  ActivityType,
+  ActivityOptions,
   CacheType,
   Client,
   Interaction,
@@ -37,12 +37,6 @@ import { ReactionHandlerAction } from '@src/enum/controller.enum'
 import { ReactionHandlerOptions } from '@src/interface'
 import { CommandMetadata } from '@src/interface/command-decorator.interface'
 
-export interface AppActivity {
-  name: string
-  type: ActivityType
-  url: string
-}
-
 export class MeoCordApp {
   static bot: Client
   private readonly logger = new Logger(MeoCordApp.name)
@@ -54,7 +48,7 @@ export class MeoCordApp {
     private readonly controllers: any[],
     private readonly discordClient: Client,
     private discordToken: string,
-    private activities?: AppActivity[],
+    private activities?: ActivityOptions[],
   ) {
     this.bot = this.discordClient
     process.on('SIGINT', () => this.gracefulShutdown())

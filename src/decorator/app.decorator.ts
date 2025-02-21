@@ -18,8 +18,8 @@
 
 import 'reflect-metadata'
 import { Container, injectable, interfaces } from 'inversify'
-import { Client, ClientOptions } from 'discord.js'
-import { MeoCordApp, AppActivity } from '@src/core/meocord.app'
+import { ActivityOptions, Client, ClientOptions } from 'discord.js'
+import { MeoCordApp } from '@src/core/meocord.app'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util'
 
 type ServiceIdentifier = interfaces.ServiceIdentifier
@@ -93,7 +93,7 @@ export const mainContainer = new Container()
 export function MeoCord(options: {
   controllers: ServiceIdentifier[]
   clientOptions: ClientOptions
-  activities?: AppActivity[]
+  activities?: ActivityOptions[]
   services?: ServiceIdentifier[]
 }): (target: any) => void {
   return (target: any): void => {
