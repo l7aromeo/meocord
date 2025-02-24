@@ -62,7 +62,75 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 
 ## Getting Started
 
-To begin building your application with **MeoCord**, follow these steps:
+### ⚠️ ESM-Only Framework
+
+Starting from this version, **MeoCord** is built as an **ECMAScript Module (ESM)** framework. This means:
+
+- New projects generated with the `meocord create` CLI are already configured for ESM, so no additional setup is required.
+- **If you are migrating an existing CommonJS-based project**:
+    1. Add `"type": "module"` to your `package.json`:
+       ```json
+       {
+         "name": "your-project",
+         "version": "1.0.0",
+         "type": "module",
+         "dependencies": {
+           "meocord": "^x.x.x"
+         }
+       }
+       ```
+
+    2. Update your codebase to use `import` statements instead of `require()`:
+       ```javascript
+       // Before (CommonJS)
+       const Package = require('any-package');
+
+       // After (ESM)
+       import Package from 'any-package';
+       ```
+
+    3. Update your `tsconfig.json` file to ensure compatibility with ESM:
+       ```json
+       {
+         "compilerOptions": {
+           "module": "ESNext",
+           "target": "ESNext",
+           "moduleResolution": "Bundler",
+           "strict": true,
+           "esModuleInterop": true,
+           "declaration": true,
+           "emitDecoratorMetadata": true,
+           "experimentalDecorators": true,
+           "resolveJsonModule": true,
+           "allowSyntheticDefaultImports": true,
+           "outDir": "./dist",
+           "baseUrl": "./",
+           "rootDir": "./src",
+           "paths": {
+             "@src/*": ["./src/*"]
+           },
+           "skipLibCheck": true,
+           "forceConsistentCasingInFileNames": true
+         },
+         "include": ["src/**/*.ts"],
+         "exclude": [
+           "meocord.config.ts",
+           "dist",
+           "jest.config.ts",
+           "node_modules"
+         ]
+       }
+       ```
+
+    4. Rename files to use `.mjs` if necessary, or adapt them to ESM-compatible `.js` while ensuring that `"type": "module"` is set in your `package.json`.
+
+For more migration details, refer to the [Node.js ESM documentation](https://nodejs.org/api/esm.html).
+
+---
+
+### Steps to Build Your Application
+
+Follow these steps to build and run a **MeoCord** application:
 
 ---
 
