@@ -1,4 +1,4 @@
-/*
+/**
  * MeoCord Framework
  * Copyright (C) 2025 Ukasyah Rahmatullah Zada
  *
