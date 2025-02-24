@@ -18,7 +18,7 @@
 
 import { injectable } from 'inversify'
 import 'reflect-metadata'
-import { mainContainer } from '@src/decorator'
+import { mainContainer } from '@src/decorator/index.js'
 import {
   ButtonInteraction,
   ChatInputCommandInteraction,
@@ -33,14 +33,14 @@ import {
   SlashCommandSubcommandsOnlyBuilder,
   StringSelectMenuInteraction,
 } from 'discord.js'
-import { CommandType } from '@src/enum'
-import { ReactionHandlerOptions } from '@src/interface'
+import { CommandType } from '@src/enum/index.js'
+import { ReactionHandlerOptions } from '@src/interface/index.js'
 import {
   CommandBuilderBase,
   CommandBuilderConstructor,
   CommandInteractionType,
   CommandMetadata,
-} from '@src/interface/command-decorator.interface'
+} from '@src/interface/command-decorator.interface.js'
 
 const COMMAND_METADATA_KEY = Symbol('commands')
 const MESSAGE_HANDLER_METADATA_KEY = Symbol('message_handlers')

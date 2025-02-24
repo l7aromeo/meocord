@@ -31,7 +31,7 @@ const languageOptions = {
     ...globals.jest,
   },
   ecmaVersion: 2023,
-  sourceType: 'commonjs',
+  sourceType: 'module',
   parserOptions: {
     project: './tsconfig.json',
   },

@@ -18,9 +18,9 @@
 
 import 'reflect-metadata'
 import { injectable } from 'inversify'
-import { mainContainer } from '@src/decorator'
+import { mainContainer } from '@src/decorator/index.js'
 import { BaseInteraction, Interaction } from 'discord.js'
-import { GuardInterface } from '@src/interface'
+import { GuardInterface } from '@src/interface/index.js'
 
 /**
  * `@Guard()` decorator to mark a class as a Guard that later can be added on `@UseGuard` decorator.

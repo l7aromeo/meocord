@@ -16,12 +16,16 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import * as path from 'path'
-import { execSync } from 'child_process'
-import { findModulePackageDir } from '@src/util/common.util'
+import path from 'path'
+import { findModulePackageDir } from '@src/util/common.util.js'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
-import { MeoCordConfig } from '@src/interface'
-import { fixJSON } from '@src/util/json.util'
+import { MeoCordConfig } from '@src/interface/index.js'
+import { fixJSON } from '@src/util/json.util.js'
+import { createRequire } from 'module'
+import webpack, { Configuration } from 'webpack'
+import NodeExternals from 'webpack-node-externals'
+import TsconfigPathsPlugin from 'tsconfig-paths-webpack-plugin'
+const require = createRequire(import.meta.url)
 
 const tempOutputDir = path.resolve(process.cwd(), 'dist', '.meocord-temp')
 
@@ -31,7 +35,7 @@ const tempOutputDir = path.resolve(process.cwd(), 'dist', '.meocord-temp')
  *
  * @returns {boolean} Whether the TypeScript compilation was successful.
  */
-export function compileMeoCordConfig(): boolean {
+export async function compileMeoCordConfig(): Promise<boolean> {
   const meocordModulePath = findModulePackageDir('meocord')
   if (!meocordModulePath) return false
 
@@ -64,9 +68,6 @@ export function compileMeoCordConfig(): boolean {
       target: 'ESNext',
       moduleResolution: 'NodeNext',
       esModuleInterop: true,
-      declaration: true,
-      emitDecoratorMetadata: true,
-      experimentalDecorators: true,
       resolveJsonModule: true,
       allowSyntheticDefaultImports: true,
       sourceMap: false,
@@ -97,12 +98,66 @@ export function compileMeoCordConfig(): boolean {
     mkdirSync(tempOutputDir, { recursive: true })
   }
 
+  const webpackConfig: Configuration = {
+    mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
+    entry: 'meocord.config.ts',
+    target: 'node',
+    externals: NodeExternals({ importType: 'module' }),
+    experiments: {
+      outputModule: true,
+    },
+    module: {
+      rules: [
+        {
+          test: /\.ts$/,
+          use: {
+            loader: 'ts-loader',
+            options: {
+              configFile: buildTsConfigTempPath,
+            },
+          },
+          exclude: /node_modules/,
+        },
+      ],
+    },
+    resolve: {
+      plugins: [new TsconfigPathsPlugin({ configFile: buildTsConfigTempPath })],
+      extensions: ['.ts', '.js'],
+    },
+    output: {
+      filename: 'meocord.config.js',
+      path: tempOutputDir,
+      publicPath: tempOutputDir,
+      library: {
+        type: 'module',
+      },
+    },
+  }
+
+  const compiler = webpack(webpackConfig)
+
   try {
-    // Run TypeScript build and alias transformation
-    execSync(`npx -y tsc -p "${buildTsConfigTempPath}" && npx -y tsc-alias -p "${buildTsConfigTempPath}"`, {
-      stdio: 'inherit',
+    return await new Promise<boolean>((resolve, reject) => {
+      compiler.run((err, stats) => {
+        if (err) {
+          console.error(`Build encountered an error: ${err.message}`)
+          return reject(`Build encountered an error: ${err.message}`)
+        }
+
+        if (stats?.hasErrors()) {
+          console.error('Build failed due to errors in the compilation process:', stats.compilation.errors)
+          return reject(`Build encountered an error: ${stats.compilation.errors}`)
+        }
+
+        compiler.close(closeErr => {
+          if (closeErr) {
+            console.error(`Error occurred while closing the compiler: ${closeErr.message}`)
+            return reject(`Error occurred while closing the compiler: ${closeErr.message}`)
+          }
+          resolve(true)
+        })
+      })
     })
-    return true
   } catch (error) {
     if (error instanceof Error) {
       console.error(`[MeoCord] Failed to transpile config: ${error.message}`)
@@ -111,7 +166,7 @@ export function compileMeoCordConfig(): boolean {
     }
     return false
   } finally {
-    rmSync(buildTsConfigTempPath)
+    rmSync(buildTsConfigTempPath, { force: true })
   }
 }
 
@@ -129,7 +184,6 @@ export function loadMeoCordConfig(): MeoCordConfig | undefined {
 
   if (existsSync(tempConfigFilePath)) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports,@typescript-eslint/no-var-requires
       return require(tempConfigFilePath).default as MeoCordConfig
     } catch (error) {
       if (error instanceof Error) {

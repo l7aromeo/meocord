@@ -18,7 +18,7 @@
 
 import { BaseInteraction, PartialUser, User } from 'discord.js'
 import { Configuration } from 'webpack'
-import { ReactionHandlerAction } from '@src/enum/controller.enum'
+import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 
 /**
  * Interface for Guard classes.

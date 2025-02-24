@@ -5,11 +5,11 @@
  */
 import { Argument, Command, Help, Option } from 'commander'
 import CliTable3 from 'cli-table3'
-import { findModulePackageDir } from '@src/util/common.util'
+import { findModulePackageDir } from '@src/util/common.util.js'
 import path from 'node:path'
 import fs from 'node:fs'
-import wait from '@src/util/wait.util'
-import chalk from '@src/lib/chalk'
+import wait from '@src/util/wait.util.js'
+import chalk from 'chalk'
 
 export function configureCommandHelp(command: Command) {
   command.configureHelp({

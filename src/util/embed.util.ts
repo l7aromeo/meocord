@@ -17,7 +17,7 @@
  */
 
 import { EmbedBuilder } from 'discord.js'
-import { Theme } from '@src/common'
+import { Theme } from '@src/common/index.js'
 
 export const createErrorEmbed = (description: string) => {
   const embed = new EmbedBuilder()

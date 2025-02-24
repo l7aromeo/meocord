@@ -17,13 +17,13 @@
  */
 
 import path from 'path'
-import { Logger } from '@src/common/logger'
+import { Logger } from '@src/common/index.js'
 import {
   buildTemplate,
   createDirectoryIfNotExists,
   generateFile,
   validateAndFormatName,
-} from '@src/util/generator-cli.util'
+} from '@src/util/generator-cli.util.js'
 
 export class GuardGeneratorHelper {
   private readonly logger: Logger

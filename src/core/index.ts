@@ -16,5 +16,5 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export { MeoCordApp } from '@src/core/meocord.app'
-export { MeoCordFactory } from '@src/core/meocord-factory'
+export { MeoCordApp } from '@src/core/meocord.app.js'
+export { MeoCordFactory } from '@src/core/meocord-factory.js'

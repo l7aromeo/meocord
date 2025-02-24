@@ -17,13 +17,17 @@
  */
 
 import path from 'path'
-import { ControllerType } from '@src/enum/controller.enum'
+import { ControllerType } from '@src/enum/controller.enum.js'
 import {
   createDirectoryIfNotExists,
   generateFile,
   populateTemplate,
   validateAndFormatName,
-} from '@src/util/generator-cli.util'
+} from '@src/util/generator-cli.util.js'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 export class ControllerGeneratorHelper {
   /**

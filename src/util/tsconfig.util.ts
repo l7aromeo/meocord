@@ -18,9 +18,9 @@
 
 import path from 'path'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
-import { Logger } from '@src/common'
+import { Logger } from '@src/common/index.js'
 import { tmpdir } from 'os'
-import { fixJSON } from '@src/util/json.util'
+import { fixJSON } from '@src/util/json.util.js'
 
 const logger = new Logger()
 

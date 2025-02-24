@@ -2,9 +2,9 @@
   "compilerOptions": {
     "tsBuildInfoFile": null,
     "strict": true,
-    "module": "NodeNext",
+    "module": "ESNext",
     "target": "ESNext",
-    "moduleResolution": "NodeNext",
+    "moduleResolution": "Bundler",
     "esModuleInterop": true,
     "declaration": true,
     "emitDeclarationOnly": true,
@@ -25,6 +25,11 @@
     "noImplicitAny": false,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["webpack.config.js", "node_modules"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "webpack.config.js",
+    "node_modules"
+  ]
 }

@@ -1,9 +1,9 @@
 import { inspect } from 'node:util'
 import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc'
-import timezone from 'dayjs/plugin/timezone'
-import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util'
-import chalk from '@src/lib/chalk'
+import utc from 'dayjs/plugin/utc.js'
+import timezone from 'dayjs/plugin/timezone.js'
+import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
+import chalk from 'chalk'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)

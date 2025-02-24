@@ -18,9 +18,9 @@
 
 import fs from 'fs'
 import path from 'path'
-import { compileMeoCordConfig, loadMeoCordConfig } from '@src/util/meocord-config-loader.util'
-import wait from '@src/util/wait.util'
-import chalk from '@src/lib/chalk'
+import { compileMeoCordConfig, loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
+import wait from '@src/util/wait.util.js'
+import chalk from 'chalk'
 
 /**
  * Finds the package directory for the given module name
@@ -72,7 +72,7 @@ export async function compileAndValidateConfig() {
     process.exit(1)
   }
 
-  compileMeoCordConfig()
+  await compileMeoCordConfig()
   const meocordConfig = loadMeoCordConfig()
   if (!meocordConfig?.discordToken) {
     console.error(chalk.red('Discord token is missing!'))

@@ -16,19 +16,25 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-const path = require('path')
-const NodeExternals = require('webpack-node-externals')
-const TsconfigPathsPlugin = require('tsconfig-paths-webpack-plugin')
-const TerserPlugin = require('terser-webpack-plugin')
-const { loadMeoCordConfig } = require(path.resolve(__dirname, 'dist/util/meocord-config-loader.util'))
+import path from 'path'
+import NodeExternals from 'webpack-node-externals'
+import TsconfigPathsPlugin from 'tsconfig-paths-webpack-plugin'
+import TerserPlugin from 'terser-webpack-plugin'
+import { loadMeoCordConfig } from './dist/util/meocord-config-loader.util.js'
+import { prepareModifiedTsConfig } from './dist/util/tsconfig.util.js'
+
 const meocordConfig = loadMeoCordConfig()
-const { prepareModifiedTsConfig } = require(path.resolve(__dirname, 'dist/util/tsconfig.util'))
 const tsConfigPath = prepareModifiedTsConfig()
 
 const baseRules = [
   {
     test: /\.ts$/,
-    use: 'ts-loader',
+    use: {
+      loader: 'ts-loader',
+      options: {
+        configFile: tsConfigPath,
+      },
+    },
     exclude: /node_modules/,
   },
   {
@@ -68,26 +74,32 @@ const baseConfig = (config = {}) => ({
       ]),
     ),
   },
-  externals: Array.from(new Set([NodeExternals(), ...(config?.externals || [])])),
+  externals: Array.from(new Set([NodeExternals({ importType: 'module' }), ...(config?.externals || [])])),
   module: {
     ...config?.module,
     rules: Array.from(new Set([...baseRules, ...(config?.module?.rules || [])])),
   },
   resolve: {
     ...config?.resolve,
-    extensions: Array.from(new Set(['.ts', '.js', ...(config?.resolve?.extensions || [])])),
     plugins: Array.from(
       new Set([new TsconfigPathsPlugin({ configFile: tsConfigPath }), ...(config?.resolve?.plugins || [])]),
     ),
+    extensions: Array.from(new Set(['.ts', '.js', ...(config?.resolve?.extensions || [])])),
   },
   output: {
     ...config?.output,
     filename: 'main.js',
     path: path.resolve(process.cwd(), 'dist'),
     publicPath: 'dist/',
+    library: {
+      type: 'module',
+    },
+  },
+  experiments: {
+    outputModule: true,
   },
   stats: config?.stats || 'errors-only',
 })
 
 const userConfig = meocordConfig?.webpack?.(baseConfig())
-module.exports = baseConfig(userConfig)
+export default baseConfig(userConfig)

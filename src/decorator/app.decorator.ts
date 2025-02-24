@@ -19,8 +19,8 @@
 import 'reflect-metadata'
 import { Container, injectable, interfaces } from 'inversify'
 import { ActivityOptions, Client, ClientOptions } from 'discord.js'
-import { MeoCordApp } from '@src/core/meocord.app'
-import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util'
+import { MeoCordApp } from '@src/core/meocord.app.js'
+import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
 
 type ServiceIdentifier = interfaces.ServiceIdentifier
 

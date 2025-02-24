@@ -27,15 +27,15 @@ import {
   PartialMessageReaction,
   SlashCommandBuilder,
 } from 'discord.js'
-import { Logger } from '@src/common'
-import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator'
-import { sample, size } from 'lodash'
-import { EmbedUtil } from '@src/util'
-import wait from '@src/util/wait.util'
-import { CommandType } from '@src/enum'
-import { ReactionHandlerAction } from '@src/enum/controller.enum'
-import { ReactionHandlerOptions } from '@src/interface'
-import { CommandMetadata } from '@src/interface/command-decorator.interface'
+import { Logger } from '@src/common/index.js'
+import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator/index.js'
+import { sample, size } from 'lodash-es'
+import { EmbedUtil } from '@src/util/index.js'
+import wait from '@src/util/wait.util.js'
+import { CommandType } from '@src/enum/index.js'
+import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
+import { ReactionHandlerOptions } from '@src/interface/index.js'
+import { CommandMetadata } from '@src/interface/command-decorator.interface.js'
 
 export class MeoCordApp {
   static bot: Client

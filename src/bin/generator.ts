@@ -17,12 +17,12 @@
  */
 
 import { Argument, Command } from 'commander'
-import { ControllerType } from '@src/enum/controller.enum'
-import { ControllerGeneratorHelper } from '@src/bin/helper/controller-generator.helper'
-import { Logger } from '@src/common'
-import { ServiceGeneratorHelper } from '@src/bin/helper/service-generator.helper'
-import { GuardGeneratorHelper } from '@src/bin/helper/guard-generator.helper'
-import wait from '@src/util/wait.util'
+import { ControllerType } from '@src/enum/controller.enum.js'
+import { ControllerGeneratorHelper } from '@src/bin/helper/controller-generator.helper.js'
+import { Logger } from '@src/common/index.js'
+import { ServiceGeneratorHelper } from '@src/bin/helper/service-generator.helper.js'
+import { GuardGeneratorHelper } from '@src/bin/helper/guard-generator.helper.js'
+import wait from '@src/util/wait.util.js'
 
 export class GeneratorCLI {
   private logger: Logger

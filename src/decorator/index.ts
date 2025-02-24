@@ -16,8 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export * from './service.decorator'
-export * from './command-builder.decorator'
-export * from './controller.decorator'
-export * from './guard.decorator'
-export * from './app.decorator'
+export * from './service.decorator.js'
+export * from './command-builder.decorator.js'
+export * from './controller.decorator.js'
+export * from './guard.decorator.js'
+export * from './app.decorator.js'

@@ -16,11 +16,15 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import _ from 'lodash'
 import fs from 'fs'
 import path from 'path'
 import { exec } from 'child_process'
-import { Logger } from '@src/common'
+import { Logger } from '@src/common/index.js'
+import { camelCase, kebabCase, startCase } from 'lodash-es'
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 const logger = new Logger('MeoCord')
 
@@ -31,7 +35,7 @@ const logger = new Logger('MeoCord')
  * @throws Will exit the process if the generated class name is invalid.
  */
 export function toClassName(originalName: string): string {
-  const className = _.startCase(_.camelCase(originalName)).replace(/\s/g, '')
+  const className = startCase(camelCase(originalName)).replace(/\s/g, '')
 
   const classNameRegex = /^[A-Z][A-Za-z0-9]*$/
   if (!classNameRegex.test(className)) {
@@ -67,7 +71,7 @@ export function validateAndFormatName(originalName?: string): {
     process.exit(1)
   }
 
-  const kebabCaseName = _.kebabCase(fileName)
+  const kebabCaseName = kebabCase(fileName)
   const className = toClassName(fileName)
 
   return { parts, kebabCaseName, className }

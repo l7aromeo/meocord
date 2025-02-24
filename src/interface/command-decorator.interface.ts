@@ -9,7 +9,7 @@ import {
   StringSelectMenuInteraction,
   UserContextMenuCommandInteraction,
 } from 'discord.js'
-import { CommandType } from '@src/enum'
+import { CommandType } from '@src/enum/index.js'
 
 /**
  * Base interface for a command builder.

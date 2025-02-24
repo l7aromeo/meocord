@@ -18,23 +18,26 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import './generator'
-import * as path from 'node:path'
+import path from 'path'
 import webpack from 'webpack'
-import { Logger } from '@src/common'
+import { Logger } from '@src/common/index.js'
 import { spawn, ChildProcess } from 'node:child_process'
-import { capitalize } from 'lodash'
-import wait from '@src/util/wait.util'
-import { GeneratorCLI } from '@src/bin/generator'
+import { capitalize } from 'lodash-es'
+import wait from '@src/util/wait.util.js'
+import { GeneratorCLI } from '@src/bin/generator.js'
 import * as fs from 'node:fs'
-import { compileAndValidateConfig, setEnvironment } from '@src/util/common.util'
+import { compileAndValidateConfig, setEnvironment } from '@src/util/common.util.js'
 import { Command } from 'commander'
-import { compileMeoCordConfig } from '@src/util/meocord-config-loader.util'
-import simpleGit from 'simple-git'
-import chalk from '@src/lib/chalk'
+import { compileMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
+import { simpleGit } from 'simple-git'
+import chalk from 'chalk'
 import { execSync } from 'child_process'
-import { configureCommandHelp, ensureReady } from '@src/util/meocord-cli.util'
-import packageJson from '../../package.json'
+import { configureCommandHelp, ensureReady } from '@src/util/meocord-cli.util.js'
+import packageJson from '../../package.json' with { type: 'json' }
+import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 /**
  * A Command Line Interface (CLI) for managing the MeoCord application.
@@ -292,7 +295,7 @@ For full license details, refer to:
               nodemonProcess = null
             }
             await new Promise(resolve => compiler.close(resolve))
-            compileMeoCordConfig()
+            await compileMeoCordConfig()
             watch()
           }
         }, 300)
