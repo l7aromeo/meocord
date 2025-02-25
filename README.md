@@ -97,20 +97,21 @@ Starting from this version, **MeoCord** is built as an **ECMAScript Module (ESM)
            "target": "ESNext",
            "moduleResolution": "Bundler",
            "strict": true,
-           "esModuleInterop": true,
            "declaration": true,
            "emitDecoratorMetadata": true,
            "experimentalDecorators": true,
            "resolveJsonModule": true,
-           "allowSyntheticDefaultImports": true,
+           "verbatimModuleSyntax": true,
+           "noUnusedLocals": true,
+           "noUnusedParameters": true,
+           "skipLibCheck": true,
+           "noImplicitAny": false,
            "outDir": "./dist",
            "baseUrl": "./",
            "rootDir": "./src",
            "paths": {
              "@src/*": ["./src/*"]
-           },
-           "skipLibCheck": true,
-           "forceConsistentCasingInFileNames": true
+           }
          },
          "include": ["src/**/*.ts"],
          "exclude": [
@@ -149,7 +150,7 @@ npx meocord create <your-app-name>
 Edit `meocord.config.ts` to add required discord token:
 
 ```typescript
-import { MeoCordConfig } from 'meocord/interface'
+import { type MeoCordConfig } from 'meocord/interface'
 
 export default {
   appName: 'DJS ChuTao',
