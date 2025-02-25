@@ -1,18 +1,18 @@
 {
   "compilerOptions": {
-    "tsBuildInfoFile": null,
-    "strict": true,
-    "module": "ESNext",
+    "module": "NodeNext",
     "target": "ESNext",
-    "moduleResolution": "Bundler",
-    "esModuleInterop": true,
+    "moduleResolution": "NodeNext",
+    "strict": true,
     "declaration": true,
-    "emitDeclarationOnly": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "resolveJsonModule": true,
-    "allowSyntheticDefaultImports": true,
-    "sourceMap": false,
+    "verbatimModuleSyntax": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true,
+    "noImplicitAny": false,
     "outDir": "./dist",
     "baseUrl": ".",
     "rootDir": "./src",
@@ -20,10 +20,7 @@
       "@src/*": [
         "./src/*"
       ]
-    },
-    "skipLibCheck": true,
-    "noImplicitAny": false,
-    "forceConsistentCasingInFileNames": true
+    }
   },
   "include": [
     "src/**/*"

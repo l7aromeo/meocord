@@ -16,8 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { BaseInteraction, PartialUser, User } from 'discord.js'
-import { Configuration } from 'webpack'
+import { BaseInteraction, type PartialUser, User } from 'discord.js'
+import { type Configuration } from 'webpack'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 
 /**

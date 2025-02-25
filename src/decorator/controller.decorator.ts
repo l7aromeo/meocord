@@ -27,19 +27,19 @@ import {
   Message,
   MessageReaction,
   ModalSubmitInteraction,
-  OmitPartialGroupDMChannel,
-  PartialMessageReaction,
+  type OmitPartialGroupDMChannel,
+  type PartialMessageReaction,
   SlashCommandBuilder,
-  SlashCommandSubcommandsOnlyBuilder,
+  type SlashCommandSubcommandsOnlyBuilder,
   StringSelectMenuInteraction,
 } from 'discord.js'
 import { CommandType } from '@src/enum/index.js'
-import { ReactionHandlerOptions } from '@src/interface/index.js'
+import { type ReactionHandlerOptions } from '@src/interface/index.js'
 import {
-  CommandBuilderBase,
-  CommandBuilderConstructor,
-  CommandInteractionType,
-  CommandMetadata,
+  type CommandBuilderBase,
+  type CommandBuilderConstructor,
+  type CommandInteractionType,
+  type CommandMetadata,
 } from '@src/interface/command-decorator.interface.js'
 
 const COMMAND_METADATA_KEY = Symbol('commands')
@@ -67,7 +67,7 @@ const REACTION_HANDLER_METADATA_KEY = Symbol('reaction_handlers')
 export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boolean>>, R extends void | Promise<void>>(
   keyword?: string,
 ) {
-  return function (target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(message: T) => R>) {
+  return function (target: object, propertyKey: string, _descriptor: TypedPropertyDescriptor<(message: T) => R>) {
     const handlers = Reflect.getMetadata(MESSAGE_HANDLER_METADATA_KEY, target) || []
     handlers.push({ keyword, method: propertyKey.toString() })
     Reflect.defineMetadata(MESSAGE_HANDLER_METADATA_KEY, handlers, target)
@@ -98,7 +98,7 @@ export function ReactionHandler<T extends MessageReaction | PartialMessageReacti
   return function (
     target: object,
     propertyKey: string,
-    descriptor:
+    _descriptor:
       | TypedPropertyDescriptor<(reaction: T, options: ReactionHandlerOptions) => R>
       | TypedPropertyDescriptor<(reaction: T) => R>,
   ) {
@@ -179,17 +179,17 @@ export function Command<
   return function <P extends Record<string, any>, R extends Promise<void> | void>(
     target: object,
     propertyKey: string,
-    descriptor:
+    _descriptor:
       | TypedPropertyDescriptor<(interaction: CommandInteractionType<CBC, T>, params: P) => R>
       | TypedPropertyDescriptor<(interaction: CommandInteractionType<CBC, T>) => R>,
   ) {
-    const originalMethod = descriptor.value
+    const originalMethod = _descriptor.value
     if (!originalMethod) {
       throw new Error(`Missing implementation for method ${propertyKey}`)
     }
 
     // Replace the original method with a decorator wrapper
-    descriptor.value = function (interaction, params) {
+    _descriptor.value = function (interaction, params) {
       // Apply the original method implementation
       const expectedInteraction =
         (commandType === CommandType.BUTTON && interaction instanceof ButtonInteraction) ||

@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { ColorResolvable } from 'discord.js'
+import { type ColorResolvable } from 'discord.js'
 
 export class Theme {
   static successColor: ColorResolvable = '#28A745'

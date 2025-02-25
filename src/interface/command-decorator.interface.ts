@@ -23,9 +23,9 @@ import {
   MessageContextMenuCommandInteraction,
   ModalSubmitInteraction,
   SlashCommandBuilder,
-  SlashCommandSubcommandsOnlyBuilder,
   StringSelectMenuInteraction,
   UserContextMenuCommandInteraction,
+  type SlashCommandSubcommandsOnlyBuilder,
 } from 'discord.js'
 import { CommandType } from '@src/enum/index.js'
 

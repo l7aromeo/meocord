@@ -19,8 +19,8 @@
 import 'reflect-metadata'
 import { injectable } from 'inversify'
 import { mainContainer } from '@src/decorator/index.js'
-import { BaseInteraction, Interaction } from 'discord.js'
-import { GuardInterface } from '@src/interface/index.js'
+import { BaseInteraction, type Interaction } from 'discord.js'
+import { type GuardInterface } from '@src/interface/index.js'
 
 /**
  * `@Guard()` decorator to mark a class as a Guard that later can be added on `@UseGuard` decorator.
@@ -123,11 +123,11 @@ function isGuardWithParams(guard: any): guard is GuardWithParams {
  * ```
  */
 export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | GuardWithParams)[]): MethodDecorator {
-  return function (target: any, propertyKey: string | symbol, descriptor: PropertyDescriptor) {
-    const originalMethod = descriptor.value
+  return function (target: any, propertyKey: string | symbol, _descriptor: PropertyDescriptor) {
+    const originalMethod = _descriptor.value
 
     // TypeScript: Enforce that the first argument is an Interaction
-    descriptor.value = async function (...args: [Interaction, ...any[]]) {
+    _descriptor.value = async function (...args: [Interaction, ...any[]]) {
       // Ensure the first argument is an instance of Interaction
       if (!(args[0] instanceof BaseInteraction)) {
         throw new Error(`The first argument of ${String(propertyKey)} must be an instance of Interaction.`)

@@ -17,14 +17,14 @@
  */
 
 import {
-  ActivityOptions,
-  CacheType,
+  type ActivityOptions,
+  type CacheType,
   Client,
-  Interaction,
+  type Interaction,
   Message,
   MessageFlagsBitField,
   MessageReaction,
-  PartialMessageReaction,
+  type PartialMessageReaction,
   SlashCommandBuilder,
 } from 'discord.js'
 import { Logger } from '@src/common/index.js'
@@ -34,8 +34,8 @@ import { EmbedUtil } from '@src/util/index.js'
 import wait from '@src/util/wait.util.js'
 import { CommandType } from '@src/enum/index.js'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
-import { ReactionHandlerOptions } from '@src/interface/index.js'
-import { CommandMetadata } from '@src/interface/command-decorator.interface.js'
+import { type ReactionHandlerOptions } from '@src/interface/index.js'
+import { type CommandMetadata } from '@src/interface/command-decorator.interface.js'
 
 export class MeoCordApp {
   static bot: Client

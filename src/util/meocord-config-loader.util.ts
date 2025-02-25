@@ -19,12 +19,12 @@
 import path from 'path'
 import { findModulePackageDir } from '@src/util/common.util.js'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
-import { MeoCordConfig } from '@src/interface/index.js'
+import { type MeoCordConfig } from '@src/interface/index.js'
 import { fixJSON } from '@src/util/json.util.js'
 import { createRequire } from 'module'
-import webpack, { Configuration } from 'webpack'
+import webpack, { type Configuration } from 'webpack'
 import NodeExternals from 'webpack-node-externals'
-import TsconfigPathsPlugin from 'tsconfig-paths-webpack-plugin'
+import { TsconfigPathsPlugin } from 'tsconfig-paths-webpack-plugin'
 const require = createRequire(import.meta.url)
 
 const tempOutputDir = path.resolve(process.cwd(), 'dist', '.meocord-temp')
