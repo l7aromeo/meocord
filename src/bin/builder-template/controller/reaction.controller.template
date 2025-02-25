@@ -2,7 +2,7 @@ import { MessageReaction, User } from 'discord.js'
 import { Controller, ReactionHandler } from 'meocord/decorator'
 import { Logger } from 'meocord/common'
 import { CommandType, ReactionHandlerAction } from 'meocord/enum'
-import { ReactionHandlerOptions } from 'meocord/interface'
+import { type ReactionHandlerOptions } from 'meocord/interface'
 
 @Controller()
 export class {{className}}ReactionController {
