@@ -146,7 +146,7 @@ function createRegexFromPattern(pattern: string): { regex: RegExp; params: strin
       throw new Error(`Invalid parameter name: ${param}. Parameter names must be alphanumeric.`)
     }
     params.push(param)
-    return `(?<${param}>\\d+)` // Adjust as needed for matching specific patterns
+    return `(?<${param}>\\d+)`
   })
 
   const regex = new RegExp(`^${regexPattern}$`)
