@@ -64,7 +64,7 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 
 ### ⚠️ ESM-Only Framework
 
-Starting from this version, **MeoCord** is built as an **ECMAScript Module (ESM)** framework. This means:
+**MeoCord** is built as an **ECMAScript Module (ESM)** framework. This means:
 
 - New projects generated with the `meocord create` CLI are already configured for ESM, so no additional setup is required.
 - **If you are migrating an existing CommonJS-based project**:
@@ -80,7 +80,8 @@ Starting from this version, **MeoCord** is built as an **ECMAScript Module (ESM)
        }
        ```
 
-    2. Update your codebase to use `import` statements instead of `require()`:
+    2. If your codebase uses `require()` statements, replace them with `import` statements to ensure compatibility with
+       ESM:
        ```javascript
        // Before (CommonJS)
        const Package = require('any-package');
