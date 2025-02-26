@@ -137,11 +137,11 @@ export function getMessageHandlers(controller: any): { keyword: string | undefin
 function createRegexFromPattern(pattern: string): { regex: RegExp; params: string[] } {
   const params: string[] = []
 
-  // Escape special characters outside placeholders
-  const escapedPattern = pattern.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')
+  // Escape special characters except for {} and -
+  const escapedPattern = pattern.replace(/[/\\^$*+?.()|[\]]/g, '\\$&') // Removed hyphen `-` from this list
 
   // Replace placeholders with named capturing groups
-  const regexPattern = escapedPattern.replace(/\\{(\w+)\\}/g, (_, param) => {
+  const regexPattern = escapedPattern.replace(/\{(\w+)\}/g, (_, param) => {
     if (!/^\w+$/.test(param)) {
       throw new Error(`Invalid parameter name: ${param}. Parameter names must be alphanumeric.`)
     }
@@ -149,6 +149,7 @@ function createRegexFromPattern(pattern: string): { regex: RegExp; params: strin
     return `(?<${param}>\\d+)`
   })
 
+  // Construct the final regex
   const regex = new RegExp(`^${regexPattern}$`)
   return { regex, params }
 }
