@@ -5,6 +5,7 @@
     "moduleResolution": "NodeNext",
     "strict": true,
     "declaration": true,
+    "emitDeclarationOnly": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "resolveJsonModule": true,
