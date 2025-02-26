@@ -141,7 +141,7 @@ function createRegexFromPattern(pattern: string): { regex: RegExp; params: strin
   const escapedPattern = pattern.replace(/[/\\^$*+?.()|[\]]/g, '\\$&') // Removed hyphen `-` from this list
 
   // Replace placeholders with named capturing groups
-  const regexPattern = escapedPattern.replace(/\{(\w+)\}/g, (_, param) => {
+  const regexPattern = escapedPattern.replace(/\{(\w+)}/g, (_, param) => {
     if (!/^\w+$/.test(param)) {
       throw new Error(`Invalid parameter name: ${param}. Parameter names must be alphanumeric.`)
     }
