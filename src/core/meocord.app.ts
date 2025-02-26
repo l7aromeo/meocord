@@ -28,7 +28,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js'
 import { Logger } from '@src/common/index.js'
-import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator/index.js'
+import { getCommandMap, getMessageHandlers, getReactionHandlers, mainContainer } from '@src/decorator/index.js'
 import { sample, size } from 'lodash-es'
 import { EmbedUtil } from '@src/util/index.js'
 import wait from '@src/util/wait.util.js'
@@ -131,35 +131,35 @@ export class MeoCordApp {
   private async handleInteraction(interaction: Interaction<CacheType>) {
     for (const controller of this.controllers) {
       // Check if the controller instance is already cached
-      let controllerInstance = this.controllerInstancesCache.get(controller.constructor)
+      let controllerInstance = this.controllerInstancesCache.get(controller)
       if (!controllerInstance) {
-        const container = Reflect.getMetadata('inversify:container', controller.constructor)
-        controllerInstance = container.resolve(controller.constructor)
-        this.controllerInstancesCache.set(controller.constructor, controllerInstance)
+        controllerInstance = mainContainer.get(controller.constructor)
+        this.controllerInstancesCache.set(controller, controllerInstance)
       }
 
-      const commandMap = getCommandMap(controller)
+      const commandMap = getCommandMap(controllerInstance)
+
+      if (!commandMap) {
+        continue
+      }
 
       let commandMetadata: CommandMetadata<string> | undefined = undefined
       let commandIdentifier: string | undefined = undefined
 
-      if (interaction.isChatInputCommand()) {
+      if (interaction.isChatInputCommand() || interaction.isContextMenuCommand()) {
         commandIdentifier = interaction.commandName
         commandMetadata = commandMap[commandIdentifier]
       } else if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
         commandIdentifier = interaction.customId
-        commandMetadata = Object.values(commandMap).find(meta => {
+        commandMetadata = Object.entries(commandMap).find(([commandName, meta]) => {
           if (!meta.regex || !commandIdentifier) return false
           const match = meta.regex.exec(commandIdentifier)
           if (match?.groups) {
             ;(interaction as Interaction & { dynamicParams: Record<string, string> }).dynamicParams = match.groups
             return true
           }
-          return false
-        })
-      } else if (interaction.isContextMenuCommand()) {
-        commandIdentifier = interaction.commandName
-        commandMetadata = commandMap[commandIdentifier]
+          return commandIdentifier === commandName
+        })?.[1]
       }
 
       if (commandMetadata) {
@@ -190,6 +190,7 @@ export class MeoCordApp {
 
             await controllerInstance[methodName](interaction, dynamicParams)
           } else {
+            this.logger.debug(type, methodName, CommandType.BUTTON, interaction.isButton())
             this.logger.warn(
               `Interaction type mismatch for command "${commandIdentifier}". Interaction type: ${interaction.type}.`,
             )
