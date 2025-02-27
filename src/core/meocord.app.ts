@@ -38,7 +38,6 @@ import { type ReactionHandlerOptions } from '@src/interface/index.js'
 import { type CommandMetadata } from '@src/interface/command-decorator.interface.js'
 
 export class MeoCordApp {
-  static bot: Client
   private readonly logger = new Logger(MeoCordApp.name)
   private readonly bot: Client
   private isShuttingDown = false

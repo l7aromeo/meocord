@@ -19,7 +19,7 @@
 import 'reflect-metadata'
 import { Container, type interfaces } from 'inversify'
 import { Logger } from '@src/common/index.js'
-import { MeoCordApp } from '@src/core/index.js'
+import { MeoCordApp } from '@src/core/meocord.app.js'
 import { mainContainer } from '@src/decorator/index.js'
 
 type ServiceIdentifier = interfaces.ServiceIdentifier
