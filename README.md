@@ -98,7 +98,6 @@ While still growing, MeoCord provides a solid foundation for developers to creat
            "target": "ESNext",
            "moduleResolution": "Bundler",
            "strict": true,
-           "declaration": true,
            "emitDecoratorMetadata": true,
            "experimentalDecorators": true,
            "resolveJsonModule": true,
