@@ -101,7 +101,6 @@ While still growing, MeoCord provides a solid foundation for developers to creat
            "emitDecoratorMetadata": true,
            "experimentalDecorators": true,
            "resolveJsonModule": true,
-           "verbatimModuleSyntax": true,
            "noUnusedLocals": true,
            "noUnusedParameters": true,
            "skipLibCheck": true,
