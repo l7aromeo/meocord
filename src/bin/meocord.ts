@@ -156,9 +156,11 @@ For full license details, refer to:
 
   async createApp(appName: string) {
     const kebabCaseAppName = appName
+      .replace(/([a-z])([A-Z])/g, '$1-$2')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') // Remove leading/trailing dashes
+      .replace(/^-+|-+$/g, '')
+
     const appPath = path.resolve(process.cwd(), kebabCaseAppName)
     const gitRepo = 'https://github.com/l7aromeo/meocord-template.git'
 
