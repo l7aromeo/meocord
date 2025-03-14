@@ -155,15 +155,19 @@ For full license details, refer to:
   }
 
   async createApp(appName: string) {
-    const appPath = path.resolve(process.cwd(), appName)
+    const kebabCaseAppName = appName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') // Remove leading/trailing dashes
+    const appPath = path.resolve(process.cwd(), kebabCaseAppName)
     const gitRepo = 'https://github.com/l7aromeo/meocord-template.git'
 
-    console.info(chalk.blueBright(`🚀 Creating a new MeoCord app: ${chalk.bold(appName)}`))
+    console.info(chalk.blueBright(`🚀 Creating a new MeoCord app: ${chalk.bold(kebabCaseAppName)}`))
 
     try {
       // Validate if directory already exists
       if (fs.existsSync(appPath)) {
-        console.error(chalk.red(`❌ Directory "${chalk.bold(appName)}" already exists.`))
+        console.error(chalk.red(`❌ Directory "${chalk.bold(kebabCaseAppName)}" already exists.`))
         process.exit(1)
       }
 
@@ -185,10 +189,10 @@ For full license details, refer to:
 
       // Install dependencies
       console.info(chalk.blueBright('📦 Installing dependencies...'))
-      execSync(`cd ${appName} && corepack enable && yarn install`, { stdio: 'inherit' })
+      execSync(`cd ${kebabCaseAppName} && corepack enable && yarn install`, { stdio: 'inherit' })
       console.log(chalk.green('✔ Dependencies installed successfully.'))
 
-      console.log(chalk.greenBright(`🎉 MeoCord app "${chalk.bold(appName)}" is ready!`))
+      console.log(chalk.greenBright(`🎉 MeoCord app "${chalk.bold(kebabCaseAppName)}" is ready!`))
     } catch (error) {
       console.error(chalk.red(`❌ Failed to create app: ${error instanceof Error ? error.message : String(error)}`))
       process.exit(1)
