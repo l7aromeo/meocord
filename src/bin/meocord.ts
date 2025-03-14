@@ -168,6 +168,24 @@ For full license details, refer to:
       // Validate if directory already exists
       if (fs.existsSync(appPath)) {
         console.error(chalk.red(`❌ Directory "${chalk.bold(kebabCaseAppName)}" already exists.`))
+        await wait(100)
+        process.exit(1)
+      }
+
+      // Check Node.js version
+      const MINIMUM_NODE_VERSION = '22.14.0'
+      const [major, minor, patch] = process.version.slice(1).split('.').map(Number)
+      const [minMajor, minMinor, minPatch] = MINIMUM_NODE_VERSION.split('.').map(Number)
+
+      if (
+        major < minMajor ||
+        (major === minMajor && minor < minMinor) ||
+        (major === minMajor && minor === minMinor && patch < minPatch)
+      ) {
+        console.error(
+          chalk.red(`❌ Node.js v${MINIMUM_NODE_VERSION} or higher is required. Current version: v${process.version}.`),
+        )
+        await wait(100)
         process.exit(1)
       }
 
@@ -195,6 +213,7 @@ For full license details, refer to:
       console.log(chalk.greenBright(`🎉 MeoCord app "${chalk.bold(kebabCaseAppName)}" is ready!`))
     } catch (error) {
       console.error(chalk.red(`❌ Failed to create app: ${error instanceof Error ? error.message : String(error)}`))
+      await wait(100)
       process.exit(1)
     }
   }
