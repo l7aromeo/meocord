@@ -15,6 +15,8 @@ While still growing, MeoCord provides a solid foundation for developers to creat
     - [Key Components](#key-components)
 - [Configuration](#configuration)
 - [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Create Fresh App](#create-fresh-app)
 - [CLI Usage](#cli-usage)
 - [Development Guide](#development-guide)
 - [Deployment Guide](#deployment-guide)
@@ -61,6 +63,12 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 ---
 
 ## Getting Started
+
+### Prerequisites
+
+- **Node.js**: Ensure you have version **22.14.0** or higher, as it’s the current LTS release.
+- **TypeScript**: Version **5.7** or above is required for compatibility with modern features.
+- **Yarn**: Version stable **4.7** (`corepack enable && yarn set version stable`) or above is strongly recommended for managing dependencies and smooth builds.
 
 ### ⚠️ ESM-Only Framework
 
@@ -128,9 +136,9 @@ For more migration details, refer to the [Node.js ESM documentation](https://nod
 
 ---
 
-### Steps to Build Your Application
+### Create Fresh App
 
-Follow these steps to build and run a **MeoCord** application:
+Follow these steps to create and run a **MeoCord** application:
 
 ---
 
@@ -438,15 +446,7 @@ This will provide command-specific help and options.
 
 ## Development Guide
 
-### Prerequisites
-
-- **Node.js**: Ensure you have version **22.x** or higher, as it’s the current LTS release.
-- **TypeScript**: Version **5.x** or above is required for compatibility with modern features.
-- **Yarn**: Version stable (`corepack enable && yarn set version stable`) Strongly recommended for managing dependencies and smooth builds.
-
-### Running Your Application
-
-#### Development Mode
+### Development Mode
 
 Run the application in development mode with live-reload for a seamless coding experience:
 
@@ -454,7 +454,7 @@ Run the application in development mode with live-reload for a seamless coding e
 yarn meocord start --dev
 ```
 
-#### Building for Production
+### Building for Production
 
 Generate an optimized and compiled production build with:
 
