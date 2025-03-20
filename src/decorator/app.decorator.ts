@@ -17,12 +17,10 @@
  */
 
 import 'reflect-metadata'
-import { Container, injectable, type interfaces } from 'inversify'
+import { Container, injectable, type ServiceIdentifier } from 'inversify'
 import { type ActivityOptions, Client, type ClientOptions } from 'discord.js'
 import { MeoCordApp } from '@src/core/meocord.app.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
-
-type ServiceIdentifier = interfaces.ServiceIdentifier
 
 /**
  * Binds a class and its dependencies to the Inversify container in singleton scope.

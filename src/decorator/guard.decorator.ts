@@ -139,12 +139,12 @@ export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | 
 
         if (isGuardWithParams(guard)) {
           const { provide, params } = guard
-          guardInstance = mainContainer.resolve(provide)
+          guardInstance = mainContainer.get(provide, { autobind: true })
           // Inject the parameters into the guard instance
           Object.assign(guardInstance, params)
         } else {
           // Resolve guard without parameters
-          guardInstance = mainContainer.resolve(guard)
+          guardInstance = mainContainer.get(guard, { autobind: true })
         }
 
         // Ensure the guard has the necessary method `canActivate`
