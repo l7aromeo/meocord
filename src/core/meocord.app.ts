@@ -230,7 +230,7 @@ export class MeoCordApp {
       let controllerInstance = this.controllerInstancesCache.get(controller.constructor)
       if (!controllerInstance) {
         const container = Reflect.getMetadata('inversify:container', controller.constructor)
-        controllerInstance = container.resolve(controller.constructor)
+        controllerInstance = container.get(controller.constructor, { autobind: true })
         this.controllerInstancesCache.set(controller.constructor, controllerInstance)
       }
 
@@ -271,7 +271,7 @@ export class MeoCordApp {
       let controllerInstance = this.controllerInstancesCache.get(controller.constructor)
       if (!controllerInstance) {
         const container = Reflect.getMetadata('inversify:container', controller.constructor)
-        controllerInstance = container.resolve(controller.constructor)
+        controllerInstance = container.get(controller.constructor, { autobind: true })
         this.controllerInstancesCache.set(controller.constructor, controllerInstance)
       }
 
