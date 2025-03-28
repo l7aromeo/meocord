@@ -189,9 +189,8 @@ export function Command<
       throw new Error(`Missing implementation for method ${propertyKey}`)
     }
 
-    // Replace the original method with a decorator wrapper
+    // Wrap original method for interaction type validation
     _descriptor.value = function (interaction, params) {
-      // Apply the original method implementation
       const expectedInteraction =
         (commandType === CommandType.BUTTON && interaction instanceof ButtonInteraction) ||
         (commandType === CommandType.SELECT_MENU && interaction instanceof StringSelectMenuInteraction) ||
@@ -206,8 +205,8 @@ export function Command<
       return originalMethod.apply(this, [interaction, params])
     }
 
-    // Retrieve or initialize metadata
-    const commands: Record<string, CommandMetadata> = Reflect.getMetadata(COMMAND_METADATA_KEY, target) || {}
+    // Retrieve existing metadata or initialize it
+    const commands: Record<string, CommandMetadata[]> = Reflect.getMetadata(COMMAND_METADATA_KEY, target) || {}
 
     let builderInstance:
       | SlashCommandBuilder
@@ -218,7 +217,7 @@ export function Command<
     let regex: RegExp | undefined
     let dynamicParams: string[] = []
 
-    // Handle CommandBuilderBase or CommandType logic
+    // Determine command type and builder
     if (typeof builderOrType === 'function') {
       const builderObj = new builderOrType() as CommandBuilderBase
       builderInstance = builderObj.build(commandName)
@@ -230,21 +229,24 @@ export function Command<
       commandType = builderOrType
     }
 
-    // Handle non-SLASH and non-CONTEXT_MENU commands
     if (commandType !== CommandType.SLASH && commandType !== CommandType.CONTEXT_MENU) {
       const { regex: generatedRegex, params } = createRegexFromPattern(commandName)
       regex = generatedRegex
       dynamicParams = params
     }
 
-    // Store command metadata
-    commands[commandName] = {
+    // Ensure commandName supports multiple entries
+    if (!commands[commandName]) {
+      commands[commandName] = []
+    }
+
+    commands[commandName].push({
       methodName: propertyKey,
       builder: builderInstance,
       type: commandType,
       regex,
       dynamicParams,
-    }
+    })
 
     Reflect.defineMetadata(COMMAND_METADATA_KEY, commands, target)
   }
@@ -256,7 +258,7 @@ export function Command<
  * @param controller - The controller class instance.
  * @returns A record containing command metadata indexed by command names.
  */
-export function getCommandMap<T extends string>(controller: any): Record<string, CommandMetadata<T>> {
+export function getCommandMap<T extends string>(controller: any): Record<string, CommandMetadata<T>[]> {
   return Reflect.getMetadata(COMMAND_METADATA_KEY, controller)
 }
 
