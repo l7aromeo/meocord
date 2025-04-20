@@ -71,7 +71,6 @@ const createWebpackConfig = (overrides = {}) => {
       path: DIST_DIR,
       publicPath: path.join(process.cwd(), 'dist/'),
       library: { type: 'module' },
-      clean: IS_PRODUCTION,
       ...overrides.output,
     },
     experiments: {
