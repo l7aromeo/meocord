@@ -115,15 +115,23 @@ const createWebpackConfig = (overrides = {}) => {
 
     finalMinimizerArray.push(...otherMinimizers)
 
-    const terserPluginToUse = lastTerserInstance
-      ? new TerserPlugin({
-          ...lastTerserInstance.options,
-          terserOptions: {
-            ...lastTerserInstance.options?.terserOptions,
-            keep_classnames: true,
-          },
-        })
-      : new TerserPlugin({ terserOptions: { keep_classnames: true } })
+    let terserPluginToUse
+    if (lastTerserInstance) {
+      terserPluginToUse = new TerserPlugin({
+        test: lastTerserInstance.options?.test,
+        include: lastTerserInstance.options?.include,
+        exclude: lastTerserInstance.options?.exclude,
+        extractComments: lastTerserInstance.options?.extractComments,
+        parallel: lastTerserInstance.options?.parallel,
+        minify: lastTerserInstance.options?.minify,
+        terserOptions: {
+          ...(lastTerserInstance.options?.terserOptions || {}),
+          keep_classnames: true,
+        },
+      })
+    } else {
+      terserPluginToUse = new TerserPlugin({ terserOptions: { keep_classnames: true } })
+    }
 
     finalMinimizerArray.push(terserPluginToUse)
   }
