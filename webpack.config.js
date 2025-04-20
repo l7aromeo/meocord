@@ -23,83 +23,116 @@ import TerserPlugin from 'terser-webpack-plugin'
 import { loadMeoCordConfig } from './dist/util/meocord-config-loader.util.js'
 import { prepareModifiedTsConfig } from './dist/util/tsconfig.util.js'
 
+const CWD = process.cwd()
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
+const SRC_DIR = path.resolve(CWD, 'src')
+const DIST_DIR = path.resolve(CWD, 'dist')
+
 const meocordConfig = loadMeoCordConfig()
 const tsConfigPath = prepareModifiedTsConfig()
 
 const baseRules = [
   {
     test: /\.ts$/,
-    use: {
-      loader: 'ts-loader',
-      options: {
-        configFile: tsConfigPath,
-      },
+    loader: 'ts-loader',
+    options: {
+      configFile: tsConfigPath,
+      transpileOnly: true,
     },
     exclude: /node_modules/,
-  },
-  {
-    test: /\.(gif|jpg|jpeg|png|svg|woff|woff2|eot|ttf|otf)$/i,
-    type: 'javascript/auto',
-    exclude: /node_modules/,
-    use: {
-      loader: 'file-loader',
-      options: { name: '[path][name].[ext]', context: path.resolve(process.cwd(), 'src') },
-    },
-  },
-  {
-    test: /\.html$/i,
-    use: 'raw-loader',
   },
 ]
 
 /**
- * Generates the base Webpack configuration for the project.
- * Uses `tsconfig` for resolving paths and applies custom `meocord` configuration if available.
- *
- * @param {import('webpack').Configuration} [config={}] Custom overrides for the base configuration.
- * @returns {import('webpack').Configuration} The Webpack configuration object.
+ * Merges two arrays returning unique elements
  */
-const baseConfig = (config = {}) => ({
-  ...config,
-  mode: config.mode || (process.env.NODE_ENV === 'production' ? 'production' : 'development'),
-  entry: path.resolve(process.cwd(), config.entry || 'src/main.ts'),
-  target: 'node',
-  optimization: {
-    ...config?.optimization,
-    minimize: config?.optimization?.minimize ?? true,
-    minimizer: Array.from(
-      new Set([
-        ...(config?.optimization?.minimizer || []),
-        new TerserPlugin({ terserOptions: { keep_classnames: true } }),
-      ]),
-    ),
-  },
-  externals: Array.from(new Set([NodeExternals({ importType: 'module' }), ...(config?.externals || [])])),
-  module: {
-    ...config?.module,
-    rules: Array.from(new Set([...baseRules, ...(config?.module?.rules || [])])),
-  },
-  resolve: {
-    ...config?.resolve,
-    plugins: Array.from(
-      new Set([new TsconfigPathsPlugin({ configFile: tsConfigPath }), ...(config?.resolve?.plugins || [])]),
-    ),
-    extensions: Array.from(new Set(['.ts', '.js', ...(config?.resolve?.extensions || [])])),
-  },
-  output: {
-    ...config?.output,
-    filename: 'main.js',
-    path: path.resolve(process.cwd(), 'dist'),
-    publicPath: 'dist/',
-    library: {
-      type: 'module',
-    },
-  },
-  experiments: {
-    outputModule: true,
-  },
-  stats: config?.stats || 'errors-only',
-})
+const mergeUnique = (base = [], additions = []) => Array.from(new Set([...base, ...additions]))
 
-const userConfig = meocordConfig?.webpack?.(baseConfig())
-export default baseConfig(userConfig)
+/**
+ * Creates webpack configuration with framework defaults
+ */
+const createWebpackConfig = (overrides = {}) => {
+  const baseConfig = {
+    mode: overrides.mode ?? (IS_PRODUCTION ? 'production' : 'development'),
+    entry: overrides.entry ?? path.resolve(SRC_DIR, 'main.ts'),
+    target: 'node',
+    externals: mergeUnique([NodeExternals({ importType: 'module' })], overrides.externals),
+    module: {
+      ...overrides.module,
+      rules: mergeUnique(baseRules, overrides.module?.rules),
+    },
+    resolve: {
+      ...overrides.resolve,
+      extensions: mergeUnique(['.ts', '.js'], overrides.resolve?.extensions),
+      plugins: mergeUnique([new TsconfigPathsPlugin({ configFile: tsConfigPath })], overrides.resolve?.plugins),
+    },
+    output: {
+      filename: 'main.js',
+      path: DIST_DIR,
+      publicPath: path.join(process.cwd(), 'dist/'),
+      library: { type: 'module' },
+      clean: IS_PRODUCTION,
+      ...overrides.output,
+    },
+    experiments: {
+      outputModule: true,
+      ...overrides.experiments,
+    },
+    stats: overrides.stats ?? (IS_PRODUCTION ? 'normal' : 'errors-warnings'),
+    devtool: overrides.devtool ?? (IS_PRODUCTION ? 'source-map' : 'eval-source-map'),
+    performance: {
+      hints: overrides.performance?.hints ?? (IS_PRODUCTION ? 'warning' : false),
+      ...overrides.performance,
+    },
+    ...overrides,
+    optimization: {
+      ...overrides.optimization,
+      minimize: overrides.optimization?.minimize ?? IS_PRODUCTION,
+      minimizer: [],
+    },
+  }
+
+  const finalMinimizerArray = []
+  const shouldMinimize = baseConfig.optimization.minimize
+
+  if (shouldMinimize) {
+    const userProvidedMinimizers = overrides.optimization?.minimizer
+    let lastTerserInstance = null
+    const otherMinimizers = []
+
+    if (Array.isArray(userProvidedMinimizers)) {
+      for (let i = userProvidedMinimizers.length - 1; i >= 0; i--) {
+        const minimizer = userProvidedMinimizers[i]
+        if (minimizer?.constructor?.name === 'TerserPlugin') {
+          if (!lastTerserInstance) {
+            lastTerserInstance = minimizer
+          }
+        } else if (minimizer) {
+          otherMinimizers.unshift(minimizer)
+        }
+      }
+    }
+
+    finalMinimizerArray.push(...otherMinimizers)
+
+    const terserPluginToUse = lastTerserInstance
+      ? new TerserPlugin({
+          ...lastTerserInstance.options,
+          terserOptions: {
+            ...lastTerserInstance.options?.terserOptions,
+            keep_classnames: true,
+          },
+        })
+      : new TerserPlugin({ terserOptions: { keep_classnames: true } })
+
+    finalMinimizerArray.push(terserPluginToUse)
+  }
+
+  baseConfig.optimization.minimizer = finalMinimizerArray
+
+  return baseConfig
+}
+
+const initialConfig = createWebpackConfig()
+const userModifiedConfig = meocordConfig?.webpack?.(initialConfig)
+export default createWebpackConfig(userModifiedConfig ?? {})
