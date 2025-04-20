@@ -1,7 +1,7 @@
 {
   "name": "meocord",
   "description": "MeoCord is a lightweight and modular framework for building scalable Discord bots using TypeScript and Discord.js. It simplifies bot development with an extensible architecture, TypeScript-first approach, and powerful CLI tools.",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "packageManager": "yarn@4.7.0",
   "type": "module",
   "scripts": {
@@ -94,11 +94,9 @@
     "dayjs": "^1.11.13",
     "discord.js": "^14.18.0",
     "dotenv": "^16.4.7",
-    "file-loader": "^6.2.0",
     "inversify": "^7.1.0",
     "lodash-es": "^4.17.21",
     "nodemon": "^3.1.9",
-    "raw-loader": "^4.0.2",
     "reflect-metadata": "^0.2.2",
     "simple-git": "^3.27.0",
     "terser-webpack-plugin": "^5.3.14",
