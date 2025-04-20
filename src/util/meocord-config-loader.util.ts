@@ -27,7 +27,7 @@ import NodeExternals from 'webpack-node-externals'
 import { TsconfigPathsPlugin } from 'tsconfig-paths-webpack-plugin'
 const require = createRequire(import.meta.url)
 
-const tempOutputDir = path.resolve(process.cwd(), 'dist', '.meocord-temp')
+const tempOutputDir = path.resolve(process.cwd(), '.meocord-temp')
 
 /**
  * Compiles the TypeScript configuration file (meocord.config.ts) to JavaScript
@@ -39,7 +39,7 @@ export async function compileMeoCordConfig(): Promise<boolean> {
   const meocordModulePath = findModulePackageDir('meocord')
   if (!meocordModulePath) return false
 
-  const buildTsConfigTempPath = path.resolve(process.cwd(), 'tsconfig.build.json')
+  const buildTsConfigTempPath = path.join(process.cwd(), '.meocord-temp', 'tsconfig.build.json')
 
   const rootTsConfigPath = path.resolve(process.cwd(), 'tsconfig.json')
 
@@ -60,29 +60,44 @@ export async function compileMeoCordConfig(): Promise<boolean> {
     })
   }
 
+  const paths = rootTsConfigContent?.compilerOptions?.paths
+    ? Object.entries<string[]>(rootTsConfigContent.compilerOptions.paths).reduce(
+        (acc, [key, value]) => {
+          acc[key] = value.map(p => path.resolve(process.cwd(), p))
+          return acc
+        },
+        {} as Record<string, string[]>,
+      )
+    : {}
+
   const buildTsConfigContent = {
     compilerOptions: {
       tsBuildInfoFile: null,
       strict: true,
-      module: 'NodeNext',
+      module: 'ESNext',
       target: 'ESNext',
-      moduleResolution: 'NodeNext',
+      moduleResolution: 'Bundler',
       esModuleInterop: true,
       resolveJsonModule: true,
       allowSyntheticDefaultImports: true,
       sourceMap: false,
-      baseUrl: '.',
-      rootDir: '.',
+      baseUrl: path.resolve(process.cwd()),
+      rootDir: path.resolve(process.cwd()),
       outDir: tempOutputDir,
-      paths: rootTsConfigContent?.compilerOptions?.paths,
+      paths,
       skipLibCheck: true,
       noImplicitAny: false,
       forceConsistentCasingInFileNames: true,
     },
-    include: ['meocord.config.ts'],
+    include: [path.resolve(process.cwd(), 'meocord.config.ts')],
   }
 
   removeUndefinedKeys(buildTsConfigContent)
+
+  // Ensure the temp directory exists
+  if (!existsSync(tempOutputDir)) {
+    mkdirSync(tempOutputDir, { recursive: true })
+  }
 
   // Copy the build config to the working directory
   writeFileSync(buildTsConfigTempPath, fixJSON(JSON.stringify(buildTsConfigContent)))
@@ -93,14 +108,9 @@ export async function compileMeoCordConfig(): Promise<boolean> {
     return false
   }
 
-  // Ensure the temp directory exists
-  if (!existsSync(tempOutputDir)) {
-    mkdirSync(tempOutputDir, { recursive: true })
-  }
-
   const webpackConfig: Configuration = {
     mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
-    entry: 'meocord.config.ts',
+    entry: path.join(process.cwd(), 'meocord.config.ts'),
     target: 'node',
     externals: NodeExternals({ importType: 'module' }),
     experiments: {
