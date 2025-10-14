@@ -17,11 +17,11 @@
  */
 
 import path from 'path'
-import NodeExternals from 'webpack-node-externals'
 import TsconfigPathsPlugin from 'tsconfig-paths-webpack-plugin'
 import TerserPlugin from 'terser-webpack-plugin'
 import { loadMeoCordConfig } from './dist/util/meocord-config-loader.util.js'
 import { prepareModifiedTsConfig } from './dist/util/tsconfig.util.js'
+import nodeExternals from 'webpack-node-externals'
 
 const CWD = process.cwd()
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
@@ -34,10 +34,21 @@ const tsConfigPath = prepareModifiedTsConfig()
 const baseRules = [
   {
     test: /\.ts$/,
-    loader: 'ts-loader',
-    options: {
-      configFile: tsConfigPath,
-      transpileOnly: true,
+    use: {
+      loader: 'swc-loader',
+      options: {
+        jsc: {
+          parser: {
+            syntax: 'typescript',
+            tsx: false,
+            decorators: true,
+          },
+          transform: {
+            decoratorMetadata: true,
+            legacyDecorator: true,
+          },
+        },
+      },
     },
     exclude: /node_modules/,
   },
@@ -56,7 +67,7 @@ const createWebpackConfig = (overrides = {}) => {
     mode: overrides.mode ?? (IS_PRODUCTION ? 'production' : 'development'),
     entry: overrides.entry ?? path.resolve(SRC_DIR, 'main.ts'),
     target: 'node',
-    externals: mergeUnique([NodeExternals({ importType: 'module' })], overrides.externals),
+    externals: mergeUnique([nodeExternals({ importType: 'module' })], overrides.externals),
     module: {
       ...overrides.module,
       rules: mergeUnique(baseRules, overrides.module?.rules),

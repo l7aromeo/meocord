@@ -238,11 +238,15 @@ For full license details, refer to:
       })
 
       await new Promise<void>((resolve, reject) => {
+        if (!compiler) {
+          this.logger.error('Failed to create webpack compiler instance.')
+          return reject('Failed to create webpack compiler instance.')
+        }
+
         compiler.run((err, stats) => {
           if (err) {
             this.logger.error(`Build encountered an error: ${err.message}`)
-            reject(`Build encountered an error: ${err.message}`)
-            return
+            return reject(`Build encountered an error: ${err.message}`)
           }
 
           if (stats?.hasErrors()) {
@@ -254,8 +258,7 @@ For full license details, refer to:
           compiler.close(closeErr => {
             if (closeErr) {
               this.logger.error(`Error occurred while closing the compiler: ${closeErr.message}`)
-              reject(`Error occurred while closing the compiler: ${closeErr.message}`)
-              return
+              return reject(`Error occurred while closing the compiler: ${closeErr.message}`)
             }
             resolve()
           })
@@ -277,6 +280,12 @@ For full license details, refer to:
       this.logger.log('Starting watch mode...')
       const webpackConfig = (await import(this.webpackConfigPath)).default
       const compiler = webpack({ ...webpackConfig, mode: 'development' })
+
+      if (!compiler) {
+        this.logger.error('Failed to create webpack compiler instance.')
+        await wait(100)
+        process.exit(1)
+      }
 
       let nodemonProcess: ChildProcess | null = null
       let isRunning = false

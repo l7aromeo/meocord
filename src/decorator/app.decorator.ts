@@ -61,7 +61,7 @@ export const mainContainer = new Container()
  * @param {Object} options - The decorator options.
  * @param {ServiceIdentifier[]} options.controllers - The list of controllers to be registered.
  * @param {ClientOptions} options.clientOptions - The Discord client options for initializing the bot.
- * @param {AppActivity[]} [options.activities] - Optional activities for the bot.
+ * @param {ActivityOptions[]} [options.activities] - Optional activities for the bot.
  * @param {ServiceIdentifier[]} [options.services] - Optional services to be registered.
  *
  * @example

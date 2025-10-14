@@ -18,7 +18,6 @@
 
 import { type Configuration } from 'webpack'
 import webpack from 'webpack'
-import NodeExternals from 'webpack-node-externals'
 import { TsconfigPathsPlugin } from 'tsconfig-paths-webpack-plugin'
 import path from 'path'
 import { createRequire } from 'module'
@@ -26,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { type MeoCordConfig } from '@src/interface/index.js'
 import { findModulePackageDir } from '@src/util/common.util.js'
 import { fixJSON } from '@src/util/json.util.js'
+import nodeExternals from 'webpack-node-externals'
 
 const require = createRequire(import.meta.url)
 const TEMP_OUTPUT_DIR = path.resolve(process.cwd(), 'dist', '.meocord-temp')
@@ -75,7 +75,7 @@ const createWebpackConfig = (buildTsConfigPath: string): Configuration => ({
   mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
   entry: 'meocord.config.ts',
   target: 'node',
-  externals: NodeExternals({ importType: 'module' }),
+  externals: [nodeExternals({ importType: 'module' })],
   experiments: {
     outputModule: true,
   },
@@ -83,9 +83,21 @@ const createWebpackConfig = (buildTsConfigPath: string): Configuration => ({
     rules: [
       {
         test: /\.ts$/,
-        loader: 'ts-loader',
-        options: {
-          configFile: buildTsConfigPath,
+        use: {
+          loader: 'swc-loader',
+          options: {
+            jsc: {
+              parser: {
+                syntax: 'typescript',
+                tsx: false,
+                decorators: true,
+              },
+              transform: {
+                decoratorMetadata: true,
+                legacyDecorator: true,
+              },
+            },
+          },
         },
         exclude: /node_modules/,
       },
@@ -142,6 +154,11 @@ export async function compileMeoCordConfig(): Promise<boolean> {
 
   try {
     return await new Promise<boolean>((resolve, reject) => {
+      if (!compiler) {
+        console.error('[MeoCord] Failed to create webpack compiler instance.')
+        return reject('Failed to create webpack compiler instance.')
+      }
+
       compiler.run((err, stats) => {
         if (err) {
           console.error(`Build encountered an error: ${err.message}`)
