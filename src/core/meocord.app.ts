@@ -58,7 +58,7 @@ export class MeoCordApp {
     try {
       this.logger.log('Starting bot...')
 
-      this.bot.on('ready', async () => {
+      this.bot.on('clientReady', async () => {
         setInterval(() => {
           this.bot.user?.setActivity(sample(this.activities))
         }, 10000)
