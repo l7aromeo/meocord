@@ -115,7 +115,6 @@ export class MeoCordApp {
           `Registered ${builders.length} bot commands:`,
           builders.map(builder => {
             const json = typeof (builder as any).toJSON === 'function' ? (builder as any).toJSON() : (builder as any)
-            this.logger.debug(json)
             const typeName =
               json?.type === 1
                 ? 'SlashCommand'
