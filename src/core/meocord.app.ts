@@ -114,14 +114,27 @@ export class MeoCordApp {
         this.logger.log(
           `Registered ${builders.length} bot commands:`,
           builders.map(builder => {
-            if (builder instanceof SlashCommandBuilder && builder.options.length) {
-              return {
-                name: builder.name,
-                subCommands: builder.toJSON().options?.map(option => option.name),
-              }
-            } else {
-              return { name: builder.name }
-            }
+            const json = typeof (builder as any).toJSON === 'function' ? (builder as any).toJSON() : (builder as any)
+            this.logger.debug(json)
+            const typeName =
+              json?.type === 1
+                ? 'SlashCommand'
+                : json?.type === 2
+                  ? 'UserContextMenu'
+                  : json?.type === 3
+                    ? 'MessageContextMenu'
+                    : builder instanceof SlashCommandBuilder
+                      ? 'SlashCommand'
+                      : 'Command'
+            const subCommands =
+              Array.isArray(json?.options) && json.options.length
+                ? json.options.map((opt: any) => ({
+                    name: opt.name,
+                    options: opt.options.map((opt: any) => opt.name),
+                  }))
+                : undefined
+            const name = json?.name || (builder as any).name
+            return subCommands ? { type: typeName, name, subCommands } : { type: typeName, name }
           }),
         )
       }
