@@ -152,33 +152,53 @@ export async function compileMeoCordConfig(): Promise<boolean> {
   const webpackConfig = createWebpackConfig(buildTsConfigPath)
   const compiler = webpack(webpackConfig)
 
+  if (!compiler) {
+    console.error('[MeoCord] Failed to create webpack compiler instance.')
+    return false
+  }
+
   try {
-    return await new Promise<boolean>((resolve, reject) => {
-      if (!compiler) {
-        console.error('[MeoCord] Failed to create webpack compiler instance.')
-        return reject('Failed to create webpack compiler instance.')
-      }
+    // Workaround for Bun: Keep the event loop alive while webpack runs
+    // Bun sometimes exits before async callbacks fire
+    let keepAliveTimer: ReturnType<typeof setInterval> | null = null
 
-      compiler.run((err, stats) => {
-        if (err) {
-          console.error(`Build encountered an error: ${err.message}`)
-          return reject(`Build encountered an error: ${err.message}`)
-        }
+    const runCompiler = (): Promise<boolean> => {
+      return new Promise((resolve, reject) => {
+        keepAliveTimer = setInterval(() => {
+          // Keeps event loop active
+        }, 100)
 
-        if (stats?.hasErrors()) {
-          console.error('Build failed due to errors in the compilation process:', stats.compilation.errors)
-          return reject(`Build encountered an error: ${stats.compilation.errors}`)
-        }
-
-        compiler.close(closeErr => {
-          if (closeErr) {
-            console.error(`Error occurred while closing the compiler: ${closeErr.message}`)
-            return reject(`Error occurred while closing the compiler: ${closeErr.message}`)
+        compiler.run((err, stats) => {
+          if (keepAliveTimer) {
+            clearInterval(keepAliveTimer)
+            keepAliveTimer = null
           }
-          resolve(true)
+
+          if (err) {
+            console.error(`[MeoCord] Build error: ${err.message}`)
+            reject(err)
+            return
+          }
+
+          if (stats?.hasErrors()) {
+            console.error('[MeoCord] Compilation errors:', stats.compilation.errors)
+            reject(new Error('Compilation failed'))
+            return
+          }
+
+          compiler.close(closeErr => {
+            if (closeErr) {
+              console.error(`[MeoCord] Close error: ${closeErr.message}`)
+              reject(closeErr)
+              return
+            }
+            resolve(true)
+          })
         })
       })
-    })
+    }
+
+    return await runCompiler()
   } catch (error) {
     if (error instanceof Error) {
       console.error(`[MeoCord] Failed to transpile config: ${error.message}`)
@@ -205,6 +225,8 @@ export function loadMeoCordConfig(): MeoCordConfig | undefined {
 
   if (existsSync(tempConfigFilePath)) {
     try {
+      // Clear require cache to ensure fresh load (fixes Bun Docker caching issues)
+      delete require.cache[require.resolve(tempConfigFilePath)]
       return require(tempConfigFilePath).default as MeoCordConfig
     } catch (error) {
       if (error instanceof Error) {

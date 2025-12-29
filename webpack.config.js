@@ -28,7 +28,8 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 const SRC_DIR = path.resolve(CWD, 'src')
 const DIST_DIR = path.resolve(CWD, 'dist')
 
-const meocordConfig = loadMeoCordConfig()
+// Note: meocordConfig is loaded lazily inside createWebpackConfig()
+// to avoid Bun's aggressive module caching issues in Docker containers
 const tsConfigPath = prepareModifiedTsConfig()
 
 const baseRules = [
@@ -151,6 +152,8 @@ const createWebpackConfig = (overrides = {}) => {
   return baseConfig
 }
 
+// Load user config lazily (fixes Bun Docker caching issues)
+const meocordConfig = loadMeoCordConfig()
 const initialConfig = createWebpackConfig()
 const userModifiedConfig = meocordConfig?.webpack?.(initialConfig)
 export default createWebpackConfig(userModifiedConfig ?? {})

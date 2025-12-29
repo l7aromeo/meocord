@@ -237,13 +237,26 @@ For full license details, refer to:
         mode,
       })
 
+      if (!compiler) {
+        this.logger.error('Failed to create webpack compiler instance.')
+        throw new Error('Failed to create webpack compiler instance.')
+      }
+
+      // Workaround for Bun: Keep the event loop alive while webpack runs
+      // Bun sometimes exits before async callbacks fire
+      let keepAliveTimer: ReturnType<typeof setInterval> | null = null
+
       await new Promise<void>((resolve, reject) => {
-        if (!compiler) {
-          this.logger.error('Failed to create webpack compiler instance.')
-          return reject('Failed to create webpack compiler instance.')
-        }
+        keepAliveTimer = setInterval(() => {
+          // Keeps event loop active
+        }, 100)
 
         compiler.run((err, stats) => {
+          if (keepAliveTimer) {
+            clearInterval(keepAliveTimer)
+            keepAliveTimer = null
+          }
+
           if (err) {
             this.logger.error(`Build encountered an error: ${err.message}`)
             return reject(`Build encountered an error: ${err.message}`)
@@ -266,7 +279,7 @@ For full license details, refer to:
       })
     } catch (error: any) {
       this.logger.error(`Build process failed: ${error.message}`)
-      await wait(100) // Ensure that `wait` is defined or imported correctly
+      await wait(100)
       process.exit(1)
     }
   }
