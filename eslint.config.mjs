@@ -142,7 +142,7 @@ const recommendedTypeScriptConfigs = [
 ]
 
 export default [
-  { ignores: ['dist/*'] },
+  { ignores: ['dist/*', '.yarn/*'] },
   ...recommendedTypeScriptConfigs,
   eslintConfigPrettier,
   typescriptConfig,
