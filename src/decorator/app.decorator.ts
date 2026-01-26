@@ -17,6 +17,7 @@
  */
 
 import 'reflect-metadata'
+import { mainContainer } from '@src/decorator/container.js'
 import { Container, injectable, type ServiceIdentifier } from 'inversify'
 import { type ActivityOptions, Client, type ClientOptions } from 'discord.js'
 import { MeoCordApp } from '@src/core/meocord.app.js'
@@ -51,9 +52,6 @@ function resolveDependencies(container: Container, target: any): any[] {
     return container.get(dep)
   })
 }
-
-/** The main Inversify container for managing dependencies. */
-export const mainContainer = new Container()
 
 /**
  * `@MeoCord()` decorator for initializing and setting up the MeoCord application.

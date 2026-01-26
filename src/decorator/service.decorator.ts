@@ -17,7 +17,7 @@
  */
 
 import 'reflect-metadata'
-import { mainContainer } from '@src/decorator/index.js'
+import { mainContainer } from '@src/decorator/container.js'
 import { injectable } from 'inversify'
 import { Client } from 'discord.js'
 

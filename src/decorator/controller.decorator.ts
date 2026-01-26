@@ -16,9 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { injectable } from 'inversify'
 import 'reflect-metadata'
-import { mainContainer } from '@src/decorator/index.js'
+import { injectable } from 'inversify'
+import { mainContainer } from '@src/decorator/container.js'
 import {
   ButtonInteraction,
   ChatInputCommandInteraction,
