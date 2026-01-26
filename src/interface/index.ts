@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { BaseInteraction, type PartialUser, User } from 'discord.js'
+import { BaseInteraction, Message, MessageReaction, type PartialUser, User } from 'discord.js'
 import { type Configuration } from 'webpack'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 
@@ -24,17 +24,17 @@ import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
  * Interface for Guard classes.
  * Guards are used to handle permission checks before executing a method.
  * Each guard must implement the `canActivate` method, which is responsible for determining
- * whether the method should be allowed to execute based on the provided interaction and arguments.
+ * whether the method should be allowed to execute based on the provided context (Interaction, Message, or Reaction) and arguments.
  */
 export interface GuardInterface {
   /**
-   * Determines if the method should be allowed to execute based on the interaction and additional arguments.
-   * @param interaction - The interaction object, typically representing a user action in Discord.
+   * Determines if the method should be allowed to execute based on the context (Interaction, Message, or Reaction) and additional arguments.
+   * @param context - The context object, typically representing a user action in Discord (Interaction, Message, or Reaction).
    * @param args - Additional arguments that might be required for the guard's logic.
    * @returns A `Promise` resolving to `true` if the method can proceed, otherwise `false`,
    *          or a `boolean` value directly.
    */
-  canActivate(interaction: BaseInteraction, ...args: any[]): Promise<boolean> | boolean
+  canActivate(context: BaseInteraction | Message | MessageReaction, ...args: any[]): Promise<boolean> | boolean
 }
 
 /**

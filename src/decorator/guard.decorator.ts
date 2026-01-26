@@ -18,9 +18,63 @@
 
 import 'reflect-metadata'
 import { injectable } from 'inversify'
-import { mainContainer } from '@src/decorator/index.js'
-import { BaseInteraction, type Interaction } from 'discord.js'
+import { mainContainer } from '@src/decorator/container.js'
+import { BaseInteraction, Message, MessageReaction, type Interaction } from 'discord.js'
 import { type GuardInterface } from '@src/interface/index.js'
+import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator/controller.decorator.js'
+
+function applyGuards(
+  descriptor: PropertyDescriptor,
+  guards: ((new (...args: any[]) => GuardInterface) | GuardWithParams)[],
+  propertyKey: string,
+) {
+  const originalMethod = descriptor.value
+
+  descriptor.value = async function (...args: [Interaction | Message | MessageReaction, ...any[]]) {
+    const [context] = args
+
+    if (
+      !(context instanceof BaseInteraction) &&
+      !(context instanceof Message) &&
+      !(context instanceof MessageReaction)
+    ) {
+      throw new Error(
+        `The first argument of ${String(propertyKey)} must be an instance of Interaction, Message, or MessageReaction.`,
+      )
+    }
+
+    // Iterate over each guard and check if it allows the method to proceed
+    for (const guard of guards) {
+      let guardInstance: GuardInterface
+
+      if (isGuardWithParams(guard)) {
+        const { provide, params } = guard
+        guardInstance = mainContainer.get(provide, { autobind: true })
+        // Inject the parameters into the guard instance
+        Object.assign(guardInstance, params)
+      } else {
+        // Resolve guard without parameters
+        guardInstance = mainContainer.get(guard, { autobind: true })
+      }
+
+      // Ensure the guard has the necessary method `canActivate`
+      if (!guardInstance.canActivate) {
+        throw new Error(
+          `Guard ${guard.constructor.name} applied to ${String(propertyKey)} does not have a valid canActivate method.`,
+        )
+      }
+
+      // Check if the guard allows the method to proceed
+      const canActivate = await guardInstance.canActivate(...args)
+      if (!canActivate) {
+        return // Prevent method execution if the guard fails
+      }
+    }
+
+    // Call the original method if all guards pass
+    return originalMethod.apply(this, args)
+  }
+}
 
 /**
  * `@Guard()` decorator to mark a class as a Guard that later can be added on `@UseGuard` decorator.
@@ -28,26 +82,26 @@ import { type GuardInterface } from '@src/interface/index.js'
  * @example
  * ```typescript
  * @Guard()
- * export class ButtonInteractionGuard implements GuardInterface {
- *   private readonly logger = new Logger(ButtonInteractionGuard.name)
- *
- *   async canActivate(interaction: ButtonInteraction, { ownerId }: { ownerId: string }): Promise<boolean> {
- *     if (interaction.user.id !== ownerId) {
- *       this.logger.error(
- *         `User with id ${interaction.user.id} is not allowed to use this command that initiated by user with id ${ownerId}.`,
- *       )
- *       const embed = generateErrorEmbed(
- *         `Hi <@${interaction.user.id}>, this command can only be used by the person who initiated it: <@${ownerId}>.`,
- *       )
- *       await interaction.reply({
- *         embeds: [embed],
- *         flags: MessageFlagsBitField.Flags.Ephemeral,
- *       })
- *       return false
- *     }
- *     return true
- *   }
- * }
+export class ButtonInteractionGuard implements GuardInterface {
+  private readonly logger = new Logger(ButtonInteractionGuard.name)
+
+  async canActivate(context: ButtonInteraction, { ownerId }: { ownerId: string }): Promise<boolean> {
+    if (context.user.id !== ownerId) {
+      this.logger.error(
+        `User with id ${context.user.id} is not allowed to use this command that initiated by user with id ${ownerId}.`,
+      )
+      const embed = generateErrorEmbed(
+        `Hi <@${context.user.id}>, this command can only be used by the person who initiated it: <@${ownerId}>.`,
+      )
+      await context.reply({
+        embeds: [embed],
+        flags: MessageFlagsBitField.Flags.Ephemeral,
+      })
+      return false
+    }
+    return true
+  }
+}
  * ```
  */
 export function Guard() {
@@ -100,7 +154,7 @@ function isGuardWithParams(guard: any): guard is GuardWithParams {
  * `@UseGuard()` decorator to apply one or more guards to methods.
  * Guards are used to handle permission checks before executing a method.
  * Each guard must use `@Guard` decorator and implement the `canActivate` method, which determines
- * whether the method should be allowed to execute based on the provided interaction and arguments.
+ * whether the method should be allowed to execute based on the provided context (Interaction, Message, or Reaction) and arguments.
  * This decorator ensures that all guards pass validation before calling the original method.
  * Supports guards that are parameterized (accepting additional parameters).
  *
@@ -112,6 +166,7 @@ function isGuardWithParams(guard: any): guard is GuardWithParams {
  *
  * @example
  * ```typescript
+ * // Method-level usage
  * @Command('profile-{id}', CommandType.BUTTON)
  * @UseGuard(
  *   { provide: RateLimiterGuard, params: { limit: 2, window: 3000 } },
@@ -120,52 +175,51 @@ function isGuardWithParams(guard: any): guard is GuardWithParams {
  * async showProfileById(interaction: ButtonInteraction, { id }: { id: string }) {
  *   await interaction.reply(`Profile ID: ${id}`)
  * }
+ *
+ * // Class-level usage
+ * @Controller()
+ * @UseGuard(GlobalGuard)
+ * class MyController {
+ *   @Command('ping', CommandType.SLASH)
+ *   async ping(interaction: ChatInputCommandInteraction) {
+ *     await interaction.reply('Pong!')
+ *   }
+ * }
  * ```
  */
-export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | GuardWithParams)[]): MethodDecorator {
-  return function (target: any, propertyKey: string | symbol, _descriptor: PropertyDescriptor) {
-    const originalMethod = _descriptor.value
+export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | GuardWithParams)[]): any {
+  return function (target: any, propertyKey?: string | symbol, descriptor?: PropertyDescriptor) {
+    if (descriptor && propertyKey) {
+      // Method Decorator
+      applyGuards(descriptor, guards as any, String(propertyKey))
+      // Store guard metadata for later access (if needed)
+      Reflect.defineMetadata('guards', guards, target, propertyKey)
+    } else if (typeof target === 'function' && !propertyKey && !descriptor) {
+      // Class Decorator
+      const prototype = target.prototype
 
-    // TypeScript: Enforce that the first argument is an Interaction
-    _descriptor.value = async function (...args: [Interaction, ...any[]]) {
-      // Ensure the first argument is an instance of Interaction
-      if (!(args[0] instanceof BaseInteraction)) {
-        throw new Error(`The first argument of ${String(propertyKey)} must be an instance of Interaction.`)
-      }
+      // 1. Get all methods to guard
+      const methods = new Set<string>()
 
-      // Iterate over each guard and check if it allows the method to proceed
-      for (const guard of guards) {
-        let guardInstance: GuardInterface
+      const commandMap = getCommandMap(prototype) || {}
+      Object.values(commandMap)
+        .flat()
+        .forEach(cmd => methods.add(cmd.methodName))
 
-        if (isGuardWithParams(guard)) {
-          const { provide, params } = guard
-          guardInstance = mainContainer.get(provide, { autobind: true })
-          // Inject the parameters into the guard instance
-          Object.assign(guardInstance, params)
-        } else {
-          // Resolve guard without parameters
-          guardInstance = mainContainer.get(guard, { autobind: true })
-        }
+      const messageHandlers = getMessageHandlers(prototype) || []
+      messageHandlers.forEach(handler => methods.add(handler.method))
 
-        // Ensure the guard has the necessary method `canActivate`
-        if (!guardInstance.canActivate) {
-          throw new Error(
-            `Guard ${guard.constructor.name} applied to ${String(propertyKey)} does not have a valid canActivate method.`,
-          )
-        }
+      const reactionHandlers = getReactionHandlers(prototype) || []
+      reactionHandlers.forEach(handler => methods.add(handler.method))
 
-        // Check if the guard allows the method to proceed
-        const canActivate = await guardInstance.canActivate(...args)
-        if (!canActivate) {
-          return // Prevent method execution if the guard fails
+      for (const methodName of methods) {
+        const methodDescriptor = Object.getOwnPropertyDescriptor(prototype, methodName)
+        if (methodDescriptor) {
+          applyGuards(methodDescriptor, guards as any, methodName)
+          Object.defineProperty(prototype, methodName, methodDescriptor)
+          Reflect.defineMetadata('guards', guards, prototype, methodName)
         }
       }
-
-      // Call the original method if all guards pass
-      return originalMethod.apply(this, args)
     }
-
-    // Store guard metadata for later access (if needed)
-    Reflect.defineMetadata('guards', guards, target, propertyKey)
   }
 }
