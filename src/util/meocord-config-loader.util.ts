@@ -75,7 +75,7 @@ const createWebpackConfig = (buildTsConfigPath: string): Configuration => ({
   mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
   entry: 'meocord.config.ts',
   target: 'node',
-  externals: [nodeExternals({ importType: 'module' })],
+  externals: [nodeExternals({ importType: 'module' }) as any],
   experiments: {
     outputModule: true,
   },

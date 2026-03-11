@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- feat(core): support modal submit in interaction dynamic params ([4f372b8](https://github.com/l7aromeo/meocord/commit/4f372b8709e0a164f80cce7d0d3e7dd64a3cd5f0))
+
+### Fixed
+- Fix Webpack `ExternalItem` type mismatch in `meocord-config-loader.util.ts`.
+
+### Changed
+
+- chore(deps): bump multiple dependencies ([a70d9e4](https://github.com/l7aromeo/meocord/commit/a70d9e405452553c6a40750b98658fd2403951a8))
+
 ## [1.1.0] - 2026-01-27
 
 ### Added
