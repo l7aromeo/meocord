@@ -201,7 +201,7 @@ export class MeoCordApp {
                 acc[opt.name] = opt.value
                 return acc
               }, {})
-            } else if (interaction.isButton() || interaction.isStringSelectMenu()) {
+            } else if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
               dynamicParams = (interaction as any).dynamicParams || {}
             }
 
