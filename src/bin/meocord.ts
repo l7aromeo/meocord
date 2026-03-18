@@ -348,13 +348,26 @@ For full license details, refer to:
         }, 300)
       })
 
+      let sigintReceived = false
       process.on('SIGINT', async () => {
-        await wait(1000)
-        if (nodemonProcess && !nodemonProcess.killed) nodemonProcess.kill()
-        await new Promise(resolve => compiler.close(resolve))
+        if (sigintReceived) {
+          // Second Ctrl+C — force kill and exit immediately
+          if (nodemonProcess && !nodemonProcess.killed) nodemonProcess.kill('SIGKILL')
+          process.exit(1)
+        }
+        sigintReceived = true
+        // Nodemon and the bot already received SIGINT from the process group.
+        // Clean up parent-owned resources and wait for nodemon to exit.
         fsWatcher.close()
-        await wait(100)
-        process.exit(0)
+        if (nodemonProcess && !nodemonProcess.killed) {
+          nodemonProcess.on('exit', async () => {
+            await new Promise(resolve => compiler.close(resolve))
+            process.exit(0)
+          })
+        } else {
+          await new Promise(resolve => compiler.close(resolve))
+          process.exit(0)
+        }
       })
     } catch (error: any) {
       this.logger.error(`Failed to start: ${error.message}`)
@@ -384,11 +397,20 @@ For full license details, refer to:
         stdio: 'inherit',
       }).on('spawn', this.clearConsole)
 
-      process.on('SIGINT', async () => {
-        await wait(1000)
-        if (start && !start.killed) start.kill()
-        await wait(100)
-        process.exit(0)
+      start.on('exit', (code) => {
+        process.exit(code ?? 0)
+      })
+
+      let sigintReceived = false
+      process.on('SIGINT', () => {
+        if (sigintReceived) {
+          // Second Ctrl+C — force kill child and exit immediately
+          if (!start.killed) start.kill('SIGKILL')
+          process.exit(1)
+        }
+        sigintReceived = true
+        // Child process receives SIGINT from the process group directly.
+        // Wait for it to exit via the 'exit' handler above.
       })
     } catch (error) {
       this.logger.error('Failed to start:', error instanceof Error ? error.message : String(error))

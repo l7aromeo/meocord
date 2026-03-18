@@ -31,7 +31,6 @@ import { Logger } from '@src/common/index.js'
 import { getCommandMap, getMessageHandlers, getReactionHandlers, mainContainer } from '@src/decorator/index.js'
 import { sample } from 'lodash-es'
 import { EmbedUtil } from '@src/util/index.js'
-import wait from '@src/util/wait.util.js'
 import { CommandType } from '@src/enum/index.js'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 import { type ReactionHandlerOptions } from '@src/interface/index.js'
@@ -41,6 +40,7 @@ export class MeoCordApp {
   private readonly logger = new Logger(MeoCordApp.name)
   private readonly bot: Client
   private isShuttingDown = false
+  private activityInterval: ReturnType<typeof setInterval> | null = null
   private controllerInstancesCache = new Map()
 
   constructor(
@@ -59,7 +59,7 @@ export class MeoCordApp {
       this.logger.log('Starting bot...')
 
       this.bot.on('clientReady', async () => {
-        setInterval(() => {
+        this.activityInterval = setInterval(() => {
           this.bot.user?.setActivity(sample(this.activities))
         }, 10000)
 
@@ -317,19 +317,23 @@ export class MeoCordApp {
   }
 
   private async gracefulShutdown() {
-    if (this.bot && !this.isShuttingDown) {
+    if (this.isShuttingDown) {
+      // Second signal received while shutting down — force exit immediately
+      process.exit(1)
+    }
+
+    if (this.bot) {
       try {
         this.isShuttingDown = true
         this.logger.log('Shutting down bot...')
+        if (this.activityInterval) clearInterval(this.activityInterval)
         this.bot.removeAllListeners()
         await this.bot.destroy()
         this.logger.log('Bot has shut down')
-        await wait(100)
         process.exit(0)
       } catch (error) {
         this.logger.error('Error during shutdown:', error)
-        await wait(100)
-        process.exit(0)
+        process.exit(1)
       }
     }
   }
