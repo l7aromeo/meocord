@@ -302,7 +302,7 @@ For full license details, refer to:
       const compiler = webpack({
         entry: configPath,
         target: 'node',
-        mode: 'production',
+        mode: 'none',
         externals: [nodeExternals({ importType: 'module' }) as any],
         module: {
           rules: [
