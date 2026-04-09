@@ -61,7 +61,7 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 
 - **Node.js**: Ensure you have version **22.14.0** or higher, as it’s the current LTS release.
 - **TypeScript**: Version **5.7** or above is required for compatibility with modern features.
-- **Yarn**: Version stable **4.7** (`corepack enable && yarn set version stable`) or above is strongly recommended for managing dependencies and smooth builds.
+- **Bun**: Version **1.x** or above is required as the package manager.
 
 ### Module Support
 
@@ -176,14 +176,14 @@ Use the CLI to start your application.
   Run in development mode:
 
 ```shell
-yarn start:dev
+bun start:dev
 ```
 
 - **Production Mode**:
   Run in production mode with fresh production build:
 
 ```shell
-yarn start:prod --build   # use arg `--build` if not built yet or use `yarn build:prod` first
+bun start:prod --build   # use arg `--build` if not built yet or use `bun build:prod` first
 ```
 
 ---
@@ -199,7 +199,6 @@ When using MeoCord, the expected project structure is as follows:
 .
 ├── .gitignore
 ├── .prettierrc.mjs
-├── .yarnrc.yml
 ├── eslint.config.mjs
 ├── meocord.config.ts
 ├── package.json
@@ -219,7 +218,7 @@ When using MeoCord, the expected project structure is as follows:
 │   └── services
 │       └── sample.service.ts
 ├── tsconfig.json
-└── yarn.lock
+└── bun.lock
 ```
 
 This structure ensures clear separation of concerns and scalable project architecture.
@@ -363,13 +362,13 @@ The **MeoCord CLI** is designed to help you manage, build, and run your applicat
 To ensure you see the most accurate and complete list of commands and options, always refer to the help menu by running:
 
 ```shell
-yarn meocord --help
+bun meocord --help
 ```
 
 Below is an example of the help display output:
 
 ```textmate
-❯ yarn meocord --help
+❯ bun meocord --help
 MeoCord Copyright (C) 2025  Ukasyah Rahmatullah Zada
     This program comes with ABSOLUTELY NO WARRANTY; for details type `meocord show -w'.
     This is free software, and you are welcome to redistribute it
@@ -413,8 +412,8 @@ Builds the application in **production** or **development** mode.
 **Usage:**
 
 ```shell
-yarn meocord build --prod       # Build for production
-yarn meocord build --dev        # Build for development
+bun meocord build --prod       # Build for production
+bun meocord build --dev        # Build for development
 ```
 
 #### `meocord start`
@@ -424,8 +423,8 @@ Starts the application with options for either a **production** or **development
 **Usage:**
 
 ```shell
-yarn meocord start --build --prod          # Start in production mode with fresh production build
-yarn meocord start --dev                   # Start in development mode (will always fresh build)
+bun meocord start --build --prod          # Start in production mode with fresh production build
+bun meocord start --dev                   # Start in development mode (will always fresh build)
 ```
 
 #### `meocord generate` (Alias: `meocord g`)
@@ -435,13 +434,13 @@ Scaffolds application components such as controllers, services, and other elemen
 **Usage:**
 
 ```text
-yarn meocord generate|g [options] [command]
+bun meocord generate|g [options] [command]
 ```
 
 **Example:**
 
 ```shell
-yarn meocord g co slash "user"
+bun meocord g co slash "user"
 ```
 
 This command will generate a `user` slash controller.
@@ -451,7 +450,7 @@ This command will generate a `user` slash controller.
 For detailed usage of any particular command, append the `--help` flag to it. For instance:
 
 ```shell
-yarn meocord g --help
+bun meocord g --help
 ```
 
 This will provide command-specific help and options.
@@ -465,7 +464,7 @@ This will provide command-specific help and options.
 Run the application in development mode with live-reload for a seamless coding experience:
 
 ```shell
-yarn meocord start --dev
+bun meocord start --dev
 ```
 
 ### Building for Production
@@ -473,7 +472,7 @@ yarn meocord start --dev
 Generate an optimized and compiled production build with:
 
 ```shell
-yarn meocord build --prod
+bun meocord build --prod
 ```
 
 Once built, you can deploy or run the application efficiently.
@@ -485,19 +484,19 @@ Once built, you can deploy or run the application efficiently.
 Install all necessary dependencies, including development dependencies, before building:
 
 ```shell
-yarn install --immutable
+bun install --frozen-lockfile
 ```
 
 Generate an optimized and compiled production build:
 
 ```shell
-yarn meocord build --prod
+bun meocord build --prod
 ```
 
 Clean up and focus on production-only dependencies:
 
 ```shell
-yarn workspaces focus --production
+bun install --production
 ```
 
 Ensure the following essential files and folders are prepared for deployment on the server:
@@ -507,16 +506,14 @@ Ensure the following essential files and folders are prepared for deployment on 
 ├── dist
 ├── node_modules (production dependencies only)
 ├── .env (if applicable, ensure it contains necessary variables)
-├── .yarn (optional: exclude cache if not required)
-├── .yarnrc.yml
 ├── package.json
-└── yarn.lock
+└── bun.lock
 ```
 
 Start the application in production mode on the server:
 
 ```shell
-yarn meocord start --prod
+bun meocord start --prod
 ```
 
 ---
