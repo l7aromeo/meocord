@@ -130,6 +130,32 @@ const javaScriptConfig = {
   },
 }
 
+const webpackConfig = {
+  files: ['webpack.config.js'],
+  plugins: {
+    headers,
+    import: importPlugin,
+    prettier: eslintPluginPrettier,
+    'unused-imports': unusedImports,
+  },
+  languageOptions,
+  rules: {
+    ...eslintJs.configs.recommended.rules,
+    'prettier/prettier': 'error',
+    'unused-imports/no-unused-imports': 'error',
+    'no-var': 'error',
+    'prefer-const': 'warn',
+    'no-unused-vars': [
+      'error',
+      {
+        ignoreRestSiblings: true,
+        args: 'none',
+      },
+    ],
+    'import/no-unresolved': 'off',
+  },
+}
+
 const recommendedTypeScriptConfigs = [
   ...eslintTs.configs.recommended.map(config => ({
     ...config,
@@ -147,4 +173,5 @@ export default [
   eslintConfigPrettier,
   typescriptConfig,
   javaScriptConfig,
+  webpackConfig,
 ]
