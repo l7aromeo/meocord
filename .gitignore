@@ -1,13 +1,6 @@
 # Node.js dependencies
 node_modules/
 
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/sdks
-!.yarn/versions
-.pnp.*
 
 # Build outputs
 dist/
@@ -21,7 +14,6 @@ dist/
 
 # Logs
 *.log
-yarn-error.log
 
 # Cache and temporary files
 .prettier_cache/
