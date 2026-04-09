@@ -5,11 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2026-04-09
+
+### Fixed
+
+- Compile `meocord.config.ts` to `dist/meocord.config.mjs` during `meocord build` so the config can be loaded at runtime without requiring `tsconfig.json`, source files, or path alias resolution. Fixes `@MeoCord` decorator failing with "No container found" in Docker and other environments where only `dist/` is present. ([2765dc8](https://github.com/l7aromeo/meocord/commit/2765dc8))
+- Cache loaded config in `loadMeoCordConfig()` to avoid repeated jiti calls on every invocation (e.g., logger reading `appName` on each log line). ([2765dc8](https://github.com/l7aromeo/meocord/commit/2765dc8))
+
 ## [1.2.3] - 2026-04-09
 
 ### Fixed
 
-- Move webpack build tools back to dependencies so `meocord start --dev` works automatically after `yarn add meocord` without requiring manual peer dependency installation.
+- Move webpack build tools back to dependencies so `meocord start --dev` works automatically after `yarn add meocord` without requiring manual peer dependency installation. ([8fd1ca8](https://github.com/l7aromeo/meocord/commit/8fd1ca8))
+- Add missing `discord.js` and related dev dependencies to package.json. ([449685a](https://github.com/l7aromeo/meocord/commit/449685a))
 
 ## [1.2.2] - 2026-04-09
 
