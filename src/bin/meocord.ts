@@ -363,6 +363,7 @@ For full license details, refer to:
     try {
       this.clearConsole()
       this.logger.log('Starting watch mode...')
+      await this.compileConfig()
       const webpackConfig = (await import(this.webpackConfigPath)).default
       const compiler = webpack({ ...webpackConfig, mode: 'development' })
 
