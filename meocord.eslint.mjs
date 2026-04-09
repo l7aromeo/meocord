@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import importPlugin from 'eslint-plugin-import'
+import { importX } from 'eslint-plugin-import-x'
 import globals from 'globals'
 import tsParser from '@typescript-eslint/parser'
 import eslintTs from 'typescript-eslint'
@@ -40,7 +40,7 @@ const languageOptions = {
 export const typescriptConfig = {
   files: tsFiles,
   plugins: {
-    import: importPlugin,
+    'import-x': importX,
     prettier: eslintPluginPrettier,
   },
   languageOptions: {
@@ -48,10 +48,10 @@ export const typescriptConfig = {
     parser: tsParser,
   },
   settings: {
-    'import/parsers': {
+    'import-x/parsers': {
       '@typescript-eslint/parser': ['.ts'],
     },
-    'import/resolver': {
+    'import-x/resolver': {
       typescript: {
         alwaysTryTypes: true,
         project: './tsconfig.json',
@@ -59,7 +59,6 @@ export const typescriptConfig = {
     },
   },
   rules: {
-    ...importPlugin.configs.typescript.rules,
     'prettier/prettier': 'error',
     '@typescript-eslint/no-explicit-any': 'off',
     '@typescript-eslint/ban-ts-comment': 'off',

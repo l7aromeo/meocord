@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import importPlugin from 'eslint-plugin-import'
+import { importX } from 'eslint-plugin-import-x'
 import globals from 'globals'
 import tsParser from '@typescript-eslint/parser'
 import eslintJs from '@eslint/js'
@@ -45,7 +45,7 @@ const typescriptConfig = {
   files: tsFiles,
   plugins: {
     headers,
-    import: importPlugin,
+    'import-x': importX,
     prettier: eslintPluginPrettier,
     'unused-imports': unusedImports,
   },
@@ -54,10 +54,10 @@ const typescriptConfig = {
     parser: tsParser,
   },
   settings: {
-    'import/parsers': {
+    'import-x/parsers': {
       '@typescript-eslint/parser': ['.ts'],
     },
-    'import/resolver': {
+    'import-x/resolver': {
       typescript: {
         alwaysTryTypes: true,
         project: './tsconfig.json',
@@ -65,7 +65,6 @@ const typescriptConfig = {
     },
   },
   rules: {
-    ...importPlugin.configs.typescript.rules,
     'prettier/prettier': 'error',
     '@typescript-eslint/no-explicit-any': 'off',
     '@typescript-eslint/ban-ts-comment': 'off',
@@ -108,14 +107,13 @@ const javaScriptConfig = {
   files: jsFiles,
   plugins: {
     headers,
-    import: importPlugin,
+    'import-x': importX,
     prettier: eslintPluginPrettier,
     'unused-imports': unusedImports,
   },
   languageOptions,
   rules: {
     ...eslintJs.configs.recommended.rules,
-    ...importPlugin.configs.recommended.rules,
     'prettier/prettier': 'error',
     'unused-imports/no-unused-imports': 'error',
     'no-var': 'error',
@@ -134,7 +132,7 @@ const webpackConfig = {
   files: ['webpack.config.js'],
   plugins: {
     headers,
-    import: importPlugin,
+    'import-x': importX,
     prettier: eslintPluginPrettier,
     'unused-imports': unusedImports,
   },
@@ -152,7 +150,7 @@ const webpackConfig = {
         args: 'none',
       },
     ],
-    'import/no-unresolved': 'off',
+    'import-x/no-unresolved': 'off',
   },
 }
 
