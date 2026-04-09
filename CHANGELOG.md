@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2-0] - 2026-04-09
+
+### Changed
+
+- **Breaking:** Migrate build system from Babel to Rollup. Output structure changed from `dist/` to `dist/{esm,cjs,types}/`. Package exports updated accordingly. ([33d77b4](https://github.com/l7aromeo/meocord/commit/33d77b4))
+- Replace Babel with Rollup for faster ESM, CJS, and declaration builds. ([33d77b4](https://github.com/l7aromeo/meocord/commit/33d77b4))
+- Move `discord.js` from dependencies to peer dependencies only, preventing duplicate package installs in consumer projects. ([33d77b4](https://github.com/l7aromeo/meocord/commit/33d77b4))
+- Replace webpack-based TypeScript config compilation with jiti runtime loader for faster startup and no temp file generation. ([923e01f](https://github.com/l7aromeo/meocord/commit/923e01f))
+
+### Fixed
+
+- Resolve webpack config path in CLI after dist structure change. ([b80f770](https://github.com/l7aromeo/meocord/commit/b80f770))
+- Resolve circular dependency between `core/meocord.app.ts` and `decorator/app.decorator.ts`. ([ac01d34](https://github.com/l7aromeo/meocord/commit/ac01d34))
+- Extract context validation in `@UseGuard` to a type predicate function to eliminate redundant `instanceof` check warnings. ([fa3b18c](https://github.com/l7aromeo/meocord/commit/fa3b18c))
+
 ## [1.2.1] - 2026-03-18
 
 ### Fixed
