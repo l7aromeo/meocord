@@ -28,7 +28,8 @@ import {
   SlashCommandBuilder,
 } from 'discord.js'
 import { Logger } from '@src/common/index.js'
-import { getCommandMap, getMessageHandlers, getReactionHandlers, mainContainer } from '@src/decorator/index.js'
+import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator/controller.decorator.js'
+import { mainContainer } from '@src/decorator/container.js'
 import { sample } from 'lodash-es'
 import { EmbedUtil } from '@src/util/index.js'
 import { CommandType } from '@src/enum/index.js'
