@@ -213,7 +213,7 @@ For full license details, refer to:
 
       // Install dependencies
       console.info(chalk.blueBright('📦 Installing dependencies...'))
-      execSync(`cd ${kebabCaseAppName} && corepack enable && yarn install`, { stdio: 'inherit' })
+      execSync(`cd ${kebabCaseAppName} && bun install`, { stdio: 'inherit' })
       console.log(chalk.green('✔ Dependencies installed successfully.'))
 
       console.log(chalk.greenBright(`🎉 MeoCord app "${chalk.bold(kebabCaseAppName)}" is ready!`))
