@@ -11,8 +11,8 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 - [Features](#features)
 - [Getting Started](#getting-started)
 - [Project Structure](#project-structure)
-    - [Example Structure](#example-structure)
-    - [Key Components](#key-components)
+  - [Example Structure](#example-structure)
+  - [Key Components](#key-components)
 - [Configuration](#configuration)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
@@ -27,36 +27,29 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 
 ## Features
 
-- **Powerful CLI Tools**  
+- **Powerful CLI Tools**
   Easily manage, build, and run projects using an intuitive CLI. Simplify tasks such as scaffolding components, building
   applications, and starting bots in development/production modes.
-
-- **Modular Design**  
+- **Modular Design**
   Embrace modularity by organizing application logic into distinct components like controllers and services. This
   approach enhances scalability, improves maintainability, and simplifies future development.
-
-- **Built-in Decorators**  
+- **Built-in Decorators**
   Simplify and extend bot behavior through a robust decorator system. Leverage built-in decorators for streamlined
   functionality.
-
-- **Specialized Services**  
+- **Specialized Services**
   Register specialized services using the `@MeoCord` decorator. For example, add a RabbitMQ service to listen for events
   and trigger actions, such as sending Discord messages. This promotes modularity, flexibility, and seamless integration
   of custom services.
-
-- **Seamless Discord.js Integration**  
+- **Seamless Discord.js Integration**
   Built on top of Discord.js to provide full support for the Discord API, with added features like activity management,
   intents, partials, and custom client options.
-
-- **TypeScript-First Approach**  
+- **TypeScript-First Approach**
   Designed with TypeScript in mind, offering strict type safety, interfaces, and decorators to empower modern
   development workflows.
-
-- **Extensible Webpack Integration**  
+- **Extensible Webpack Integration**
   Easily customize your build process using an exposed Webpack configuration hook. Add rules, plugins, or modify setups
   to match your project's requirements.
-
-- **Dynamic Activity Support**  
+- **Dynamic Activity Support**
   Manage bot presence dynamically, such as setting activities (e.g., "Playing X with Y") or linking bot status to
   real-time events.
 
@@ -70,67 +63,75 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 - **TypeScript**: Version **5.7** or above is required for compatibility with modern features.
 - **Yarn**: Version stable **4.7** (`corepack enable && yarn set version stable`) or above is strongly recommended for managing dependencies and smooth builds.
 
-### ⚠️ ESM-Only Framework
+### Module Support
 
-**MeoCord** is built as an **ECMAScript Module (ESM)** framework. This means:
+**MeoCord** supports both **ESM** (`import`) and **CommonJS** (`require`) consumption:
 
+- The package exports dual module formats via `dist/esm/` (ESM) and `dist/cjs/` (CommonJS), with type declarations in `dist/types/`.
 - New projects generated with the `meocord create` CLI are already configured for ESM, so no additional setup is required.
-- **If you are migrating an existing CommonJS-based project**:
-    1. Add `"type": "module"` to your `package.json`:
-       ```json
-       {
-         "name": "your-project",
-         "version": "1.0.0",
-         "type": "module",
-         "dependencies": {
-           "meocord": "^x.x.x"
-         }
+- **If you are migrating an existing CommonJS-based project**, you can still use MeoCord with your existing setup. If you prefer ESM:
+  1. Add `"type": "module"` to your `package.json`:
+
+     ```json
+     {
+       "name": "your-project",
+       "version": "1.0.0",
+       "type": "module",
+       "dependencies": {
+         "meocord": "^x.x.x"
        }
-       ```
+     }
+     ```
+  2. If your codebase uses `require()` statements, replace them with `import` statements to ensure compatibility with
+     ESM:
 
-    2. If your codebase uses `require()` statements, replace them with `import` statements to ensure compatibility with
-       ESM:
-       ```javascript
-       // Before (CommonJS)
-       const Package = require('any-package');
+     ```javascript
+     // Before (CommonJS)
+     const Package = require('any-package');
 
-       // After (ESM)
-       import Package from 'any-package';
-       ```
+     // After (ESM)
+     import Package from 'any-package';
+     ```
+  3. Update your `tsconfig.json` file to ensure compatibility with ESM:
 
-    3. Update your `tsconfig.json` file to ensure compatibility with ESM:
-       ```json
-       {
-         "compilerOptions": {
-           "module": "ESNext",
-           "target": "ESNext",
-           "moduleResolution": "Bundler",
-           "strict": true,
-           "emitDecoratorMetadata": true,
-           "experimentalDecorators": true,
-           "resolveJsonModule": true,
-           "noUnusedLocals": true,
-           "noUnusedParameters": true,
-           "skipLibCheck": true,
-           "noImplicitAny": false,
-           "outDir": "./dist",
-           "baseUrl": "./",
-           "rootDir": "./src",
-           "paths": {
-             "@src/*": ["./src/*"]
-           }
+     ```json
+     {
+       "compilerOptions": {
+         "module": "ESNext",
+         "target": "ESNext",
+         "moduleResolution": "Bundler",
+         "strict": true,
+         "strictNullChecks": true,
+         "strictBindCallApply": true,
+         "strictPropertyInitialization": false,
+         "forceConsistentCasingInFileNames": true,
+         "noFallthroughCasesInSwitch": true,
+         "emitDecoratorMetadata": true,
+         "experimentalDecorators": true,
+         "resolveJsonModule": true,
+         "verbatimModuleSyntax": true,
+         "noUnusedLocals": true,
+         "noUnusedParameters": true,
+         "skipLibCheck": true,
+         "noImplicitAny": false,
+         "noEmit": true,
+         "outDir": "./dist",
+         "rootDir": "./src",
+         "paths": {
+           "@src/*": ["./src/*"]
          },
-         "include": ["src/**/*.ts"],
-         "exclude": [
-           "meocord.config.ts",
-           "dist",
-           "jest.config.ts",
-           "node_modules"
-         ]
-       }
-       ```
-
-    4. Rename files to use `.mjs` if necessary, or adapt them to ESM-compatible `.js` while ensuring that `"type": "module"` is set in your `package.json`.
+         "types": ["node"]
+       },
+       "include": ["src/**/*.ts"],
+       "exclude": [
+         "meocord.config.ts",
+         "dist",
+         "jest.config.ts",
+         "node_modules"
+       ]
+     }
+     ```
+  4. Rename files to use `.mjs` if necessary, or adapt them to ESM-compatible `.js` while ensuring that `"type": "module"` is set in your `package.json`.
 
 For more migration details, refer to the [Node.js ESM documentation](https://nodejs.org/api/esm.html).
 
@@ -146,7 +147,7 @@ Follow these steps to create and run a **MeoCord** application:
 
 Use the CLI to generate your application.
 
-```shell script
+```shell
 npx meocord create <your-app-name>
 ```
 
@@ -173,13 +174,15 @@ Use the CLI to start your application.
 
 - **Development Mode**:
   Run in development mode:
-```shell script
+
+```shell
 yarn start:dev
 ```
 
 - **Production Mode**:
   Run in production mode with fresh production build:
-```shell script
+
+```shell
 yarn start:prod --build   # use arg `--build` if not built yet or use `yarn build:prod` first
 ```
 
@@ -190,6 +193,7 @@ yarn start:prod --build   # use arg `--build` if not built yet or use `yarn buil
 When using MeoCord, the expected project structure is as follows:
 
 ### Example Structure
+
 ```
 .
 .
@@ -225,23 +229,24 @@ This structure ensures clear separation of concerns and scalable project archite
 ### Key Components
 
 1. **Entry Point** (`src/main.ts`):
-    - The main application logic, where you initialize and run the app.
 
+   - The main application logic, where you initialize and run the app.
 2. **Application Configuration** (`src/app.ts`):
-    - Acts as the central configuration point, where controllers, services, client options, and other metadata are defined.
-    - Ties all modular components (controllers, specialized services, activities, etc.) together to define the core structure of the app.
 
+   - Acts as the central configuration point, where controllers, services, client options, and other metadata are defined.
+   - Ties all modular components (controllers, specialized services, activities, etc.) together to define the core structure of the app.
 3. **Controllers** (`src/controllers`):
-    - Build feature-specific logic (e.g., context menus, message handling in bots).
 
+   - Build feature-specific logic (e.g., context menus, message handling in bots).
 4. **Services** (`src/services`):
-    - Core business logic and reusable service definitions.
 
+   - Core business logic and reusable service definitions.
 5. **Guards** (`src/guards`):
-    - Middleware-like services for pre-execution logic (e.g., rate-limiting, authorization).
 
+   - Middleware-like services for pre-execution logic (e.g., rate-limiting, authorization).
 6. **Assets** (`src/assets`):
-    - Fonts, images, and other static files for your application.
+
+   - Fonts, images, and other static files for your application.
 
 ---
 
@@ -306,56 +311,55 @@ export default {
 ```
 
 - **Line-by-Line Explanation**:
-    1. **Environment Variable Loading**:  
-       The `load-env.util` ensures that environment variables from `.env` files are loaded before executing the app. *(This utility internally uses the `dotenv` package to load variables from `.env` files. For example, a `.env`
-       file containing `TOKEN=your-discord-bot-token` makes `process.env.TOKEN` accessible in the application).*
-       **Example of `load-env.util`:**
-         ```typescript
-         import { config } from 'dotenv';
-         import path from 'path';
-    
-         const getEnvFilePath = (): string => {
-           switch (process.env.NODE_ENV) {
-             case 'production':
-               return '.env.prod';
-             default:
-               return '.env.dev';
-           }
-         };
-    
-         const envFilePath = path.resolve(process.cwd(), getEnvFilePath());
-    
-         config({
-           path: envFilePath,
-           encoding: 'utf8',
-         });
-         ```
+  1. **Environment Variable Loading**:
+     The `load-env.util` ensures that environment variables from `.env` files are loaded before executing the app. *(This utility internally uses the `dotenv` package to load variables from `.env` files. For example, a `.env`
+     file containing `TOKEN=your-discord-bot-token` makes `process.env.TOKEN` accessible in the application).*
+     **Example of `load-env.util`:**
 
-    2. **Import Configuration Interface**:  
-       Imports the `MeoCordConfig` interface to enforce type safety on the configuration object.
+     ```typescript
+     import { config } from 'dotenv';
+     import path from 'path';
 
-    3. **Application Name**:  
-       The `appName` defines the name of the bot or application.
+     const getEnvFilePath = (): string => {
+       switch (process.env.NODE_ENV) {
+         case 'production':
+           return '.env.prod';
+         default:
+           return '.env.dev';
+       }
+     };
 
-    4. **Discord Token**:  
-       The `discordToken` property retrieves the bot's token from the environment variables, ensuring security and
-       flexibility.
+     const envFilePath = path.resolve(process.cwd(), getEnvFilePath());
 
-    5. **Custom Webpack Configuration**:  
-       Adds an optional function to modify and extend the default Webpack configuration, including custom module rules
-       or plugins.
-
-    6. **Return Configuration**:  
-       Ensures the final configuration satisfies the `MeoCordConfig` type, guaranteeing that all required properties are
-       correctly defined.
+     config({
+       path: envFilePath,
+       encoding: 'utf8',
+     });
+     ```
+  2. **Import Configuration Interface**:
+     Imports the `MeoCordConfig` interface to enforce type safety on the configuration object.
+  3. **Application Name**:
+     The `appName` defines the name of the bot or application.
+  4. **Discord Token**:
+     The `discordToken` property retrieves the bot's token from the environment variables, ensuring security and
+     flexibility.
+  5. **Custom Webpack Configuration**:
+     Adds an optional function to modify and extend the default Webpack configuration, including custom module rules
+     or plugins.
+  6. **Return Configuration**:
+     Ensures the final configuration satisfies the `MeoCordConfig` type, guaranteeing that all required properties are
+     correctly defined.
 
 ---
 
 ## CLI Usage
+
 ### Overview
+
 The **MeoCord CLI** is designed to help you manage, build, and run your application seamlessly. It provides essential commands and options to streamline your workflow.
 
 #### Viewing All Commands and Options
+
 To ensure you see the most accurate and complete list of commands and options, always refer to the help menu by running:
 
 ```shell
@@ -399,43 +403,53 @@ Available Commands:
 ```
 
 ### Key Commands Overview
+
 The following section provides details for frequently used commands, but note that **additional commands** may be available by running `meocord --help`.
 
 #### `meocord build`
+
 Builds the application in **production** or **development** mode.
 
 **Usage:**
+
 ```shell
 yarn meocord build --prod       # Build for production
 yarn meocord build --dev        # Build for development
 ```
 
 #### `meocord start`
+
 Starts the application with options for either a **production** or **development** environment. The application can also build automatically before starting.
 
 **Usage:**
+
 ```shell
 yarn meocord start --build --prod          # Start in production mode with fresh production build
 yarn meocord start --dev                   # Start in development mode (will always fresh build)
 ```
 
 #### `meocord generate` (Alias: `meocord g`)
+
 Scaffolds application components such as controllers, services, and other elements.
 
 **Usage:**
+
 ```text
 yarn meocord generate|g [options] [command]
 ```
 
 **Example:**
+
 ```shell
 yarn meocord g co slash "user"
 ```
+
 This command will generate a `user` slash controller.
 
 ---
 
 For detailed usage of any particular command, append the `--help` flag to it. For instance:
+
 ```shell
 yarn meocord g --help
 ```
@@ -511,41 +525,38 @@ yarn meocord start --prod
 
 We welcome contributions to improve **MeoCord**. Here's how you can get started:
 
-1. **Fork the Repository**:  
+1. **Fork the Repository**:
    Click the "Fork" button in the top-right corner of the repository page to create your copy of the project.
-
-2. **Create a Feature Branch**:  
+2. **Create a Feature Branch**:
    Use the following command to create a branch for your changes:
 
    ```textmate
    git checkout -b feature/your-feature-name
    ```
-
-3. **Make Meaningful Commits**:  
+3. **Make Meaningful Commits**:
    Commit your changes with clear, descriptive, and concise messages that explain what your changes do:
 
    ```textmate
    git commit -m "feat: add [brief description of your feature or fix]"
    ```
-
-4. **Push Your Changes**:  
+4. **Push Your Changes**:
    Push your branch to your forked repository with this command:
 
    ```textmate
    git push origin feature/your-feature-name
    ```
-
 5. **Open a Pull Request (PR)**:
-    - Navigate to the original **MeoCord** repository.
-    - Click "Compare & Pull Request."
-    - Provide a descriptive title and a detailed description of your changes.
+
+   - Navigate to the original **MeoCord** repository.
+   - Click "Compare & Pull Request."
+   - Provide a descriptive title and a detailed description of your changes.
 
    Be sure to include:
-    - The purpose of your changes.
-    - Any relevant details or links.
-    - Steps to reproduce/test the changes, if applicable.
 
-6. **Engage in Reviews**:  
+   - The purpose of your changes.
+   - Any relevant details or links.
+   - Steps to reproduce/test the changes, if applicable.
+6. **Engage in Reviews**:
    Work with maintainers to address any feedback or changes they request.
 
 Thank you for helping make **MeoCord** better!
@@ -557,6 +568,7 @@ Thank you for helping make **MeoCord** better!
 **MeoCord Framework** is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.txt).
 
 **Key conditions:**
+
 - You can freely use, modify, and distribute the framework under the terms of GPL v3.
 - If you distribute derivatives of this software, the source code must also remain freely available under the same GPL v3 terms.
 
