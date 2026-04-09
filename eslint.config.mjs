@@ -142,7 +142,7 @@ const recommendedTypeScriptConfigs = [
 ]
 
 export default [
-  { ignores: ['dist/*', '.yarn/*'] },
+  { ignores: ['dist/*', '.yarn/*', 'rollup.config.js'] },
   ...recommendedTypeScriptConfigs,
   eslintConfigPrettier,
   typescriptConfig,

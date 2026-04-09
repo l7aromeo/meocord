@@ -19,8 +19,8 @@
 import path from 'path'
 import TsconfigPathsPlugin from 'tsconfig-paths-webpack-plugin'
 import TerserPlugin from 'terser-webpack-plugin'
-import { loadMeoCordConfig } from './dist/util/meocord-config-loader.util.js'
-import { prepareModifiedTsConfig } from './dist/util/tsconfig.util.js'
+import { loadMeoCordConfig } from './dist/esm/util/meocord-config-loader.util.js'
+import { prepareModifiedTsConfig } from './dist/esm/util/tsconfig.util.js'
 import nodeExternals from 'webpack-node-externals'
 
 const CWD = process.cwd()

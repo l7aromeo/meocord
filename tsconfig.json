@@ -15,19 +15,12 @@
     "skipLibCheck": true,
     "noImplicitAny": false,
     "outDir": "./dist",
-    "baseUrl": ".",
-    "rootDir": "./src",
+    "rootDir": ".",
     "paths": {
-      "@src/*": [
-        "./src/*"
-      ]
-    }
+      "@src/*": ["./src/*"]
+    },
+    "types": ["node", "reflect-metadata"],
   },
-  "include": [
-    "src/**/*"
-  ],
-  "exclude": [
-    "webpack.config.js",
-    "node_modules"
-  ]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
 }
