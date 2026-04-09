@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2026-04-09
+
+### Fixed
+
+- Use webpack `mode: 'none'` for config compilation to prevent `DefinePlugin` from replacing `process.env.NODE_ENV` with a string literal, which caused the compiled config to always load the production env file. ([91d8a04](https://github.com/l7aromeo/meocord/commit/91d8a04))
+
 ## [1.2.4] - 2026-04-09
 
 ### Fixed
