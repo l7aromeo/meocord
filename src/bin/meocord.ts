@@ -27,6 +27,7 @@ import wait from '@src/util/wait.util.js'
 import { GeneratorCLI } from '@src/bin/generator.js'
 import * as fs from 'node:fs'
 import { compileAndValidateConfig, setEnvironment } from '@src/util/common.util.js'
+import { prepareModifiedTsConfig } from '@src/util/tsconfig.util.js'
 import { Command } from 'commander'
 import { simpleGit } from 'simple-git'
 import chalk from 'chalk'
@@ -34,6 +35,8 @@ import { execSync } from 'child_process'
 import { configureCommandHelp, ensureReady } from '@src/util/meocord-cli.util.js'
 import packageJson from '../../package.json' with { type: 'json' }
 import { fileURLToPath } from 'url'
+import TsconfigPathsPlugin from 'tsconfig-paths-webpack-plugin'
+import nodeExternals from 'webpack-node-externals'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -121,6 +124,7 @@ For full license details, refer to:
         await compileAndValidateConfig()
 
         await this.build(mode)
+        await this.compileConfig()
       })
 
     program
@@ -141,6 +145,7 @@ For full license details, refer to:
 
         if (options.build) {
           await this.build(mode)
+          await this.compileConfig()
         }
 
         options.prod ? await this.startProd() : await this.startDev()
@@ -280,6 +285,74 @@ For full license details, refer to:
       this.logger.error(`Build process failed: ${error.message}`)
       await wait(100)
       process.exit(1)
+    }
+  }
+
+  /**
+   * Compiles meocord.config.ts to dist/meocord.config.mjs so the config
+   * can be loaded at runtime without jiti, tsconfig, or source files.
+   */
+  async compileConfig() {
+    const configPath = path.resolve(this.projectRoot, 'meocord.config.ts')
+    if (!fs.existsSync(configPath)) return
+
+    try {
+      const tsConfigPath = prepareModifiedTsConfig()
+
+      const compiler = webpack({
+        entry: configPath,
+        target: 'node',
+        mode: 'production',
+        externals: [nodeExternals({ importType: 'module' }) as any],
+        module: {
+          rules: [
+            {
+              test: /\.ts$/,
+              use: {
+                loader: 'swc-loader',
+                options: {
+                  jsc: {
+                    parser: { syntax: 'typescript', tsx: false, decorators: true },
+                    transform: { decoratorMetadata: true, legacyDecorator: true },
+                  },
+                },
+              },
+              exclude: /node_modules/,
+            },
+          ],
+        },
+        resolve: {
+          extensions: ['.ts', '.js'],
+          plugins: [new (TsconfigPathsPlugin as any)({ configFile: tsConfigPath })],
+        },
+        output: {
+          filename: 'meocord.config.mjs',
+          path: path.resolve(this.projectRoot, 'dist'),
+          library: { type: 'module' },
+        },
+        experiments: { outputModule: true },
+        optimization: { minimize: false },
+      })
+
+      await new Promise<void>(resolve => {
+        compiler.run((err, stats) => {
+          if (err || stats?.hasErrors()) {
+            this.logger.warn('Failed to compile meocord.config.ts — runtime will fall back to source config.')
+            resolve()
+            return
+          }
+          compiler.close(closeErr => {
+            if (closeErr) {
+              resolve()
+              return
+            }
+            this.logger.info('Config compiled to dist/meocord.config.mjs')
+            resolve()
+          })
+        })
+      })
+    } catch {
+      this.logger.warn('Failed to compile meocord.config.ts — runtime will fall back to source config.')
     }
   }
 
