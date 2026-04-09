@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-04-09
+
+### Changed
+
+- **Breaking:** Migrate build system from Babel to Rollup. Output structure changed from `dist/` to `dist/{esm,cjs,types}/`. Package exports updated accordingly.
+- Replace Babel with Rollup for faster ESM, CJS, and declaration builds.
+- Move `discord.js` from dependencies to peer dependencies only, preventing duplicate package installs in consumer projects.
+- Replace webpack-based TypeScript config compilation with jiti runtime loader for faster startup and no temp file generation.
+- Update tsconfig.json for Rollup compatibility with `NodeNext` module resolution.
+
+### Fixed
+
+- Resolve webpack config path in CLI after dist structure change.
+- Resolve circular dependency between `core/meocord.app.ts` and `decorator/app.decorator.ts`.
+- Extract context validation in `@UseGuard` to a type predicate function to eliminate redundant `instanceof` check warnings.
+
+### Documentation
+
+- Update README to reflect dual ESM/CJS module support.
+
 ## [1.2.2-0] - 2026-04-09
 
 ### Changed
