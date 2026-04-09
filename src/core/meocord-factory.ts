@@ -29,7 +29,7 @@ export class MeoCordFactory {
     const container: Container = Reflect.getMetadata('inversify:container', target)
 
     if (!container) {
-      if (target instanceof Function) {
+      if (typeof target === 'function') {
         this.logger.error(`No container found for class: ${target.name}`)
       } else {
         this.logger.error('No container found for the provided target.')

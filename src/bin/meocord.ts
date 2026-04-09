@@ -28,7 +28,6 @@ import { GeneratorCLI } from '@src/bin/generator.js'
 import * as fs from 'node:fs'
 import { compileAndValidateConfig, setEnvironment } from '@src/util/common.util.js'
 import { Command } from 'commander'
-import { compileMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
 import { simpleGit } from 'simple-git'
 import chalk from 'chalk'
 import { execSync } from 'child_process'
@@ -47,7 +46,7 @@ class MeoCordCLI {
   readonly logger = new Logger(this.appName)
   private readonly projectRoot = process.cwd()
   private readonly mainJSPath = path.join(this.projectRoot, 'dist', 'main.js')
-  private readonly webpackConfigPath = path.resolve(__dirname, '..', '..', 'webpack.config.js')
+  private readonly webpackConfigPath = path.resolve(__dirname, '..', '..', '..', 'webpack.config.js')
   private readonly generatorCLI = new GeneratorCLI(this.appName)
   private readonly version = packageJson.version
 
@@ -336,13 +335,12 @@ For full license details, refer to:
         debounceWatcher = setTimeout(async () => {
           if (isRunning && nodemonProcess) {
             isRunning = false
-            this.logger.log('MeoCord config change detected, recompiling config...')
+            this.logger.log('MeoCord config change detected, reloading config...')
             if (nodemonProcess && !nodemonProcess.killed) {
               nodemonProcess.kill()
               nodemonProcess = null
             }
             await new Promise(resolve => compiler.close(resolve))
-            await compileMeoCordConfig()
             watch()
           }
         }, 300)
@@ -397,7 +395,7 @@ For full license details, refer to:
         stdio: 'inherit',
       }).on('spawn', this.clearConsole)
 
-      start.on('exit', (code) => {
+      start.on('exit', code => {
         process.exit(code ?? 0)
       })
 
