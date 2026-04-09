@@ -23,6 +23,10 @@ import { BaseInteraction, Message, MessageReaction, type Interaction } from 'dis
 import { type GuardInterface } from '@src/interface/index.js'
 import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator/controller.decorator.js'
 
+function isValidContext(context: unknown): context is BaseInteraction | Message | MessageReaction {
+  return context instanceof BaseInteraction || context instanceof Message || context instanceof MessageReaction
+}
+
 function applyGuards(
   descriptor: PropertyDescriptor,
   guards: ((new (...args: any[]) => GuardInterface) | GuardWithParams)[],
@@ -33,11 +37,7 @@ function applyGuards(
   descriptor.value = async function (...args: [Interaction | Message | MessageReaction, ...any[]]) {
     const [context] = args
 
-    if (
-      !(context instanceof BaseInteraction) &&
-      !(context instanceof Message) &&
-      !(context instanceof MessageReaction)
-    ) {
+    if (!isValidContext(context)) {
       throw new Error(
         `The first argument of ${String(propertyKey)} must be an instance of Interaction, Message, or MessageReaction.`,
       )
