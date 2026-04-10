@@ -30,8 +30,9 @@ import { compileAndValidateConfig, setEnvironment } from '@src/util/common.util.
 import { prepareModifiedTsConfig } from '@src/util/tsconfig.util.js'
 import { Command } from 'commander'
 import { simpleGit } from 'simple-git'
-import chalk from 'chalk'
 import { execSync } from 'child_process'
+import * as p from '@clack/prompts'
+import { detectInstalledPMs, getInstallCommand, type PackageManager } from '@src/util/package-manager.util.js'
 import { configureCommandHelp, ensureReady } from '@src/util/meocord-cli.util.js'
 import packageJson from '../../package.json' with { type: 'json' }
 import { fileURLToPath } from 'url'
@@ -108,7 +109,11 @@ For full license details, refer to:
     program
       .command('create <app-name>')
       .description('Create a new MeoCord application')
-      .action(async appName => await this.createApp(appName))
+      .option('--use-npm', 'Use npm as the package manager')
+      .option('--use-yarn', 'Use Yarn as the package manager')
+      .option('--use-pnpm', 'Use pnpm as the package manager')
+      .option('--use-bun', 'Use Bun as the package manager')
+      .action(async (appName, options) => await this.createApp(appName, options))
 
     program
       .command('build')
@@ -158,7 +163,10 @@ For full license details, refer to:
     program.showHelpAfterError().parse(process.argv)
   }
 
-  async createApp(appName: string) {
+  async createApp(
+    appName: string,
+    options: { useNpm?: boolean; useYarn?: boolean; usePnpm?: boolean; useBun?: boolean },
+  ) {
     const kebabCaseAppName = appName
       .replace(/([a-z])([A-Z])/g, '$1-$2')
       .toLowerCase()
@@ -168,60 +176,113 @@ For full license details, refer to:
     const appPath = path.resolve(process.cwd(), kebabCaseAppName)
     const gitRepo = 'https://github.com/l7aromeo/meocord-template.git'
 
-    console.info(chalk.blueBright(`🚀 Creating a new MeoCord app: ${chalk.bold(kebabCaseAppName)}`))
+    p.intro(`meocord v${this.version}`)
 
+    // Validate directory
+    if (fs.existsSync(appPath)) {
+      p.cancel(`Directory "${kebabCaseAppName}" already exists.`)
+      await wait(100)
+      process.exit(1)
+    }
+
+    // Check Node.js version
+    const MINIMUM_NODE_VERSION = '22.14.0'
+    const [major, minor, patch] = process.version.slice(1).split('.').map(Number)
+    const [minMajor, minMinor, minPatch] = MINIMUM_NODE_VERSION.split('.').map(Number)
+
+    if (
+      major < minMajor ||
+      (major === minMajor && minor < minMinor) ||
+      (major === minMajor && minor === minMinor && patch < minPatch)
+    ) {
+      p.cancel(`Node.js v${MINIMUM_NODE_VERSION} or higher is required. Current: ${process.version}`)
+      await wait(100)
+      process.exit(1)
+    }
+
+    // Determine package manager
+    const installedPMs = detectInstalledPMs()
+    let pm: PackageManager
+
+    const flagMap: Record<string, PackageManager> = {
+      useNpm: 'npm',
+      useYarn: 'yarn',
+      usePnpm: 'pnpm',
+      useBun: 'bun',
+    }
+
+    const selectedFlag = Object.entries(flagMap).find(([key]) => options[key as keyof typeof options])
+
+    if (selectedFlag) {
+      pm = selectedFlag[1]
+      if (!installedPMs.includes(pm)) {
+        p.cancel(`${pm} is not installed.`)
+        await wait(100)
+        process.exit(1)
+      }
+    } else {
+      const defaultPM = installedPMs.includes('bun') ? 'bun' : 'npm'
+      const selected = await p.select<PackageManager>({
+        message: 'Which package manager do you want to use?',
+        options: installedPMs.map(name => ({
+          value: name,
+          label: name,
+          hint: name === defaultPM ? 'default' : undefined,
+        })),
+        initialValue: defaultPM,
+      })
+
+      if (p.isCancel(selected)) {
+        p.cancel('Operation cancelled.')
+        process.exit(0)
+      }
+
+      pm = selected
+    }
+
+    const s = p.spinner()
+
+    // Clone template
+    s.start(`Creating a new MeoCord app: ${kebabCaseAppName}`)
     try {
-      // Validate if directory already exists
-      if (fs.existsSync(appPath)) {
-        console.error(chalk.red(`❌ Directory "${chalk.bold(kebabCaseAppName)}" already exists.`))
-        await wait(100)
-        process.exit(1)
-      }
-
-      // Check Node.js version
-      const MINIMUM_NODE_VERSION = '22.14.0'
-      const [major, minor, patch] = process.version.slice(1).split('.').map(Number)
-      const [minMajor, minMinor, minPatch] = MINIMUM_NODE_VERSION.split('.').map(Number)
-
-      if (
-        major < minMajor ||
-        (major === minMajor && minor < minMinor) ||
-        (major === minMajor && minor === minMinor && patch < minPatch)
-      ) {
-        console.error(
-          chalk.red(`❌ Node.js v${MINIMUM_NODE_VERSION} or higher is required. Current version: v${process.version}.`),
-        )
-        await wait(100)
-        process.exit(1)
-      }
-
-      // Clone the template repository
-      console.info(chalk.blueBright('📦 Fetching template...'))
       await simpleGit().clone(gitRepo, appPath)
-      console.log(chalk.green(`✔ App successfully created at: ${chalk.bold(appPath)}`))
+    } catch (error) {
+      s.stop('Failed to fetch template.')
+      p.cancel(error instanceof Error ? error.message : String(error))
+      await wait(100)
+      process.exit(1)
+    }
+    s.stop(`App created at: ${appPath}`)
 
-      // Remove .git history from template
+    // Initialize git
+    s.start('Initializing Git repository...')
+    try {
       fs.rmSync(path.join(appPath, '.git'), { recursive: true, force: true })
-
-      // Initialize a new Git repository
-      console.info(chalk.blueBright('🔧 Initializing Git repository...'))
       const git = simpleGit(appPath)
       await git.init()
       await git.add('./*')
       await git.commit('Initial commit')
-      console.log(chalk.green('✔ Git repository initialized.'))
-
-      // Install dependencies
-      console.info(chalk.blueBright('📦 Installing dependencies...'))
-      execSync(`cd ${kebabCaseAppName} && bun install`, { stdio: 'inherit' })
-      console.log(chalk.green('✔ Dependencies installed successfully.'))
-
-      console.log(chalk.greenBright(`🎉 MeoCord app "${chalk.bold(kebabCaseAppName)}" is ready!`))
     } catch (error) {
-      console.error(chalk.red(`❌ Failed to create app: ${error instanceof Error ? error.message : String(error)}`))
+      s.stop('Failed to initialize Git.')
+      p.cancel(error instanceof Error ? error.message : String(error))
       await wait(100)
       process.exit(1)
     }
+    s.stop('Git repository initialized.')
+
+    // Install dependencies
+    s.start(`Installing dependencies with ${pm}...`)
+    try {
+      execSync(getInstallCommand(pm), { cwd: appPath, stdio: 'ignore' })
+    } catch (error) {
+      s.stop('Failed to install dependencies.')
+      p.cancel(error instanceof Error ? error.message : String(error))
+      await wait(100)
+      process.exit(1)
+    }
+    s.stop('Dependencies installed.')
+
+    p.outro(`MeoCord app "${kebabCaseAppName}" is ready!`)
   }
 
   /**
