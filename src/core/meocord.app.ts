@@ -36,6 +36,7 @@ import { CommandType } from '@src/enum/index.js'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 import { type ReactionHandlerOptions } from '@src/interface/index.js'
 import { type CommandMetadata } from '@src/interface/command-decorator.interface.js'
+import Table from 'cli-table3'
 
 export class MeoCordApp {
   private readonly logger = new Logger(MeoCordApp.name)
@@ -112,31 +113,32 @@ export class MeoCordApp {
     try {
       if (this.bot.application) {
         await this.bot.application.commands.set(builders)
-        this.logger.log(
-          `Registered ${builders.length} bot commands:`,
-          builders.map(builder => {
-            const json = typeof (builder as any).toJSON === 'function' ? (builder as any).toJSON() : (builder as any)
-            const typeName =
-              json?.type === 1
-                ? 'SlashCommand'
-                : json?.type === 2
-                  ? 'UserContextMenu'
-                  : json?.type === 3
-                    ? 'MessageContextMenu'
-                    : builder instanceof SlashCommandBuilder
-                      ? 'SlashCommand'
-                      : 'Command'
-            const subCommands =
-              Array.isArray(json?.options) && json.options.length
-                ? json.options.map((opt: any) => ({
-                    name: opt.name,
-                    options: opt.options.map((opt: any) => opt.name),
-                  }))
-                : undefined
-            const name = json?.name || (builder as any).name
-            return subCommands ? { type: typeName, name, subCommands } : { type: typeName, name }
-          }),
-        )
+        const table = new Table({
+          head: ['Name', 'Type', 'Sub-commands'],
+        })
+
+        for (const builder of builders) {
+          const json = typeof (builder as any).toJSON === 'function' ? (builder as any).toJSON() : (builder as any)
+          const typeName =
+            json?.type === 1
+              ? 'SlashCommand'
+              : json?.type === 2
+                ? 'UserContextMenu'
+                : json?.type === 3
+                  ? 'MessageContextMenu'
+                  : builder instanceof SlashCommandBuilder
+                    ? 'SlashCommand'
+                    : 'Command'
+          const name = json?.name || (builder as any).name
+          const subCommands =
+            Array.isArray(json?.options) && json.options.length
+              ? json.options.map((opt: any) => opt.name).join(', ')
+              : ''
+
+          table.push([name, typeName, subCommands])
+        }
+
+        this.logger.log(`Registered ${builders.length} bot commands:\n${table.toString()}`)
       }
     } catch (error) {
       this.logger.error('Error during command registration:', error)
