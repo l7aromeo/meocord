@@ -115,6 +115,8 @@ export class MeoCordApp {
         await this.bot.application.commands.set(builders)
         const table = new Table({
           head: ['Name', 'Type', 'Sub-commands'],
+          colWidths: [null, null, 30],
+          wordWrap: true,
         })
 
         for (const builder of builders) {
