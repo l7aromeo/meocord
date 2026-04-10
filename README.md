@@ -61,7 +61,7 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 
 - **Node.js**: Ensure you have version **22.14.0** or higher, as it’s the current LTS release.
 - **TypeScript**: Version **5.7** or above is required for compatibility with modern features.
-- **Bun**: Version **1.x** or above is required as the package manager.
+- **Package Manager**: Any of **npm**, **yarn**, **pnpm**, or **bun**. The CLI will detect installed package managers and let you choose.
 
 ### Module Support
 
@@ -145,10 +145,19 @@ Follow these steps to create and run a **MeoCord** application:
 
 ### 1. Create a fresh MeoCord Application
 
-Use the CLI to generate your application.
+Use the CLI to generate your application. You'll be prompted to choose a package manager from those installed on your system.
 
 ```shell
 npx meocord create <your-app-name>
+```
+
+You can also skip the prompt by specifying a package manager directly:
+
+```shell
+npx meocord create <your-app-name> --use-bun
+npx meocord create <your-app-name> --use-npm
+npx meocord create <your-app-name> --use-yarn
+npx meocord create <your-app-name> --use-pnpm
 ```
 
 ---
