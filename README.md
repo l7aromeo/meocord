@@ -59,8 +59,8 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 
 ### Prerequisites
 
-- **Node.js**: Ensure you have version **22.14.0** or higher, as it’s the current LTS release.
-- **TypeScript**: Version **5.7** or above is required for compatibility with modern features.
+- **Runtime**: **Node.js** (latest LTS) or **Bun** (1.x+).
+- **TypeScript**: Version **6** or above.
 - **Package Manager**: Any of **npm**, **yarn**, **pnpm**, or **bun**. The CLI will detect installed package managers and let you choose.
 
 ### Module Support
