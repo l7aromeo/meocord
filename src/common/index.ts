@@ -6,3 +6,4 @@
 
 export { Logger } from '@src/common/logger.js'
 export { Theme } from '@src/common/theme.js'
+export { applyDecorators, SetMetadata } from '@src/common/decorator.js'
