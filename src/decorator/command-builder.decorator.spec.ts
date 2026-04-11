@@ -45,8 +45,9 @@ describe('@CommandBuilder', () => {
     expect(() => {
       @CommandBuilder(CommandType.SLASH)
       @CommandBuilder(CommandType.SLASH)
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      class TestCmd {
+
+      //@ts-ignore
+      class _TestCmd {
         build() {
           return {} as any
         }
