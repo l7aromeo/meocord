@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["meocord.eslint.ts", "jest.config.ts", "eslint.config.ts"],
+  "exclude": ["node_modules"]
+}

@@ -25,7 +25,7 @@ const languageOptions = {
   ecmaVersion: 2023,
   sourceType: 'module',
   parserOptions: {
-    project: ['./tsconfig.json', './tsconfig.test.json'],
+    project: ['./tsconfig.json', './tsconfig.test.json', './tsconfig.eslint.json'],
   },
 }
 
@@ -68,16 +68,14 @@ const typescriptConfig = {
         argsIgnorePattern: '^_',
       },
     ],
-    "headers/header-format": [
-      "error",
+    'headers/header-format': [
+      'error',
       {
-        source: "string",
+        source: 'string',
         content:
-          "MeoCord Framework\n" +
-          "Copyright (c) 2025 Ukasyah Rahmatullah Zada\n" +
-          "SPDX-License-Identifier: MIT"
-      }
-    ]
+          'MeoCord Framework\n' + 'Copyright (c) 2025 Ukasyah Rahmatullah Zada\n' + 'SPDX-License-Identifier: MIT',
+      },
+    ],
   },
 }
 
