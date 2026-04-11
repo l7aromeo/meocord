@@ -25,7 +25,7 @@ const languageOptions = {
   ecmaVersion: 2023,
   sourceType: 'module',
   parserOptions: {
-    project: './tsconfig.json',
+    project: ['./tsconfig.json', './tsconfig.test.json'],
   },
 }
 
@@ -48,7 +48,7 @@ const typescriptConfig = {
     'import-x/resolver': {
       typescript: {
         alwaysTryTypes: true,
-        project: './tsconfig.json',
+        project: ['./tsconfig.json', './tsconfig.test.json'],
       },
     },
   },
@@ -141,11 +141,19 @@ const recommendedTypeScriptConfigs = [
   })),
 ]
 
+const specConfig = {
+  files: ['**/*.spec.ts'],
+  rules: {
+    '@typescript-eslint/no-empty-function': 'off',
+  },
+}
+
 export default [
   { ignores: ['dist/*', 'rollup.config.js'] },
   ...recommendedTypeScriptConfigs,
   eslintConfigPrettier,
   typescriptConfig,
+  specConfig,
   javaScriptConfig,
   webpackConfig,
 ]
