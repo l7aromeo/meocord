@@ -5,8 +5,7 @@
  */
 
 import 'reflect-metadata'
-import { injectable } from 'inversify'
-import { mainContainer } from '@src/decorator/container.js'
+import { injectable, type Container } from 'inversify'
 import { BaseInteraction, Message, MessageReaction, type Interaction } from 'discord.js'
 import { type GuardInterface } from '@src/interface/index.js'
 import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator/controller.decorator.js'
@@ -32,35 +31,31 @@ function applyGuards(
       )
     }
 
-    // Iterate over each guard and check if it allows the method to proceed
+    const container: Container = Reflect.getMetadata(MetadataKey.Container, this.constructor)
+
     for (const guard of guards) {
       let guardInstance: GuardInterface
 
       if (isGuardWithParams(guard)) {
         const { provide, params } = guard
-        guardInstance = mainContainer.get(provide, { autobind: true })
-        // Inject the parameters into the guard instance
+        guardInstance = container.get(provide, { autobind: true })
         Object.assign(guardInstance, params)
       } else {
-        // Resolve guard without parameters
-        guardInstance = mainContainer.get(guard, { autobind: true })
+        guardInstance = container.get(guard, { autobind: true })
       }
 
-      // Ensure the guard has the necessary method `canActivate`
       if (!guardInstance.canActivate) {
         throw new Error(
           `Guard ${guard.constructor.name} applied to ${String(propertyKey)} does not have a valid canActivate method.`,
         )
       }
 
-      // Check if the guard allows the method to proceed
       const canActivate = await guardInstance.canActivate(...args)
       if (!canActivate) {
-        return // Prevent method execution if the guard fails
+        return
       }
     }
 
-    // Call the original method if all guards pass
     return originalMethod.apply(this, args)
   }
 }
@@ -95,20 +90,9 @@ export class ButtonInteractionGuard implements GuardInterface {
  */
 export function Guard() {
   return function (target: any) {
-    // Check if the class is already injectable; if not, make it injectable dynamically
     if (!Reflect.hasMetadata(MetadataKey.Injectable, target)) {
       injectable()(target)
     }
-
-    mainContainer.bind(target).toSelf().inTransientScope()
-
-    // Bind any dependencies that the guard requires
-    const injectables = Reflect.getMetadata(MetadataKey.ParamTypes, target) || []
-    injectables.forEach((dep: any) => {
-      if (!mainContainer.isBound(dep)) {
-        mainContainer.bind(dep).toSelf().inSingletonScope()
-      }
-    })
   }
 }
 
@@ -181,13 +165,11 @@ export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | 
     if (descriptor && propertyKey) {
       // Method Decorator
       applyGuards(descriptor, guards as any, String(propertyKey))
-      // Store guard metadata for later access (if needed)
       Reflect.defineMetadata(MetadataKey.Guards, guards, target, propertyKey)
     } else if (typeof target === 'function' && !propertyKey && !descriptor) {
       // Class Decorator
       const prototype = target.prototype
 
-      // 1. Get all methods to guard
       const methods = new Set<string>()
 
       const commandMap = getCommandMap(prototype) || {}

@@ -5,13 +5,10 @@
  */
 
 import { Guard, UseGuard } from '@src/decorator/guard.decorator.js'
-import { mainContainer } from '@src/decorator/container.js'
+import { MetadataKey } from '@src/enum/index.js'
+import { Container } from 'inversify'
 import { type GuardInterface } from '@src/interface/index.js'
 import { BaseInteraction, Message } from 'discord.js'
-
-afterEach(() => {
-  mainContainer.unbindAll()
-})
 
 function makeFakeInteraction(): BaseInteraction {
   return Object.create(BaseInteraction.prototype) as BaseInteraction
@@ -21,8 +18,18 @@ function makeFakeMessage(): Message {
   return Object.create(Message.prototype) as Message
 }
 
+/** Attach a fresh container (with guards bound) to a controller class. */
+function attachContainer(controllerClass: any, ...guardClasses: (new (...args: any[]) => any)[]): Container {
+  const container = new Container()
+  for (const cls of guardClasses) {
+    container.bind(cls).toSelf().inTransientScope()
+  }
+  Reflect.defineMetadata(MetadataKey.Container, container, controllerClass)
+  return container
+}
+
 describe('@Guard', () => {
-  it('binds the guard to the container', () => {
+  it('marks the class as inversify-injectable', () => {
     @Guard()
     class TestGuard implements GuardInterface {
       canActivate() {
@@ -30,7 +37,7 @@ describe('@Guard', () => {
       }
     }
 
-    expect(mainContainer.isBound(TestGuard)).toBe(true)
+    expect(Reflect.getMetadata(MetadataKey.Injectable, TestGuard)).toBe(true)
   })
 })
 
@@ -52,6 +59,7 @@ describe('@UseGuard (method decorator)', () => {
       }
     }
 
+    attachContainer(TestController, AllowGuard)
     const ctrl = new TestController()
     await ctrl.handle(makeFakeInteraction())
     expect(ctrl.result).toBe(true)
@@ -74,6 +82,7 @@ describe('@UseGuard (method decorator)', () => {
       }
     }
 
+    attachContainer(TestController, DenyGuard)
     const ctrl = new TestController()
     await ctrl.handle(makeFakeInteraction())
     expect(ctrl.result).toBe(false)
@@ -96,6 +105,7 @@ describe('@UseGuard (method decorator)', () => {
       }
     }
 
+    attachContainer(TestController, AsyncGuard)
     const ctrl = new TestController()
     await ctrl.handle(makeFakeInteraction())
     expect(ctrl.result).toBe(true)
@@ -114,6 +124,7 @@ describe('@UseGuard (method decorator)', () => {
       async handle(_ctx: any) {}
     }
 
+    attachContainer(TestController, TestGuard)
     const ctrl = new TestController()
     await expect(ctrl.handle('invalid-context')).rejects.toThrow()
   })
@@ -136,6 +147,7 @@ describe('@UseGuard (method decorator)', () => {
       async handle(_ctx: any) {}
     }
 
+    attachContainer(TestController, ParamGuard)
     const ctrl = new TestController()
     await ctrl.handle(makeFakeMessage())
     expect(receivedLimit).toBe(5)
@@ -165,6 +177,7 @@ describe('@UseGuard (method decorator)', () => {
       async handle(_ctx: any) {}
     }
 
+    attachContainer(TestController, FirstGuard, SecondGuard)
     const ctrl = new TestController()
     await ctrl.handle(makeFakeInteraction())
     expect(order).toEqual(['first'])

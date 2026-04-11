@@ -7,12 +7,6 @@
 import { CommandBuilder } from '@src/decorator/command-builder.decorator.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { CommandType } from '@src/enum/index.js'
-import { mainContainer } from '@src/decorator/container.js'
-
-afterEach(() => {
-  mainContainer.unbindAll()
-})
-
 describe('@CommandBuilder', () => {
   it('sets commandType metadata on the class', () => {
     @CommandBuilder(CommandType.SLASH)

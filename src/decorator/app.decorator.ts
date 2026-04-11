@@ -5,45 +5,16 @@
  */
 
 import 'reflect-metadata'
-import { mainContainer } from '@src/decorator/container.js'
-import { Container, injectable, type ServiceIdentifier } from 'inversify'
-import { type ActivityOptions, Client, type ClientOptions } from 'discord.js'
-import { MeoCordApp } from '@src/core/meocord.app.js'
-import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
+import { injectable, type ServiceIdentifier } from 'inversify'
+import { type ActivityOptions, type ClientOptions } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
 
 /**
- * Binds a class and its dependencies to the Inversify container in singleton scope.
+ * `@MeoCord()` decorator for declaring the MeoCord application class.
  *
- * @param {Container} container - The Inversify container instance.
- * @param {any} cls - The class to be bound to the container.
- */
-function bindDependencies(container: Container, cls: any): void {
-  if (!container.isBound(cls)) {
-    container.bind(cls).toSelf().inSingletonScope()
-
-    const dependencies = Reflect.getMetadata(MetadataKey.ParamTypes, cls) || []
-    dependencies.forEach((dep: any) => bindDependencies(container, dep))
-  }
-}
-
-/**
- * Resolves dependencies for a given class by binding them to the container and returning the resolved instances.
- *
- * @param {Container} container - The Inversify container instance.
- * @param {any} target - The target class whose dependencies are to be resolved.
- * @returns {any[]} - An array of resolved instances of the target's dependencies.
- */
-function resolveDependencies(container: Container, target: any): any[] {
-  const injectables = Reflect.getMetadata(MetadataKey.ParamTypes, target) || []
-  return injectables.map((dep: any) => {
-    bindDependencies(container, dep)
-    return container.get(dep)
-  })
-}
-
-/**
- * `@MeoCord()` decorator for initializing and setting up the MeoCord application.
+ * This decorator stores the application options as metadata on the class.
+ * All DI wiring — container creation, client binding, controller/service
+ * registration — happens inside `MeoCordFactory.create()`, not here.
  *
  * @param {Object} options - The decorator options.
  * @param {ServiceIdentifier[]} options.controllers - The list of controllers to be registered.
@@ -83,49 +54,9 @@ export function MeoCord(options: {
 }): (target: any) => void {
   return (target: any): void => {
     if (!Reflect.hasMetadata(MetadataKey.Injectable, target)) {
-      injectable()(target) // Make target injectable (inversify-specific)
+      injectable()(target)
     }
 
-    const meocordConfig = loadMeoCordConfig()
-    if (!meocordConfig) return
-
-    const discordClient = new Client(options.clientOptions)
-    mainContainer.bind(Client).toConstantValue(discordClient)
-
-    // Bind controllers and services to the container
-    ;[...options.controllers, ...(options.services || [])].forEach(dep => {
-      bindDependencies(mainContainer, dep)
-    })
-
-    // Bind other static values to the container
-    mainContainer.bind(target).toConstantValue(options.clientOptions)
-
-    if (options.activities) {
-      mainContainer.bind(target).toConstantValue(options.activities)
-    }
-
-    if (options.services) {
-      mainContainer.bind(target).toConstantValue(options.services.map(s => mainContainer.get(s)))
-    }
-
-    const meocordApp = new MeoCordApp(
-      options.controllers.map(c => mainContainer.get(c)),
-      discordClient,
-      meocordConfig.discordToken,
-      options?.activities,
-    )
-
-    mainContainer.bind(MeoCordApp).toConstantValue(meocordApp)
-
-    // Bind the App class dynamically with resolved dependencies
-    mainContainer
-      .bind(target)
-      .toDynamicValue(() => {
-        const dependencies = resolveDependencies(mainContainer, target)
-        return new target(...dependencies)
-      })
-      .inSingletonScope()
-
-    Reflect.defineMetadata(MetadataKey.Container, mainContainer, target)
+    Reflect.defineMetadata(MetadataKey.AppOptions, options, target)
   }
 }

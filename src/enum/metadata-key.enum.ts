@@ -18,10 +18,16 @@ export const enum MetadataKey {
   Injectable = '@inversifyjs/core/classIsInjectableFlagReflectKey',
 
   /**
-   * Stores the Inversify `Container` instance on a `@Controller` or `@MeoCord` class.
-   * Read by `MeoCordFactory.create()` and `MeoCordApp` event handlers.
+   * Stores the Inversify `Container` instance on a controller class.
+   * Set by `MeoCordFactory.create()`, read by `@UseGuard` at runtime.
    */
   Container = 'inversify:container',
+
+  /**
+   * Stores the `@MeoCord()` options object on the app class.
+   * Read by `MeoCordFactory.create()` to wire up the container.
+   */
+  AppOptions = 'meocord:app-options',
 
   /**
    * TypeScript compiler-emitted metadata listing constructor parameter types.

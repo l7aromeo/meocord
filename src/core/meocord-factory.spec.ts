@@ -17,29 +17,41 @@ jest.mock('@src/common/index.js', () => ({
   })),
 }))
 
-import { MeoCordFactory } from '@src/core/meocord-factory.js'
-import { mainContainer } from '@src/decorator/container.js'
-import { MeoCordApp } from '@src/core/meocord.app.js'
-import { MetadataKey } from '@src/enum/index.js'
+const mockLoadConfig = jest.fn()
+jest.unstable_mockModule('@src/util/meocord-config-loader.util.js', () => ({
+  loadMeoCordConfig: mockLoadConfig,
+}))
 
-afterEach(() => {
-  mainContainer.unbindAll()
-})
+const { MeoCordFactory } = await import('@src/core/meocord-factory.js')
+const { MeoCordApp } = await import('@src/core/meocord.app.js')
+const { MetadataKey } = await import('@src/enum/index.js')
 
 describe('MeoCordFactory.create()', () => {
-  it('throws when the target has no inversify:container metadata', () => {
-    class NoMetadataApp {}
-    expect(() => MeoCordFactory.create(NoMetadataApp)).toThrow('No container found on the target class.')
+  afterEach(() => {
+    jest.clearAllMocks()
   })
 
-  it('returns the MeoCordApp from the container', () => {
-    const mockApp = {} as MeoCordApp
-    mainContainer.bind(MeoCordApp).toConstantValue(mockApp)
+  it('throws when the target has no @MeoCord() options metadata', () => {
+    class NoMetadataApp {}
+    expect(() => MeoCordFactory.create(NoMetadataApp)).toThrow('Target class is not decorated with @MeoCord().')
+  })
+
+  it('throws when meocord config is missing', () => {
+    mockLoadConfig.mockReturnValue(null)
 
     class MyApp {}
-    Reflect.defineMetadata(MetadataKey.Container, mainContainer, MyApp)
+    Reflect.defineMetadata(MetadataKey.AppOptions, { controllers: [], clientOptions: { intents: [] } }, MyApp)
+
+    expect(() => MeoCordFactory.create(MyApp)).toThrow('MeoCord config not found')
+  })
+
+  it('returns a MeoCordApp instance when config and options are valid', () => {
+    mockLoadConfig.mockReturnValue({ discordToken: 'test-token' })
+
+    class MyApp {}
+    Reflect.defineMetadata(MetadataKey.AppOptions, { controllers: [], clientOptions: { intents: [] } }, MyApp)
 
     const result = MeoCordFactory.create(MyApp)
-    expect(result).toBe(mockApp)
+    expect(result).toBeInstanceOf(MeoCordApp)
   })
 })

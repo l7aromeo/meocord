@@ -6,7 +6,6 @@
 
 import 'reflect-metadata'
 import { injectable } from 'inversify'
-import { mainContainer } from '@src/decorator/container.js'
 import {
   ButtonInteraction,
   ChatInputCommandInteraction,
@@ -272,18 +271,5 @@ export function Controller() {
     if (!Reflect.hasMetadata(MetadataKey.Injectable, target)) {
       injectable()(target)
     }
-
-    const injectables = Reflect.getMetadata(MetadataKey.ParamTypes, target) || []
-    injectables.map((dep: any) => {
-      if (!mainContainer.isBound(dep)) {
-        if (!Reflect.hasMetadata(MetadataKey.Injectable, dep)) {
-          injectable()(dep)
-        }
-
-        mainContainer.bind(dep).toSelf().inSingletonScope()
-      }
-    })
-
-    Reflect.defineMetadata(MetadataKey.Container, mainContainer, target)
   }
 }

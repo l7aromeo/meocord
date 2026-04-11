@@ -15,12 +15,12 @@ import {
   type PartialMessageReaction,
   SlashCommandBuilder,
 } from 'discord.js'
+import { type Container } from 'inversify'
 import { Logger } from '@src/common/index.js'
 import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator/controller.decorator.js'
-import { mainContainer } from '@src/decorator/container.js'
 import { sample } from 'lodash-es'
 import { EmbedUtil } from '@src/util/index.js'
-import { CommandType, MetadataKey } from '@src/enum/index.js'
+import { CommandType } from '@src/enum/index.js'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 import { type ReactionHandlerOptions } from '@src/interface/index.js'
 import { type CommandMetadata } from '@src/interface/command-decorator.interface.js'
@@ -31,10 +31,11 @@ export class MeoCordApp {
   private readonly bot: Client
   private isShuttingDown = false
   private activityInterval: ReturnType<typeof setInterval> | null = null
-  private controllerInstancesCache = new Map()
+  private controllerInstancesCache = new Map<any, any>()
 
   constructor(
-    private readonly controllers: any[],
+    private readonly controllerClasses: (new (...args: any[]) => any)[],
+    private readonly container: Container,
     private readonly discordClient: Client,
     private discordToken: string,
     private activities?: ActivityOptions[],
@@ -42,6 +43,13 @@ export class MeoCordApp {
     this.bot = this.discordClient
     process.on('SIGINT', () => this.gracefulShutdown())
     process.on('SIGTERM', () => this.gracefulShutdown())
+  }
+
+  private getInstance(controllerClass: new (...args: any[]) => any): any {
+    if (!this.controllerInstancesCache.has(controllerClass)) {
+      this.controllerInstancesCache.set(controllerClass, this.container.get(controllerClass))
+    }
+    return this.controllerInstancesCache.get(controllerClass)
   }
 
   async start() {
@@ -82,8 +90,9 @@ export class MeoCordApp {
   async registerCommands() {
     const builders: NonNullable<CommandMetadata['builder']>[] = []
 
-    for (const controller of this.controllers) {
-      const commandMap = getCommandMap(controller)
+    for (const controllerClass of this.controllerClasses) {
+      const instance = this.getInstance(controllerClass)
+      const commandMap = getCommandMap(instance)
 
       for (const commandName in commandMap) {
         const commandMetadataArray = commandMap[commandName]
@@ -136,13 +145,8 @@ export class MeoCordApp {
   }
 
   private async handleInteraction(interaction: Interaction<CacheType>) {
-    for (const controller of this.controllers) {
-      let controllerInstance = this.controllerInstancesCache.get(controller)
-      if (!controllerInstance) {
-        controllerInstance = mainContainer.get(controller.constructor)
-        this.controllerInstancesCache.set(controller, controllerInstance)
-      }
-
+    for (const controllerClass of this.controllerClasses) {
+      const controllerInstance = this.getInstance(controllerClass)
       const commandMap = getCommandMap(controllerInstance)
       if (!commandMap) continue
 
@@ -221,7 +225,6 @@ export class MeoCordApp {
       }
     }
 
-    // If no matching command is found
     if (interaction.isRepliable()) {
       const embed = EmbedUtil.createErrorEmbed('Command not found!')
       await interaction.reply({ embeds: [embed], flags: MessageFlagsBitField.Flags.Ephemeral })
@@ -233,20 +236,16 @@ export class MeoCordApp {
 
     const messageContent = message.content.trim()
 
-    const relevantControllers = this.controllers.filter(controller => {
-      const messageHandlers = getMessageHandlers(controller)
+    const relevantControllers = this.controllerClasses.filter(controllerClass => {
+      const instance = this.getInstance(controllerClass)
+      const messageHandlers = getMessageHandlers(instance)
       return messageHandlers.some(handler => !handler.keyword || handler.keyword === messageContent)
     })
 
-    for (const controller of relevantControllers) {
-      let controllerInstance = this.controllerInstancesCache.get(controller.constructor)
-      if (!controllerInstance) {
-        const container = Reflect.getMetadata(MetadataKey.Container, controller.constructor)
-        controllerInstance = container.get(controller.constructor, { autobind: true })
-        this.controllerInstancesCache.set(controller.constructor, controllerInstance)
-      }
+    for (const controllerClass of relevantControllers) {
+      const controllerInstance = this.getInstance(controllerClass)
 
-      let messageHandlers = getMessageHandlers(controller)
+      let messageHandlers = getMessageHandlers(controllerInstance)
 
       messageHandlers = messageHandlers.sort((a, b) => {
         if (a.keyword && !b.keyword) return -1
@@ -274,20 +273,16 @@ export class MeoCordApp {
   ) {
     await reaction.message.fetch()
 
-    const relevantControllers = this.controllers.filter(controller => {
-      const reactionHandlers = getReactionHandlers(controller)
+    const relevantControllers = this.controllerClasses.filter(controllerClass => {
+      const instance = this.getInstance(controllerClass)
+      const reactionHandlers = getReactionHandlers(instance)
       return reactionHandlers.some(handler => !handler.emoji || handler.emoji === reaction.emoji.name)
     })
 
-    for (const controller of relevantControllers) {
-      let controllerInstance = this.controllerInstancesCache.get(controller.constructor)
-      if (!controllerInstance) {
-        const container = Reflect.getMetadata(MetadataKey.Container, controller.constructor)
-        controllerInstance = container.get(controller.constructor, { autobind: true })
-        this.controllerInstancesCache.set(controller.constructor, controllerInstance)
-      }
+    for (const controllerClass of relevantControllers) {
+      const controllerInstance = this.getInstance(controllerClass)
 
-      let reactionHandlers = getReactionHandlers(controller)
+      let reactionHandlers = getReactionHandlers(controllerInstance)
 
       reactionHandlers = reactionHandlers.sort((a, b) => {
         if (a.emoji && !b.emoji) return -1
@@ -311,7 +306,6 @@ export class MeoCordApp {
 
   private async gracefulShutdown() {
     if (this.isShuttingDown) {
-      // Second signal received while shutting down — force exit immediately
       process.exit(1)
     }
 

@@ -14,11 +14,6 @@ import {
   ReactionHandler,
 } from '@src/decorator/controller.decorator.js'
 import { CommandType, MetadataKey } from '@src/enum/index.js'
-import { mainContainer } from '@src/decorator/container.js'
-
-afterEach(() => {
-  mainContainer.unbindAll()
-})
 
 describe('@MessageHandler', () => {
   it('registers a handler with a keyword', () => {
@@ -162,12 +157,11 @@ describe('@Controller', () => {
     expect(Reflect.getMetadata(MetadataKey.Injectable, TestController)).toBe(true)
   })
 
-  it('stores the inversify container in class metadata', () => {
+  it('does not throw when applied to an already-injectable class', () => {
     @Controller()
     class TestController {}
 
-    const container = Reflect.getMetadata(MetadataKey.Container, TestController)
-    expect(container).toBeDefined()
+    expect(() => Controller()(TestController)).not.toThrow()
   })
 })
 
