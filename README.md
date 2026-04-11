@@ -10,13 +10,12 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 
 - [Features](#features)
 - [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Create Fresh App](#create-fresh-app)
 - [Project Structure](#project-structure)
   - [Example Structure](#example-structure)
   - [Key Components](#key-components)
 - [Configuration](#configuration)
-- [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Create Fresh App](#create-fresh-app)
 - [CLI Usage](#cli-usage)
 - [Development Guide](#development-guide)
 - [Deployment Guide](#deployment-guide)
@@ -185,14 +184,14 @@ Use the CLI to start your application.
   Run in development mode:
 
 ```shell
-bun start:dev
+npx meocord start --dev
 ```
 
 - **Production Mode**:
   Run in production mode with fresh production build:
 
 ```shell
-bun start:prod --build   # use arg `--build` if not built yet or use `bun build:prod` first
+npx meocord start --build --prod
 ```
 
 ---
@@ -227,7 +226,7 @@ When using MeoCord, the expected project structure is as follows:
 │   └── services
 │       └── sample.service.ts
 ├── tsconfig.json
-└── bun.lock
+└── <lockfile>          # bun.lock / package-lock.json / yarn.lock / pnpm-lock.yaml
 ```
 
 This structure ensures clear separation of concerns and scalable project architecture.
@@ -371,13 +370,13 @@ The **MeoCord CLI** is designed to help you manage, build, and run your applicat
 To ensure you see the most accurate and complete list of commands and options, always refer to the help menu by running:
 
 ```shell
-bun meocord --help
+npx meocord --help
 ```
 
 Below is an example of the help display output:
 
 ```textmate
-❯ bun meocord --help
+❯ npx meocord --help
 MeoCord Copyright (C) 2025  Ukasyah Rahmatullah Zada
     This program comes with ABSOLUTELY NO WARRANTY; for details type `meocord show -w'.
     This is free software, and you are welcome to redistribute it
@@ -421,8 +420,8 @@ Builds the application in **production** or **development** mode.
 **Usage:**
 
 ```shell
-bun meocord build --prod       # Build for production
-bun meocord build --dev        # Build for development
+npx meocord build --prod       # Build for production
+npx meocord build --dev        # Build for development
 ```
 
 #### `meocord start`
@@ -432,8 +431,8 @@ Starts the application with options for either a **production** or **development
 **Usage:**
 
 ```shell
-bun meocord start --build --prod          # Start in production mode with fresh production build
-bun meocord start --dev                   # Start in development mode (will always fresh build)
+npx meocord start --build --prod          # Start in production mode with fresh production build
+npx meocord start --dev                   # Start in development mode (will always fresh build)
 ```
 
 #### `meocord generate` (Alias: `meocord g`)
@@ -443,13 +442,13 @@ Scaffolds application components such as controllers, services, and other elemen
 **Usage:**
 
 ```text
-bun meocord generate|g [options] [command]
+npx meocord generate|g [options] [command]
 ```
 
 **Example:**
 
 ```shell
-bun meocord g co slash "user"
+npx meocord g co slash "user"
 ```
 
 This command will generate a `user` slash controller.
@@ -459,7 +458,7 @@ This command will generate a `user` slash controller.
 For detailed usage of any particular command, append the `--help` flag to it. For instance:
 
 ```shell
-bun meocord g --help
+npx meocord g --help
 ```
 
 This will provide command-specific help and options.
@@ -473,7 +472,7 @@ This will provide command-specific help and options.
 Run the application in development mode with live-reload for a seamless coding experience:
 
 ```shell
-bun meocord start --dev
+npx meocord start --dev
 ```
 
 ### Building for Production
@@ -481,7 +480,7 @@ bun meocord start --dev
 Generate an optimized and compiled production build with:
 
 ```shell
-bun meocord build --prod
+npx meocord build --prod
 ```
 
 Once built, you can deploy or run the application efficiently.
@@ -493,19 +492,25 @@ Once built, you can deploy or run the application efficiently.
 Install all necessary dependencies, including development dependencies, before building:
 
 ```shell
-bun install --frozen-lockfile
+npm ci                        # npm
+yarn install --frozen-lockfile  # yarn
+pnpm install --frozen-lockfile  # pnpm
+bun install --frozen-lockfile   # bun
 ```
 
 Generate an optimized and compiled production build:
 
 ```shell
-bun meocord build --prod
+npx meocord build --prod
 ```
 
 Clean up and focus on production-only dependencies:
 
 ```shell
-bun install --production
+npm ci --omit=dev             # npm
+yarn install --production     # yarn
+pnpm install --prod           # pnpm
+bun install --production      # bun
 ```
 
 Ensure the following essential files and folders are prepared for deployment on the server:
@@ -516,13 +521,13 @@ Ensure the following essential files and folders are prepared for deployment on 
 ├── node_modules (production dependencies only)
 ├── .env (if applicable, ensure it contains necessary variables)
 ├── package.json
-└── bun.lock
+└── <lockfile>          # bun.lock / package-lock.json / yarn.lock / pnpm-lock.yaml
 ```
 
 Start the application in production mode on the server:
 
 ```shell
-bun meocord start --prod
+npx meocord start --prod
 ```
 
 ---
