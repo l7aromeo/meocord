@@ -21,6 +21,7 @@ const libraryEntries = {
   'decorator/index': 'src/decorator/index.ts',
   'interface/index': 'src/interface/index.ts',
   'enum/index': 'src/enum/index.ts',
+  'testing/index': 'src/testing/index.ts',
 }
 
 const cliEntry = {
