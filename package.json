@@ -54,7 +54,7 @@
       "require": "./dist/cjs/testing/index.cjs"
     },
     "./eslint": {
-      "types": "./meocord.eslint.ts",
+      "types": "./meocord.eslint.d.ts",
       "import": "./meocord.eslint.mjs",
       "require": "./meocord.eslint.cjs"
     }

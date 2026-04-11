@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-const {importX} = require('eslint-plugin-import-x')
+const { importX } = require('eslint-plugin-import-x')
 const globals = require('globals')
 const tsParser = require('@typescript-eslint/parser')
 const eslintTs = require('typescript-eslint')
@@ -83,7 +83,7 @@ const specConfig = {
 }
 
 module.exports = [
-  {ignores: ['docs/*', 'build/*', 'lib/*', 'dist/*', 'meocord.config.ts', 'jest.config.ts']},
+  { ignores: ['docs/*', 'build/*', 'lib/*', 'dist/*', 'meocord.config.ts', 'jest.config.ts'] },
   ...recommendedTypeScriptConfigs,
   specConfig,
   eslintConfigPrettier,
