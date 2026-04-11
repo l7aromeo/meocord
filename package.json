@@ -63,6 +63,8 @@
     "dist/**/*",
     "webpack.config.js",
     "meocord.eslint.mjs",
+    "meocord.eslint.cjs",
+    "meocord.eslint.d.ts",
     "package.json",
     "LICENSE",
     "AUTHOR.md",
