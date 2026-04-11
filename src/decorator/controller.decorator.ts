@@ -21,7 +21,7 @@ import {
   type SlashCommandSubcommandsOnlyBuilder,
   StringSelectMenuInteraction,
 } from 'discord.js'
-import { CommandType } from '@src/enum/index.js'
+import { CommandType, MetadataKey } from '@src/enum/index.js'
 import { type ReactionHandlerOptions } from '@src/interface/index.js'
 import {
   type CommandBuilderBase,
@@ -209,7 +209,7 @@ export function Command<
     if (typeof builderOrType === 'function') {
       const builderObj = new builderOrType() as CommandBuilderBase
       builderInstance = builderObj.build(commandName)
-      commandType = Reflect.getMetadata('commandType', builderOrType) as CommandType
+      commandType = Reflect.getMetadata(MetadataKey.CommandType, builderOrType) as CommandType
       if (!(commandType in CommandType)) {
         throw new Error(`Metadata for 'commandType' is missing on builder ${builderOrType.name}`)
       }
@@ -269,14 +269,14 @@ export function getCommandMap<T extends string>(controller: any): Record<string,
  */
 export function Controller() {
   return function (target: any) {
-    if (!Reflect.hasMetadata('inversify:injectable', target)) {
+    if (!Reflect.hasMetadata(MetadataKey.Injectable, target)) {
       injectable()(target)
     }
 
-    const injectables = Reflect.getMetadata('design:paramtypes', target) || []
+    const injectables = Reflect.getMetadata(MetadataKey.ParamTypes, target) || []
     injectables.map((dep: any) => {
       if (!mainContainer.isBound(dep)) {
-        if (!Reflect.hasMetadata('inversify:injectable', dep)) {
+        if (!Reflect.hasMetadata(MetadataKey.Injectable, dep)) {
           injectable()(dep)
         }
 
@@ -284,6 +284,6 @@ export function Controller() {
       }
     })
 
-    Reflect.defineMetadata('inversify:container', mainContainer, target)
+    Reflect.defineMetadata(MetadataKey.Container, mainContainer, target)
   }
 }

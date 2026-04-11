@@ -8,6 +8,7 @@ import 'reflect-metadata'
 import { mainContainer } from '@src/decorator/container.js'
 import { injectable } from 'inversify'
 import { Client } from 'discord.js'
+import { MetadataKey } from '@src/enum/index.js'
 
 /**
  * `@Service()` decorator to mark a class as a service that can be injected into controllers or used as standalone services.
@@ -29,7 +30,7 @@ import { Client } from 'discord.js'
 export function Service<T>() {
   return function (target: new (...args: any[]) => T) {
     // Check if the class is already injectable; if not, make it injectable dynamically
-    if (!Reflect.hasMetadata('inversify:injectable', target)) {
+    if (!Reflect.hasMetadata(MetadataKey.Injectable, target)) {
       injectable()(target)
     }
 
@@ -45,7 +46,7 @@ export function Service<T>() {
 
 function bindDependencies(target: any) {
   // Get the constructor parameter types using Reflect metadata
-  const dependencies = Reflect.getMetadata('design:paramtypes', target) || []
+  const dependencies = Reflect.getMetadata(MetadataKey.ParamTypes, target) || []
 
   dependencies.forEach((dep: any) => {
     // Bind the dependency if not already bound
@@ -53,7 +54,7 @@ function bindDependencies(target: any) {
       if (dep.name === Client.name) return
       try {
         // Check if the class is already injectable; if not, make it injectable dynamically
-        if (!Reflect.hasMetadata('inversify:injectable', dep)) {
+        if (!Reflect.hasMetadata(MetadataKey.Injectable, dep)) {
           injectable()(dep)
         }
         mainContainer.bind(dep).toSelf().inSingletonScope()

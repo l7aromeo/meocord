@@ -10,6 +10,7 @@ import { mainContainer } from '@src/decorator/container.js'
 import { BaseInteraction, Message, MessageReaction, type Interaction } from 'discord.js'
 import { type GuardInterface } from '@src/interface/index.js'
 import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator/controller.decorator.js'
+import { MetadataKey } from '@src/enum/index.js'
 
 function isValidContext(context: unknown): context is BaseInteraction | Message | MessageReaction {
   return context instanceof BaseInteraction || context instanceof Message || context instanceof MessageReaction
@@ -95,14 +96,14 @@ export class ButtonInteractionGuard implements GuardInterface {
 export function Guard() {
   return function (target: any) {
     // Check if the class is already injectable; if not, make it injectable dynamically
-    if (!Reflect.hasMetadata('inversify:injectable', target)) {
+    if (!Reflect.hasMetadata(MetadataKey.Injectable, target)) {
       injectable()(target)
     }
 
     mainContainer.bind(target).toSelf().inTransientScope()
 
     // Bind any dependencies that the guard requires
-    const injectables = Reflect.getMetadata('design:paramtypes', target) || []
+    const injectables = Reflect.getMetadata(MetadataKey.ParamTypes, target) || []
     injectables.forEach((dep: any) => {
       if (!mainContainer.isBound(dep)) {
         mainContainer.bind(dep).toSelf().inSingletonScope()
@@ -181,7 +182,7 @@ export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | 
       // Method Decorator
       applyGuards(descriptor, guards as any, String(propertyKey))
       // Store guard metadata for later access (if needed)
-      Reflect.defineMetadata('guards', guards, target, propertyKey)
+      Reflect.defineMetadata(MetadataKey.Guards, guards, target, propertyKey)
     } else if (typeof target === 'function' && !propertyKey && !descriptor) {
       // Class Decorator
       const prototype = target.prototype
@@ -205,7 +206,7 @@ export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | 
         if (methodDescriptor) {
           applyGuards(methodDescriptor, guards as any, methodName)
           Object.defineProperty(prototype, methodName, methodDescriptor)
-          Reflect.defineMetadata('guards', guards, prototype, methodName)
+          Reflect.defineMetadata(MetadataKey.Guards, guards, prototype, methodName)
         }
       }
     }

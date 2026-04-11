@@ -10,6 +10,7 @@ import { Container, injectable, type ServiceIdentifier } from 'inversify'
 import { type ActivityOptions, Client, type ClientOptions } from 'discord.js'
 import { MeoCordApp } from '@src/core/meocord.app.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
+import { MetadataKey } from '@src/enum/index.js'
 
 /**
  * Binds a class and its dependencies to the Inversify container in singleton scope.
@@ -21,7 +22,7 @@ function bindDependencies(container: Container, cls: any): void {
   if (!container.isBound(cls)) {
     container.bind(cls).toSelf().inSingletonScope()
 
-    const dependencies = Reflect.getMetadata('design:paramtypes', cls) || []
+    const dependencies = Reflect.getMetadata(MetadataKey.ParamTypes, cls) || []
     dependencies.forEach((dep: any) => bindDependencies(container, dep))
   }
 }
@@ -34,7 +35,7 @@ function bindDependencies(container: Container, cls: any): void {
  * @returns {any[]} - An array of resolved instances of the target's dependencies.
  */
 function resolveDependencies(container: Container, target: any): any[] {
-  const injectables = Reflect.getMetadata('design:paramtypes', target) || []
+  const injectables = Reflect.getMetadata(MetadataKey.ParamTypes, target) || []
   return injectables.map((dep: any) => {
     bindDependencies(container, dep)
     return container.get(dep)
@@ -81,7 +82,7 @@ export function MeoCord(options: {
   services?: ServiceIdentifier[]
 }): (target: any) => void {
   return (target: any): void => {
-    if (!Reflect.hasMetadata('inversify:injectable', target)) {
+    if (!Reflect.hasMetadata(MetadataKey.Injectable, target)) {
       injectable()(target) // Make target injectable (inversify-specific)
     }
 
@@ -125,6 +126,6 @@ export function MeoCord(options: {
       })
       .inSingletonScope()
 
-    Reflect.defineMetadata('inversify:container', mainContainer, target)
+    Reflect.defineMetadata(MetadataKey.Container, mainContainer, target)
   }
 }

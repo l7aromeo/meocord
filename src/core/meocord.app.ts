@@ -20,7 +20,7 @@ import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/dec
 import { mainContainer } from '@src/decorator/container.js'
 import { sample } from 'lodash-es'
 import { EmbedUtil } from '@src/util/index.js'
-import { CommandType } from '@src/enum/index.js'
+import { CommandType, MetadataKey } from '@src/enum/index.js'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 import { type ReactionHandlerOptions } from '@src/interface/index.js'
 import { type CommandMetadata } from '@src/interface/command-decorator.interface.js'
@@ -241,7 +241,7 @@ export class MeoCordApp {
     for (const controller of relevantControllers) {
       let controllerInstance = this.controllerInstancesCache.get(controller.constructor)
       if (!controllerInstance) {
-        const container = Reflect.getMetadata('inversify:container', controller.constructor)
+        const container = Reflect.getMetadata(MetadataKey.Container, controller.constructor)
         controllerInstance = container.get(controller.constructor, { autobind: true })
         this.controllerInstancesCache.set(controller.constructor, controllerInstance)
       }
@@ -282,7 +282,7 @@ export class MeoCordApp {
     for (const controller of relevantControllers) {
       let controllerInstance = this.controllerInstancesCache.get(controller.constructor)
       if (!controllerInstance) {
-        const container = Reflect.getMetadata('inversify:container', controller.constructor)
+        const container = Reflect.getMetadata(MetadataKey.Container, controller.constructor)
         controllerInstance = container.get(controller.constructor, { autobind: true })
         this.controllerInstancesCache.set(controller.constructor, controllerInstance)
       }
