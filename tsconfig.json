@@ -21,6 +21,6 @@
     },
     "types": ["node", "reflect-metadata"]
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "src/**/*.spec.ts"]
 }
