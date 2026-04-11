@@ -48,6 +48,11 @@
       "import": "./dist/esm/enum/index.js",
       "require": "./dist/cjs/enum/index.cjs"
     },
+    "./testing": {
+      "types": "./dist/types/testing/index.d.ts",
+      "import": "./dist/esm/testing/index.js",
+      "require": "./dist/cjs/testing/index.cjs"
+    },
     "./eslint": "./meocord.eslint.mjs"
   },
   "files": [
