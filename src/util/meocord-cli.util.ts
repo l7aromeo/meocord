@@ -1,21 +1,7 @@
 /**
  * MeoCord Framework
- * Copyright (C) 2025 Ukasyah Rahmatullah Zada
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
- *
- * @param command - The command for which to configure help.
+ * Copyright (c) 2025 Ukasyah Rahmatullah Zada
+ * SPDX-License-Identifier: MIT
  */
 import { Argument, Command, Help, Option } from 'commander'
 import CliTable3 from 'cli-table3'
@@ -46,10 +32,7 @@ export function configureCommandHelp(command: Command) {
  * @returns The formatted help text.
  */
 export function formatHelp(cmd: Command, helper: Help, options: readonly Option[]): string {
-  let helpText = `MeoCord Copyright (C) 2025  Ukasyah Rahmatullah Zada
-    This program comes with ABSOLUTELY NO WARRANTY; for details type \`meocord show -w'.
-    This is free software, and you are welcome to redistribute it
-    under certain conditions; type \`meocord show -c' for details.\n\n`
+  let helpText = `MeoCord Copyright (c) 2025 Ukasyah Rahmatullah Zada — MIT License\n\n`
 
   helpText += `${helper.commandUsage(cmd)}\n\n`
   helpText += `${helper.commandDescription(cmd)}\n\n`

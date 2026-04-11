@@ -17,7 +17,7 @@
   "bugs": {
     "url": "https://github.com/l7aromeo/meocord/issues"
   },
-  "license": "GPL-3.0-or-later",
+  "license": "MIT",
   "exports": {
     "./core": {
       "types": "./dist/types/core/index.d.ts",

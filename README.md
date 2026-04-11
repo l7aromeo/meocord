@@ -377,10 +377,7 @@ Below is an example of the help display output:
 
 ```textmate
 ❯ npx meocord --help
-MeoCord Copyright (C) 2025  Ukasyah Rahmatullah Zada
-    This program comes with ABSOLUTELY NO WARRANTY; for details type `meocord show -w'.
-    This is free software, and you are welcome to redistribute it
-    under certain conditions; type `meocord show -c' for details.
+MeoCord Copyright (c) 2025 Ukasyah Rahmatullah Zada — MIT License
 
 meocord [options] [command]
 
@@ -576,13 +573,8 @@ Thank you for helping make **MeoCord** better!
 
 ## License
 
-**MeoCord Framework** is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.txt).
+**MeoCord Framework** is licensed under the [MIT License](./LICENSE).
 
-**Key conditions:**
+You are free to use, modify, and distribute this software in any project — personal, academic, or commercial — with no restrictions other than preserving the copyright notice.
 
-- You can freely use, modify, and distribute the framework under the terms of GPL v3.
-- If you distribute derivatives of this software, the source code must also remain freely available under the same GPL v3 terms.
-
-Copying, modification, and redistribution of this software are welcome, but this program comes with **NO WARRANTY**.
-
-For full details about the license, consult the [LICENSE](./LICENSE) file included in the repository.
+For full details, consult the [LICENSE](./LICENSE) file included in the repository.

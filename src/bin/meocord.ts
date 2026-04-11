@@ -2,20 +2,8 @@
 
 /**
  * MeoCord Framework
- * Copyright (C) 2025 Ukasyah Rahmatullah Zada
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * Copyright (c) 2025 Ukasyah Rahmatullah Zada
+ * SPDX-License-Identifier: MIT
  */
 
 import path from 'path'
@@ -69,7 +57,7 @@ class MeoCordCLI {
       .command('show')
       .description('Display information')
       .option('-w, --warranty', 'Display warranty disclaimer')
-      .option('-c, --license', 'Display licensing conditions and usage rights')
+      .option('-c, --license', 'Display license')
       .action(options => {
         if (!options.warranty && !options.license) {
           program.commands.find(cmd => cmd.name() === 'show')?.outputHelp()
@@ -77,31 +65,30 @@ class MeoCordCLI {
         }
         if (options.warranty) {
           console.log(`
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-
-The authors of this software are not responsible for damages caused
-by the usage, misuse, or inability to use the software.
-
-See the GNU General Public License for full details:
-<https://www.gnu.org/licenses/>.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
       `)
         }
         if (options.license) {
           console.log(`
-This program is free software: you can redistribute it and/or
-modify it under the terms of the GNU General Public License as
-published by the Free Software Foundation, either version 3 of
-the License, or (at your option) any later version.
+MIT License
 
-Key conditions of the GNU GPL v3:
-- You can use this software for personal, academic, or commercial purposes.
-- If you distribute modified versions, you must share the source code under the same GPL v3 license.
-- The original copyright must be retained.
+Copyright (c) 2025 Ukasyah Rahmatullah Zada
 
-For full license details, refer to:
-<https://www.gnu.org/licenses/gpl-3.0.txt>
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
       `)
         }
       })
