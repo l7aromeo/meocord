@@ -228,6 +228,7 @@ When using MeoCord, the expected project structure is as follows:
 │   └── services
 │       └── sample.service.ts
 ├── tsconfig.json
+├── tsconfig.eslint.json
 ├── tsconfig.test.json
 └── <lockfile>          # bun.lock / package-lock.json / yarn.lock / pnpm-lock.yaml
 ```
