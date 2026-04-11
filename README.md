@@ -571,6 +571,12 @@ Thank you for helping make **MeoCord** better!
 
 ---
 
+## Release Notes
+
+Full release history is available on the [GitHub Releases](https://github.com/l7aromeo/meocord/releases) page.
+
+---
+
 ## License
 
 **MeoCord Framework** is licensed under the [MIT License](./LICENSE).
