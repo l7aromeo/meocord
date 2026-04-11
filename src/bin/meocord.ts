@@ -185,19 +185,36 @@ For full license details, refer to:
       process.exit(1)
     }
 
-    // Check Node.js version
-    const MINIMUM_NODE_VERSION = '22.14.0'
-    const [major, minor, patch] = process.version.slice(1).split('.').map(Number)
-    const [minMajor, minMinor, minPatch] = MINIMUM_NODE_VERSION.split('.').map(Number)
-
-    if (
-      major < minMajor ||
-      (major === minMajor && minor < minMinor) ||
-      (major === minMajor && minor === minMinor && patch < minPatch)
-    ) {
-      p.cancel(`Node.js v${MINIMUM_NODE_VERSION} or higher is required. Current: ${process.version}`)
+    // Check Node.js version against latest LTS
+    interface NodeRelease {
+      version: string
+      lts: string | false
+    }
+    let latestLTS: string | null = null
+    try {
+      const res = await fetch('https://nodejs.org/dist/index.json')
+      const releases = (await res.json()) as NodeRelease[]
+      const ltsRelease = releases.find(r => r.lts !== false)
+      if (ltsRelease) latestLTS = ltsRelease.version.slice(1)
+    } catch {
+      p.cancel('No internet connection. Creating a MeoCord app requires network access.')
       await wait(100)
       process.exit(1)
+    }
+
+    if (latestLTS) {
+      const [major, minor, patch] = process.version.slice(1).split('.').map(Number)
+      const [minMajor, minMinor, minPatch] = latestLTS.split('.').map(Number)
+
+      if (
+        major < minMajor ||
+        (major === minMajor && minor < minMinor) ||
+        (major === minMajor && minor === minMinor && patch < minPatch)
+      ) {
+        p.log.warn(
+          `Your Node.js (${process.version}) is behind the latest LTS (v${latestLTS}). Consider upgrading for best compatibility.`,
+        )
+      }
     }
 
     // Determine package manager
