@@ -119,7 +119,7 @@ export class GeneratorCLI {
 
   private async handleGenerateController(args: { name: string; type: ControllerType }): Promise<void> {
     try {
-      this.controllerGeneratorHelper.generateController({ controllerName: args.name }, args.type as ControllerType)
+      this.controllerGeneratorHelper.generateController({ controllerName: args.name }, args.type)
     } catch (error) {
       this.logger.error(`Error generating controller: ${error instanceof Error ? error.message : String(error)}`)
       await wait(100)
