@@ -1,0 +1,17 @@
+import { MeoCordTestingModule } from 'meocord/testing'
+import { {{className}}Service } from './{{kebabCaseName}}.service.js'
+
+describe('{{className}}Service', () => {
+  let service: {{className}}Service
+
+  beforeEach(() => {
+    const module = MeoCordTestingModule.create({
+      providers: [{ provide: {{className}}Service, useClass: {{className}}Service }],
+    }).compile()
+    service = module.get({{className}}Service)
+  })
+
+  it('should be defined', () => {
+    expect(service).toBeDefined()
+  })
+})

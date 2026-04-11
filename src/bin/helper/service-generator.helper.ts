@@ -41,8 +41,10 @@ export class ServiceGeneratorHelper {
     const serviceFile = path.join(serviceDir, `${kebabCaseName}.service.ts`)
 
     const serviceTemplate = buildTemplate(className, 'service.template')
+    const specTemplate = buildTemplate(className, 'service.spec.template', { kebabCaseName })
 
     createDirectoryIfNotExists(serviceDir)
     generateFile(serviceFile, serviceTemplate)
+    generateFile(path.join(serviceDir, `${kebabCaseName}.service.spec.ts`), specTemplate)
   }
 }

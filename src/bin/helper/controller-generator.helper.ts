@@ -10,6 +10,7 @@ import {
   createDirectoryIfNotExists,
   generateFile,
   populateTemplate,
+  toClassName,
   validateAndFormatName,
 } from '@src/util/generator-cli.util.js'
 import { fileURLToPath } from 'url'
@@ -86,8 +87,14 @@ export class ControllerGeneratorHelper {
   ): void {
     this.generateBuilderFile(className, type, controllerDir)
     createDirectoryIfNotExists(controllerDir)
+
     const controllerFilePath = path.join(controllerDir, `${kebabCaseName}.${type}.controller.ts`)
     generateFile(controllerFilePath, controllerTemplate)
+
+    const typeClassName = toClassName(type.replace(/-/g, ' '))
+    const specTemplatePath = path.resolve(__dirname, '..', 'builder-template', 'controller', 'controller.spec.template')
+    const specContent = populateTemplate(specTemplatePath, { className, kebabCaseName, type, typeClassName })
+    generateFile(path.join(controllerDir, `${kebabCaseName}.${type}.controller.spec.ts`), specContent)
   }
 
   /**

@@ -1,0 +1,18 @@
+import { {{className}}Guard } from './{{kebabCaseName}}.guard.js'
+
+describe('{{className}}Guard', () => {
+  let guard: {{className}}Guard
+
+  beforeEach(() => {
+    guard = new {{className}}Guard()
+  })
+
+  it('should be defined', () => {
+    expect(guard).toBeDefined()
+  })
+
+  it('should allow by default', async () => {
+    const result = await guard.canActivate({} as any)
+    expect(result).toBe(true)
+  })
+})

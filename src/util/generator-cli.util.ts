@@ -98,15 +98,11 @@ export function generateFile(filePath: string, content: string): void {
  * @returns The populated template string.
  * @throws Will throw an error if the template file cannot be read.
  */
-export function buildTemplate(className: string, templateFileName: string): string {
+export function buildTemplate(className: string, templateFileName: string, extra: Record<string, string> = {}): string {
   const filePath = path.resolve(__dirname, '..', 'bin', 'builder-template', templateFileName)
   let template = fs.readFileSync(filePath, 'utf-8')
 
-  const variables = {
-    className,
-  }
-
-  for (const [key, value] of Object.entries(variables)) {
+  for (const [key, value] of Object.entries({ className, ...extra })) {
     template = template.replaceAll(`{{${key}}}`, value)
   }
 

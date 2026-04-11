@@ -41,8 +41,10 @@ export class GuardGeneratorHelper {
     const guardFile = path.join(guardDir, `${kebabCaseName}.guard.ts`)
 
     const guardTemplate = buildTemplate(className, 'guard.template')
+    const specTemplate = buildTemplate(className, 'guard.spec.template', { kebabCaseName })
 
     createDirectoryIfNotExists(guardDir)
     generateFile(guardFile, guardTemplate)
+    generateFile(path.join(guardDir, `${kebabCaseName}.guard.spec.ts`), specTemplate)
   }
 }
