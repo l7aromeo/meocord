@@ -5,12 +5,11 @@
  */
 
 import type { Linter } from 'eslint'
-import type { TSESLint } from '@typescript-eslint/utils'
 
 /**
  * Pre-configured TypeScript ESLint config for MeoCord projects.
  */
-export declare const typescriptConfig: TSESLint.FlatConfig.ConfigFile
+export declare const typescriptConfig: Linter.Config
 
 /**
  * Default MeoCord ESLint configuration.
