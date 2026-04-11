@@ -36,9 +36,8 @@ While still growing, MeoCord provides a solid foundation for developers to creat
   Simplify and extend bot behavior through a robust decorator system. Leverage built-in decorators for streamlined
   functionality.
 - **Specialized Services**
-  Register specialized services using the `@MeoCord` decorator. For example, add a RabbitMQ service to listen for events
-  and trigger actions, such as sending Discord messages. This promotes modularity, flexibility, and seamless integration
-  of custom services.
+  Register custom services using the `@MeoCord` decorator. Services are resolved via dependency injection and can
+  encapsulate any reusable business logic, promoting modularity, flexibility, and seamless integration across your bot.
 - **Seamless Discord.js Integration**
   Built on top of Discord.js to provide full support for the Discord API, with added features like activity management,
   intents, partials, and custom client options.
