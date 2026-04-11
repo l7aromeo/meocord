@@ -33,7 +33,7 @@ const languageOptions = {
   ecmaVersion: 2023,
   sourceType: 'module',
   parserOptions: {
-    project: './tsconfig.json',
+    project: ['./tsconfig.json', './tsconfig.test.json'],
   },
 }
 
