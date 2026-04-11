@@ -56,12 +56,7 @@ const config = {
   setupFiles: ['reflect-metadata'],
   clearMocks: true,
   restoreMocks: true,
-  collectCoverageFrom: [
-    'src/**/*.ts',
-    '!src/**/*.spec.ts',
-    '!src/bin/**',
-    '!src/**/index.ts',
-  ],
+  collectCoverageFrom: ['src/**/*.ts', '!src/**/*.spec.ts', '!src/bin/**', '!src/**/index.ts'],
   coverageDirectory: 'coverage',
   coverageProvider: 'v8',
 }
