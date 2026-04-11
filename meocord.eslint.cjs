@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: MIT
  */
 
-import {importX} from 'eslint-plugin-import-x'
-import globals from 'globals'
-import tsParser from '@typescript-eslint/parser'
-import eslintTs from 'typescript-eslint'
-import eslintConfigPrettier from 'eslint-config-prettier'
-import eslintPluginPrettier from 'eslint-plugin-prettier'
+const {importX} = require('eslint-plugin-import-x')
+const globals = require('globals')
+const tsParser = require('@typescript-eslint/parser')
+const eslintTs = require('typescript-eslint')
+const eslintConfigPrettier = require('eslint-config-prettier')
+const eslintPluginPrettier = require('eslint-plugin-prettier')
 
 const tsFiles = ['**/*.ts']
 
@@ -25,7 +25,7 @@ const languageOptions = {
   },
 }
 
-export const typescriptConfig = {
+const typescriptConfig = {
   files: tsFiles,
   plugins: {
     'import-x': importX,
@@ -82,10 +82,12 @@ const specConfig = {
   },
 }
 
-export default [
+module.exports = [
   {ignores: ['docs/*', 'build/*', 'lib/*', 'dist/*', 'meocord.config.ts', 'jest.config.ts']},
   ...recommendedTypeScriptConfigs,
   specConfig,
   eslintConfigPrettier,
   typescriptConfig,
 ]
+
+module.exports.typescriptConfig = typescriptConfig

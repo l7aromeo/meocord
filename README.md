@@ -116,7 +116,7 @@ While still growing, MeoCord provides a solid foundation for developers to creat
          "noImplicitAny": false,
          "noEmit": true,
          "outDir": "./dist",
-         "rootDir": "./src",
+         "rootDir": ".",
          "paths": {
            "@src/*": ["./src/*"]
          },
@@ -208,7 +208,8 @@ When using MeoCord, the expected project structure is as follows:
 .
 ├── .gitignore
 ├── .prettierrc.mjs
-├── eslint.config.mjs
+├── eslint.config.ts
+├── jest.config.ts
 ├── meocord.config.ts
 ├── package.json
 ├── src
@@ -227,6 +228,7 @@ When using MeoCord, the expected project structure is as follows:
 │   └── services
 │       └── sample.service.ts
 ├── tsconfig.json
+├── tsconfig.test.json
 └── <lockfile>          # bun.lock / package-lock.json / yarn.lock / pnpm-lock.yaml
 ```
 
