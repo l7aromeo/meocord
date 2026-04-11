@@ -4,9 +4,6 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "verbatimModuleSyntax": false,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "outDir": "./dist/test",
     "types": ["node", "jest", "reflect-metadata"]
   },
   "include": ["src/**/*", "src/**/*.spec.ts"],

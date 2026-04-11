@@ -19,7 +19,7 @@
     "paths": {
       "@src/*": ["./src/*"]
     },
-    "types": ["node", "reflect-metadata"],
+    "types": ["node", "reflect-metadata"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "src/**/*.spec.ts"]

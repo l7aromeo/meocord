@@ -62,8 +62,10 @@ const typescriptConfig = {
     '@typescript-eslint/no-unused-vars': [
       'error',
       {
-        ignoreRestSiblings: true,
-        args: 'none',
+        vars: 'all',
+        varsIgnorePattern: '^_',
+        args: 'all',
+        argsIgnorePattern: '^_',
       },
     ],
     "headers/header-format": [
@@ -97,8 +99,10 @@ const javaScriptConfig = {
     'no-unused-vars': [
       'error',
       {
-        ignoreRestSiblings: true,
-        args: 'none',
+        vars: 'all',
+        varsIgnorePattern: '^_',
+        args: 'all',
+        argsIgnorePattern: '^_',
       },
     ],
   },
@@ -122,8 +126,10 @@ const webpackConfig = {
     'no-unused-vars': [
       'error',
       {
-        ignoreRestSiblings: true,
-        args: 'none',
+        vars: 'all',
+        varsIgnorePattern: '^_',
+        args: 'all',
+        argsIgnorePattern: '^_',
       },
     ],
     'import-x/no-unresolved': 'off',
