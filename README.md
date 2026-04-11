@@ -18,6 +18,7 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 - [Configuration](#configuration)
 - [CLI Usage](#cli-usage)
 - [Development Guide](#development-guide)
+- [Custom Decorators](#custom-decorators)
 - [Deployment Guide](#deployment-guide)
 - [Contributing](#contributing)
 - [License](#license)
@@ -481,6 +482,104 @@ npx meocord build --prod
 ```
 
 Once built, you can deploy or run the application efficiently.
+
+---
+
+## Custom Decorators
+
+MeoCord exports two helpers from `meocord/common` for building your own decorators: `applyDecorators` and `SetMetadata`.
+
+### `applyDecorators` — compose decorators into one
+
+Combine multiple existing decorators into a single reusable one. Useful for bundling a common guard pattern so you don't repeat it on every command.
+
+```typescript
+import { applyDecorators } from 'meocord/common'
+import { UseGuard } from 'meocord/decorator'
+import { DefaultGuard, GlobalRateLimiterGuard, RateLimiterGuard } from '@src/guards'
+
+// Reusable decorator that applies a standard guard stack
+export const Protected = () =>
+  applyDecorators(
+    UseGuard(DefaultGuard, GlobalRateLimiterGuard),
+  )
+
+// With configurable rate limit
+export const RateLimited = (limit: number) =>
+  applyDecorators(
+    UseGuard(DefaultGuard, { provide: RateLimiterGuard, params: { limit } }),
+  )
+```
+
+Usage on a controller:
+
+```typescript
+import { Controller } from 'meocord/decorator'
+import { Protected, RateLimited } from '@src/common/decorators'
+
+@Controller()
+export class ProfileController {
+  @Command('profile', CommandType.SLASH)
+  @Protected()
+  async profile(interaction: ChatInputCommandInteraction) { ... }
+
+  @Command('wish', CommandType.SLASH)
+  @RateLimited(3)
+  async wish(interaction: ChatInputCommandInteraction) { ... }
+}
+```
+
+### `SetMetadata` + custom guard — attach and read custom metadata
+
+Use `SetMetadata` to tag commands with arbitrary data, then read it inside a guard.
+
+**1. Define the metadata decorator:**
+
+```typescript
+import { SetMetadata } from 'meocord/common'
+
+export const Roles = (...roles: string[]) => SetMetadata('roles', roles)
+```
+
+**2. Read it in a guard:**
+
+```typescript
+import { Guard } from 'meocord/decorator'
+import { type GuardInterface } from 'meocord/interface'
+import type { ChatInputCommandInteraction } from 'discord.js'
+
+@Guard()
+export class RolesGuard implements GuardInterface {
+  async canActivate(interaction: ChatInputCommandInteraction): Promise<boolean> {
+    const required: string[] = Reflect.getMetadata('roles', interaction.constructor) ?? []
+    if (!required.length) return true
+
+    const memberRoles = interaction.member?.roles
+    // ... check member has at least one required role
+    return true
+  }
+}
+```
+
+**3. Apply both on a command:**
+
+```typescript
+import { applyDecorators } from 'meocord/common'
+import { UseGuard } from 'meocord/decorator'
+
+export const RequireRoles = (...roles: string[]) =>
+  applyDecorators(
+    Roles(...roles),
+    UseGuard(RolesGuard),
+  )
+
+@Controller()
+export class AdminController {
+  @Command('ban', CommandType.SLASH)
+  @RequireRoles('admin', 'moderator')
+  async ban(interaction: ChatInputCommandInteraction) { ... }
+}
+```
 
 ---
 
