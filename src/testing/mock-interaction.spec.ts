@@ -36,6 +36,7 @@ import {
   createMockClient,
   createMockGuild,
   createMockChannel,
+  createMockMessage,
 } from './mock-interaction.js'
 import { MeoCordTestingModule } from './meocord-testing-module.js'
 import { Guard, UseGuard } from '@src/decorator/guard.decorator.js'
@@ -321,6 +322,20 @@ describe('createMockInteraction', () => {
       const interaction = createMockInteraction(ChatInputCommandInteraction)
       await interaction.reply({ content: 'hello' })
       expect(interaction.reply).toHaveBeenCalledWith({ content: 'hello' })
+    })
+
+    it('followUp() resolves to a Message instance', async () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      await interaction.reply({ content: 'first' })
+      const msg = await interaction.followUp({ content: 'second' })
+      expect(msg).toBeInstanceOf(Message)
+    })
+
+    it('editReply() resolves to a Message instance', async () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      await interaction.deferReply()
+      const msg = await interaction.editReply({ content: 'done' })
+      expect(msg).toBeInstanceOf(Message)
     })
 
     it('state machine is not set up for AutocompleteInteraction (not repliable)', () => {
@@ -686,6 +701,68 @@ describe('overrideGuard()', () => {
 
     expect(order).toEqual(['stubA', 'stubB'])
     expect(ctrl.executed).toBe(true)
+  })
+})
+
+describe('createMockMessage', () => {
+  it('returns a Message instance', () => {
+    expect(createMockMessage()).toBeInstanceOf(Message)
+  })
+
+  it('methods are auto-stubbed as jest.fn()', () => {
+    const msg = createMockMessage()
+    expect(jest.isMockFunction(msg.edit)).toBe(true)
+    expect(jest.isMockFunction(msg.react)).toBe(true)
+  })
+
+  it('deleted starts as false', () => {
+    expect((createMockMessage() as any).deleted).toBe(false)
+  })
+
+  it('delete() sets deleted to true', async () => {
+    const msg = createMockMessage()
+    await msg.delete()
+    expect((msg as any).deleted).toBe(true)
+  })
+
+  it('delete() twice throws', async () => {
+    const msg = createMockMessage()
+    await msg.delete()
+    await expect(msg.delete()).rejects.toThrow()
+  })
+
+  it('edit() after delete() throws', async () => {
+    const msg = createMockMessage()
+    await msg.delete()
+    await expect(msg.edit({ content: 'new' })).rejects.toThrow()
+  })
+
+  it('reply() after delete() throws', async () => {
+    const msg = createMockMessage()
+    await msg.delete()
+    await expect(msg.reply({ content: 'hi' })).rejects.toThrow()
+  })
+
+  it('react() after delete() throws', async () => {
+    const msg = createMockMessage()
+    await msg.delete()
+    await expect(msg.react('👍')).rejects.toThrow()
+  })
+
+  it('edit() resolves to a Message instance', async () => {
+    const result = await createMockMessage().edit({ content: 'updated' })
+    expect(result).toBeInstanceOf(Message)
+  })
+
+  it('reply() resolves to a Message instance', async () => {
+    const result = await createMockMessage().reply({ content: 'hi' })
+    expect(result).toBeInstanceOf(Message)
+  })
+
+  it('delete() is jest.fn() — call assertions still work', async () => {
+    const msg = createMockMessage()
+    await msg.delete()
+    expect(msg.delete).toHaveBeenCalledTimes(1)
   })
 })
 

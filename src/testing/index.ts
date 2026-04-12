@@ -14,5 +14,6 @@ export {
   createMockClient,
   createMockGuild,
   createMockChannel,
+  createMockMessage,
 } from './mock-interaction.js'
 export type { DeepMocked, ChatInputOptions } from './mock-interaction.js'

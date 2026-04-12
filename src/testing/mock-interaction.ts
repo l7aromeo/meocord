@@ -13,6 +13,7 @@ import {
   ComponentType,
   Guild,
   InteractionType,
+  Message,
   User,
   type Channel,
 } from 'discord.js'
@@ -269,6 +270,7 @@ export function createMockInteraction<T extends object>(Class: InteractionClass<
       jest.fn(async () => {
         if (!instance.deferred && !instance.replied) throw notYetReplied('followUp')
         instance.replied = true
+        return createMockMessage()
       }),
     )
     stubs.set(
@@ -276,6 +278,7 @@ export function createMockInteraction<T extends object>(Class: InteractionClass<
       jest.fn(async () => {
         if (!instance.deferred && !instance.replied) throw notYetReplied('editReply')
         instance.replied = true
+        return createMockMessage()
       }),
     )
     stubs.set(
@@ -326,6 +329,69 @@ export const createMockGuild = (): DeepMocked<Guild> => createMockInteraction(Gu
  */
 export const createMockChannel = <T extends Channel>(Class: InteractionClass<T>): DeepMocked<T> =>
   createMockInteraction(Class)
+
+/**
+ * Creates a smart mock {@link Message}.
+ *
+ * Tracks a `deleted` boolean. `delete()`, `edit()`, `reply()`, `react()`,
+ * `pin()`, and `unpin()` throw if the message has already been deleted.
+ * `edit()` and `reply()` resolve to a new mock `Message` instance.
+ *
+ * All methods remain `jest.fn()` — overridable per test.
+ *
+ * Note: `createMockInteraction`'s `followUp()` and `editReply()` stubs return
+ * a `createMockMessage()` by default, matching the official return types.
+ */
+export function createMockMessage(): DeepMocked<Message> {
+  const instance = Object.create(Message.prototype) as Record<string, unknown>
+  const stubs = new Map<string, jest.Mock>()
+
+  instance.deleted = false
+
+  const alreadyDeleted = () => new Error('This message has already been deleted.')
+
+  stubs.set(
+    'delete',
+    jest.fn(async () => {
+      if (instance.deleted) throw alreadyDeleted()
+      instance.deleted = true
+    }),
+  )
+  stubs.set(
+    'edit',
+    jest.fn(async () => {
+      if (instance.deleted) throw alreadyDeleted()
+      return createMockMessage()
+    }),
+  )
+  stubs.set(
+    'reply',
+    jest.fn(async () => {
+      if (instance.deleted) throw alreadyDeleted()
+      return createMockMessage()
+    }),
+  )
+  stubs.set(
+    'react',
+    jest.fn(async () => {
+      if (instance.deleted) throw alreadyDeleted()
+    }),
+  )
+  stubs.set(
+    'pin',
+    jest.fn(async () => {
+      if (instance.deleted) throw alreadyDeleted()
+    }),
+  )
+  stubs.set(
+    'unpin',
+    jest.fn(async () => {
+      if (instance.deleted) throw alreadyDeleted()
+    }),
+  )
+
+  return stubDeep(instance, stubs) as DeepMocked<Message>
+}
 
 // ---------------------------------------------------------------------------
 // createChatInputOptions — typed options resolver for ChatInputCommandInteraction
