@@ -9,11 +9,21 @@ import {
   BaseInteraction,
   ButtonInteraction,
   ChatInputCommandInteraction,
+  ContextMenuCommandInteraction,
   Message,
   MessageComponentInteraction,
+  MessageFlags,
   MessageReaction,
   ModalSubmitInteraction,
   StringSelectMenuInteraction,
+  AutocompleteInteraction,
+  UserSelectMenuInteraction,
+  RoleSelectMenuInteraction,
+  MentionableSelectMenuInteraction,
+  ChannelSelectMenuInteraction,
+  UserContextMenuCommandInteraction,
+  MessageContextMenuCommandInteraction,
+  PrimaryEntryPointCommandInteraction,
 } from 'discord.js'
 import { createMockInteraction, createChatInputOptions } from './mock-interaction.js'
 import { MeoCordTestingModule } from './meocord-testing-module.js'
@@ -98,6 +108,286 @@ describe('createMockInteraction', () => {
     })
   })
 
+  describe('auto-configured type guards', () => {
+    it('ChatInputCommandInteraction auto-returns true for isChatInputCommand()', () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      expect(interaction.isChatInputCommand()).toBe(true)
+    })
+
+    it('ChatInputCommandInteraction auto-returns true for isCommand()', () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      expect(interaction.isCommand()).toBe(true)
+    })
+
+    it('ButtonInteraction auto-returns true for isButton()', () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      expect(interaction.isButton()).toBe(true)
+    })
+
+    it('ButtonInteraction auto-returns true for isMessageComponent()', () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      expect(interaction.isMessageComponent()).toBe(true)
+    })
+
+    it('StringSelectMenuInteraction auto-returns true for isStringSelectMenu()', () => {
+      const interaction = createMockInteraction(StringSelectMenuInteraction)
+      expect(interaction.isStringSelectMenu()).toBe(true)
+    })
+
+    it('StringSelectMenuInteraction auto-returns true for isMessageComponent()', () => {
+      const interaction = createMockInteraction(StringSelectMenuInteraction)
+      expect(interaction.isMessageComponent()).toBe(true)
+    })
+
+    it('ModalSubmitInteraction auto-returns true for isModalSubmit()', () => {
+      const interaction = createMockInteraction(ModalSubmitInteraction)
+      expect(interaction.isModalSubmit()).toBe(true)
+    })
+
+    it('ContextMenuCommandInteraction auto-returns true for isContextMenuCommand()', () => {
+      const interaction = createMockInteraction(ContextMenuCommandInteraction)
+      expect(interaction.isContextMenuCommand()).toBe(true)
+    })
+
+    it('AutocompleteInteraction auto-returns true for isAutocomplete()', () => {
+      const interaction = createMockInteraction(AutocompleteInteraction)
+      expect(interaction.isAutocomplete()).toBe(true)
+    })
+
+    it('UserSelectMenuInteraction auto-returns true for isUserSelectMenu()', () => {
+      const interaction = createMockInteraction(UserSelectMenuInteraction)
+      expect(interaction.isUserSelectMenu()).toBe(true)
+    })
+
+    it('UserSelectMenuInteraction auto-returns true for isMessageComponent()', () => {
+      const interaction = createMockInteraction(UserSelectMenuInteraction)
+      expect(interaction.isMessageComponent()).toBe(true)
+    })
+
+    it('RoleSelectMenuInteraction auto-returns true for isRoleSelectMenu()', () => {
+      const interaction = createMockInteraction(RoleSelectMenuInteraction)
+      expect(interaction.isRoleSelectMenu()).toBe(true)
+    })
+
+    it('MentionableSelectMenuInteraction auto-returns true for isMentionableSelectMenu()', () => {
+      const interaction = createMockInteraction(MentionableSelectMenuInteraction)
+      expect(interaction.isMentionableSelectMenu()).toBe(true)
+    })
+
+    it('ChannelSelectMenuInteraction auto-returns true for isChannelSelectMenu()', () => {
+      const interaction = createMockInteraction(ChannelSelectMenuInteraction)
+      expect(interaction.isChannelSelectMenu()).toBe(true)
+    })
+
+    it('UserContextMenuCommandInteraction auto-returns true for isUserContextMenuCommand()', () => {
+      const interaction = createMockInteraction(UserContextMenuCommandInteraction)
+      expect(interaction.isUserContextMenuCommand()).toBe(true)
+    })
+
+    it('MessageContextMenuCommandInteraction auto-returns true for isMessageContextMenuCommand()', () => {
+      const interaction = createMockInteraction(MessageContextMenuCommandInteraction)
+      expect(interaction.isMessageContextMenuCommand()).toBe(true)
+    })
+
+    it('PrimaryEntryPointCommandInteraction auto-returns true for isPrimaryEntryPointCommand()', () => {
+      const interaction = createMockInteraction(PrimaryEntryPointCommandInteraction)
+      expect(interaction.isPrimaryEntryPointCommand()).toBe(true)
+    })
+
+    it('StringSelectMenuInteraction auto-returns true for deprecated isSelectMenu()', () => {
+      const interaction = createMockInteraction(StringSelectMenuInteraction)
+      expect(interaction.isSelectMenu()).toBe(true)
+    })
+
+    it('user can still override type guard return value', () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      interaction.isButton.mockReturnValue(false)
+      expect(interaction.isButton()).toBe(false)
+    })
+
+    it('BaseInteraction type guards return false (no type fields set)', () => {
+      const interaction = createMockInteraction(BaseInteraction)
+      expect(interaction.isChatInputCommand()).toBe(false)
+      expect(interaction.isButton()).toBe(false)
+    })
+  })
+
+  describe('isRepliable', () => {
+    it('returns true for ChatInputCommandInteraction', () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      expect(interaction.isRepliable()).toBe(true)
+    })
+
+    it('returns true for ButtonInteraction', () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      expect(interaction.isRepliable()).toBe(true)
+    })
+
+    it('returns true for ModalSubmitInteraction', () => {
+      const interaction = createMockInteraction(ModalSubmitInteraction)
+      expect(interaction.isRepliable()).toBe(true)
+    })
+
+    it('returns false for AutocompleteInteraction', () => {
+      const interaction = createMockInteraction(AutocompleteInteraction)
+      expect(interaction.isRepliable()).toBe(false)
+    })
+
+    it('is jest.fn() — can be overridden per test', () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      interaction.isRepliable.mockReturnValue(false)
+      expect(interaction.isRepliable()).toBe(false)
+    })
+  })
+
+  describe('reply state machine', () => {
+    it('replied and deferred start as false booleans', () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      expect(interaction.replied).toBe(false)
+      expect(interaction.deferred).toBe(false)
+      expect(typeof interaction.replied).toBe('boolean')
+      expect(typeof interaction.deferred).toBe('boolean')
+    })
+
+    it('reply() sets replied to true', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await interaction.reply({ content: 'hi' })
+      expect(interaction.replied).toBe(true)
+    })
+
+    it('deferReply() sets deferred to true', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await interaction.deferReply()
+      expect(interaction.deferred).toBe(true)
+    })
+
+    it('reply() twice throws', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await interaction.reply({ content: 'first' })
+      await expect(interaction.reply({ content: 'second' })).rejects.toThrow()
+    })
+
+    it('deferReply() then reply() throws', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await interaction.deferReply()
+      await expect(interaction.reply({ content: 'hi' })).rejects.toThrow()
+    })
+
+    it('reply() then deferReply() throws', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await interaction.reply({ content: 'hi' })
+      await expect(interaction.deferReply()).rejects.toThrow()
+    })
+
+    it('followUp() before any reply throws', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await expect(interaction.followUp({ content: 'hi' })).rejects.toThrow()
+    })
+
+    it('followUp() after reply() resolves', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await interaction.reply({ content: 'first' })
+      await expect(interaction.followUp({ content: 'second' })).resolves.not.toThrow()
+    })
+
+    it('followUp() after deferReply() resolves', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await interaction.deferReply()
+      await expect(interaction.followUp({ content: 'hi' })).resolves.not.toThrow()
+    })
+
+    it('editReply() before any reply throws', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await expect(interaction.editReply({ content: 'hi' })).rejects.toThrow()
+    })
+
+    it('deleteReply() before any reply throws', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await expect(interaction.deleteReply()).rejects.toThrow()
+    })
+
+    it('reply is jest.fn() — call assertions still work', async () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      await interaction.reply({ content: 'hello' })
+      expect(interaction.reply).toHaveBeenCalledWith({ content: 'hello' })
+    })
+
+    it('state machine is not set up for AutocompleteInteraction (not repliable)', () => {
+      const interaction = createMockInteraction(AutocompleteInteraction)
+      expect(typeof (interaction as any).replied).not.toBe('boolean')
+      expect(typeof (interaction as any).deferred).not.toBe('boolean')
+    })
+
+    it('ephemeral starts as false', () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      expect((interaction as any).ephemeral).toBe(false)
+    })
+
+    it('reply() with ephemeral flag sets ephemeral to true', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await interaction.reply({ flags: MessageFlags.Ephemeral })
+      expect((interaction as any).ephemeral).toBe(true)
+    })
+
+    it('reply() without ephemeral flag leaves ephemeral false', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await interaction.reply({ content: 'hi' })
+      expect((interaction as any).ephemeral).toBe(false)
+    })
+
+    it('deferReply() with ephemeral flag sets ephemeral to true', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral })
+      expect((interaction as any).ephemeral).toBe(true)
+    })
+
+    it('editReply() after deferReply() sets replied to true', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await interaction.deferReply()
+      expect(interaction.replied).toBe(false)
+      await interaction.editReply({ content: 'done' })
+      expect(interaction.replied).toBe(true)
+    })
+
+    it('followUp() after reply() sets replied to true (already true, stays true)', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await interaction.reply({ content: 'first' })
+      await interaction.followUp({ content: 'second' })
+      expect(interaction.replied).toBe(true)
+    })
+  })
+
+  describe('deferUpdate / update (MessageComponentInteraction)', () => {
+    it('update() sets replied to true', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await (interaction as any).update({ content: 'updated' })
+      expect(interaction.replied).toBe(true)
+    })
+
+    it('deferUpdate() sets deferred to true', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await (interaction as any).deferUpdate()
+      expect(interaction.deferred).toBe(true)
+    })
+
+    it('update() twice throws', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await (interaction as any).update({ content: 'first' })
+      await expect((interaction as any).update({ content: 'second' })).rejects.toThrow()
+    })
+
+    it('deferUpdate() then reply() throws', async () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      await (interaction as any).deferUpdate()
+      await expect(interaction.reply({ content: 'hi' })).rejects.toThrow()
+    })
+
+    it('update() is not set up for ChatInputCommandInteraction', () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      expect(jest.isMockFunction((interaction as any).update)).toBe(false)
+    })
+  })
+
   describe('direct property writes', () => {
     it('allows writing primitive properties', () => {
       const interaction = createMockInteraction(ButtonInteraction)
@@ -123,7 +413,7 @@ describe('createChatInputOptions', () => {
 
     it('returns subcommand', () => {
       const options = createChatInputOptions({ subcommandGroup: 'daily', subcommand: 'notes' })
-      expect(options.getSubcommand()).toBe('notes')
+      expect(options.getSubcommand(true)).toBe('notes')
     })
 
     it('returns null for missing subcommandGroup when required=false', () => {
