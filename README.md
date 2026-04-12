@@ -1,8 +1,6 @@
 # MeoCord Framework
 
-**MeoCord** is a lightweight and extensible framework designed for building **Discord bots**. With its modular architecture, support for **TypeScript**, and seamless integration with **Discord.js**, MeoCord simplifies bot development with a focus on flexibility, scalability, and modularity. It offers essential tools such as **CLI commands**, **built-in decorators**, and centralized logging, while also giving developers the ability to define their **own decorators** to extend and customize functionality.
-
-While still growing, MeoCord provides a solid foundation for developers to create bots tailored for communities, automation, or entertainment.
+**MeoCord** is a decorator-based Discord bot framework built on top of discord.js. It brings a NestJS-style architecture — controllers, services, guards, and dependency injection — to bot development, with a full CLI, TypeScript-first design, and testing utilities included out of the box.
 
 ---
 
@@ -11,15 +9,17 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 - [Features](#features)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
-  - [Create Fresh App](#create-fresh-app)
+  - [Create a New App](#create-a-new-app)
+  - [Quick Example](#quick-example)
 - [Project Structure](#project-structure)
-  - [Example Structure](#example-structure)
-  - [Key Components](#key-components)
 - [Configuration](#configuration)
-- [CLI Usage](#cli-usage)
-- [Development Guide](#development-guide)
+  - [meocord.config.ts](#meocordconfigts)
+  - [ESLint](#eslint)
+- [CLI Reference](#cli-reference)
+- [Guards](#guards)
 - [Custom Decorators](#custom-decorators)
-- [Deployment Guide](#deployment-guide)
+- [Testing](#testing)
+- [Deployment](#deployment)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -27,31 +27,13 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 
 ## Features
 
-- **Powerful CLI Tools**
-  Easily manage, build, and run projects using an intuitive CLI. Simplify tasks such as scaffolding components, building
-  applications, and starting bots in development/production modes.
-- **Modular Design**
-  Embrace modularity by organizing application logic into distinct components like controllers and services. This
-  approach enhances scalability, improves maintainability, and simplifies future development.
-- **Built-in Decorators**
-  Simplify and extend bot behavior through a robust decorator system. Leverage built-in decorators for streamlined
-  functionality.
-- **Specialized Services**
-  Register specialized services using the `@MeoCord` decorator. For example, add a RabbitMQ service to listen for events
-  and trigger actions, such as sending Discord messages. This promotes modularity, flexibility, and seamless integration
-  of custom services.
-- **Seamless Discord.js Integration**
-  Built on top of Discord.js to provide full support for the Discord API, with added features like activity management,
-  intents, partials, and custom client options.
-- **TypeScript-First Approach**
-  Designed with TypeScript in mind, offering strict type safety, interfaces, and decorators to empower modern
-  development workflows.
-- **Extensible Webpack Integration**
-  Easily customize your build process using an exposed Webpack configuration hook. Add rules, plugins, or modify setups
-  to match your project's requirements.
-- **Dynamic Activity Support**
-  Manage bot presence dynamically, such as setting activities (e.g., "Playing X with Y") or linking bot status to
-  real-time events.
+- **Decorator-based controllers** — Handle slash commands, buttons, modals, select menus, context menus, messages, and reactions with `@Command`, `@Controller`, and `@UseGuard` decorators. No routing boilerplate.
+- **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators.
+- **Guard system** — Pre-execution hooks for auth, rate limiting, metrics, and anything else. Apply per-method or per-class with `@UseGuard`. Guards receive the full interaction context.
+- **Full CLI** — `meocord create`, `build`, `start`, `generate`. Scaffolds controllers, services, and guards; handles Webpack builds for both development and production.
+- **Testing utilities** — `MeoCordTestingModule`, `createMockInteraction`, `createChatInputOptions`, and `overrideGuard` let you test controllers against real guard logic without a Discord connection.
+- **TypeScript-first** — Strict types throughout. Decorator metadata, `DeepMocked<T>` for test mocks, and typed config interfaces included.
+- **Extensible build** — Expose a Webpack config hook in `meocord.config.ts` to add rules, plugins, or loaders without ejecting.
 
 ---
 
@@ -59,571 +41,460 @@ While still growing, MeoCord provides a solid foundation for developers to creat
 
 ### Prerequisites
 
-- **Runtime**: **Node.js** (latest LTS) or **Bun** (1.x+).
-- **TypeScript**: Version **6** or above.
-- **Package Manager**: Any of **npm**, **yarn**, **pnpm**, or **bun**. The CLI will detect installed package managers and let you choose.
+- **Runtime**: Node.js (latest LTS) or Bun 1.x+
+- **TypeScript**: 5.0+
+- **Package manager**: npm, yarn, pnpm, or bun
 
-### Module Support
+MeoCord ships dual ESM/CJS builds. New projects generated by the CLI are preconfigured for ESM.
 
-**MeoCord** supports both **ESM** (`import`) and **CommonJS** (`require`) consumption:
-
-- The package exports dual module formats via `dist/esm/` (ESM) and `dist/cjs/` (CommonJS), with type declarations in `dist/types/`.
-- New projects generated with the `meocord create` CLI are already configured for ESM, so no additional setup is required.
-- **If you are migrating an existing CommonJS-based project**, you can still use MeoCord with your existing setup. If you prefer ESM:
-  1. Add `"type": "module"` to your `package.json`:
-
-     ```json
-     {
-       "name": "your-project",
-       "version": "1.0.0",
-       "type": "module",
-       "dependencies": {
-         "meocord": "^x.x.x"
-       }
-     }
-     ```
-  2. If your codebase uses `require()` statements, replace them with `import` statements to ensure compatibility with
-     ESM:
-
-     ```javascript
-     // Before (CommonJS)
-     const Package = require('any-package');
-
-     // After (ESM)
-     import Package from 'any-package';
-     ```
-  3. Update your `tsconfig.json` file to ensure compatibility with ESM:
-
-     ```json
-     {
-       "compilerOptions": {
-         "module": "ESNext",
-         "target": "ESNext",
-         "moduleResolution": "Bundler",
-         "strict": true,
-         "strictNullChecks": true,
-         "strictBindCallApply": true,
-         "strictPropertyInitialization": false,
-         "forceConsistentCasingInFileNames": true,
-         "noFallthroughCasesInSwitch": true,
-         "emitDecoratorMetadata": true,
-         "experimentalDecorators": true,
-         "resolveJsonModule": true,
-         "verbatimModuleSyntax": true,
-         "noUnusedLocals": true,
-         "noUnusedParameters": true,
-         "skipLibCheck": true,
-         "noImplicitAny": false,
-         "noEmit": true,
-         "outDir": "./dist",
-         "rootDir": ".",
-         "paths": {
-           "@src/*": ["./src/*"]
-         },
-         "types": ["node"]
-       },
-       "include": ["src/**/*.ts"],
-       "exclude": [
-         "meocord.config.ts",
-         "dist",
-         "jest.config.ts",
-         "node_modules"
-       ]
-     }
-     ```
-  4. Rename files to use `.mjs` if necessary, or adapt them to ESM-compatible `.js` while ensuring that `"type": "module"` is set in your `package.json`.
-
-For more migration details, refer to the [Node.js ESM documentation](https://nodejs.org/api/esm.html).
-
----
-
-### Create Fresh App
-
-Follow these steps to create and run a **MeoCord** application:
-
----
-
-### 1. Create a fresh MeoCord Application
-
-Use the CLI to generate your application. You'll be prompted to choose a package manager from those installed on your system.
+### Create a New App
 
 ```shell
 npx meocord create <your-app-name>
 ```
 
-You can also skip the prompt by specifying a package manager directly:
+The CLI detects installed package managers and prompts you to choose, or you can pass a flag directly:
 
 ```shell
 npx meocord create <your-app-name> --use-bun
 npx meocord create <your-app-name> --use-npm
-npx meocord create <your-app-name> --use-yarn
 npx meocord create <your-app-name> --use-pnpm
+npx meocord create <your-app-name> --use-yarn
 ```
 
----
+Set your Discord bot token in `meocord.config.ts`, then start the bot:
 
-### 2. Configure `meocord.config.ts`
+```shell
+npx meocord start --dev   # development with live-reload
+npx meocord start --build --prod  # production build + start
+```
 
-Edit `meocord.config.ts` to add required discord token:
+### Quick Example
+
+A minimal slash command controller:
 
 ```typescript
-import { type MeoCordConfig } from 'meocord/interface'
+import { Controller, Command, UseGuard } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+import { type ChatInputCommandInteraction } from 'discord.js'
+import { RateLimiterGuard } from '@src/guards/rate-limiter.guard.js'
+import { GreetingService } from '@src/services/greeting.service.js'
 
-export default {
-  appName: 'DJS ChuTao',
-  discordToken: '<add-your-token-here>',
-} satisfies MeoCordConfig
+@Controller()
+export class GreetingSlashController {
+  constructor(private readonly greetingService: GreetingService) {}
+
+  @Command('greet', CommandType.SLASH)
+  @UseGuard({ provide: RateLimiterGuard, params: { limit: 3, window: 10_000 } })
+  async greet(interaction: ChatInputCommandInteraction) {
+    const name = interaction.options.getString('name', true)
+    const message = await this.greetingService.buildGreeting(name)
+    await interaction.reply({ content: message })
+  }
+}
 ```
 
----
+Register it in `src/app.ts`:
 
-### 3. Run the Application
+```typescript
+import { MeoCord } from 'meocord/decorator'
+import { GatewayIntentBits, Partials } from 'discord.js'
+import { GreetingSlashController } from '@src/controllers/slash/greeting.slash.controller.js'
+import { GreetingService } from '@src/services/greeting.service.js'
 
-Use the CLI to start your application.
-
-- **Development Mode**:
-  Run in development mode:
-
-```shell
-npx meocord start --dev
-```
-
-- **Production Mode**:
-  Run in production mode with fresh production build:
-
-```shell
-npx meocord start --build --prod
+@MeoCord({
+  controllers: [GreetingSlashController],
+  // `services` is for specialized, event-driven services (e.g. RabbitMQ consumers,
+  // schedulers). Regular business-logic services are injected via controller
+  // constructors — they don't belong here.
+  services: [RabbitMQService],
+  clientOptions: {
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+    partials: [Partials.Message, Partials.Channel],
+  },
+})
+export class App {}
 ```
 
 ---
 
 ## Project Structure
 
-When using MeoCord, the expected project structure is as follows:
-
-### Example Structure
-
 ```
 .
-.
-├── .gitignore
-├── .prettierrc.mjs
+├── meocord.config.ts
 ├── eslint.config.ts
 ├── jest.config.ts
-├── meocord.config.ts
-├── package.json
-├── src
-│   ├── app.ts
-│   ├── controllers
-│   │   ├── button
-│   │   ├── context-menu
-│   │   ├── message
-│   │   ├── modal-submit
-│   │   ├── reaction
-│   │   ├── select-menu
-│   │   └── slash
-│   ├── guards
-│   │   └── rate-limit.guard.ts
-│   ├── main.ts
-│   └── services
-│       └── sample.service.ts
 ├── tsconfig.json
 ├── tsconfig.eslint.json
 ├── tsconfig.test.json
-└── <lockfile>          # bun.lock / package-lock.json / yarn.lock / pnpm-lock.yaml
+├── package.json
+└── src
+    ├── main.ts                         # Entry point — bootstraps the app
+    ├── app.ts                          # Root module — registers controllers and services
+    ├── controllers
+    │   ├── slash
+    │   │   ├── builders/               # Slash command option/subcommand builders
+    │   │   ├── sample.slash.controller.ts
+    │   │   └── sample.slash.controller.spec.ts
+    │   ├── button
+    │   │   ├── sample.button.controller.ts
+    │   │   └── sample.button.controller.spec.ts
+    │   ├── select-menu
+    │   │   ├── sample.select-menu.controller.ts
+    │   │   └── sample.select-menu.controller.spec.ts
+    │   ├── modal-submit
+    │   │   ├── sample.modal-submit.controller.ts
+    │   │   └── sample.modal-submit.controller.spec.ts
+    │   ├── context-menu
+    │   │   ├── builders/               # Context menu command builders
+    │   │   ├── sample.context-menu.controller.ts
+    │   │   └── sample.context-menu.controller.spec.ts
+    │   ├── message
+    │   │   ├── sample.message.controller.ts
+    │   │   └── sample.message.controller.spec.ts
+    │   └── reaction
+    │       ├── sample.reaction.controller.ts
+    │       └── sample.reaction.controller.spec.ts
+    ├── guards
+    │   ├── rate-limit.guard.ts
+    │   └── rate-limit.guard.spec.ts
+    └── services
+        ├── sample.service.ts
+        └── sample.service.spec.ts
 ```
-
-This structure ensures clear separation of concerns and scalable project architecture.
-
----
-
-### Key Components
-
-1. **Entry Point** (`src/main.ts`):
-
-   - The main application logic, where you initialize and run the app.
-2. **Application Configuration** (`src/app.ts`):
-
-   - Acts as the central configuration point, where controllers, services, client options, and other metadata are defined.
-   - Ties all modular components (controllers, specialized services, activities, etc.) together to define the core structure of the app.
-3. **Controllers** (`src/controllers`):
-
-   - Build feature-specific logic (e.g., context menus, message handling in bots).
-4. **Services** (`src/services`):
-
-   - Core business logic and reusable service definitions.
-5. **Guards** (`src/guards`):
-
-   - Middleware-like services for pre-execution logic (e.g., rate-limiting, authorization).
-6. **Assets** (`src/assets`):
-
-   - Fonts, images, and other static files for your application.
 
 ---
 
 ## Configuration
 
-### Customize the ESLint Configuration
+### `meocord.config.ts`
 
-If needed, you can extend or modify the default configuration to fit your project's requirements:
-
-```javascript
-import unusedImports from 'eslint-plugin-unused-imports';
-import meocordEslint, { typescriptConfig } from 'meocord/eslint';
-
-const customConfig = {
-  ...typescriptConfig,
-  plugins: {
-    ...typescriptConfig.plugins,
-    'unused-imports': unusedImports,
-  },
-  rules: {
-    ...typescriptConfig.rules,
-    'unused-imports/no-unused-imports': 'error', // Ensure no unused imports
-    'unused-imports/no-unused-vars': [
-      'error',
-      {
-        vars: 'all',
-        varsIgnorePattern: '^_', // Allow variables starting with `_`
-        args: 'after-used',
-        argsIgnorePattern: '^_',
-      },
-    ],
-    // Add or override additional rules here
-  },
-};
-
-export default [...meocordEslint, customConfig];
-```
-
----
-
-### Customize the `meocord.config.ts`
-
-The **configuration file** (`meocord.config.ts`) is responsible for defining the application-wide settings. It provides essential configurations such as the app name and Discord token.
-
-Below is an example setup for `meocord.config.ts`:
+The top-level config file. At minimum it needs `discordToken`. The `webpack` hook lets you extend the build without ejecting.
 
 ```typescript
-import '@src/common/utils/load-env.util'
-import { MeoCordConfig } from 'meocord/interface'
+import { type MeoCordConfig } from 'meocord/interface'
 
 export default {
-  appName: 'DJS ChuTao',
+  appName: 'MyBot',
   discordToken: process.env.TOKEN!,
   webpack: config => {
     config.module.rules?.push({
-      // Add your custom webpack rule
+      // add custom rules here
     })
-
     return config
-  }
+  },
 } satisfies MeoCordConfig
 ```
 
-- **Line-by-Line Explanation**:
-  1. **Environment Variable Loading**:
-     The `load-env.util` ensures that environment variables from `.env` files are loaded before executing the app. *(This utility internally uses the `dotenv` package to load variables from `.env` files. For example, a `.env`
-     file containing `TOKEN=your-discord-bot-token` makes `process.env.TOKEN` accessible in the application).*
-     **Example of `load-env.util`:**
+### ESLint
 
-     ```typescript
-     import { config } from 'dotenv';
-     import path from 'path';
+MeoCord exports a base ESLint config from `meocord/eslint`. Extend it as needed:
 
-     const getEnvFilePath = (): string => {
-       switch (process.env.NODE_ENV) {
-         case 'production':
-           return '.env.prod';
-         default:
-           return '.env.dev';
-       }
-     };
+```javascript
+import meocordEslint, { typescriptConfig } from 'meocord/eslint'
+import unusedImports from 'eslint-plugin-unused-imports'
 
-     const envFilePath = path.resolve(process.cwd(), getEnvFilePath());
-
-     config({
-       path: envFilePath,
-       encoding: 'utf8',
-     });
-     ```
-  2. **Import Configuration Interface**:
-     Imports the `MeoCordConfig` interface to enforce type safety on the configuration object.
-  3. **Application Name**:
-     The `appName` defines the name of the bot or application.
-  4. **Discord Token**:
-     The `discordToken` property retrieves the bot's token from the environment variables, ensuring security and
-     flexibility.
-  5. **Custom Webpack Configuration**:
-     Adds an optional function to modify and extend the default Webpack configuration, including custom module rules
-     or plugins.
-  6. **Return Configuration**:
-     Ensures the final configuration satisfies the `MeoCordConfig` type, guaranteeing that all required properties are
-     correctly defined.
+export default [
+  ...meocordEslint,
+  {
+    ...typescriptConfig,
+    plugins: {
+      ...typescriptConfig.plugins,
+      'unused-imports': unusedImports,
+    },
+    rules: {
+      ...typescriptConfig.rules,
+      'unused-imports/no-unused-imports': 'error',
+    },
+  },
+]
+```
 
 ---
 
-## CLI Usage
-
-### Overview
-
-The **MeoCord CLI** is designed to help you manage, build, and run your application seamlessly. It provides essential commands and options to streamline your workflow.
-
-#### Viewing All Commands and Options
-
-To ensure you see the most accurate and complete list of commands and options, always refer to the help menu by running:
+## CLI Reference
 
 ```shell
 npx meocord --help
 ```
 
-Below is an example of the help display output:
+| Command    | Alias | Description                          |
+|------------|-------|--------------------------------------|
+| `create`   | —     | Scaffold a new MeoCord application   |
+| `build`    | —     | Compile the application via Webpack  |
+| `start`    | —     | Start the application                |
+| `generate` | `g`   | Scaffold controllers, services, guards |
+| `show`     | —     | Display framework info               |
 
-```textmate
-❯ npx meocord --help
-MeoCord Copyright (c) 2025 Ukasyah Rahmatullah Zada — MIT License
-
-meocord [options] [command]
-
-CLI for managing the MeoCord application
-
-Available Options:
-┌───────────────┬───────────────────────────┐
-│ Option        │ Description               │
-├───────────────┼───────────────────────────┤
-│ -V, --version │ output the version number │
-└───────────────┴───────────────────────────┘
-
-Available Commands:
-┌──────────┬───────┬──────────────────────────────────┐
-│ Command  │ Alias │ Description                      │
-├──────────┼───────┼──────────────────────────────────┤
-│ show     │ —     │ Display information              │
-├──────────┼───────┼──────────────────────────────────┤
-│ create   │ —     │ Create a new MeoCord application │
-├──────────┼───────┼──────────────────────────────────┤
-│ build    │ —     │ Build the application            │
-├──────────┼───────┼──────────────────────────────────┤
-│ start    │ —     │ Start the application            │
-├──────────┼───────┼──────────────────────────────────┤
-│ generate │ g     │ Generate components              │
-└──────────┴───────┴──────────────────────────────────┘
-```
-
-### Key Commands Overview
-
-The following section provides details for frequently used commands, but note that **additional commands** may be available by running `meocord --help`.
-
-#### `meocord build`
-
-Builds the application in **production** or **development** mode.
-
-**Usage:**
+**Common flags:**
 
 ```shell
-npx meocord build --prod       # Build for production
-npx meocord build --dev        # Build for development
+npx meocord build --prod          # production build
+npx meocord build --dev           # development build
+npx meocord start --dev           # dev mode with live-reload
+npx meocord start --build --prod  # production build + start
+npx meocord g co slash "profile"  # generate a slash controller
+npx meocord g --help              # list all generator sub-commands
 ```
-
-#### `meocord start`
-
-Starts the application with options for either a **production** or **development** environment. The application can also build automatically before starting.
-
-**Usage:**
-
-```shell
-npx meocord start --build --prod          # Start in production mode with fresh production build
-npx meocord start --dev                   # Start in development mode (will always fresh build)
-```
-
-#### `meocord generate` (Alias: `meocord g`)
-
-Scaffolds application components such as controllers, services, and other elements.
-
-**Usage:**
-
-```text
-npx meocord generate|g [options] [command]
-```
-
-**Example:**
-
-```shell
-npx meocord g co slash "user"
-```
-
-This command will generate a `user` slash controller.
 
 ---
 
-For detailed usage of any particular command, append the `--help` flag to it. For instance:
+## Guards
 
-```shell
-npx meocord g --help
+Guards run before the handler method. Each guard implements `canActivate` — return `true` to allow, `false` to block.
+
+```typescript
+import { Guard } from 'meocord/decorator'
+import { type GuardInterface } from 'meocord/interface'
+import { type ChatInputCommandInteraction } from 'discord.js'
+import { RedisService } from '@src/services/redis.service.js'
+
+@Guard()
+export class RateLimiterGuard implements GuardInterface {
+  constructor(private readonly redis: RedisService) {}
+
+  // limit and window are injected via @UseGuard params
+  limit = 5
+  window = 60_000
+
+  async canActivate(interaction: ChatInputCommandInteraction): Promise<boolean> {
+    const key = `ratelimit:${interaction.user.id}`
+    const count = await this.redis.increment(key, this.window)
+    return count <= this.limit
+  }
+}
 ```
 
-This will provide command-specific help and options.
+Apply to a single method or an entire controller:
 
----
+```typescript
+// Per-method, with params
+@Command('search', CommandType.SLASH)
+@UseGuard({ provide: RateLimiterGuard, params: { limit: 5, window: 60_000 } })
+async search(interaction: ChatInputCommandInteraction) { ... }
 
-## Development Guide
-
-### Development Mode
-
-Run the application in development mode with live-reload for a seamless coding experience:
-
-```shell
-npx meocord start --dev
+// Per-class (applies to every command in the controller)
+@Controller()
+@UseGuard(MetricsGuard, DefaultGuard)
+export class ProfileController { ... }
 ```
-
-### Building for Production
-
-Generate an optimized and compiled production build with:
-
-```shell
-npx meocord build --prod
-```
-
-Once built, you can deploy or run the application efficiently.
 
 ---
 
 ## Custom Decorators
 
-MeoCord exports two helpers from `meocord/common` for building your own decorators: `applyDecorators` and `SetMetadata`.
+MeoCord exports `applyDecorators` and `SetMetadata` from `meocord/common` for composing reusable decorators.
 
-### `applyDecorators` — compose decorators into one
-
-Combine multiple existing decorators into a single reusable one. Useful for bundling a common guard pattern so you don't repeat it on every command.
+### Composing guards into a reusable decorator
 
 ```typescript
 import { applyDecorators } from 'meocord/common'
 import { UseGuard } from 'meocord/decorator'
-import { DefaultGuard, GlobalRateLimiterGuard, RateLimiterGuard } from '@src/guards'
+import { DefaultGuard, RateLimiterGuard } from '@src/guards/index.js'
 
-// Reusable decorator that applies a standard guard stack
-export const Protected = () =>
-  applyDecorators(
-    UseGuard(DefaultGuard, GlobalRateLimiterGuard),
-  )
-
-// With configurable rate limit
-export const RateLimited = (limit: number) =>
+export const Protected = (limit = 5) =>
   applyDecorators(
     UseGuard(DefaultGuard, { provide: RateLimiterGuard, params: { limit } }),
   )
 ```
 
-Usage on a controller:
-
 ```typescript
-import { Controller } from 'meocord/decorator'
-import { Protected, RateLimited } from '@src/common/decorators'
-
-@Controller()
-export class ProfileController {
-  @Command('profile', CommandType.SLASH)
-  @Protected()
-  async profile(interaction: ChatInputCommandInteraction) { ... }
-
-  @Command('wish', CommandType.SLASH)
-  @RateLimited(3)
-  async wish(interaction: ChatInputCommandInteraction) { ... }
-}
+@Command('profile', CommandType.SLASH)
+@Protected(3)
+async profile(interaction: ChatInputCommandInteraction) { ... }
 ```
 
-### `SetMetadata` + custom guard — attach and read custom metadata
-
-Use `SetMetadata` to tag commands with arbitrary data, then read it inside a guard.
-
-**1. Define the metadata decorator:**
+### Attaching metadata for guards to read
 
 ```typescript
+// Define the metadata decorator
 import { SetMetadata } from 'meocord/common'
-
 export const Roles = (...roles: string[]) => SetMetadata('roles', roles)
-```
 
-**2. Read it in a guard:**
-
-```typescript
-import { Guard } from 'meocord/decorator'
-import { type GuardInterface } from 'meocord/interface'
-import type { ChatInputCommandInteraction } from 'discord.js'
-
+// Read it inside a guard
 @Guard()
 export class RolesGuard implements GuardInterface {
   async canActivate(interaction: ChatInputCommandInteraction): Promise<boolean> {
     const required: string[] = Reflect.getMetadata('roles', interaction.constructor) ?? []
     if (!required.length) return true
-
-    const memberRoles = interaction.member?.roles
-    // ... check member has at least one required role
+    // ... validate member roles
     return true
   }
 }
-```
 
-**3. Apply both on a command:**
-
-```typescript
-import { applyDecorators } from 'meocord/common'
-import { UseGuard } from 'meocord/decorator'
-
+// Compose into a single decorator
 export const RequireRoles = (...roles: string[]) =>
-  applyDecorators(
-    Roles(...roles),
-    UseGuard(RolesGuard),
-  )
+  applyDecorators(Roles(...roles), UseGuard(RolesGuard))
 
-@Controller()
-export class AdminController {
-  @Command('ban', CommandType.SLASH)
-  @RequireRoles('admin', 'moderator')
-  async ban(interaction: ChatInputCommandInteraction) { ... }
-}
+// Apply
+@Command('ban', CommandType.SLASH)
+@RequireRoles('admin', 'moderator')
+async ban(interaction: ChatInputCommandInteraction) { ... }
 ```
 
 ---
 
-## Deployment Guide
+## Testing
 
-Install all necessary dependencies, including development dependencies, before building:
+MeoCord ships a `meocord/testing` entry point with utilities for testing controllers in isolation — no real Discord connection required.
+
+### `MeoCordTestingModule`
+
+Builds an isolated DI container from your controllers and providers.
+
+```typescript
+import { MeoCordTestingModule } from 'meocord/testing'
+import { GreetingSlashController } from '@src/controllers/slash/greeting.slash.controller.js'
+import { GreetingService } from '@src/services/greeting.service.js'
+
+const module = MeoCordTestingModule.create({
+  controllers: [GreetingSlashController],
+  providers: [{ provide: GreetingService, useValue: mockGreetingService }],
+}).compile()
+
+const controller = module.get(GreetingSlashController)
+```
+
+### `createMockInteraction`
+
+Creates a mock instance of any discord.js class. The full prototype chain is preserved so `instanceof` checks at every level pass. Every method is auto-stubbed as a `jest.fn()`.
+
+```typescript
+import { createMockInteraction } from 'meocord/testing'
+import { ChatInputCommandInteraction, BaseInteraction } from 'discord.js'
+
+const interaction = createMockInteraction(ChatInputCommandInteraction)
+
+expect(interaction).toBeInstanceOf(ChatInputCommandInteraction) // true
+expect(interaction).toBeInstanceOf(BaseInteraction)            // true
+
+interaction.reply.mockResolvedValue(undefined)
+await interaction.reply({ content: 'hi' })
+expect(interaction.reply).toHaveBeenCalledWith({ content: 'hi' })
+
+// direct property writes work normally
+interaction.guildId = 'guild-123'
+```
+
+Works for any discord.js class — `ButtonInteraction`, `ModalSubmitInteraction`, `StringSelectMenuInteraction`, `Message`, `MessageReaction`, and any future class. No per-type maintenance.
+
+### `createChatInputOptions`
+
+Builds a typed options resolver from a plain record. Type routing mirrors the real `CommandInteractionOptionResolver`: wrong-type access returns `null`, `required=true` throws if the option is absent.
+
+```typescript
+import { createMockInteraction, createChatInputOptions } from 'meocord/testing'
+import { ChatInputCommandInteraction } from 'discord.js'
+
+const interaction = createMockInteraction(ChatInputCommandInteraction)
+interaction.options = createChatInputOptions({
+  subcommandGroup: 'admin',
+  subcommand: 'ban',
+  user: { id: '123456789' },
+  reason: 'spam',
+  duration: 7,
+})
+
+interaction.options.getSubcommandGroup()      // → 'admin'
+interaction.options.getSubcommand()           // → 'ban'
+interaction.options.getUser('user')           // → { id: '123456789' }
+interaction.options.getString('reason')       // → 'spam'
+interaction.options.getNumber('duration')     // → 7
+interaction.options.getString('duration')     // → null (wrong type)
+interaction.options.getNumber('x', true)      // → throws (absent + required)
+```
+
+All methods are `jest.fn()` — override any per test with `.mockReturnValue()`.
+
+### `overrideGuard`
+
+Replaces a guard class in the DI container with a stub. No guard dependencies need to be provided.
+
+```typescript
+const module = MeoCordTestingModule.create({
+  controllers: [GreetingSlashController],
+  providers: [{ provide: GreetingService, useValue: mockGreetingService }],
+})
+  .overrideGuard(MetricsGuard).useValue({ canActivate: () => true })
+  .overrideGuard(RateLimiterGuard).useValue({ canActivate: () => true })
+  .compile()
+```
+
+`canActivate: () => true` allows the method to run. `() => false` blocks it. Multiple guards chain fluently.
+
+### Full example
+
+```typescript
+import { jest } from '@jest/globals'
+import { MeoCordTestingModule, createMockInteraction, createChatInputOptions } from 'meocord/testing'
+import { ChatInputCommandInteraction } from 'discord.js'
+import { GreetingSlashController } from '@src/controllers/slash/greeting.slash.controller.js'
+import { GreetingService } from '@src/services/greeting.service.js'
+import { RateLimiterGuard } from '@src/guards/rate-limiter.guard.js'
+
+describe('GreetingSlashController', () => {
+  let controller: GreetingSlashController
+  let greetingService: { buildGreeting: jest.MockedFunction<GreetingService['buildGreeting']> }
+
+  beforeEach(() => {
+    greetingService = { buildGreeting: jest.fn() }
+
+    const module = MeoCordTestingModule.create({
+      controllers: [GreetingSlashController],
+      providers: [{ provide: GreetingService, useValue: greetingService }],
+    })
+      .overrideGuard(RateLimiterGuard).useValue({ canActivate: () => true })
+      .compile()
+
+    controller = module.get(GreetingSlashController)
+  })
+
+  it('replies with a greeting for the provided name', async () => {
+    jest.mocked(greetingService.buildGreeting).mockResolvedValue('Hello, Alice!')
+
+    const interaction = createMockInteraction(ChatInputCommandInteraction)
+    interaction.options = createChatInputOptions({ name: 'Alice' })
+    interaction.reply.mockResolvedValue(undefined as any)
+
+    await controller.greet(interaction)
+
+    expect(greetingService.buildGreeting).toHaveBeenCalledWith('Alice')
+    expect(interaction.reply).toHaveBeenCalledWith({ content: 'Hello, Alice!' })
+  })
+})
+```
+
+---
+
+## Deployment
+
+Install all dependencies and build for production:
 
 ```shell
-npm ci                        # npm
-yarn install --frozen-lockfile  # yarn
-pnpm install --frozen-lockfile  # pnpm
-bun install --frozen-lockfile   # bun
+npm ci && npx meocord build --prod
 ```
 
-Generate an optimized and compiled production build:
+Strip dev dependencies:
 
 ```shell
-npx meocord build --prod
+npm ci --omit=dev      # npm
+yarn install --production  # yarn
+pnpm install --prod    # pnpm
+bun install --production   # bun
 ```
 
-Clean up and focus on production-only dependencies:
+Required files on the server:
 
-```shell
-npm ci --omit=dev             # npm
-yarn install --production     # yarn
-pnpm install --prod           # pnpm
-bun install --production      # bun
+```
+dist/
+node_modules/   (production only)
+package.json
+.env            (if used)
+<lockfile>
 ```
 
-Ensure the following essential files and folders are prepared for deployment on the server:
-
-```text
-.
-├── dist
-├── node_modules (production dependencies only)
-├── .env (if applicable, ensure it contains necessary variables)
-├── package.json
-└── <lockfile>          # bun.lock / package-lock.json / yarn.lock / pnpm-lock.yaml
-```
-
-Start the application in production mode on the server:
+Start in production:
 
 ```shell
 npx meocord start --prod
@@ -633,56 +504,21 @@ npx meocord start --prod
 
 ## Contributing
 
-We welcome contributions to improve **MeoCord**. Here's how you can get started:
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feat/your-feature`
+3. Commit with conventional commits: `git commit -m "feat: add X"`
+4. Push and open a pull request against `main`
 
-1. **Fork the Repository**:
-   Click the "Fork" button in the top-right corner of the repository page to create your copy of the project.
-2. **Create a Feature Branch**:
-   Use the following command to create a branch for your changes:
-
-   ```textmate
-   git checkout -b feature/your-feature-name
-   ```
-3. **Make Meaningful Commits**:
-   Commit your changes with clear, descriptive, and concise messages that explain what your changes do:
-
-   ```textmate
-   git commit -m "feat: add [brief description of your feature or fix]"
-   ```
-4. **Push Your Changes**:
-   Push your branch to your forked repository with this command:
-
-   ```textmate
-   git push origin feature/your-feature-name
-   ```
-5. **Open a Pull Request (PR)**:
-
-   - Navigate to the original **MeoCord** repository.
-   - Click "Compare & Pull Request."
-   - Provide a descriptive title and a detailed description of your changes.
-
-   Be sure to include:
-
-   - The purpose of your changes.
-   - Any relevant details or links.
-   - Steps to reproduce/test the changes, if applicable.
-6. **Engage in Reviews**:
-   Work with maintainers to address any feedback or changes they request.
-
-Thank you for helping make **MeoCord** better!
+Include a description of what changed and why, and add tests for any new behaviour.
 
 ---
 
 ## Release Notes
 
-Full release history is available on the [GitHub Releases](https://github.com/l7aromeo/meocord/releases) page.
+Full changelog is available on the [GitHub Releases](https://github.com/l7aromeo/meocord/releases) page.
 
 ---
 
 ## License
 
 **MeoCord Framework** is licensed under the [MIT License](./LICENSE).
-
-You are free to use, modify, and distribute this software in any project — personal, academic, or commercial — with no restrictions other than preserving the copyright notice.
-
-For full details, consult the [LICENSE](./LICENSE) file included in the repository.
