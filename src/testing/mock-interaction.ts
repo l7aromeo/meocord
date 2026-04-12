@@ -6,7 +6,16 @@
 
 import 'reflect-metadata'
 import { jest } from '@jest/globals'
-import { ApplicationCommandType, CommandInteractionOptionResolver, ComponentType, InteractionType } from 'discord.js'
+import {
+  ApplicationCommandType,
+  Client,
+  CommandInteractionOptionResolver,
+  ComponentType,
+  Guild,
+  InteractionType,
+  User,
+  type Channel,
+} from 'discord.js'
 
 // ---------------------------------------------------------------------------
 // DeepMocked<T>
@@ -76,7 +85,7 @@ function stubDeep(instance: object, externalStubs?: Map<string, StubValue>): obj
         proto = Object.getPrototypeOf(proto)
       }
 
-      const stub: StubValue = typeof protoValue === 'function' ? jest.fn() : stubDeep({}, stubs)
+      const stub: StubValue = typeof protoValue === 'function' ? jest.fn() : stubDeep({})
       stubs.set(key, stub)
       return stub
     },
@@ -297,6 +306,26 @@ export function createMockInteraction<T extends object>(Class: InteractionClass<
 
   return stubDeep(instance, stubs) as DeepMocked<T>
 }
+
+// ---------------------------------------------------------------------------
+// Convenience wrappers for common discord.js classes
+// ---------------------------------------------------------------------------
+
+/** Creates a mock {@link User}. All methods are auto-stubbed as `jest.fn()`. */
+export const createMockUser = (): DeepMocked<User> => createMockInteraction(User)
+
+/** Creates a mock {@link Client}. Managers like `client.users` are nested stubs. */
+export const createMockClient = (): DeepMocked<Client> => createMockInteraction(Client)
+
+/** Creates a mock {@link Guild}. Managers like `guild.members` are nested stubs. */
+export const createMockGuild = (): DeepMocked<Guild> => createMockInteraction(Guild)
+
+/**
+ * Creates a mock channel of the given class (e.g. `TextChannel`, `DMChannel`).
+ * All methods are auto-stubbed as `jest.fn()`.
+ */
+export const createMockChannel = <T extends Channel>(Class: InteractionClass<T>): DeepMocked<T> =>
+  createMockInteraction(Class)
 
 // ---------------------------------------------------------------------------
 // createChatInputOptions — typed options resolver for ChatInputCommandInteraction

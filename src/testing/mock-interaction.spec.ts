@@ -9,7 +9,9 @@ import {
   BaseInteraction,
   ButtonInteraction,
   ChatInputCommandInteraction,
+  Client,
   ContextMenuCommandInteraction,
+  Guild,
   Message,
   MessageComponentInteraction,
   MessageFlags,
@@ -17,6 +19,8 @@ import {
   ModalSubmitInteraction,
   StringSelectMenuInteraction,
   AutocompleteInteraction,
+  TextChannel,
+  User,
   UserSelectMenuInteraction,
   RoleSelectMenuInteraction,
   MentionableSelectMenuInteraction,
@@ -25,7 +29,14 @@ import {
   MessageContextMenuCommandInteraction,
   PrimaryEntryPointCommandInteraction,
 } from 'discord.js'
-import { createMockInteraction, createChatInputOptions } from './mock-interaction.js'
+import {
+  createMockInteraction,
+  createChatInputOptions,
+  createMockUser,
+  createMockClient,
+  createMockGuild,
+  createMockChannel,
+} from './mock-interaction.js'
 import { MeoCordTestingModule } from './meocord-testing-module.js'
 import { Guard, UseGuard } from '@src/decorator/guard.decorator.js'
 import { type GuardInterface } from '@src/interface/index.js'
@@ -675,5 +686,78 @@ describe('overrideGuard()', () => {
 
     expect(order).toEqual(['stubA', 'stubB'])
     expect(ctrl.executed).toBe(true)
+  })
+})
+
+describe('createMockUser', () => {
+  it('returns a User instance', () => {
+    expect(createMockUser()).toBeInstanceOf(User)
+  })
+
+  it('send() is a jest.fn()', () => {
+    const user = createMockUser()
+    expect(jest.isMockFunction(user.send)).toBe(true)
+  })
+
+  it('send() can be asserted on', async () => {
+    const user = createMockUser()
+    await user.send({ embeds: [] })
+    expect(user.send).toHaveBeenCalledWith({ embeds: [] })
+  })
+
+  it('createDM() is a jest.fn()', () => {
+    expect(jest.isMockFunction(createMockUser().createDM)).toBe(true)
+  })
+})
+
+describe('createMockClient', () => {
+  it('returns a Client instance', () => {
+    expect(createMockClient()).toBeInstanceOf(Client)
+  })
+
+  it('client.users and client.guilds are independent nested stubs', () => {
+    const client = createMockClient()
+    expect(client.users).not.toBe(client.guilds)
+  })
+
+  it('client.users.fetch can be overridden to resolve a mock user', async () => {
+    const client = createMockClient()
+    const user = createMockUser()
+    ;(client.users as any).fetch = jest.fn(() => Promise.resolve(user))
+    const result = await (client.users as any).fetch('user-123')
+    expect(result).toBe(user)
+    expect((client.users as any).fetch).toHaveBeenCalledWith('user-123')
+  })
+})
+
+describe('createMockGuild', () => {
+  it('returns a Guild instance', () => {
+    expect(createMockGuild()).toBeInstanceOf(Guild)
+  })
+
+  it('guild.members is a nested stub', () => {
+    expect(createMockGuild().members).toBeDefined()
+  })
+
+  it('guild.members.fetch and guild.channels.fetch are independent stubs', () => {
+    const guild = createMockGuild()
+    expect((guild.members as any).fetch).not.toBe((guild.channels as any).fetch)
+  })
+})
+
+describe('createMockChannel', () => {
+  it('returns a TextChannel instance', () => {
+    expect(createMockChannel(TextChannel)).toBeInstanceOf(TextChannel)
+  })
+
+  it('send() is a jest.fn()', () => {
+    const channel = createMockChannel(TextChannel)
+    expect(jest.isMockFunction(channel.send)).toBe(true)
+  })
+
+  it('send() can be asserted on', async () => {
+    const channel = createMockChannel(TextChannel)
+    await channel.send({ content: 'hi' })
+    expect(channel.send).toHaveBeenCalledWith({ content: 'hi' })
   })
 })
