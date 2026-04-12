@@ -19,7 +19,9 @@ import {
   ModalSubmitInteraction,
   StringSelectMenuInteraction,
   AutocompleteInteraction,
+  DMChannel,
   TextChannel,
+  ThreadChannel,
   User,
   UserSelectMenuInteraction,
   RoleSelectMenuInteraction,
@@ -764,6 +766,109 @@ describe('createMockMessage', () => {
     await msg.delete()
     expect(msg.delete).toHaveBeenCalledTimes(1)
   })
+
+  it('msg.author is a User instance', () => {
+    const msg = createMockMessage()
+    expect(msg.author).toBeInstanceOf(User)
+  })
+
+  it('msg.author.send is a jest.fn()', () => {
+    expect(jest.isMockFunction(createMockMessage().author.send)).toBe(true)
+  })
+
+  it('msg.member is a GuildMember-like object with fetch', () => {
+    const msg = createMockMessage()
+    expect(jest.isMockFunction((msg.member as any)?.fetch)).toBe(true)
+  })
+
+  it('msg.member.fetch.mockResolvedValue works', async () => {
+    const msg = createMockMessage()
+    ;(msg.member as any).fetch.mockResolvedValue(true)
+    await expect((msg.member as any).fetch()).resolves.toBe(true)
+  })
+
+  it('msg.channel is a TextChannel-like object with send', () => {
+    const msg = createMockMessage()
+    expect(jest.isMockFunction((msg.channel as any).send)).toBe(true)
+  })
+
+  it('msg.guild is a Guild-like object with members', () => {
+    const msg = createMockMessage()
+    expect(jest.isMockFunction((msg.guild as any).members.fetch)).toBe(true)
+  })
+
+  it('msg.thread is a ThreadChannel-like object', () => {
+    const msg = createMockMessage()
+    expect(jest.isMockFunction((msg.thread as any).fetch)).toBe(true)
+  })
+
+  it('msg.mentions.users is a jest.fn() collection', () => {
+    const msg = createMockMessage()
+    expect(jest.isMockFunction((msg.mentions as any).has)).toBe(true)
+  })
+
+  it('msg.mentions.members is an object (Collection stub)', () => {
+    const msg = createMockMessage()
+    expect((msg.mentions as any).members).toBeDefined()
+    expect(typeof (msg.mentions as any).members).toBe('object')
+  })
+
+  it('msg.author.send.mockResolvedValue works', async () => {
+    const msg = createMockMessage()
+    ;(msg.author.send as any).mockResolvedValue(createMockMessage())
+    const result = await msg.author.send({ content: 'hi' })
+    expect(result).toBeInstanceOf(Message)
+  })
+
+  it('msg.member.fetch.mockResolvedValue works', async () => {
+    const msg = createMockMessage()
+    const member = createMockUser()
+    ;(msg.member as any).fetch.mockResolvedValue(member)
+    const result = await (msg.member as any).fetch()
+    expect(result).toBe(member)
+  })
+
+  it('msg.member.fetch.mockRejectedValue works', async () => {
+    const msg = createMockMessage()
+    ;(msg.member as any).fetch.mockRejectedValue(new Error('not found'))
+    await expect((msg.member as any).fetch()).rejects.toThrow('not found')
+  })
+
+  it('msg.channel.send.mockResolvedValue works', async () => {
+    const msg = createMockMessage()
+    const reply = createMockMessage()
+    ;(msg.channel as any).send.mockResolvedValue(reply)
+    const result = await (msg.channel as any).send({ content: 'hi' })
+    expect(result).toBe(reply)
+  })
+
+  it('msg.channel.send.mockRejectedValue works', async () => {
+    const msg = createMockMessage()
+    ;(msg.channel as any).send.mockRejectedValue(new Error('cannot send'))
+    await expect((msg.channel as any).send({ content: 'hi' })).rejects.toThrow('cannot send')
+  })
+
+  it('msg.guild.members.fetch.mockResolvedValue works', async () => {
+    const msg = createMockMessage()
+    const member = createMockUser()
+    ;(msg.guild as any).members.fetch.mockResolvedValue(member)
+    const result = await (msg.guild as any).members.fetch('user-123')
+    expect(result).toBe(member)
+  })
+
+  it('msg.thread.fetch.mockResolvedValue works', async () => {
+    const msg = createMockMessage()
+    const thread = createMockChannel(ThreadChannel as any)
+    ;(msg.thread as any).fetch.mockResolvedValue(thread)
+    const result = await (msg.thread as any).fetch()
+    expect(result).toBe(thread)
+  })
+
+  it('msg.thread.fetch.mockRejectedValue works', async () => {
+    const msg = createMockMessage()
+    ;(msg.thread as any).fetch.mockRejectedValue(new Error('not found'))
+    await expect((msg.thread as any).fetch()).rejects.toThrow('not found')
+  })
 })
 
 describe('createMockUser', () => {
@@ -841,6 +946,48 @@ describe('createMockClient', () => {
     await (client.users as any).fetch('user-123')
     expect((client.users as any).fetch).toHaveBeenCalledWith('user-123')
   })
+
+  it('client.users.fetch.mockResolvedValue works', async () => {
+    const client = createMockClient()
+    const user = createMockUser()
+    ;(client.users as any).fetch.mockResolvedValue(user)
+    const result = await (client.users as any).fetch('user-123')
+    expect(result).toBe(user)
+  })
+
+  it('client.users.fetch.mockRejectedValue works', async () => {
+    const client = createMockClient()
+    ;(client.users as any).fetch.mockRejectedValue(new Error('not found'))
+    await expect((client.users as any).fetch('user-123')).rejects.toThrow('not found')
+  })
+
+  it('client.channels.fetch.mockResolvedValue works', async () => {
+    const client = createMockClient()
+    const channel = createMockChannel(TextChannel)
+    ;(client.channels as any).fetch.mockResolvedValue(channel)
+    const result = await (client.channels as any).fetch('ch-123')
+    expect(result).toBe(channel)
+  })
+
+  it('client.channels.fetch.mockRejectedValue works', async () => {
+    const client = createMockClient()
+    ;(client.channels as any).fetch.mockRejectedValue(new Error('not found'))
+    await expect((client.channels as any).fetch('ch-123')).rejects.toThrow('not found')
+  })
+
+  it('client.guilds.fetch.mockResolvedValue works', async () => {
+    const client = createMockClient()
+    const guild = createMockGuild()
+    ;(client.guilds as any).fetch.mockResolvedValue(guild)
+    const result = await (client.guilds as any).fetch('guild-123')
+    expect(result).toBe(guild)
+  })
+
+  it('client.guilds.fetch.mockRejectedValue works', async () => {
+    const client = createMockClient()
+    ;(client.guilds as any).fetch.mockRejectedValue(new Error('not found'))
+    await expect((client.guilds as any).fetch('guild-123')).rejects.toThrow('not found')
+  })
 })
 
 describe('createMockGuild', () => {
@@ -868,6 +1015,34 @@ describe('createMockGuild', () => {
     const guild = createMockGuild()
     expect((guild.members as any).fetch).not.toBe((guild.channels as any).fetch)
   })
+
+  it('guild.members.fetch.mockResolvedValue works', async () => {
+    const guild = createMockGuild()
+    const member = createMockUser() // close enough structurally
+    ;(guild.members as any).fetch.mockResolvedValue(member)
+    const result = await (guild.members as any).fetch('member-123')
+    expect(result).toBe(member)
+  })
+
+  it('guild.members.fetch.mockRejectedValue works', async () => {
+    const guild = createMockGuild()
+    ;(guild.members as any).fetch.mockRejectedValue(new Error('not found'))
+    await expect((guild.members as any).fetch('member-123')).rejects.toThrow('not found')
+  })
+
+  it('guild.channels.fetch.mockResolvedValue works', async () => {
+    const guild = createMockGuild()
+    const channel = createMockChannel(TextChannel)
+    ;(guild.channels as any).fetch.mockResolvedValue(channel)
+    const result = await (guild.channels as any).fetch('ch-123')
+    expect(result).toBe(channel)
+  })
+
+  it('guild.channels.fetch.mockRejectedValue works', async () => {
+    const guild = createMockGuild()
+    ;(guild.channels as any).fetch.mockRejectedValue(new Error('not found'))
+    await expect((guild.channels as any).fetch('ch-123')).rejects.toThrow('not found')
+  })
 })
 
 describe('createMockChannel', () => {
@@ -884,5 +1059,57 @@ describe('createMockChannel', () => {
     const channel = createMockChannel(TextChannel)
     await channel.send({ content: 'hi' })
     expect(channel.send).toHaveBeenCalledWith({ content: 'hi' })
+  })
+
+  it('channel.messages.fetch is a jest.fn() by default (TextChannel)', () => {
+    const channel = createMockChannel(TextChannel)
+    expect(jest.isMockFunction((channel.messages as any).fetch)).toBe(true)
+  })
+
+  it('channel.threads.fetch is a jest.fn() by default (TextChannel)', () => {
+    const channel = createMockChannel(TextChannel)
+    expect(jest.isMockFunction((channel.threads as any).fetch)).toBe(true)
+  })
+
+  it('channel.messages.fetch is a jest.fn() by default (DMChannel)', () => {
+    const channel = createMockChannel(DMChannel as any)
+    expect(jest.isMockFunction((channel as any).messages.fetch)).toBe(true)
+  })
+
+  it('channel.messages.fetch is a jest.fn() by default (ThreadChannel)', () => {
+    const channel = createMockChannel(ThreadChannel as any)
+    expect(jest.isMockFunction((channel as any).messages.fetch)).toBe(true)
+  })
+
+  it('channel.members.fetch is a jest.fn() by default (ThreadChannel)', () => {
+    const channel = createMockChannel(ThreadChannel as any)
+    expect(jest.isMockFunction((channel as any).members.fetch)).toBe(true)
+  })
+
+  it('channel.messages.fetch.mockResolvedValue works (TextChannel)', async () => {
+    const channel = createMockChannel(TextChannel)
+    const msg = createMockMessage()
+    ;(channel.messages as any).fetch.mockResolvedValue(msg)
+    const result = await (channel.messages as any).fetch('msg-123')
+    expect(result).toBe(msg)
+  })
+
+  it('channel.messages.fetch.mockRejectedValue works (TextChannel)', async () => {
+    const channel = createMockChannel(TextChannel)
+    ;(channel.messages as any).fetch.mockRejectedValue(new Error('not found'))
+    await expect((channel.messages as any).fetch('msg-123')).rejects.toThrow('not found')
+  })
+
+  it('channel.threads.fetch.mockResolvedValue works (TextChannel)', async () => {
+    const channel = createMockChannel(TextChannel)
+    ;(channel.threads as any).fetch.mockResolvedValue('thread-result')
+    const result = await (channel.threads as any).fetch('thread-123')
+    expect(result).toBe('thread-result')
+  })
+
+  it('channel.threads.fetch.mockRejectedValue works (TextChannel)', async () => {
+    const channel = createMockChannel(TextChannel)
+    ;(channel.threads as any).fetch.mockRejectedValue(new Error('not found'))
+    await expect((channel.threads as any).fetch('thread-123')).rejects.toThrow('not found')
   })
 })

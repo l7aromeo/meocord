@@ -14,14 +14,23 @@ import {
   ClientUser,
   CommandInteractionOptionResolver,
   ComponentType,
+  DMMessageManager,
   Guild,
   GuildBanManager,
   GuildChannelManager,
+  GuildMember,
   GuildMemberManager,
+  GuildMessageManager,
   GuildManager,
   InteractionType,
   Message,
+  MessageManager,
+  MessageMentions,
   RoleManager,
+  TextChannel,
+  ThreadChannel,
+  ThreadManager,
+  ThreadMemberManager,
   User,
   UserManager,
   type Channel,
@@ -373,10 +382,35 @@ export function createMockGuild(): DeepMocked<Guild> {
 
 /**
  * Creates a mock channel of the given class (e.g. `TextChannel`, `DMChannel`).
- * All methods are auto-stubbed as `jest.fn()`.
+ *
+ * Manager properties that are constructor-assigned in discord.js are
+ * pre-initialized as prototype-based stubs so all methods are auto-stubbed
+ * as `jest.fn()`:
+ * - Guild text channels (`TextChannel`, `NewsChannel`): `messages`, `threads`
+ * - `DMChannel`: `messages`
+ * - `ThreadChannel`: `messages`, `members`
  */
-export const createMockChannel = <T extends Channel>(Class: InteractionClass<T>): DeepMocked<T> =>
-  createMockInteraction(Class)
+export function createMockChannel<T extends Channel>(Class: InteractionClass<T>): DeepMocked<T> {
+  const instance = Object.create(Class.prototype) as Record<string, unknown>
+
+  // Guild text channels (TextChannel, NewsChannel) — messages & threads
+  // assigned in BaseGuildTextChannel constructor
+  if ('messages' in Class.prototype || Class.name === 'TextChannel' || Class.name === 'NewsChannel') {
+    instance.messages = stubDeep(Object.create(GuildMessageManager.prototype))
+    instance.threads = stubDeep(Object.create(ThreadManager.prototype))
+  }
+  // DMChannel — messages assigned in DMChannel constructor
+  if (Class.name === 'DMChannel') {
+    instance.messages = stubDeep(Object.create(DMMessageManager.prototype))
+  }
+  // ThreadChannel — messages & members assigned in ThreadChannel constructor
+  if (Class.name === 'ThreadChannel') {
+    instance.messages = stubDeep(Object.create(MessageManager.prototype))
+    instance.members = stubDeep(Object.create(ThreadMemberManager.prototype))
+  }
+
+  return stubDeep(instance) as DeepMocked<T>
+}
 
 /**
  * Creates a smart mock {@link Message}.
@@ -385,16 +419,62 @@ export const createMockChannel = <T extends Channel>(Class: InteractionClass<T>)
  * `pin()`, and `unpin()` throw if the message has already been deleted.
  * `edit()` and `reply()` resolve to a new mock `Message` instance.
  *
+ * Constructor-assigned and getter properties are pre-initialized as
+ * prototype-based stubs so `msg.author.send`, `msg.member.fetch`,
+ * `msg.channel.send`, `msg.guild.members.fetch`, `msg.thread.fetch`,
+ * and `msg.mentions.has` all work out of the box.
+ *
  * All methods remain `jest.fn()` — overridable per test.
  *
  * Note: `createMockInteraction`'s `followUp()` and `editReply()` stubs return
  * a `createMockMessage()` by default, matching the official return types.
  */
+
+/**
+ * Internal guild stub for use inside createMockMessage.
+ * Reuses the same manager stubs as createMockGuild but avoids
+ * a circular reference in the module.
+ */
+function createMockGuildForMessage(): object {
+  const guild = Object.create(Guild.prototype) as Record<string, unknown>
+  guild.members = stubDeep(Object.create(GuildMemberManager.prototype))
+  guild.channels = stubDeep(Object.create(GuildChannelManager.prototype))
+  guild.roles = stubDeep(Object.create(RoleManager.prototype))
+  guild.bans = stubDeep(Object.create(GuildBanManager.prototype))
+  return stubDeep(guild)
+}
+
 export function createMockMessage(): DeepMocked<Message> {
   const instance = Object.create(Message.prototype) as Record<string, unknown>
   const stubs = new Map<string, jest.Mock>()
 
   instance.deleted = false
+
+  // Constructor-assigned — set as prototype-based stubs
+  instance.author = stubDeep(Object.create(User.prototype))
+
+  // Getters on the prototype — the proxy sees them as functions and returns
+  // jest.fn(), which is wrong. Pre-initialize as own properties to shadow
+  // the prototype getters.
+  Object.defineProperty(instance, 'member', {
+    value: stubDeep(Object.create(GuildMember.prototype)),
+    writable: true,
+  })
+  Object.defineProperty(instance, 'channel', {
+    value: stubDeep(Object.create(TextChannel.prototype)),
+    writable: true,
+  })
+  Object.defineProperty(instance, 'guild', {
+    value: createMockGuildForMessage(),
+    writable: true,
+  })
+  Object.defineProperty(instance, 'thread', {
+    value: stubDeep(Object.create(ThreadChannel.prototype)),
+    writable: true,
+  })
+
+  // MessageMentions — constructor-assigned, has methods like .has(), .members
+  instance.mentions = stubDeep(Object.create(MessageMentions.prototype))
 
   const alreadyDeleted = () => new Error('This message has already been deleted.')
 
