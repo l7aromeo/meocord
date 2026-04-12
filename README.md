@@ -31,7 +31,7 @@
 - **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators.
 - **Guard system** — Pre-execution hooks for auth, rate limiting, metrics, and anything else. Apply per-method or per-class with `@UseGuard`. Guards receive the full interaction context.
 - **Full CLI** — `meocord create`, `build`, `start`, `generate`. Scaffolds controllers, services, and guards; handles Webpack builds for both development and production.
-- **Testing utilities** — `MeoCordTestingModule`, `createMockInteraction`, `createChatInputOptions`, and `overrideGuard` let you test controllers against real guard logic without a Discord connection.
+- **Testing utilities** — `MeoCordTestingModule`, `createMockInteraction`, `createMockMessage`, `createMockUser`, `createMockClient`, `createMockGuild`, `createMockChannel`, `createChatInputOptions`, and `overrideGuard` let you test controllers against real guard logic without a Discord connection. Type guards and reply state machines work out of the box.
 - **TypeScript-first** — Strict types throughout. Decorator metadata, `DeepMocked<T>` for test mocks, and typed config interfaces included.
 - **Extensible build** — Expose a Webpack config hook in `meocord.config.ts` to add rules, plugins, or loaders without ejecting.
 
@@ -358,26 +358,41 @@ const controller = module.get(GreetingSlashController)
 
 ### `createMockInteraction`
 
-Creates a mock instance of any discord.js class. The full prototype chain is preserved so `instanceof` checks at every level pass. Every method is auto-stubbed as a `jest.fn()`.
+Creates a smart mock instance of any discord.js class. The full prototype chain is preserved so `instanceof` checks pass at every level.
+
+**Type guards run real logic** — `isButton()`, `isRepliable()`, `isChatInputCommand()`, etc. are backed by the actual discord.js prototype methods. The right fields (`type`, `componentType`, `commandType`) are set based on the class you pass in, so no manual `.mockReturnValue(true)` setup is needed. All type guard methods are still `jest.fn()` and can be overridden per test.
+
+**Reply state machine** — for repliable interactions, `replied` and `deferred` start as `false`. Calling `reply()` or `deferReply()` twice throws, just like a real interaction. `followUp()`, `editReply()`, and `deleteReply()` throw if called before any reply. The ephemeral flag is tracked on `interaction.ephemeral`. All reply methods are still `jest.fn()` so call assertions work normally.
 
 ```typescript
 import { createMockInteraction } from 'meocord/testing'
-import { ChatInputCommandInteraction, BaseInteraction } from 'discord.js'
+import { ChatInputCommandInteraction, ButtonInteraction, BaseInteraction } from 'discord.js'
 
 const interaction = createMockInteraction(ChatInputCommandInteraction)
 
+// instanceof works at every level
 expect(interaction).toBeInstanceOf(ChatInputCommandInteraction) // true
 expect(interaction).toBeInstanceOf(BaseInteraction)            // true
 
-interaction.reply.mockResolvedValue(undefined)
+// type guards work — no manual setup needed
+interaction.isChatInputCommand() // → true
+interaction.isRepliable()        // → true
+interaction.isButton()           // → false
+
+// reply state machine
+interaction.replied   // → false
 await interaction.reply({ content: 'hi' })
+interaction.replied   // → true
+await interaction.reply({ content: 'again' }) // → throws (already replied)
+
+// still jest.fn() — call assertions work normally
 expect(interaction.reply).toHaveBeenCalledWith({ content: 'hi' })
 
 // direct property writes work normally
 interaction.guildId = 'guild-123'
 ```
 
-Works for any discord.js class — `ButtonInteraction`, `ModalSubmitInteraction`, `StringSelectMenuInteraction`, `Message`, `MessageReaction`, and any future class. No per-type maintenance.
+Works for any discord.js class — interactions, `Message`, `MessageReaction`, and anything else. No per-type maintenance.
 
 ### `createChatInputOptions`
 
@@ -396,16 +411,58 @@ interaction.options = createChatInputOptions({
   duration: 7,
 })
 
-interaction.options.getSubcommandGroup()      // → 'admin'
-interaction.options.getSubcommand()           // → 'ban'
-interaction.options.getUser('user')           // → { id: '123456789' }
-interaction.options.getString('reason')       // → 'spam'
-interaction.options.getNumber('duration')     // → 7
-interaction.options.getString('duration')     // → null (wrong type)
-interaction.options.getNumber('x', true)      // → throws (absent + required)
+interaction.options.getSubcommandGroup()       // → 'admin'
+interaction.options.getSubcommand(true)        // → 'ban'
+interaction.options.getUser('user')            // → { id: '123456789' }
+interaction.options.getString('reason')        // → 'spam'
+interaction.options.getNumber('duration')      // → 7
+interaction.options.getString('duration')      // → null (wrong type)
+interaction.options.getNumber('x', true)       // → throws (absent + required)
 ```
 
 All methods are `jest.fn()` — override any per test with `.mockReturnValue()`.
+
+### `createMockUser` / `createMockClient` / `createMockGuild` / `createMockChannel`
+
+Convenience wrappers for common discord.js classes. All methods are auto-stubbed as `jest.fn()`. Nested managers (`client.users`, `guild.members`, etc.) are independent nested stubs.
+
+```typescript
+import { createMockUser, createMockClient, createMockGuild, createMockChannel } from 'meocord/testing'
+import { TextChannel } from 'discord.js'
+
+const user    = createMockUser()
+const client  = createMockClient()
+const guild   = createMockGuild()
+const channel = createMockChannel(TextChannel)
+
+// override nested manager methods per test
+;(client.users as any).fetch = jest.fn(() => Promise.resolve(user))
+await (client.users as any).fetch('user-123')
+expect((client.users as any).fetch).toHaveBeenCalledWith('user-123')
+```
+
+### `createMockMessage`
+
+Creates a smart mock `Message`. Tracks a `deleted` boolean — `delete()`, `edit()`, `reply()`, `react()`, `pin()`, and `unpin()` throw if the message has already been deleted. `edit()` and `reply()` resolve to a new mock `Message` instance. All methods are `jest.fn()`.
+
+```typescript
+import { createMockMessage } from 'meocord/testing'
+
+const msg = createMockMessage()
+
+msg.deleted  // → false
+await msg.delete()
+msg.deleted  // → true
+await msg.delete()          // → throws (already deleted)
+await msg.edit({ content: 'x' }) // → throws (already deleted)
+
+// edit() and reply() resolve to a new Message mock
+const edited = await createMockMessage().edit({ content: 'updated' })
+edited.delete  // → jest.fn()
+
+// still jest.fn() — assertions work
+expect(msg.delete).toHaveBeenCalledTimes(1)
+```
 
 ### `overrideGuard`
 
@@ -455,7 +512,6 @@ describe('GreetingSlashController', () => {
 
     const interaction = createMockInteraction(ChatInputCommandInteraction)
     interaction.options = createChatInputOptions({ name: 'Alice' })
-    interaction.reply.mockResolvedValue(undefined as any)
 
     await controller.greet(interaction)
 
