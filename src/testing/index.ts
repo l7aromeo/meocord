@@ -6,3 +6,6 @@
 
 export { MeoCordTestingModule, TestingModule, TestingModuleBuilder } from './meocord-testing-module.js'
 export type { Provider, ValueProvider, ClassProvider, TestingModuleOptions } from './meocord-testing-module.js'
+
+export { createMockInteraction, createChatInputOptions } from './mock-interaction.js'
+export type { DeepMocked, ChatInputOptions } from './mock-interaction.js'
