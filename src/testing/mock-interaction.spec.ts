@@ -797,12 +797,48 @@ describe('createMockClient', () => {
     expect(client.users).not.toBe(client.guilds)
   })
 
+  it('client.users.fetch is a jest.fn() by default', () => {
+    const client = createMockClient()
+    expect(jest.isMockFunction((client.users as any).fetch)).toBe(true)
+  })
+
+  it('client.channels.fetch is a jest.fn() by default', () => {
+    const client = createMockClient()
+    expect(jest.isMockFunction((client.channels as any).fetch)).toBe(true)
+  })
+
+  it('client.guilds.fetch is a jest.fn() by default', () => {
+    const client = createMockClient()
+    expect(jest.isMockFunction((client.guilds as any).fetch)).toBe(true)
+  })
+
+  it('client.application.commands.fetch is a jest.fn() by default', () => {
+    const client = createMockClient()
+    expect(jest.isMockFunction((client.application as any).commands.fetch)).toBe(true)
+  })
+
+  it('client.application.commands.set is a jest.fn() by default', () => {
+    const client = createMockClient()
+    expect(jest.isMockFunction((client.application as any).commands.set)).toBe(true)
+  })
+
+  it('client.user.avatarURL is a jest.fn() by default', () => {
+    const client = createMockClient()
+    expect(jest.isMockFunction((client.user as any).avatarURL)).toBe(true)
+  })
+
   it('client.users.fetch can be overridden to resolve a mock user', async () => {
     const client = createMockClient()
     const user = createMockUser()
     ;(client.users as any).fetch = jest.fn(() => Promise.resolve(user))
     const result = await (client.users as any).fetch('user-123')
     expect(result).toBe(user)
+    expect((client.users as any).fetch).toHaveBeenCalledWith('user-123')
+  })
+
+  it('client.users.fetch resolves and can be asserted without override', async () => {
+    const client = createMockClient()
+    await (client.users as any).fetch('user-123')
     expect((client.users as any).fetch).toHaveBeenCalledWith('user-123')
   })
 })
@@ -812,8 +848,20 @@ describe('createMockGuild', () => {
     expect(createMockGuild()).toBeInstanceOf(Guild)
   })
 
-  it('guild.members is a nested stub', () => {
-    expect(createMockGuild().members).toBeDefined()
+  it('guild.members.fetch is a jest.fn() by default', () => {
+    expect(jest.isMockFunction((createMockGuild().members as any).fetch)).toBe(true)
+  })
+
+  it('guild.channels.fetch is a jest.fn() by default', () => {
+    expect(jest.isMockFunction((createMockGuild().channels as any).fetch)).toBe(true)
+  })
+
+  it('guild.roles.fetch is a jest.fn() by default', () => {
+    expect(jest.isMockFunction((createMockGuild().roles as any).fetch)).toBe(true)
+  })
+
+  it('guild.bans.fetch is a jest.fn() by default', () => {
+    expect(jest.isMockFunction((createMockGuild().bans as any).fetch)).toBe(true)
   })
 
   it('guild.members.fetch and guild.channels.fetch are independent stubs', () => {

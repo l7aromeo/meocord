@@ -7,14 +7,23 @@
 import 'reflect-metadata'
 import { jest } from '@jest/globals'
 import {
+  ApplicationCommandManager,
   ApplicationCommandType,
+  ChannelManager,
   Client,
+  ClientUser,
   CommandInteractionOptionResolver,
   ComponentType,
   Guild,
+  GuildBanManager,
+  GuildChannelManager,
+  GuildMemberManager,
+  GuildManager,
   InteractionType,
   Message,
+  RoleManager,
   User,
+  UserManager,
   type Channel,
 } from 'discord.js'
 
@@ -317,11 +326,50 @@ export function createMockInteraction<T extends object>(Class: InteractionClass<
 /** Creates a mock {@link User}. All methods are auto-stubbed as `jest.fn()`. */
 export const createMockUser = (): DeepMocked<User> => createMockInteraction(User)
 
-/** Creates a mock {@link Client}. Managers like `client.users` are nested stubs. */
-export const createMockClient = (): DeepMocked<Client> => createMockInteraction(Client)
+/**
+ * Creates a mock {@link Client}.
+ *
+ * Manager methods that are constructor-assigned (not on the prototype) are
+ * pre-initialized as `jest.fn()` so they work out of the box without manual
+ * setup: `users.fetch`, `channels.fetch`, `guilds.fetch`, and
+ * `application.commands.fetch`.
+ */
+export function createMockClient(): DeepMocked<Client> {
+  const instance = Object.create(Client.prototype) as Record<string, unknown>
 
-/** Creates a mock {@link Guild}. Managers like `guild.members` are nested stubs. */
-export const createMockGuild = (): DeepMocked<Guild> => createMockInteraction(Guild)
+  // Manager properties are constructor-assigned — pre-initialize as prototype-based
+  // stubs so ALL manager methods (not just fetch) are auto-stubbed as jest.fn().
+  const appInstance = Object.create(null) as Record<string, unknown>
+  appInstance.commands = stubDeep(Object.create(ApplicationCommandManager.prototype))
+
+  instance.users = stubDeep(Object.create(UserManager.prototype))
+  instance.channels = stubDeep(Object.create(ChannelManager.prototype))
+  instance.guilds = stubDeep(Object.create(GuildManager.prototype))
+  instance.user = stubDeep(Object.create(ClientUser.prototype))
+  instance.application = stubDeep(appInstance)
+
+  return stubDeep(instance) as DeepMocked<Client>
+}
+
+/**
+ * Creates a mock {@link Guild}.
+ *
+ * Manager properties are constructor-assigned in discord.js. This factory
+ * pre-initializes each as a prototype-based stub so all methods are
+ * auto-stubbed as `jest.fn()`.
+ *
+ * Pre-initialized: `members`, `channels`, `roles`, `bans`.
+ */
+export function createMockGuild(): DeepMocked<Guild> {
+  const instance = Object.create(Guild.prototype) as Record<string, unknown>
+
+  instance.members = stubDeep(Object.create(GuildMemberManager.prototype))
+  instance.channels = stubDeep(Object.create(GuildChannelManager.prototype))
+  instance.roles = stubDeep(Object.create(RoleManager.prototype))
+  instance.bans = stubDeep(Object.create(GuildBanManager.prototype))
+
+  return stubDeep(instance) as DeepMocked<Guild>
+}
 
 /**
  * Creates a mock channel of the given class (e.g. `TextChannel`, `DMChannel`).
