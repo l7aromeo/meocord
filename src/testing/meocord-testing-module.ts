@@ -7,6 +7,7 @@
 import 'reflect-metadata'
 import { Container, injectable, type ServiceIdentifier } from 'inversify'
 import { MetadataKey } from '@src/enum/index.js'
+import { type GuardInterface } from '@src/interface/index.js'
 
 export interface ValueProvider<T = any> {
   provide: ServiceIdentifier<T>
@@ -46,6 +47,7 @@ export class TestingModule {
  */
 export class TestingModuleBuilder {
   private readonly overrides = new Map<ServiceIdentifier, Provider>()
+  private readonly guardOverrides = new Map<new (...args: any[]) => GuardInterface, Partial<GuardInterface>>()
 
   constructor(private readonly options: TestingModuleOptions) {}
 
@@ -53,6 +55,17 @@ export class TestingModuleBuilder {
     return {
       useValue: (value: T) => {
         this.overrides.set(token, { provide: token, useValue: value })
+        return this
+      },
+    }
+  }
+
+  overrideGuard(guard: new (...args: any[]) => GuardInterface): {
+    useValue: (stub: Partial<GuardInterface>) => TestingModuleBuilder
+  } {
+    return {
+      useValue: (stub: Partial<GuardInterface>) => {
+        this.guardOverrides.set(guard, stub)
         return this
       },
     }
@@ -81,6 +94,11 @@ export class TestingModuleBuilder {
         }
         container.bind(provider.provide).to(cls).inSingletonScope()
       }
+    }
+
+    // Bind guard overrides — prevents inversify from auto-wiring guard dependencies
+    for (const [guardClass, stub] of this.guardOverrides) {
+      container.bind(guardClass).toConstantValue(stub as GuardInterface)
     }
 
     // Recursively bind controllers and their dependencies, skipping already-bound tokens
