@@ -4,13 +4,17 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 import { Argument, Command, Help, Option } from 'commander'
 
-const mockExistsSync = jest.fn()
-const mockReadFileSync = jest.fn()
+const { mockExistsSync, mockReadFileSync, mockFindModulePackageDir, mockWait } = vi.hoisted(() => ({
+  mockExistsSync: vi.fn(),
+  mockReadFileSync: vi.fn(),
+  mockFindModulePackageDir: vi.fn(),
+  mockWait: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+}))
 
-jest.unstable_mockModule('node:fs', () => ({
+vi.mock('node:fs', () => ({
   default: {
     existsSync: mockExistsSync,
     readFileSync: mockReadFileSync,
@@ -19,21 +23,17 @@ jest.unstable_mockModule('node:fs', () => ({
   readFileSync: mockReadFileSync,
 }))
 
-jest.unstable_mockModule('chalk', () => ({
+vi.mock('chalk', () => ({
   default: {
     red: (...args: any[]) => args.join(' '),
   },
 }))
 
-const mockFindModulePackageDir = jest.fn()
-
-jest.unstable_mockModule('@src/util/common.util.js', () => ({
+vi.mock('@src/util/common.util.js', () => ({
   findModulePackageDir: mockFindModulePackageDir,
 }))
 
-const mockWait = jest.fn<() => Promise<void>>().mockResolvedValue(undefined)
-
-jest.unstable_mockModule('@src/util/wait.util.js', () => ({
+vi.mock('@src/util/wait.util.js', () => ({
   default: mockWait,
 }))
 
@@ -167,8 +167,8 @@ describe('ensureReady', () => {
     mockFindModulePackageDir.mockReturnValue('/some/path/meocord')
     mockExistsSync.mockReturnValue(false)
 
-    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never)
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await ensureReady()
 
@@ -182,8 +182,8 @@ describe('ensureReady', () => {
     mockFindModulePackageDir.mockReturnValue(null)
     mockExistsSync.mockReturnValue(true)
 
-    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never)
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await ensureReady()
 
@@ -205,8 +205,8 @@ describe('ensureReady', () => {
       return JSON.stringify({ dependencies: { 'other-package': '^1.0.0' } }) as any
     })
 
-    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never)
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await ensureReady()
 
@@ -229,8 +229,8 @@ describe('ensureReady', () => {
       return JSON.stringify({ dependencies: { meocord: '^1.0.0' } }) as any
     })
 
-    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never)
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await ensureReady()
 

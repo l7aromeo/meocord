@@ -4,25 +4,25 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { jest } from '@jest/globals'
+import { vi, type MockInstance } from 'vitest'
 
-jest.mock('@src/util/meocord-config-loader.util.js', () => ({
-  loadMeoCordConfig: jest.fn().mockReturnValue({ appName: 'TestApp', discordToken: 'token' }),
+vi.mock('@src/util/meocord-config-loader.util.js', () => ({
+  loadMeoCordConfig: vi.fn().mockReturnValue({ appName: 'TestApp', discordToken: 'token' }),
 }))
 
 import { Logger } from '@src/common/logger.js'
 
 describe('Logger', () => {
-  let logSpy: jest.SpiedFunction<typeof console.log>
-  let warnSpy: jest.SpiedFunction<typeof console.warn>
-  let errorSpy: jest.SpiedFunction<typeof console.error>
-  let debugSpy: jest.SpiedFunction<typeof console.debug>
+  let logSpy: MockInstance<typeof console.log>
+  let warnSpy: MockInstance<typeof console.warn>
+  let errorSpy: MockInstance<typeof console.error>
+  let debugSpy: MockInstance<typeof console.debug>
 
   beforeEach(() => {
-    logSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
-    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
-    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
-    debugSpy = jest.spyOn(console, 'debug').mockImplementation(() => {})
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
   })
 
   it('calls console.log for log()', () => {

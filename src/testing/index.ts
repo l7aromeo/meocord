@@ -17,3 +17,6 @@ export {
   createMockMessage,
 } from './mock-interaction.js'
 export type { DeepMocked, ChatInputOptions } from './mock-interaction.js'
+
+export { createMockFn, isMockFunction } from './mock-fn.js'
+export type { Mock, MockedFunction, MockInstance, MockResult, MockState } from './mock-fn.js'

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 import 'reflect-metadata'
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 import {
   BaseInteraction,
   ButtonInteraction,
@@ -87,10 +87,10 @@ describe('createMockInteraction', () => {
   })
 
   describe('auto-stubbing', () => {
-    it('auto-stubs prototype methods as jest.fn()', () => {
+    it('auto-stubs prototype methods as vi.fn()', () => {
       const interaction = createMockInteraction(ButtonInteraction)
       expect(typeof interaction.isButton).toBe('function')
-      expect(jest.isMockFunction(interaction.isButton)).toBe(true)
+      expect(vi.isMockFunction(interaction.isButton)).toBe(true)
     })
 
     it('returns the same stub reference on repeated access', () => {
@@ -106,14 +106,14 @@ describe('createMockInteraction', () => {
 
     it('auto-stubs nested method access', async () => {
       const interaction = createMockInteraction(ChatInputCommandInteraction)
-      expect(jest.isMockFunction(interaction.reply)).toBe(true)
+      expect(vi.isMockFunction(interaction.reply)).toBe(true)
       interaction.reply.mockResolvedValue(undefined as any)
       await expect(interaction.reply({ content: 'hi' })).resolves.toBeUndefined()
     })
 
     it('does not stub symbols', () => {
       const interaction = createMockInteraction(ButtonInteraction)
-      expect(jest.isMockFunction((interaction as any)[Symbol.iterator])).toBe(false)
+      expect(vi.isMockFunction((interaction as any)[Symbol.iterator])).toBe(false)
     })
 
     it('does not make the mock thenable (avoids Promise confusion)', () => {
@@ -247,7 +247,7 @@ describe('createMockInteraction', () => {
       expect(interaction.isRepliable()).toBe(false)
     })
 
-    it('is jest.fn() — can be overridden per test', () => {
+    it('is vi.fn() — can be overridden per test', () => {
       const interaction = createMockInteraction(ChatInputCommandInteraction)
       interaction.isRepliable.mockReturnValue(false)
       expect(interaction.isRepliable()).toBe(false)
@@ -320,7 +320,7 @@ describe('createMockInteraction', () => {
       await expect(interaction.deleteReply()).rejects.toThrow()
     })
 
-    it('reply is jest.fn() — call assertions still work', async () => {
+    it('reply is vi.fn() — call assertions still work', async () => {
       const interaction = createMockInteraction(ChatInputCommandInteraction)
       await interaction.reply({ content: 'hello' })
       expect(interaction.reply).toHaveBeenCalledWith({ content: 'hello' })
@@ -412,7 +412,7 @@ describe('createMockInteraction', () => {
 
     it('update() is not set up for ChatInputCommandInteraction', () => {
       const interaction = createMockInteraction(ChatInputCommandInteraction)
-      expect(jest.isMockFunction((interaction as any).update)).toBe(false)
+      expect(vi.isMockFunction((interaction as any).update)).toBe(false)
     })
   })
 
@@ -425,7 +425,7 @@ describe('createMockInteraction', () => {
 
     it('own property takes precedence over auto-stub', () => {
       const interaction = createMockInteraction(ChatInputCommandInteraction)
-      const customOptions = { getSubcommand: jest.fn().mockReturnValue('ping') }
+      const customOptions = { getSubcommand: vi.fn().mockReturnValue('ping') }
       ;(interaction as any).options = customOptions
       expect((interaction as any).options.getSubcommand()).toBe('ping')
     })
@@ -557,10 +557,10 @@ describe('createChatInputOptions', () => {
     })
   })
 
-  describe('methods are jest.fn() — configurable per test', () => {
-    it('getNumber is a jest mock function', () => {
+  describe('methods are vi.fn() — configurable per test', () => {
+    it('getNumber is a mock function', () => {
       const options = createChatInputOptions({ uid: 12345678 })
-      expect(jest.isMockFunction(options.getNumber)).toBe(true)
+      expect(vi.isMockFunction(options.getNumber)).toBe(true)
     })
 
     it('can override getNumber return value per test', () => {
@@ -571,9 +571,9 @@ describe('createChatInputOptions', () => {
   })
 
   describe('unlisted methods fall through to auto-stub', () => {
-    it('getAttachment is auto-stubbed as jest.fn()', () => {
+    it('getAttachment is auto-stubbed as vi.fn()', () => {
       const options = createChatInputOptions({})
-      expect(jest.isMockFunction((options as any).getAttachment)).toBe(true)
+      expect(vi.isMockFunction((options as any).getAttachment)).toBe(true)
     })
   })
 })
@@ -711,10 +711,10 @@ describe('createMockMessage', () => {
     expect(createMockMessage()).toBeInstanceOf(Message)
   })
 
-  it('methods are auto-stubbed as jest.fn()', () => {
+  it('methods are auto-stubbed as vi.fn()', () => {
     const msg = createMockMessage()
-    expect(jest.isMockFunction(msg.edit)).toBe(true)
-    expect(jest.isMockFunction(msg.react)).toBe(true)
+    expect(vi.isMockFunction(msg.edit)).toBe(true)
+    expect(vi.isMockFunction(msg.react)).toBe(true)
   })
 
   it('deleted starts as false', () => {
@@ -761,7 +761,7 @@ describe('createMockMessage', () => {
     expect(result).toBeInstanceOf(Message)
   })
 
-  it('delete() is jest.fn() — call assertions still work', async () => {
+  it('delete() is vi.fn() — call assertions still work', async () => {
     const msg = createMockMessage()
     await msg.delete()
     expect(msg.delete).toHaveBeenCalledTimes(1)
@@ -772,13 +772,13 @@ describe('createMockMessage', () => {
     expect(msg.author).toBeInstanceOf(User)
   })
 
-  it('msg.author.send is a jest.fn()', () => {
-    expect(jest.isMockFunction(createMockMessage().author.send)).toBe(true)
+  it('msg.author.send is a vi.fn()', () => {
+    expect(vi.isMockFunction(createMockMessage().author.send)).toBe(true)
   })
 
   it('msg.member is a GuildMember-like object with fetch', () => {
     const msg = createMockMessage()
-    expect(jest.isMockFunction((msg.member as any)?.fetch)).toBe(true)
+    expect(vi.isMockFunction((msg.member as any)?.fetch)).toBe(true)
   })
 
   it('msg.member.fetch.mockResolvedValue works', async () => {
@@ -789,22 +789,22 @@ describe('createMockMessage', () => {
 
   it('msg.channel is a TextChannel-like object with send', () => {
     const msg = createMockMessage()
-    expect(jest.isMockFunction((msg.channel as any).send)).toBe(true)
+    expect(vi.isMockFunction((msg.channel as any).send)).toBe(true)
   })
 
   it('msg.guild is a Guild-like object with members', () => {
     const msg = createMockMessage()
-    expect(jest.isMockFunction((msg.guild as any).members.fetch)).toBe(true)
+    expect(vi.isMockFunction((msg.guild as any).members.fetch)).toBe(true)
   })
 
   it('msg.thread is a ThreadChannel-like object', () => {
     const msg = createMockMessage()
-    expect(jest.isMockFunction((msg.thread as any).fetch)).toBe(true)
+    expect(vi.isMockFunction((msg.thread as any).fetch)).toBe(true)
   })
 
-  it('msg.mentions.users is a jest.fn() collection', () => {
+  it('msg.mentions.users is a vi.fn() collection', () => {
     const msg = createMockMessage()
-    expect(jest.isMockFunction((msg.mentions as any).has)).toBe(true)
+    expect(vi.isMockFunction((msg.mentions as any).has)).toBe(true)
   })
 
   it('msg.mentions.members is an object (Collection stub)', () => {
@@ -876,9 +876,9 @@ describe('createMockUser', () => {
     expect(createMockUser()).toBeInstanceOf(User)
   })
 
-  it('send() is a jest.fn()', () => {
+  it('send() is a vi.fn()', () => {
     const user = createMockUser()
-    expect(jest.isMockFunction(user.send)).toBe(true)
+    expect(vi.isMockFunction(user.send)).toBe(true)
   })
 
   it('send() can be asserted on', async () => {
@@ -887,8 +887,8 @@ describe('createMockUser', () => {
     expect(user.send).toHaveBeenCalledWith({ embeds: [] })
   })
 
-  it('createDM() is a jest.fn()', () => {
-    expect(jest.isMockFunction(createMockUser().createDM)).toBe(true)
+  it('createDM() is a vi.fn()', () => {
+    expect(vi.isMockFunction(createMockUser().createDM)).toBe(true)
   })
 })
 
@@ -902,40 +902,40 @@ describe('createMockClient', () => {
     expect(client.users).not.toBe(client.guilds)
   })
 
-  it('client.users.fetch is a jest.fn() by default', () => {
+  it('client.users.fetch is a vi.fn() by default', () => {
     const client = createMockClient()
-    expect(jest.isMockFunction((client.users as any).fetch)).toBe(true)
+    expect(vi.isMockFunction((client.users as any).fetch)).toBe(true)
   })
 
-  it('client.channels.fetch is a jest.fn() by default', () => {
+  it('client.channels.fetch is a vi.fn() by default', () => {
     const client = createMockClient()
-    expect(jest.isMockFunction((client.channels as any).fetch)).toBe(true)
+    expect(vi.isMockFunction((client.channels as any).fetch)).toBe(true)
   })
 
-  it('client.guilds.fetch is a jest.fn() by default', () => {
+  it('client.guilds.fetch is a vi.fn() by default', () => {
     const client = createMockClient()
-    expect(jest.isMockFunction((client.guilds as any).fetch)).toBe(true)
+    expect(vi.isMockFunction((client.guilds as any).fetch)).toBe(true)
   })
 
-  it('client.application.commands.fetch is a jest.fn() by default', () => {
+  it('client.application.commands.fetch is a vi.fn() by default', () => {
     const client = createMockClient()
-    expect(jest.isMockFunction((client.application as any).commands.fetch)).toBe(true)
+    expect(vi.isMockFunction((client.application as any).commands.fetch)).toBe(true)
   })
 
-  it('client.application.commands.set is a jest.fn() by default', () => {
+  it('client.application.commands.set is a vi.fn() by default', () => {
     const client = createMockClient()
-    expect(jest.isMockFunction((client.application as any).commands.set)).toBe(true)
+    expect(vi.isMockFunction((client.application as any).commands.set)).toBe(true)
   })
 
-  it('client.user.avatarURL is a jest.fn() by default', () => {
+  it('client.user.avatarURL is a vi.fn() by default', () => {
     const client = createMockClient()
-    expect(jest.isMockFunction((client.user as any).avatarURL)).toBe(true)
+    expect(vi.isMockFunction((client.user as any).avatarURL)).toBe(true)
   })
 
   it('client.users.fetch can be overridden to resolve a mock user', async () => {
     const client = createMockClient()
     const user = createMockUser()
-    ;(client.users as any).fetch = jest.fn(() => Promise.resolve(user))
+    ;(client.users as any).fetch = vi.fn(() => Promise.resolve(user))
     const result = await (client.users as any).fetch('user-123')
     expect(result).toBe(user)
     expect((client.users as any).fetch).toHaveBeenCalledWith('user-123')
@@ -995,20 +995,20 @@ describe('createMockGuild', () => {
     expect(createMockGuild()).toBeInstanceOf(Guild)
   })
 
-  it('guild.members.fetch is a jest.fn() by default', () => {
-    expect(jest.isMockFunction((createMockGuild().members as any).fetch)).toBe(true)
+  it('guild.members.fetch is a vi.fn() by default', () => {
+    expect(vi.isMockFunction((createMockGuild().members as any).fetch)).toBe(true)
   })
 
-  it('guild.channels.fetch is a jest.fn() by default', () => {
-    expect(jest.isMockFunction((createMockGuild().channels as any).fetch)).toBe(true)
+  it('guild.channels.fetch is a vi.fn() by default', () => {
+    expect(vi.isMockFunction((createMockGuild().channels as any).fetch)).toBe(true)
   })
 
-  it('guild.roles.fetch is a jest.fn() by default', () => {
-    expect(jest.isMockFunction((createMockGuild().roles as any).fetch)).toBe(true)
+  it('guild.roles.fetch is a vi.fn() by default', () => {
+    expect(vi.isMockFunction((createMockGuild().roles as any).fetch)).toBe(true)
   })
 
-  it('guild.bans.fetch is a jest.fn() by default', () => {
-    expect(jest.isMockFunction((createMockGuild().bans as any).fetch)).toBe(true)
+  it('guild.bans.fetch is a vi.fn() by default', () => {
+    expect(vi.isMockFunction((createMockGuild().bans as any).fetch)).toBe(true)
   })
 
   it('guild.members.fetch and guild.channels.fetch are independent stubs', () => {
@@ -1050,9 +1050,9 @@ describe('createMockChannel', () => {
     expect(createMockChannel(TextChannel)).toBeInstanceOf(TextChannel)
   })
 
-  it('send() is a jest.fn()', () => {
+  it('send() is a vi.fn()', () => {
     const channel = createMockChannel(TextChannel)
-    expect(jest.isMockFunction(channel.send)).toBe(true)
+    expect(vi.isMockFunction(channel.send)).toBe(true)
   })
 
   it('send() can be asserted on', async () => {
@@ -1061,29 +1061,29 @@ describe('createMockChannel', () => {
     expect(channel.send).toHaveBeenCalledWith({ content: 'hi' })
   })
 
-  it('channel.messages.fetch is a jest.fn() by default (TextChannel)', () => {
+  it('channel.messages.fetch is a vi.fn() by default (TextChannel)', () => {
     const channel = createMockChannel(TextChannel)
-    expect(jest.isMockFunction((channel.messages as any).fetch)).toBe(true)
+    expect(vi.isMockFunction((channel.messages as any).fetch)).toBe(true)
   })
 
-  it('channel.threads.fetch is a jest.fn() by default (TextChannel)', () => {
+  it('channel.threads.fetch is a vi.fn() by default (TextChannel)', () => {
     const channel = createMockChannel(TextChannel)
-    expect(jest.isMockFunction((channel.threads as any).fetch)).toBe(true)
+    expect(vi.isMockFunction((channel.threads as any).fetch)).toBe(true)
   })
 
-  it('channel.messages.fetch is a jest.fn() by default (DMChannel)', () => {
+  it('channel.messages.fetch is a vi.fn() by default (DMChannel)', () => {
     const channel = createMockChannel(DMChannel as any)
-    expect(jest.isMockFunction((channel as any).messages.fetch)).toBe(true)
+    expect(vi.isMockFunction((channel as any).messages.fetch)).toBe(true)
   })
 
-  it('channel.messages.fetch is a jest.fn() by default (ThreadChannel)', () => {
+  it('channel.messages.fetch is a vi.fn() by default (ThreadChannel)', () => {
     const channel = createMockChannel(ThreadChannel as any)
-    expect(jest.isMockFunction((channel as any).messages.fetch)).toBe(true)
+    expect(vi.isMockFunction((channel as any).messages.fetch)).toBe(true)
   })
 
-  it('channel.members.fetch is a jest.fn() by default (ThreadChannel)', () => {
+  it('channel.members.fetch is a vi.fn() by default (ThreadChannel)', () => {
     const channel = createMockChannel(ThreadChannel as any)
-    expect(jest.isMockFunction((channel as any).members.fetch)).toBe(true)
+    expect(vi.isMockFunction((channel as any).members.fetch)).toBe(true)
   })
 
   it('channel.messages.fetch.mockResolvedValue works (TextChannel)', async () => {

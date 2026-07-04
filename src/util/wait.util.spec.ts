@@ -4,22 +4,22 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 import wait from '@src/util/wait.util.js'
 
 describe('wait', () => {
   beforeEach(() => {
-    jest.useFakeTimers()
+    vi.useFakeTimers()
   })
 
   afterEach(() => {
-    jest.useRealTimers()
+    vi.useRealTimers()
   })
 
   it('returns a Promise', () => {
     const result = wait(100)
     expect(result).toBeInstanceOf(Promise)
-    jest.advanceTimersByTime(100)
+    vi.advanceTimersByTime(100)
   })
 
   it('resolves after the specified delay', async () => {
@@ -29,11 +29,11 @@ describe('wait', () => {
     })
 
     expect(resolved).toBe(false)
-    jest.advanceTimersByTime(999)
+    vi.advanceTimersByTime(999)
     await Promise.resolve()
     expect(resolved).toBe(false)
 
-    jest.advanceTimersByTime(1)
+    vi.advanceTimersByTime(1)
     await promise
     expect(resolved).toBe(true)
   })
@@ -43,7 +43,7 @@ describe('wait', () => {
     const promise = wait(0).then(() => {
       resolved = true
     })
-    jest.advanceTimersByTime(0)
+    vi.advanceTimersByTime(0)
     await promise
     expect(resolved).toBe(true)
   })

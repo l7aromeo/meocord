@@ -124,7 +124,7 @@ export class App {}
 .
 ├── meocord.config.ts
 ├── eslint.config.ts
-├── jest.config.ts
+├── vitest.config.ts
 ├── tsconfig.json
 ├── tsconfig.eslint.json
 ├── tsconfig.test.json
@@ -337,7 +337,21 @@ async ban(interaction: ChatInputCommandInteraction) { ... }
 
 ## Testing
 
-MeoCord ships a `meocord/testing` entry point with utilities for testing controllers in isolation — no real Discord connection required.
+MeoCord ships a `meocord/testing` entry point with utilities for testing controllers in isolation — no real Discord connection required. The framework repo runs tests with [Vitest](https://vitest.dev/); the mocks themselves are **framework-agnostic** and work with Vitest or Jest assertions (see below).
+
+### Running tests
+
+From the MeoCord repo root:
+
+```shell
+bun run test              # run once
+bun run test:watch        # watch mode
+bun run test:coverage     # coverage report
+bun run test:typecheck    # tsc -p tsconfig.test.json
+bun run lint              # eslint --fix + tsc
+```
+
+In your own bot project, add Vitest (or keep Jest) plus a `vitest.config.ts` with SWC if you use decorator metadata — see this repo's config for reference. Generated apps include `*.spec.ts` stubs but not a test runner config yet.
 
 ### `MeoCordTestingModule`
 
@@ -360,9 +374,11 @@ const controller = module.get(GreetingSlashController)
 
 Creates a smart mock instance of any discord.js class. The full prototype chain is preserved so `instanceof` checks pass at every level.
 
-**Type guards run real logic** — `isButton()`, `isRepliable()`, `isChatInputCommand()`, etc. are backed by the actual discord.js prototype methods. The right fields (`type`, `componentType`, `commandType`) are set based on the class you pass in, so no manual `.mockReturnValue(true)` setup is needed. All type guard methods are still `jest.fn()` and can be overridden per test.
+**Type guards run real logic** — `isButton()`, `isRepliable()`, `isChatInputCommand()`, etc. are backed by the actual discord.js prototype methods. The right fields (`type`, `componentType`, `commandType`) are set based on the class you pass in, so no manual `.mockReturnValue(true)` setup is needed. All type guard methods are still mock functions and can be overridden per test.
 
-**Reply state machine** — for repliable interactions, `replied` and `deferred` start as `false`. Calling `reply()` or `deferReply()` twice throws, just like a real interaction. `followUp()`, `editReply()`, and `deleteReply()` throw if called before any reply. The ephemeral flag is tracked on `interaction.ephemeral`. All reply methods are still `jest.fn()` so call assertions work normally.
+**Reply state machine** — for repliable interactions, `replied` and `deferred` start as `false`. Calling `reply()` or `deferReply()` twice throws, just like a real interaction. `followUp()`, `editReply()`, and `deleteReply()` throw if called before any reply. The ephemeral flag is tracked on `interaction.ephemeral`. All reply methods are still mock functions so call assertions work normally.
+
+> **Framework-agnostic** — the mocks returned here are plain mock functions that stamp `_isMockFunction` and expose `.mock.calls`, the exact contract both `jest` and `vitest` check. Use them with either framework's `expect(...).toHaveBeenCalledWith(...)` / `toHaveBeenCalledTimes(...)` — no jest or vitest import is required to produce them. For typed stubs in your own code, import `MockedFunction`, `createMockFn`, and `DeepMocked` from `meocord/testing`.
 
 ```typescript
 import { createMockInteraction } from 'meocord/testing'
@@ -385,7 +401,7 @@ await interaction.reply({ content: 'hi' })
 interaction.replied   // → true
 await interaction.reply({ content: 'again' }) // → throws (already replied)
 
-// still jest.fn() — call assertions work normally
+// still a mock fn — call assertions work normally
 expect(interaction.reply).toHaveBeenCalledWith({ content: 'hi' })
 
 // direct property writes work normally
@@ -420,14 +436,20 @@ interaction.options.getString('duration')      // → null (wrong type)
 interaction.options.getNumber('x', true)       // → throws (absent + required)
 ```
 
-All methods are `jest.fn()` — override any per test with `.mockReturnValue()`.
+All methods are mock functions — override any per test with `.mockReturnValue()`.
 
 ### `createMockUser` / `createMockClient` / `createMockGuild` / `createMockChannel`
 
-Convenience wrappers for common discord.js classes. All methods are auto-stubbed as `jest.fn()`. Nested managers (`client.users`, `guild.members`, etc.) are independent nested stubs.
+Convenience wrappers for common discord.js classes. All methods are auto-stubbed as mock functions. Nested managers (`client.users`, `guild.members`, etc.) are independent nested stubs.
 
 ```typescript
-import { createMockUser, createMockClient, createMockGuild, createMockChannel } from 'meocord/testing'
+import {
+  createMockFn,
+  createMockUser,
+  createMockClient,
+  createMockGuild,
+  createMockChannel,
+} from 'meocord/testing'
 import { TextChannel } from 'discord.js'
 
 const user    = createMockUser()
@@ -435,15 +457,15 @@ const client  = createMockClient()
 const guild   = createMockGuild()
 const channel = createMockChannel(TextChannel)
 
-// override nested manager methods per test
-;(client.users as any).fetch = jest.fn(() => Promise.resolve(user))
+// override nested manager methods per test (createMockFn works with vitest and jest matchers)
+;(client.users as any).fetch = createMockFn(() => Promise.resolve(user))
 await (client.users as any).fetch('user-123')
 expect((client.users as any).fetch).toHaveBeenCalledWith('user-123')
 ```
 
 ### `createMockMessage`
 
-Creates a smart mock `Message`. Tracks a `deleted` boolean — `delete()`, `edit()`, `reply()`, `react()`, `pin()`, and `unpin()` throw if the message has already been deleted. `edit()` and `reply()` resolve to a new mock `Message` instance. All methods are `jest.fn()`.
+Creates a smart mock `Message`. Tracks a `deleted` boolean — `delete()`, `edit()`, `reply()`, `react()`, `pin()`, and `unpin()` throw if the message has already been deleted. `edit()` and `reply()` resolve to a new mock `Message` instance. All methods are mock functions.
 
 ```typescript
 import { createMockMessage } from 'meocord/testing'
@@ -458,9 +480,9 @@ await msg.edit({ content: 'x' }) // → throws (already deleted)
 
 // edit() and reply() resolve to a new Message mock
 const edited = await createMockMessage().edit({ content: 'updated' })
-edited.delete  // → jest.fn()
+edited.delete  // → a mock fn
 
-// still jest.fn() — assertions work
+// still a mock fn — assertions work
 expect(msg.delete).toHaveBeenCalledTimes(1)
 ```
 
@@ -483,8 +505,13 @@ const module = MeoCordTestingModule.create({
 ### Full example
 
 ```typescript
-import { jest } from '@jest/globals'
-import { MeoCordTestingModule, createMockInteraction, createChatInputOptions } from 'meocord/testing'
+import {
+  MeoCordTestingModule,
+  createMockFn,
+  createMockInteraction,
+  createChatInputOptions,
+  type MockedFunction,
+} from 'meocord/testing'
 import { ChatInputCommandInteraction } from 'discord.js'
 import { GreetingSlashController } from '@src/controllers/slash/greeting.slash.controller.js'
 import { GreetingService } from '@src/services/greeting.service.js'
@@ -492,10 +519,10 @@ import { RateLimiterGuard } from '@src/guards/rate-limiter.guard.js'
 
 describe('GreetingSlashController', () => {
   let controller: GreetingSlashController
-  let greetingService: { buildGreeting: jest.MockedFunction<GreetingService['buildGreeting']> }
+  let greetingService: { buildGreeting: MockedFunction<GreetingService['buildGreeting']> }
 
   beforeEach(() => {
-    greetingService = { buildGreeting: jest.fn() }
+    greetingService = { buildGreeting: createMockFn() }
 
     const module = MeoCordTestingModule.create({
       controllers: [GreetingSlashController],
@@ -508,7 +535,7 @@ describe('GreetingSlashController', () => {
   })
 
   it('replies with a greeting for the provided name', async () => {
-    jest.mocked(greetingService.buildGreeting).mockResolvedValue('Hello, Alice!')
+    greetingService.buildGreeting.mockResolvedValue('Hello, Alice!')
 
     const interaction = createMockInteraction(ChatInputCommandInteraction)
     interaction.options = createChatInputOptions({ name: 'Alice' })
@@ -563,9 +590,10 @@ npx meocord start --prod
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feat/your-feature`
 3. Commit with conventional commits: `git commit -m "feat: add X"`
-4. Push and open a pull request against `main`
+4. Run `bun run lint` and `bun run test` before pushing
+5. Push and open a pull request against `main`
 
-Include a description of what changed and why, and add tests for any new behaviour.
+Include a description of what changed and why, and add tests for any new behaviour. Use `fix:` / `feat:` / `docs:` prefixes so [semantic-release](https://semantic-release.gitbook.io/) can version correctly — `test:` commits do not trigger a release.
 
 ---
 

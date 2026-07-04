@@ -4,21 +4,21 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 
-jest.mock('@src/common/index.js', () => ({
-  Logger: jest.fn().mockImplementation(() => ({
-    log: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    info: jest.fn(),
-    debug: jest.fn(),
-    verbose: jest.fn(),
+vi.mock('@src/common/index.js', () => ({
+  Logger: vi.fn().mockImplementation(() => ({
+    log: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+    verbose: vi.fn(),
   })),
 }))
 
-const mockLoadConfig = jest.fn()
-jest.unstable_mockModule('@src/util/meocord-config-loader.util.js', () => ({
+const { mockLoadConfig } = vi.hoisted(() => ({ mockLoadConfig: vi.fn() }))
+vi.mock('@src/util/meocord-config-loader.util.js', () => ({
   loadMeoCordConfig: mockLoadConfig,
 }))
 
@@ -28,7 +28,7 @@ const { MetadataKey } = await import('@src/enum/index.js')
 
 describe('MeoCordFactory.create()', () => {
   afterEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   it('throws when the target has no @MeoCord() options metadata', () => {

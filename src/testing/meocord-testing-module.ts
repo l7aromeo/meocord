@@ -131,10 +131,12 @@ export class TestingModuleBuilder {
  *
  * @example
  * ```typescript
+ * import { MeoCordTestingModule, createMockFn } from 'meocord/testing'
+ *
  * const module = MeoCordTestingModule.create({
  *   controllers: [PingController],
  *   providers: [
- *     { provide: PingService, useValue: { handlePing: jest.fn().mockResolvedValue('pong') } },
+ *     { provide: PingService, useValue: { handlePing: createMockFn().mockResolvedValue('pong') } },
  *   ],
  * }).compile()
  *

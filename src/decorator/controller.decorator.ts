@@ -196,10 +196,7 @@ export function Command<
     const commands: Record<string, CommandMetadata[]> = Reflect.getMetadata(COMMAND_METADATA_KEY, target) || {}
 
     let builderInstance:
-      | SlashCommandBuilder
-      | SlashCommandSubcommandsOnlyBuilder
-      | ContextMenuCommandBuilder
-      | undefined
+      SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder | ContextMenuCommandBuilder | undefined
     let commandType: CommandType
     let regex: RegExp | undefined
     let dynamicParams: string[] = []
