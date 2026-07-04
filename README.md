@@ -337,7 +337,21 @@ async ban(interaction: ChatInputCommandInteraction) { ... }
 
 ## Testing
 
-MeoCord ships a `meocord/testing` entry point with utilities for testing controllers in isolation — no real Discord connection required.
+MeoCord ships a `meocord/testing` entry point with utilities for testing controllers in isolation — no real Discord connection required. The framework repo runs tests with [Vitest](https://vitest.dev/); the mocks themselves are **framework-agnostic** and work with Vitest or Jest assertions (see below).
+
+### Running tests
+
+From the MeoCord repo root:
+
+```shell
+bun run test              # run once
+bun run test:watch        # watch mode
+bun run test:coverage     # coverage report
+bun run test:typecheck    # tsc -p tsconfig.test.json
+bun run lint              # eslint --fix + tsc
+```
+
+In your own bot project, add Vitest (or keep Jest) plus a `vitest.config.ts` with SWC if you use decorator metadata — see this repo's config for reference. Generated apps include `*.spec.ts` stubs but not a test runner config yet.
 
 ### `MeoCordTestingModule`
 
@@ -364,7 +378,7 @@ Creates a smart mock instance of any discord.js class. The full prototype chain 
 
 **Reply state machine** — for repliable interactions, `replied` and `deferred` start as `false`. Calling `reply()` or `deferReply()` twice throws, just like a real interaction. `followUp()`, `editReply()`, and `deleteReply()` throw if called before any reply. The ephemeral flag is tracked on `interaction.ephemeral`. All reply methods are still mock functions so call assertions work normally.
 
-> **Framework-agnostic** — the mocks returned here are plain mock functions that stamp `_isMockFunction` and expose `.mock.calls`, the exact contract both `jest` and `vitest` check. Use them with either framework's `expect(...).toHaveBeenCalledWith(...)` / `toHaveBeenCalledTimes(...)` — no jest or vitest import is required to produce them.
+> **Framework-agnostic** — the mocks returned here are plain mock functions that stamp `_isMockFunction` and expose `.mock.calls`, the exact contract both `jest` and `vitest` check. Use them with either framework's `expect(...).toHaveBeenCalledWith(...)` / `toHaveBeenCalledTimes(...)` — no jest or vitest import is required to produce them. For typed stubs in your own code, import `MockedFunction`, `createMockFn`, and `DeepMocked` from `meocord/testing`.
 
 ```typescript
 import { createMockInteraction } from 'meocord/testing'
@@ -429,8 +443,13 @@ All methods are mock functions — override any per test with `.mockReturnValue(
 Convenience wrappers for common discord.js classes. All methods are auto-stubbed as mock functions. Nested managers (`client.users`, `guild.members`, etc.) are independent nested stubs.
 
 ```typescript
-import { vi } from 'vitest'
-import { createMockUser, createMockClient, createMockGuild, createMockChannel } from 'meocord/testing'
+import {
+  createMockFn,
+  createMockUser,
+  createMockClient,
+  createMockGuild,
+  createMockChannel,
+} from 'meocord/testing'
 import { TextChannel } from 'discord.js'
 
 const user    = createMockUser()
@@ -438,8 +457,8 @@ const client  = createMockClient()
 const guild   = createMockGuild()
 const channel = createMockChannel(TextChannel)
 
-// override nested manager methods per test
-;(client.users as any).fetch = vi.fn(() => Promise.resolve(user))
+// override nested manager methods per test (createMockFn works with vitest and jest matchers)
+;(client.users as any).fetch = createMockFn(() => Promise.resolve(user))
 await (client.users as any).fetch('user-123')
 expect((client.users as any).fetch).toHaveBeenCalledWith('user-123')
 ```
@@ -486,8 +505,13 @@ const module = MeoCordTestingModule.create({
 ### Full example
 
 ```typescript
-import { vi, type MockedFunction } from 'vitest'
-import { MeoCordTestingModule, createMockInteraction, createChatInputOptions } from 'meocord/testing'
+import {
+  MeoCordTestingModule,
+  createMockFn,
+  createMockInteraction,
+  createChatInputOptions,
+  type MockedFunction,
+} from 'meocord/testing'
 import { ChatInputCommandInteraction } from 'discord.js'
 import { GreetingSlashController } from '@src/controllers/slash/greeting.slash.controller.js'
 import { GreetingService } from '@src/services/greeting.service.js'
@@ -498,7 +522,7 @@ describe('GreetingSlashController', () => {
   let greetingService: { buildGreeting: MockedFunction<GreetingService['buildGreeting']> }
 
   beforeEach(() => {
-    greetingService = { buildGreeting: vi.fn() }
+    greetingService = { buildGreeting: createMockFn() }
 
     const module = MeoCordTestingModule.create({
       controllers: [GreetingSlashController],
@@ -566,9 +590,10 @@ npx meocord start --prod
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feat/your-feature`
 3. Commit with conventional commits: `git commit -m "feat: add X"`
-4. Push and open a pull request against `main`
+4. Run `bun run lint` and `bun run test` before pushing
+5. Push and open a pull request against `main`
 
-Include a description of what changed and why, and add tests for any new behaviour.
+Include a description of what changed and why, and add tests for any new behaviour. Use `fix:` / `feat:` / `docs:` prefixes so [semantic-release](https://semantic-release.gitbook.io/) can version correctly — `test:` commits do not trigger a release.
 
 ---
 
