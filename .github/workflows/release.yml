@@ -6,6 +6,11 @@ on:
       - main
       - beta
       - alpha
+  pull_request:
+    branches:
+      - main
+      - beta
+      - alpha
 
 permissions:
   contents: read
@@ -66,6 +71,7 @@ jobs:
 
   release:
     name: Release
+    if: github.event_name == 'push'
     needs: [lint, test, build]
     runs-on: ubuntu-latest
     environment: Production
