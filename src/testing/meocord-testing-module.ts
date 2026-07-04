@@ -134,7 +134,7 @@ export class TestingModuleBuilder {
  * const module = MeoCordTestingModule.create({
  *   controllers: [PingController],
  *   providers: [
- *     { provide: PingService, useValue: { handlePing: jest.fn().mockResolvedValue('pong') } },
+ *     { provide: PingService, useValue: { handlePing: vi.fn().mockResolvedValue('pong') } },
  *   ],
  * }).compile()
  *

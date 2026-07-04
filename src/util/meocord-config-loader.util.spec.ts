@@ -4,24 +4,26 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 
-const mockExistsSync = jest.fn()
-const mockReadFileSync = jest.fn()
+const { mockExistsSync, mockReadFileSync } = vi.hoisted(() => ({
+  mockExistsSync: vi.fn(),
+  mockReadFileSync: vi.fn(),
+}))
 
-jest.unstable_mockModule('fs', () => ({
+vi.mock('fs', () => ({
   existsSync: mockExistsSync,
   readFileSync: mockReadFileSync,
 }))
 
-jest.mock('jiti', () => ({
-  createJiti: jest.fn().mockReturnValue(jest.fn()),
+vi.mock('jiti', () => ({
+  createJiti: vi.fn().mockReturnValue(vi.fn()),
 }))
 
-jest.mock('@src/interface/index.js', () => ({}))
+vi.mock('@src/interface/index.js', () => ({}))
 
-jest.mock('@src/util/json.util.js', () => ({
-  fixJSON: jest.fn().mockImplementation((s: unknown) => s),
+vi.mock('@src/util/json.util.js', () => ({
+  fixJSON: vi.fn().mockImplementation((s: unknown) => s),
 }))
 
 const { loadMeoCordConfig } = await import('@src/util/meocord-config-loader.util.js')

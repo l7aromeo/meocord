@@ -4,22 +4,24 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 import path from 'path'
 import { tmpdir } from 'os'
 
-const mockExistsSync = jest.fn()
-const mockReadFileSync = jest.fn()
-const mockWriteFileSync = jest.fn()
+const { mockExistsSync, mockReadFileSync, mockWriteFileSync } = vi.hoisted(() => ({
+  mockExistsSync: vi.fn(),
+  mockReadFileSync: vi.fn(),
+  mockWriteFileSync: vi.fn(),
+}))
 
-jest.unstable_mockModule('fs', () => ({
+vi.mock('fs', () => ({
   existsSync: mockExistsSync,
   readFileSync: mockReadFileSync,
   writeFileSync: mockWriteFileSync,
 }))
 
-jest.unstable_mockModule('@src/util/meocord-config-loader.util.js', () => ({
-  loadMeoCordConfig: jest.fn().mockReturnValue(null),
+vi.mock('@src/util/meocord-config-loader.util.js', () => ({
+  loadMeoCordConfig: vi.fn().mockReturnValue(null),
 }))
 
 const { prepareModifiedTsConfig } = await import('@src/util/tsconfig.util.js')

@@ -4,22 +4,22 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 
-jest.mock('@src/common/index.js', () => ({
-  Logger: jest.fn().mockImplementation(() => ({
-    log: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
-    info: jest.fn(),
-    verbose: jest.fn(),
+vi.mock('@src/common/index.js', () => ({
+  Logger: vi.fn().mockImplementation(() => ({
+    log: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+    info: vi.fn(),
+    verbose: vi.fn(),
   })),
 }))
 
-jest.mock('@src/util/index.js', () => ({
+vi.mock('@src/util/index.js', () => ({
   EmbedUtil: {
-    createErrorEmbed: jest.fn().mockReturnValue({ setColor: jest.fn() }),
+    createErrorEmbed: vi.fn().mockReturnValue({ setColor: vi.fn() }),
   },
 }))
 
@@ -29,14 +29,14 @@ function createMockClient() {
   const listeners = new Map<string, ((...args: any[]) => any)[]>()
 
   return {
-    on: jest.fn((event: string, handler: (...args: any[]) => any) => {
+    on: vi.fn((event: string, handler: (...args: any[]) => any) => {
       if (!listeners.has(event)) listeners.set(event, [])
       listeners.get(event)!.push(handler)
     }),
-    login: jest.fn<() => Promise<string>>().mockResolvedValue('token'),
-    destroy: jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-    removeAllListeners: jest.fn(),
-    user: { setActivity: jest.fn() },
+    login: vi.fn<() => Promise<string>>().mockResolvedValue('token'),
+    destroy: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    removeAllListeners: vi.fn(),
+    user: { setActivity: vi.fn() },
     application: null,
     emit(event: string, ...args: any[]) {
       listeners.get(event)?.forEach(h => h(...args))
@@ -46,8 +46,8 @@ function createMockClient() {
 
 function createMockContainer(instanceMap = new Map<any, any>()) {
   return {
-    get: jest.fn((cls: any) => instanceMap.get(cls) ?? new cls()),
-    isBound: jest.fn().mockReturnValue(false),
+    get: vi.fn((cls: any) => instanceMap.get(cls) ?? new cls()),
+    isBound: vi.fn().mockReturnValue(false),
   }
 }
 
@@ -56,11 +56,11 @@ describe('MeoCordApp', () => {
 
   beforeEach(() => {
     mockClient = createMockClient()
-    jest.useFakeTimers()
+    vi.useFakeTimers()
   })
 
   afterEach(() => {
-    jest.useRealTimers()
+    vi.useRealTimers()
   })
 
   describe('start()', () => {
@@ -89,7 +89,7 @@ describe('MeoCordApp', () => {
       mockClient.emit('clientReady')
 
       expect(mockClient.user.setActivity).not.toHaveBeenCalled()
-      jest.advanceTimersByTime(10000)
+      vi.advanceTimersByTime(10000)
       expect(mockClient.user.setActivity).toHaveBeenCalled()
     })
   })
@@ -127,10 +127,10 @@ describe('MeoCordApp', () => {
       await app.start()
 
       mockClient.emit('clientReady')
-      jest.advanceTimersByTime(10000)
+      vi.advanceTimersByTime(10000)
 
       const sigintHandler = process.listeners('SIGINT').at(-1) as () => Promise<void>
-      const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
 
       await sigintHandler()
 

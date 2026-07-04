@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 import type { PackageManager } from '@src/util/package-manager.util.js'
 
-const mockExecSync = jest.fn()
+const { mockExecSync } = vi.hoisted(() => ({ mockExecSync: vi.fn() }))
 
-jest.unstable_mockModule('child_process', () => ({
+vi.mock('child_process', () => ({
   execSync: mockExecSync,
 }))
 

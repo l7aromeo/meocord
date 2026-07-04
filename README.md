@@ -124,7 +124,7 @@ export class App {}
 .
 ├── meocord.config.ts
 ├── eslint.config.ts
-├── jest.config.ts
+├── vitest.config.ts
 ├── tsconfig.json
 ├── tsconfig.eslint.json
 ├── tsconfig.test.json
@@ -360,9 +360,11 @@ const controller = module.get(GreetingSlashController)
 
 Creates a smart mock instance of any discord.js class. The full prototype chain is preserved so `instanceof` checks pass at every level.
 
-**Type guards run real logic** — `isButton()`, `isRepliable()`, `isChatInputCommand()`, etc. are backed by the actual discord.js prototype methods. The right fields (`type`, `componentType`, `commandType`) are set based on the class you pass in, so no manual `.mockReturnValue(true)` setup is needed. All type guard methods are still `jest.fn()` and can be overridden per test.
+**Type guards run real logic** — `isButton()`, `isRepliable()`, `isChatInputCommand()`, etc. are backed by the actual discord.js prototype methods. The right fields (`type`, `componentType`, `commandType`) are set based on the class you pass in, so no manual `.mockReturnValue(true)` setup is needed. All type guard methods are still mock functions and can be overridden per test.
 
-**Reply state machine** — for repliable interactions, `replied` and `deferred` start as `false`. Calling `reply()` or `deferReply()` twice throws, just like a real interaction. `followUp()`, `editReply()`, and `deleteReply()` throw if called before any reply. The ephemeral flag is tracked on `interaction.ephemeral`. All reply methods are still `jest.fn()` so call assertions work normally.
+**Reply state machine** — for repliable interactions, `replied` and `deferred` start as `false`. Calling `reply()` or `deferReply()` twice throws, just like a real interaction. `followUp()`, `editReply()`, and `deleteReply()` throw if called before any reply. The ephemeral flag is tracked on `interaction.ephemeral`. All reply methods are still mock functions so call assertions work normally.
+
+> **Framework-agnostic** — the mocks returned here are plain mock functions that stamp `_isMockFunction` and expose `.mock.calls`, the exact contract both `jest` and `vitest` check. Use them with either framework's `expect(...).toHaveBeenCalledWith(...)` / `toHaveBeenCalledTimes(...)` — no jest or vitest import is required to produce them.
 
 ```typescript
 import { createMockInteraction } from 'meocord/testing'
@@ -385,7 +387,7 @@ await interaction.reply({ content: 'hi' })
 interaction.replied   // → true
 await interaction.reply({ content: 'again' }) // → throws (already replied)
 
-// still jest.fn() — call assertions work normally
+// still a mock fn — call assertions work normally
 expect(interaction.reply).toHaveBeenCalledWith({ content: 'hi' })
 
 // direct property writes work normally
@@ -420,13 +422,14 @@ interaction.options.getString('duration')      // → null (wrong type)
 interaction.options.getNumber('x', true)       // → throws (absent + required)
 ```
 
-All methods are `jest.fn()` — override any per test with `.mockReturnValue()`.
+All methods are mock functions — override any per test with `.mockReturnValue()`.
 
 ### `createMockUser` / `createMockClient` / `createMockGuild` / `createMockChannel`
 
-Convenience wrappers for common discord.js classes. All methods are auto-stubbed as `jest.fn()`. Nested managers (`client.users`, `guild.members`, etc.) are independent nested stubs.
+Convenience wrappers for common discord.js classes. All methods are auto-stubbed as mock functions. Nested managers (`client.users`, `guild.members`, etc.) are independent nested stubs.
 
 ```typescript
+import { vi } from 'vitest'
 import { createMockUser, createMockClient, createMockGuild, createMockChannel } from 'meocord/testing'
 import { TextChannel } from 'discord.js'
 
@@ -436,14 +439,14 @@ const guild   = createMockGuild()
 const channel = createMockChannel(TextChannel)
 
 // override nested manager methods per test
-;(client.users as any).fetch = jest.fn(() => Promise.resolve(user))
+;(client.users as any).fetch = vi.fn(() => Promise.resolve(user))
 await (client.users as any).fetch('user-123')
 expect((client.users as any).fetch).toHaveBeenCalledWith('user-123')
 ```
 
 ### `createMockMessage`
 
-Creates a smart mock `Message`. Tracks a `deleted` boolean — `delete()`, `edit()`, `reply()`, `react()`, `pin()`, and `unpin()` throw if the message has already been deleted. `edit()` and `reply()` resolve to a new mock `Message` instance. All methods are `jest.fn()`.
+Creates a smart mock `Message`. Tracks a `deleted` boolean — `delete()`, `edit()`, `reply()`, `react()`, `pin()`, and `unpin()` throw if the message has already been deleted. `edit()` and `reply()` resolve to a new mock `Message` instance. All methods are mock functions.
 
 ```typescript
 import { createMockMessage } from 'meocord/testing'
@@ -458,9 +461,9 @@ await msg.edit({ content: 'x' }) // → throws (already deleted)
 
 // edit() and reply() resolve to a new Message mock
 const edited = await createMockMessage().edit({ content: 'updated' })
-edited.delete  // → jest.fn()
+edited.delete  // → a mock fn
 
-// still jest.fn() — assertions work
+// still a mock fn — assertions work
 expect(msg.delete).toHaveBeenCalledTimes(1)
 ```
 
@@ -483,7 +486,7 @@ const module = MeoCordTestingModule.create({
 ### Full example
 
 ```typescript
-import { jest } from '@jest/globals'
+import { vi, type MockedFunction } from 'vitest'
 import { MeoCordTestingModule, createMockInteraction, createChatInputOptions } from 'meocord/testing'
 import { ChatInputCommandInteraction } from 'discord.js'
 import { GreetingSlashController } from '@src/controllers/slash/greeting.slash.controller.js'
@@ -492,10 +495,10 @@ import { RateLimiterGuard } from '@src/guards/rate-limiter.guard.js'
 
 describe('GreetingSlashController', () => {
   let controller: GreetingSlashController
-  let greetingService: { buildGreeting: jest.MockedFunction<GreetingService['buildGreeting']> }
+  let greetingService: { buildGreeting: MockedFunction<GreetingService['buildGreeting']> }
 
   beforeEach(() => {
-    greetingService = { buildGreeting: jest.fn() }
+    greetingService = { buildGreeting: vi.fn() }
 
     const module = MeoCordTestingModule.create({
       controllers: [GreetingSlashController],
@@ -508,7 +511,7 @@ describe('GreetingSlashController', () => {
   })
 
   it('replies with a greeting for the provided name', async () => {
-    jest.mocked(greetingService.buildGreeting).mockResolvedValue('Hello, Alice!')
+    greetingService.buildGreeting.mockResolvedValue('Hello, Alice!')
 
     const interaction = createMockInteraction(ChatInputCommandInteraction)
     interaction.options = createChatInputOptions({ name: 'Alice' })

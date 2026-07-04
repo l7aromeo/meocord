@@ -4,14 +4,20 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { jest } from '@jest/globals'
+import { vi } from 'vitest'
 
-const mockExistsSync = jest.fn()
-const mockMkdirSync = jest.fn()
-const mockWriteFileSync = jest.fn()
-const mockReadFileSync = jest.fn()
+const { mockExistsSync, mockMkdirSync, mockWriteFileSync, mockReadFileSync, mockExec, mockLoggerLog, mockLoggerError } =
+  vi.hoisted(() => ({
+    mockExistsSync: vi.fn(),
+    mockMkdirSync: vi.fn(),
+    mockWriteFileSync: vi.fn(),
+    mockReadFileSync: vi.fn(),
+    mockExec: vi.fn(),
+    mockLoggerLog: vi.fn(),
+    mockLoggerError: vi.fn(),
+  }))
 
-jest.unstable_mockModule('fs', () => ({
+vi.mock('fs', () => ({
   default: {
     existsSync: mockExistsSync,
     mkdirSync: mockMkdirSync,
@@ -24,23 +30,18 @@ jest.unstable_mockModule('fs', () => ({
   readFileSync: mockReadFileSync,
 }))
 
-const mockExec = jest.fn()
-
-jest.unstable_mockModule('child_process', () => ({
+vi.mock('child_process', () => ({
   exec: mockExec,
 }))
 
-const mockLoggerLog = jest.fn()
-const mockLoggerError = jest.fn()
-
-jest.unstable_mockModule('@src/common/index.js', () => ({
-  Logger: jest.fn().mockImplementation(() => ({
+vi.mock('@src/common/index.js', () => ({
+  Logger: vi.fn().mockImplementation(() => ({
     log: mockLoggerLog,
     error: mockLoggerError,
-    warn: jest.fn(),
-    info: jest.fn(),
-    debug: jest.fn(),
-    verbose: jest.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+    verbose: vi.fn(),
   })),
 }))
 
@@ -63,7 +64,7 @@ describe('toClassName', () => {
   })
 
   it('calls process.exit for invalid names like "123invalid"', () => {
-    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
 
     toClassName('123invalid')
 
@@ -88,7 +89,7 @@ describe('validateAndFormatName', () => {
   })
 
   it('calls process.exit when name is undefined', () => {
-    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
 
     try {
       validateAndFormatName(undefined)

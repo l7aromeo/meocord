@@ -5,7 +5,7 @@
  */
 
 import 'reflect-metadata'
-import { jest } from '@jest/globals'
+import { createMockFn, type MockedFunction, type Mock } from './mock-fn.js'
 import {
   ApplicationCommandManager,
   ApplicationCommandType,
@@ -41,7 +41,7 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * Recursively transforms all methods of T into jest.MockedFunction and all
+ * Recursively transforms all methods of T into MockedFunction and all
  * nested objects into DeepMocked. Depth cap at 5 prevents infinite recursion
  * on circular discord.js types (e.g. Guild ↔ GuildMember).
  * -readonly removes readonly modifiers so test setup can write any property.
@@ -50,19 +50,19 @@ export type DeepMocked<T, Depth extends number[] = []> = Depth['length'] extends
   ? T
   : {
       -readonly [K in keyof T]: T[K] extends (...args: infer A) => infer R
-        ? jest.MockedFunction<(...args: A) => R>
+        ? MockedFunction<(...args: A) => R>
         : T[K] extends object
           ? DeepMocked<T[K], [...Depth, 0]>
           : T[K]
     }
 
 // ---------------------------------------------------------------------------
-// stubDeep — Proxy that auto-creates jest.fn() on any property access
+// stubDeep — Proxy that auto-creates a mock fn on any property access
 // ---------------------------------------------------------------------------
 
 const SKIP = new Set(['constructor', 'toString', 'valueOf', 'toJSON', 'then'])
 
-type StubValue = jest.Mock | object
+type StubValue = Mock | object
 
 function stubDeep(instance: object, externalStubs?: Map<string, StubValue>): object {
   const stubs = externalStubs ?? new Map<string, StubValue>()
@@ -76,7 +76,7 @@ function stubDeep(instance: object, externalStubs?: Map<string, StubValue>): obj
 
       const key = prop as string
 
-      // 'then' must be undefined — prevents jest treating the mock as a Promise
+      // 'then' must be undefined — prevents frameworks treating the mock as a Promise
       if (key === 'then') return undefined
 
       // Own property writes take precedence (e.g. interaction.guildId = 'abc')
@@ -104,7 +104,7 @@ function stubDeep(instance: object, externalStubs?: Map<string, StubValue>): obj
         proto = Object.getPrototypeOf(proto)
       }
 
-      const stub: StubValue = typeof protoValue === 'function' ? jest.fn() : stubDeep({})
+      const stub: StubValue = typeof protoValue === 'function' ? createMockFn() : stubDeep({})
       stubs.set(key, stub)
       return stub
     },
@@ -154,7 +154,7 @@ const CLASS_TYPE_FIELDS: Record<string, { type?: number; commandType?: number; c
 }
 
 // All known pure type-guard methods on BaseInteraction and its subclasses.
-// These are wired as jest.fn() wrapping the real prototype logic so they return
+// These are wired as a mock fn wrapping the real prototype logic so they return
 // correct values by default and can still be overridden per test.
 const TYPE_GUARD_METHODS = [
   'isCommand',
@@ -202,14 +202,14 @@ function findPrototypeMethod(instance: object, name: string): ((...args: unknown
  *
  * **Type guards** (`isButton()`, `isRepliable()`, etc.) run the real discord.js
  * prototype logic — no manual `.mockReturnValue(true)` setup needed. They are
- * still `jest.fn()` so you can override them per test.
+ * still mock functions so you can override them per test.
  *
  * **Reply state machine** — `replied` and `deferred` start as `false`. Calling
  * `reply()` or `deferReply()` twice throws, just like a real interaction would.
  * `followUp()`, `editReply()`, and `deleteReply()` throw if called before any
- * reply. These are still `jest.fn()` so call assertions work normally.
+ * reply. These are still mock functions so call assertions work normally.
  *
- * All other methods are auto-stubbed as `jest.fn()` via Proxy.
+ * All other methods are auto-stubbed as a mock fn via Proxy.
  *
  * @example
  * ```ts
@@ -225,7 +225,7 @@ function findPrototypeMethod(instance: object, name: string): ((...args: unknown
  */
 export function createMockInteraction<T extends object>(Class: InteractionClass<T>): DeepMocked<T> {
   const instance = Object.create(Class.prototype) as Record<string, unknown>
-  const stubs = new Map<string, jest.Mock>()
+  const stubs = new Map<string, Mock>()
 
   // Set type fields so all prototype type-guard methods compute the right value
   const fields = CLASS_TYPE_FIELDS[Class.name]
@@ -235,14 +235,14 @@ export function createMockInteraction<T extends object>(Class: InteractionClass<
     }
   }
 
-  // Wire each type guard as jest.fn() calling the real prototype implementation.
+  // Wire each type guard as a mock fn calling the real prototype implementation.
   // Correct by default; overridable per test via .mockReturnValue().
   for (const name of TYPE_GUARD_METHODS) {
     const method = findPrototypeMethod(instance, name)
     if (method !== null) {
       stubs.set(
         name,
-        jest.fn().mockImplementation(() => method.call(instance)),
+        createMockFn().mockImplementation(() => method.call(instance)),
       )
     }
   }
@@ -269,7 +269,7 @@ export function createMockInteraction<T extends object>(Class: InteractionClass<
 
     stubs.set(
       'reply',
-      jest.fn(async (...args: unknown[]) => {
+      createMockFn(async (...args: unknown[]) => {
         if (instance.deferred || instance.replied) throw alreadyReplied()
         instance.replied = true
         if (hasEphemeralFlag(args[0] as Record<string, unknown> | undefined)) instance.ephemeral = true
@@ -277,7 +277,7 @@ export function createMockInteraction<T extends object>(Class: InteractionClass<
     )
     stubs.set(
       'deferReply',
-      jest.fn(async (...args: unknown[]) => {
+      createMockFn(async (...args: unknown[]) => {
         if (instance.deferred || instance.replied) throw alreadyReplied()
         instance.deferred = true
         if (hasEphemeralFlag(args[0] as Record<string, unknown> | undefined)) instance.ephemeral = true
@@ -285,7 +285,7 @@ export function createMockInteraction<T extends object>(Class: InteractionClass<
     )
     stubs.set(
       'followUp',
-      jest.fn(async () => {
+      createMockFn(async () => {
         if (!instance.deferred && !instance.replied) throw notYetReplied('followUp')
         instance.replied = true
         return createMockMessage()
@@ -293,7 +293,7 @@ export function createMockInteraction<T extends object>(Class: InteractionClass<
     )
     stubs.set(
       'editReply',
-      jest.fn(async () => {
+      createMockFn(async () => {
         if (!instance.deferred && !instance.replied) throw notYetReplied('editReply')
         instance.replied = true
         return createMockMessage()
@@ -301,7 +301,7 @@ export function createMockInteraction<T extends object>(Class: InteractionClass<
     )
     stubs.set(
       'deleteReply',
-      jest.fn(async () => {
+      createMockFn(async () => {
         if (!instance.deferred && !instance.replied) throw notYetReplied('deleteReply')
       }),
     )
@@ -310,14 +310,14 @@ export function createMockInteraction<T extends object>(Class: InteractionClass<
     if (instance.type === InteractionType.MessageComponent) {
       stubs.set(
         'update',
-        jest.fn(async () => {
+        createMockFn(async () => {
           if (instance.deferred || instance.replied) throw alreadyReplied()
           instance.replied = true
         }),
       )
       stubs.set(
         'deferUpdate',
-        jest.fn(async () => {
+        createMockFn(async () => {
           if (instance.deferred || instance.replied) throw alreadyReplied()
           instance.deferred = true
         }),
@@ -332,14 +332,14 @@ export function createMockInteraction<T extends object>(Class: InteractionClass<
 // Convenience wrappers for common discord.js classes
 // ---------------------------------------------------------------------------
 
-/** Creates a mock {@link User}. All methods are auto-stubbed as `jest.fn()`. */
+/** Creates a mock {@link User}. All methods are auto-stubbed as a mock fn. */
 export const createMockUser = (): DeepMocked<User> => createMockInteraction(User)
 
 /**
  * Creates a mock {@link Client}.
  *
  * Manager methods that are constructor-assigned (not on the prototype) are
- * pre-initialized as `jest.fn()` so they work out of the box without manual
+ * pre-initialized as a mock fn so they work out of the box without manual
  * setup: `users.fetch`, `channels.fetch`, `guilds.fetch`, and
  * `application.commands.fetch`.
  */
@@ -347,7 +347,7 @@ export function createMockClient(): DeepMocked<Client> {
   const instance = Object.create(Client.prototype) as Record<string, unknown>
 
   // Manager properties are constructor-assigned — pre-initialize as prototype-based
-  // stubs so ALL manager methods (not just fetch) are auto-stubbed as jest.fn().
+  // stubs so ALL manager methods (not just fetch) are auto-stubbed as a mock fn.
   const appInstance = Object.create(null) as Record<string, unknown>
   appInstance.commands = stubDeep(Object.create(ApplicationCommandManager.prototype))
 
@@ -365,7 +365,7 @@ export function createMockClient(): DeepMocked<Client> {
  *
  * Manager properties are constructor-assigned in discord.js. This factory
  * pre-initializes each as a prototype-based stub so all methods are
- * auto-stubbed as `jest.fn()`.
+ * auto-stubbed as a mock fn.
  *
  * Pre-initialized: `members`, `channels`, `roles`, `bans`.
  */
@@ -385,7 +385,7 @@ export function createMockGuild(): DeepMocked<Guild> {
  *
  * Manager properties that are constructor-assigned in discord.js are
  * pre-initialized as prototype-based stubs so all methods are auto-stubbed
- * as `jest.fn()`:
+ * as a mock fn:
  * - Guild text channels (`TextChannel`, `NewsChannel`): `messages`, `threads`
  * - `DMChannel`: `messages`
  * - `ThreadChannel`: `messages`, `members`
@@ -424,7 +424,7 @@ export function createMockChannel<T extends Channel>(Class: InteractionClass<T>)
  * `msg.channel.send`, `msg.guild.members.fetch`, `msg.thread.fetch`,
  * and `msg.mentions.has` all work out of the box.
  *
- * All methods remain `jest.fn()` — overridable per test.
+ * All methods remain mock functions — overridable per test.
  *
  * Note: `createMockInteraction`'s `followUp()` and `editReply()` stubs return
  * a `createMockMessage()` by default, matching the official return types.
@@ -446,7 +446,7 @@ function createMockGuildForMessage(): object {
 
 export function createMockMessage(): DeepMocked<Message> {
   const instance = Object.create(Message.prototype) as Record<string, unknown>
-  const stubs = new Map<string, jest.Mock>()
+  const stubs = new Map<string, Mock>()
 
   instance.deleted = false
 
@@ -454,7 +454,7 @@ export function createMockMessage(): DeepMocked<Message> {
   instance.author = stubDeep(Object.create(User.prototype))
 
   // Getters on the prototype — the proxy sees them as functions and returns
-  // jest.fn(), which is wrong. Pre-initialize as own properties to shadow
+  // a mock fn, which is wrong. Pre-initialize as own properties to shadow
   // the prototype getters.
   Object.defineProperty(instance, 'member', {
     value: stubDeep(Object.create(GuildMember.prototype)),
@@ -480,40 +480,40 @@ export function createMockMessage(): DeepMocked<Message> {
 
   stubs.set(
     'delete',
-    jest.fn(async () => {
+    createMockFn(async () => {
       if (instance.deleted) throw alreadyDeleted()
       instance.deleted = true
     }),
   )
   stubs.set(
     'edit',
-    jest.fn(async () => {
+    createMockFn(async () => {
       if (instance.deleted) throw alreadyDeleted()
       return createMockMessage()
     }),
   )
   stubs.set(
     'reply',
-    jest.fn(async () => {
+    createMockFn(async () => {
       if (instance.deleted) throw alreadyDeleted()
       return createMockMessage()
     }),
   )
   stubs.set(
     'react',
-    jest.fn(async () => {
+    createMockFn(async () => {
       if (instance.deleted) throw alreadyDeleted()
     }),
   )
   stubs.set(
     'pin',
-    jest.fn(async () => {
+    createMockFn(async () => {
       if (instance.deleted) throw alreadyDeleted()
     }),
   )
   stubs.set(
     'unpin',
-    jest.fn(async () => {
+    createMockFn(async () => {
       if (instance.deleted) throw alreadyDeleted()
     }),
   )
@@ -536,7 +536,7 @@ export interface ChatInputOptions {
  * `CommandInteractionOptionResolver` works: declare what options the command
  * was invoked with, and the resolver finds them by name.
  *
- * All explicit methods are `jest.fn()` — override per test with `.mockReturnValue()`.
+ * All explicit methods are mock functions — override per test with `.mockReturnValue()`.
  * Methods not listed (e.g. `getAttachment`) are auto-stubbed by the Proxy.
  *
  * @example
@@ -573,36 +573,40 @@ export function createChatInputOptions(opts: ChatInputOptions = {}): DeepMocked<
   const isObjectOption = (v: unknown): v is { id: string } => typeof v === 'object' && v !== null && 'id' in v
 
   // Use a real prototype instance so unlisted methods (e.g. getAttachment)
-  // are found on the prototype chain and auto-stubbed as jest.fn()
+  // are found on the prototype chain and auto-stubbed as a mock fn
   const base = Object.create(CommandInteractionOptionResolver.prototype)
 
-  base.getSubcommandGroup = jest.fn((required?: boolean) =>
+  base.getSubcommandGroup = createMockFn((required?: boolean) =>
     resolveSubEntry(subcommandGroup, 'subcommand group', required),
   )
-  base.getSubcommand = jest.fn<(required?: boolean) => string | null>((required?: boolean) =>
+  base.getSubcommand = createMockFn<(required?: boolean) => string | null>((required?: boolean) =>
     resolveSubEntry(subcommand, 'subcommand', required),
   )
-  base.getString = jest.fn<(name: string, required?: boolean) => string | null>((name: string, required?: boolean) =>
-    resolveOrThrow(name, typeof values[name] === 'string' ? (values[name] as string) : null, required),
+  base.getString = createMockFn<(name: string, required?: boolean) => string | null>(
+    (name: string, required?: boolean) =>
+      resolveOrThrow(name, typeof values[name] === 'string' ? (values[name] as string) : null, required),
   )
-  base.getNumber = jest.fn<(name: string, required?: boolean) => number | null>((name: string, required?: boolean) =>
-    resolveOrThrow(name, typeof values[name] === 'number' ? (values[name] as number) : null, required),
+  base.getNumber = createMockFn<(name: string, required?: boolean) => number | null>(
+    (name: string, required?: boolean) =>
+      resolveOrThrow(name, typeof values[name] === 'number' ? (values[name] as number) : null, required),
   )
-  base.getInteger = jest.fn<(name: string, required?: boolean) => number | null>((name: string, required?: boolean) =>
-    resolveOrThrow(name, typeof values[name] === 'number' ? (values[name] as number) : null, required),
+  base.getInteger = createMockFn<(name: string, required?: boolean) => number | null>(
+    (name: string, required?: boolean) =>
+      resolveOrThrow(name, typeof values[name] === 'number' ? (values[name] as number) : null, required),
   )
-  base.getBoolean = jest.fn<(name: string, required?: boolean) => boolean | null>((name: string, required?: boolean) =>
-    resolveOrThrow(name, typeof values[name] === 'boolean' ? (values[name] as boolean) : null, required),
+  base.getBoolean = createMockFn<(name: string, required?: boolean) => boolean | null>(
+    (name: string, required?: boolean) =>
+      resolveOrThrow(name, typeof values[name] === 'boolean' ? (values[name] as boolean) : null, required),
   )
 
   const getObjectOption = (name: string, required?: boolean) =>
     resolveOrThrow(name, isObjectOption(values[name]) ? (values[name] as { id: string }) : null, required)
 
-  base.getUser = jest.fn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
-  base.getRole = jest.fn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
-  base.getChannel = jest.fn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
-  base.getMember = jest.fn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
-  base.getMentionable = jest.fn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
+  base.getUser = createMockFn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
+  base.getRole = createMockFn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
+  base.getChannel = createMockFn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
+  base.getMember = createMockFn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
+  base.getMentionable = createMockFn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
 
   return stubDeep(base) as unknown as DeepMocked<CommandInteractionOptionResolver>
 }
