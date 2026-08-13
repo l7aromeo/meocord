@@ -115,30 +115,75 @@ export function getMessageHandlers(controller: any): { keyword: string | undefin
   return Reflect.getMetadata(MESSAGE_HANDLER_METADATA_KEY, controller) || []
 }
 
+const PLACEHOLDER_PATTERN = /\{(\w+)}/g
+
+/** The character a parameter will not cross, so one pattern segment maps to one value. */
+export const PARAM_SEPARATOR = '/'
+
+/** Escapes a literal stretch of a pattern so only placeholders stay meaningful. */
+const escapeLiteral = (literal: string): string => literal.replace(/[/\\^$*+?.()|[\]{}]/g, '\\$&')
+
 /**
  * Helper function to create regex and parameter mappings from a pattern string.
  *
+ * A `{name}` matches anything up to the next `/`, the same rule Express and Rails use
+ * for a path segment. That is what lets a value the application does not control — a
+ * uuid, an opaque vendor id, a slug — be captured whole without the author annotating
+ * anything, since a hyphen inside it is data rather than structure.
+ *
+ * It also keeps neighbouring patterns apart: `profile/{uuid}` and `profile/{uuid}/{id}`
+ * cannot both match one id, because a parameter cannot swallow the separator between
+ * them. Patterns separated by `-` instead have no such boundary, so a pair like
+ * `profile-{uuid}` and `profile-{uuid}-{id}` is ambiguous — {@link findAmbiguousRoutes}
+ * reports those at registration.
+ *
  * @param pattern - The pattern string to parse.
- * @returns An object containing the generated regex and parameter names.
+ * @returns The regex, the parameter names, and how specific the pattern is.
  */
-function createRegexFromPattern(pattern: string): { regex: RegExp; params: string[] } {
+function createRegexFromPattern(pattern: string): { regex: RegExp; params: string[]; specificity: number } {
   const params: string[] = []
+  let regexPattern = ''
+  let cursor = 0
+  let literalLength = 0
 
-  // Escape special characters except for {} and -
-  const escapedPattern = pattern.replace(/[/\\^$*+?.()|[\]]/g, '\\$&') // Removed hyphen `-` from this list
+  PLACEHOLDER_PATTERN.lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = PLACEHOLDER_PATTERN.exec(pattern)) !== null) {
+    const [placeholder, param] = match
+    const literal = pattern.slice(cursor, match.index)
+    const after = pattern[match.index + placeholder.length]
 
-  // Replace placeholders with named capturing groups
-  const regexPattern = escapedPattern.replace(/\{(\w+)}/g, (_, param) => {
-    if (!/^\w+$/.test(param)) {
-      throw new Error(`Invalid parameter name: ${param}. Parameter names must be alphanumeric.`)
+    // A parameter has to own its segment. Sharing one with a literal leaves no
+    // boundary a sibling pattern can be told apart by, and the resulting overlap has
+    // no correct reading -- `profile-{uuid}` and `profile-{uuid}-{id}` both take
+    // `profile-a-b`. Registration is the last point where that is still fixable.
+    if ((literal !== '' && !literal.endsWith(PARAM_SEPARATOR)) || (after !== undefined && after !== PARAM_SEPARATOR)) {
+      throw new Error(
+        `Invalid pattern "${pattern}": {${param}} must occupy a whole segment, so it has to be ` +
+          `preceded and followed by "${PARAM_SEPARATOR}" or by the ends of the pattern. ` +
+          `Write "a${PARAM_SEPARATOR}{${param}}" rather than "a-{${param}}".`,
+      )
     }
-    params.push(param)
-    return `(?<${param}>[a-zA-Z0-9]+)`
-  })
 
-  // Construct the final regex
+    literalLength += literal.length
+    regexPattern += escapeLiteral(literal)
+    regexPattern += `(?<${param}>[^${PARAM_SEPARATOR}]+)`
+    params.push(param)
+    cursor = match.index + placeholder.length
+  }
+
+  const trailing = pattern.slice(cursor)
+  literalLength += trailing.length
+  regexPattern += escapeLiteral(trailing)
+
   const regex = new RegExp(`^${regexPattern}$`)
-  return { regex, params }
+
+  // Literal text is the signal: a pattern spelling out more of the id describes it
+  // more exactly than one leaving it to a parameter. Fewer parameters breaks a tie
+  // between equal-length patterns, so the ranking is total and never falls back to
+  // declaration order.
+  const specificity = literalLength * 1_000 - params.length
+  return { regex, params, specificity }
 }
 
 /**
@@ -200,6 +245,7 @@ export function Command<
     let commandType: CommandType
     let regex: RegExp | undefined
     let dynamicParams: string[] = []
+    let specificity: number | undefined
 
     // Determine command type and builder
     if (typeof builderOrType === 'function') {
@@ -214,9 +260,10 @@ export function Command<
     }
 
     if (commandType !== CommandType.SLASH && commandType !== CommandType.CONTEXT_MENU) {
-      const { regex: generatedRegex, params } = createRegexFromPattern(commandName)
+      const { regex: generatedRegex, params, specificity: patternSpecificity } = createRegexFromPattern(commandName)
       regex = generatedRegex
       dynamicParams = params
+      specificity = patternSpecificity
     }
 
     // Ensure commandName supports multiple entries
@@ -230,6 +277,7 @@ export function Command<
       type: commandType,
       regex,
       dynamicParams,
+      specificity,
     })
 
     Reflect.defineMetadata(COMMAND_METADATA_KEY, commands, target)
@@ -269,4 +317,41 @@ export function Controller() {
       injectable()(target)
     }
   }
+}
+
+/**
+ * Finds pattern pairs that can both match one customId.
+ *
+ * Patterns of different segment counts are disjoint, because a parameter cannot cross
+ * `/`. Within the same count, two patterns overlap unless some position holds literals
+ * that differ: `a/{x}/c` and `a/b/{y}` both take `a/b/c`, and neither is more literal
+ * than the other, so ranking cannot settle it either.
+ *
+ * @param patterns - The registered patterns.
+ * @returns Each ambiguous pair, once, in the order the patterns were given.
+ */
+export function findAmbiguousRoutes(patterns: string[]): [string, string][] {
+  const isParam = (segment: string): boolean => PLACEHOLDER_PATTERN.test(segment)
+  const segmentsOf = (pattern: string): string[] => pattern.split(PARAM_SEPARATOR)
+  const collisions: [string, string][] = []
+
+  for (let i = 0; i < patterns.length; i++) {
+    for (let j = i + 1; j < patterns.length; j++) {
+      const left = segmentsOf(patterns[i])
+      const right = segmentsOf(patterns[j])
+      if (left.length !== right.length) continue
+
+      const disjoint = left.some((segment, index) => {
+        PLACEHOLDER_PATTERN.lastIndex = 0
+        const leftIsParam = isParam(segment)
+        PLACEHOLDER_PATTERN.lastIndex = 0
+        const rightIsParam = isParam(right[index])
+        return !leftIsParam && !rightIsParam && segment !== right[index]
+      })
+
+      if (!disjoint) collisions.push([patterns[i], patterns[j]])
+    }
+  }
+
+  return collisions
 }

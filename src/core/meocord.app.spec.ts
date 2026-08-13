@@ -27,6 +27,11 @@ vi.mock('@src/util/index.js', () => ({
   },
 }))
 
+import { ButtonInteraction } from 'discord.js'
+import { Logger } from '@src/common/index.js'
+import { createMockInteraction } from '@src/testing/index.js'
+import { Command, Controller } from '@src/decorator/index.js'
+import { CommandType } from '@src/enum/index.js'
 import { MeoCordApp } from '@src/core/meocord.app.js'
 
 function createMockClient() {
@@ -122,6 +127,148 @@ describe('MeoCordApp', () => {
       })
 
       expect(mockClient.login).toHaveBeenCalled()
+    })
+  })
+
+  // A control that is emitted but never routed -- a customId whose value broke its
+  // pattern, or a handler nobody wrote -- used to be invisible. The user saw
+  // "Command not found!" and the log said nothing about which id failed to match.
+  describe('unmatched interactions', () => {
+    const unmatchedButton = () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      interaction.customId = 'pw-delete-account-999-role-2'
+      return interaction
+    }
+
+    it('logs the customId that matched no handler', async () => {
+      const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 'token')
+      await app.start()
+
+      mockClient.emit('interactionCreate', unmatchedButton())
+      await vi.advanceTimersByTimeAsync(0)
+
+      const warn = vi.mocked(Logger).mock.results[0]?.value.warn
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('pw-delete-account-999-role-2'))
+    })
+
+    it('names the @Command pattern as the thing to check', async () => {
+      const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 'token')
+      await app.start()
+
+      mockClient.emit('interactionCreate', unmatchedButton())
+      await vi.advanceTimersByTimeAsync(0)
+
+      const warn = vi.mocked(Logger).mock.results[0]?.value.warn
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('@Command'))
+    })
+  })
+
+  // A parameter matches anything, so a broad route can also match an id that a more
+  // literal sibling owns. Which one wins must come from the patterns themselves --
+  // relying on registration order would make it depend on file layout.
+  describe('overlapping routes', () => {
+    const press = (customId: string) => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      interaction.customId = customId
+      return interaction
+    }
+
+    const controllers = () => {
+      const calls: { handler: string; params: Record<string, string> }[] = []
+
+      @Controller()
+      class BroadController {
+        @Command('gi-profile/{uuid}/{uid}', CommandType.BUTTON)
+        async broad(_i: unknown, params: Record<string, string>) {
+          calls.push({ handler: 'broad', params })
+        }
+      }
+
+      @Controller()
+      class SpecificController {
+        @Command('gi-profile/summary/{ownerId}/{uid}', CommandType.BUTTON)
+        async specific(_i: unknown, params: Record<string, string>) {
+          calls.push({ handler: 'specific', params })
+        }
+      }
+
+      return { BroadController, SpecificController, calls }
+    }
+
+    it('gives an id to the route that spells more of it out, however they were declared', async () => {
+      for (const broadFirst of [true, false]) {
+        const { BroadController, SpecificController, calls } = controllers()
+        const order = broadFirst ? [BroadController, SpecificController] : [SpecificController, BroadController]
+        const app = new MeoCordApp(order as any, createMockContainer() as any, mockClient as any, 'token')
+        await app.start()
+
+        mockClient.emit('interactionCreate', press('gi-profile/summary/123/456'))
+        await vi.advanceTimersByTimeAsync(0)
+
+        expect(calls).toEqual([{ handler: 'specific', params: { ownerId: '123', uid: '456' } }])
+        mockClient = createMockClient()
+      }
+    })
+
+    it('still routes an id only the broad pattern can take', async () => {
+      const { BroadController, SpecificController, calls } = controllers()
+      const app = new MeoCordApp(
+        [SpecificController, BroadController] as any,
+        createMockContainer() as any,
+        mockClient as any,
+        'token',
+      )
+      await app.start()
+
+      mockClient.emit('interactionCreate', press('gi-profile/asjhdasf-asdaf123-sdfasd-xxxx/800000001'))
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(calls).toEqual([{ handler: 'broad', params: { uuid: 'asjhdasf-asdaf123-sdfasd-xxxx', uid: '800000001' } }])
+    })
+  })
+
+  // `a/{x}/c` and `a/b/{y}` both take `a/b/c`, and neither is more literal than the
+  // other, so ranking cannot settle it. Saying so at startup beats letting one of
+  // them quietly win every click.
+  describe('ambiguous routes', () => {
+    it('warns about a pair that trades a literal for a parameter in each direction', async () => {
+      @Controller()
+      class AmbiguousController {
+        @Command('a/{x}/c', CommandType.BUTTON)
+        async one(..._args: any[]) {}
+
+        @Command('a/b/{y}', CommandType.BUTTON)
+        async two(..._args: any[]) {}
+      }
+
+      const app = new MeoCordApp([AmbiguousController] as any, createMockContainer() as any, mockClient as any, 't')
+      await app.start()
+
+      mockClient.emit('interactionCreate', createMockInteraction(ButtonInteraction))
+      await vi.advanceTimersByTimeAsync(0)
+
+      const warn = vi.mocked(Logger).mock.results[0]?.value.warn
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('can match the same customId'))
+    })
+
+    it('stays quiet when the patterns cannot collide', async () => {
+      @Controller()
+      class DistinctController {
+        @Command('profile/{uuid}', CommandType.BUTTON)
+        async one(..._args: any[]) {}
+
+        @Command('profile/{uuid}/{id}', CommandType.BUTTON)
+        async two(..._args: any[]) {}
+      }
+
+      const app = new MeoCordApp([DistinctController] as any, createMockContainer() as any, mockClient as any, 't')
+      await app.start()
+
+      mockClient.emit('interactionCreate', createMockInteraction(ButtonInteraction))
+      await vi.advanceTimersByTimeAsync(0)
+
+      const warn = vi.mocked(Logger).mock.results[0]?.value.warn
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('can match the same customId'))
     })
   })
 
