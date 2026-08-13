@@ -41,7 +41,7 @@
 
 ### Prerequisites
 
-- **Runtime**: Node.js (latest LTS) or Bun 1.x+
+- **Runtime**: Node.js 22 or newer, or Bun 1.x+
 - **TypeScript**: 5.0+
 - **Package manager**: npm, yarn, pnpm, or bun
 
@@ -410,6 +410,33 @@ interaction.guildId = 'guild-123'
 
 Works for any discord.js class — interactions, `Message`, `MessageReaction`, and anything else. No per-type maintenance.
 
+**Assignable to the real class** — the returned mock can be passed straight to code that expects the discord.js type. No `as unknown as ButtonInteraction` at the call site.
+
+```typescript
+const interaction = createMockInteraction(ButtonInteraction)
+
+await controller.handleButton(interaction) // takes a real ButtonInteraction
+```
+
+**Property overrides at construction** — pass a second argument to set properties as the mock is built. This is required for anything discord.js declares `readonly` (`ModalSubmitInteraction#customId` and `#fields`, `MessageComponentInteraction#message`, `client`, `guildId` on some classes), since those cannot be assigned afterwards. It is also how you set a property backed by a getter-only prototype accessor, such as `targetUser` or `targetMessage` on a context menu.
+
+```typescript
+import { createMockInteraction, createMockUser } from 'meocord/testing'
+import { ModalSubmitInteraction, UserContextMenuCommandInteraction } from 'discord.js'
+
+const modal = createMockInteraction(ModalSubmitInteraction, {
+  customId: 'wish-import-800000000',
+  fields: { getTextInputValue: () => '{"pulls":[]}' } as unknown as ModalSubmitInteraction['fields'],
+})
+
+const contextMenu = createMockInteraction(UserContextMenuCommandInteraction, {
+  commandName: 'profile',
+  targetUser: createMockUser(),
+})
+```
+
+The override record is typed as `MockProps<T>`, exported from `meocord/testing`. Every key is optional, and a misspelled property name is a compile error.
+
 ### `createChatInputOptions`
 
 Builds a typed options resolver from a plain record. Type routing mirrors the real `CommandInteractionOptionResolver`: wrong-type access returns `null`, `required=true` throws if the option is absent.
@@ -501,6 +528,19 @@ const module = MeoCordTestingModule.create({
 ```
 
 `canActivate: () => true` allows the method to run. `() => false` blocks it. Multiple guards chain fluently.
+
+### `overrideProvider`
+
+Replaces a provider already registered on the module. The value is typed as `Partial<T>`, so a double only has to cover the methods the test exercises — a class with a private member could never be satisfied by a full object literal anyway. A misspelled method name is still a compile error.
+
+```typescript
+const module = MeoCordTestingModule.create({
+  controllers: [GreetingSlashController],
+  providers: [{ provide: GreetingService, useValue: realGreetingService }],
+})
+  .overrideProvider(GreetingService).useValue({ buildGreeting: createMockFn() })
+  .compile()
+```
 
 ### Full example
 
