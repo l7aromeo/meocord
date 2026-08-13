@@ -50,6 +50,13 @@ export interface CommandMetadata<T extends string = string> {
   type: CommandType
   regex?: RegExp
   dynamicParams?: T[]
+  /**
+   * How specific this pattern is; higher wins when more than one route matches the
+   * same customId. A greedy parameter can overlap a more literal sibling —
+   * `gi-profile-{uuid:*}-{uid}` also matches an id meant for
+   * `gi-profile-summary-{ownerId}-{uid}` — so dispatch cannot rely on declaration order.
+   */
+  specificity?: number
 }
 
 export type CommandInteractionType<
