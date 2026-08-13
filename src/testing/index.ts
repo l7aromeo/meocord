@@ -8,6 +8,7 @@ export { MeoCordTestingModule, TestingModule, TestingModuleBuilder } from './meo
 export type { Provider, ValueProvider, ClassProvider, TestingModuleOptions } from './meocord-testing-module.js'
 
 export {
+  createMock,
   createMockInteraction,
   createChatInputOptions,
   createMockUser,

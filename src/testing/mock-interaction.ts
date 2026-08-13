@@ -382,6 +382,108 @@ export function createMockInteraction<T extends object>(
 }
 
 // ---------------------------------------------------------------------------
+// createMock — class-free mock for services and interfaces
+// ---------------------------------------------------------------------------
+
+/**
+ * A mock fn that also answers property access with another one, so a nested call
+ * like `cache.store.flush()` works without declaring `store` up front.
+ *
+ * stubDeep cannot serve this: it decides between a mock fn and a nested object by
+ * looking up the prototype chain, and a service double has no prototype to read.
+ * Everything here is callable instead, which is the right default when the shape
+ * being mocked is an interface that erases at runtime.
+ */
+function stubCallable(): Mock {
+  const fn = createMockFn()
+  const nested = new Map<string, Mock>()
+
+  return new Proxy(fn, {
+    get(target, prop) {
+      if (typeof prop === 'symbol') return Reflect.get(target, prop, target)
+
+      const key = prop as string
+
+      // Never thenable — otherwise awaiting a mock hangs on itself
+      if (key === 'then') return undefined
+
+      // The mock's own API (`mock`, `mockReturnValue`, `_isMockFunction`, …) and
+      // the function intrinsics pass straight through.
+      if (key in target) return Reflect.get(target, prop, target)
+
+      if (!nested.has(key)) nested.set(key, stubCallable())
+      return nested.get(key) as Mock
+    },
+
+    set(target, prop, value) {
+      Object.defineProperty(target, prop, { value, writable: true, enumerable: true, configurable: true })
+      return true
+    },
+  }) as Mock
+}
+
+/**
+ * Creates a mock of any type, with no runtime class required.
+ *
+ * `createMockInteraction` needs a class to build a prototype chain from, which is
+ * what makes `instanceof` and the real type guards work. A service double needs
+ * none of that, and frequently has no class to pass at all — an injected
+ * dependency may be an interface, which does not exist at runtime.
+ *
+ * Every property is a mock fn, created on first access and cached, so a double
+ * only has to declare what the test actually cares about. The result is assignable
+ * to `T`, so it can be handed to `useValue` or a constructor without a cast.
+ *
+ * Properties supplied through {@link MockProps} are used as given rather than
+ * wrapped, so call assertions do not apply to them.
+ *
+ * @example
+ * ```ts
+ * const notifications = createMock<NotificationService>()
+ * notifications.notify.mockResolvedValue('sent')
+ *
+ * const module = MeoCordTestingModule.create({
+ *   controllers: [AlertController],
+ *   providers: [{ provide: NotificationService, useValue: notifications }],
+ * }).compile()
+ *
+ * expect(notifications.notify).toHaveBeenCalledWith('hello')
+ * ```
+ */
+export function createMock<T extends object>(props?: MockProps<T>): DeepMocked<T> {
+  const target: Record<string, unknown> = {}
+
+  if (props !== undefined) {
+    for (const [key, value] of Object.entries(props)) {
+      Object.defineProperty(target, key, { value, writable: true, enumerable: true, configurable: true })
+    }
+  }
+
+  const stubs = new Map<string, Mock>()
+
+  return new Proxy(target, {
+    get(instance, prop) {
+      if (typeof prop === 'symbol') return Reflect.get(instance, prop, instance)
+
+      const key = prop as string
+
+      if (key === 'then') return undefined
+
+      // An explicitly supplied prop wins over the auto-stub.
+      if (Object.prototype.hasOwnProperty.call(instance, key)) return Reflect.get(instance, prop, instance)
+
+      if (!stubs.has(key)) stubs.set(key, stubCallable())
+      return stubs.get(key) as Mock
+    },
+
+    set(instance, prop, value) {
+      Object.defineProperty(instance, prop, { value, writable: true, enumerable: true, configurable: true })
+      return true
+    },
+  }) as unknown as DeepMocked<T>
+}
+
+// ---------------------------------------------------------------------------
 // Convenience wrappers for common discord.js classes
 // ---------------------------------------------------------------------------
 

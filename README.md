@@ -513,6 +513,29 @@ edited.delete  // → a mock fn
 expect(msg.delete).toHaveBeenCalledTimes(1)
 ```
 
+### `createMock`
+
+Mocks any type without a runtime class — use it for the services a controller depends on. `createMockInteraction` needs a class to build a prototype chain from, which is what makes `instanceof` and the real type guards work; a service double needs none of that, and an injected dependency may be an interface that does not exist at runtime at all.
+
+Every property is a mock fn, created on first access, so a double only declares what the test cares about. The result is assignable to `T`, so it goes straight into `useValue` with no cast — which matters because a class holding a `private` member (a logger, say) can never be satisfied by an object literal.
+
+```typescript
+import { createMock, MeoCordTestingModule } from 'meocord/testing'
+import { GreetingService } from '@src/services/greeting.service.js'
+
+const greetingService = createMock<GreetingService>()
+greetingService.buildGreeting.mockResolvedValue('Hello, Alice!')
+
+const module = MeoCordTestingModule.create({
+  controllers: [GreetingSlashController],
+  providers: [{ provide: GreetingService, useValue: greetingService }],
+}).compile()
+
+expect(greetingService.buildGreeting).toHaveBeenCalledWith('Alice')
+```
+
+Nested access works without declaring the shape first — `cache.store.flush()` is a mock fn on a mock fn. Properties passed as `createMock<T>({ ... })` are used exactly as given rather than wrapped, so call assertions do not apply to those.
+
 ### `overrideGuard`
 
 Replaces a guard class in the DI container with a stub. No guard dependencies need to be provided.

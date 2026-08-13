@@ -15,6 +15,7 @@ import {
 } from 'discord.js'
 import {
   createChatInputOptions,
+  createMock,
   createMockInteraction,
   createMockUser,
   type DeepMocked,
@@ -119,6 +120,43 @@ describe('createChatInputOptions', () => {
     expectTypeOf(
       createMockInteraction(ChatInputCommandInteraction, { options: createChatInputOptions({ name: 'Alice' }) }),
     ).toExtend<ChatInputCommandInteraction>()
+  })
+})
+
+describe('createMock', () => {
+  class NotificationService {
+    private readonly prefix = '[bot] '
+
+    async notify(message: string): Promise<string> {
+      return this.prefix + message
+    }
+  }
+
+  interface Cache {
+    get(key: string): string | null
+  }
+
+  // The point of the helper. A class with a private member can never be satisfied
+  // by an object literal, so without this every service double needs a cast.
+  it('is assignable to the class it mocks', () => {
+    expectTypeOf(createMock<NotificationService>()).toExtend<NotificationService>()
+  })
+
+  it('is assignable to an interface, which has no runtime class', () => {
+    expectTypeOf(createMock<Cache>()).toExtend<Cache>()
+  })
+
+  it('keeps the mock API on methods', () => {
+    expectTypeOf(createMock<NotificationService>().notify.mockResolvedValue).toBeFunction()
+  })
+
+  it('keeps the real call signature on methods', () => {
+    expectTypeOf(createMock<Cache>().get('k')).toEqualTypeOf<string | null>()
+  })
+
+  it('rejects a prop the type does not declare', () => {
+    // @ts-expect-error `notifi` is not a method on NotificationService.
+    createMock<NotificationService>({ notifi: async () => '' })
   })
 })
 

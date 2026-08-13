@@ -34,6 +34,7 @@ import {
 import {
   createMockInteraction,
   createChatInputOptions,
+  createMock,
   createMockUser,
   createMockClient,
   createMockGuild,
@@ -1181,5 +1182,79 @@ describe('createMockChannel', () => {
     const channel = createMockChannel(TextChannel)
     ;(channel.threads as any).fetch.mockRejectedValue(new Error('not found'))
     await expect((channel.threads as any).fetch('thread-123')).rejects.toThrow('not found')
+  })
+})
+
+// createMockInteraction needs a class to build a prototype chain from. A service
+// double has no such requirement and often no runtime class at all -- an injected
+// dependency may be an interface. createMock covers that case: every method is a
+// mock fn, nothing is a real instance of anything.
+describe('createMock', () => {
+  class NotificationService {
+    private readonly prefix = '[bot] '
+
+    async notify(message: string): Promise<string> {
+      return this.prefix + message
+    }
+
+    async broadcast(message: string): Promise<string> {
+      return this.prefix + message
+    }
+  }
+
+  interface Cache {
+    get(key: string): string | null
+    nested: { flush(): void }
+  }
+
+  it('auto-stubs every method as a mock fn', () => {
+    const service = createMock<NotificationService>()
+
+    expect(vi.isMockFunction(service.notify)).toBe(true)
+    expect(vi.isMockFunction(service.broadcast)).toBe(true)
+  })
+
+  it('records calls so assertions work normally', async () => {
+    const service = createMock<NotificationService>()
+
+    await service.notify('hello')
+
+    expect(service.notify).toHaveBeenCalledWith('hello')
+    expect(service.notify).toHaveBeenCalledTimes(1)
+  })
+
+  it('takes a return value per method', async () => {
+    const service = createMock<NotificationService>()
+    service.notify.mockResolvedValue('[bot] hello')
+
+    await expect(service.notify('hello')).resolves.toBe('[bot] hello')
+  })
+
+  it('works for an interface, which has no runtime class to pass', () => {
+    const cache = createMock<Cache>()
+
+    expect(vi.isMockFunction(cache.get)).toBe(true)
+  })
+
+  it('stubs nested objects rather than returning undefined', () => {
+    const cache = createMock<Cache>()
+
+    expect(vi.isMockFunction(cache.nested.flush)).toBe(true)
+  })
+
+  it('applies construction-time props', async () => {
+    const service = createMock<NotificationService>({ notify: async () => 'from props' })
+
+    await expect(service.notify('hello')).resolves.toBe('from props')
+  })
+
+  it('keeps each mock independent between instances', () => {
+    const a = createMock<NotificationService>()
+    const b = createMock<NotificationService>()
+
+    void a.notify('only a')
+
+    expect(a.notify).toHaveBeenCalledTimes(1)
+    expect(b.notify).not.toHaveBeenCalled()
   })
 })
