@@ -1,0 +1,186 @@
+/**
+ * MeoCord Framework
+ * Copyright (c) 2025 Ukasyah Rahmatullah Zada
+ * SPDX-License-Identifier: MIT
+ */
+
+import { vi } from 'vitest'
+import { createMockFn, isMockFunction } from './mock-fn.js'
+
+/**
+ * These assert parity with jest and vitest, which is the whole promise of this
+ * module. Each case is run against `vi.fn()` as well, so the expectation is not
+ * taken on trust — if vitest ever changed, the parity test would fail too.
+ */
+describe('createMockFn', () => {
+  describe('persistent behaviour is last-wins, as in jest and vitest', () => {
+    it('mockImplementation overrides an earlier mockReturnValue', () => {
+      const reference = vi.fn()
+      reference.mockReturnValue(1)
+      reference.mockImplementation(() => 2)
+      expect(reference()).toBe(2)
+
+      const mock = createMockFn()
+      mock.mockReturnValue(1)
+      mock.mockImplementation(() => 2)
+      expect(mock()).toBe(2)
+    })
+
+    it('mockReturnValue overrides an earlier mockImplementation', () => {
+      const reference = vi.fn()
+      reference.mockImplementation(() => 1)
+      reference.mockReturnValue(2)
+      expect(reference()).toBe(2)
+
+      const mock = createMockFn()
+      mock.mockImplementation(() => 1)
+      mock.mockReturnValue(2)
+      expect(mock()).toBe(2)
+    })
+
+    it('mockRejectedValue overrides an earlier mockResolvedValue', async () => {
+      const reference = vi.fn()
+      reference.mockResolvedValue('resolved')
+      reference.mockRejectedValue(new Error('rejected'))
+      await expect(reference()).rejects.toThrow('rejected')
+
+      const mock = createMockFn()
+      mock.mockResolvedValue('resolved')
+      mock.mockRejectedValue(new Error('rejected'))
+      await expect(mock()).rejects.toThrow('rejected')
+    })
+
+    it('mockResolvedValue overrides an earlier mockRejectedValue', async () => {
+      const reference = vi.fn()
+      reference.mockRejectedValue(new Error('rejected'))
+      reference.mockResolvedValue('resolved')
+      await expect(reference()).resolves.toBe('resolved')
+
+      const mock = createMockFn()
+      mock.mockRejectedValue(new Error('rejected'))
+      mock.mockResolvedValue('resolved')
+      await expect(mock()).resolves.toBe('resolved')
+    })
+
+    it('mockImplementation overrides an earlier mockResolvedValue', async () => {
+      const reference = vi.fn()
+      reference.mockResolvedValue('resolved')
+      reference.mockImplementation(async () => 'from impl')
+      await expect(reference()).resolves.toBe('from impl')
+
+      const mock = createMockFn()
+      mock.mockResolvedValue('resolved')
+      mock.mockImplementation(async () => 'from impl')
+      await expect(mock()).resolves.toBe('from impl')
+    })
+
+    it('overrides the implementation passed to the factory', () => {
+      const mock = createMockFn(() => 'from factory')
+      expect(mock()).toBe('from factory')
+
+      mock.mockReturnValue('from mockReturnValue')
+      expect(mock()).toBe('from mockReturnValue')
+    })
+  })
+
+  describe('once-values share a single queue, consumed in call order', () => {
+    it('interleaves mockReturnValueOnce and mockImplementationOnce in the order declared', () => {
+      const reference = vi.fn()
+      reference.mockReturnValueOnce(1).mockImplementationOnce(() => 2)
+      expect([reference(), reference()]).toEqual([1, 2])
+
+      const mock = createMockFn()
+      mock.mockReturnValueOnce(1).mockImplementationOnce(() => 2)
+      expect([mock(), mock()]).toEqual([1, 2])
+    })
+
+    it('interleaves mockImplementationOnce and mockReturnValueOnce in the order declared', () => {
+      const reference = vi.fn()
+      reference.mockImplementationOnce(() => 1).mockReturnValueOnce(2)
+      expect([reference(), reference()]).toEqual([1, 2])
+
+      const mock = createMockFn()
+      mock.mockImplementationOnce(() => 1).mockReturnValueOnce(2)
+      expect([mock(), mock()]).toEqual([1, 2])
+    })
+
+    it('interleaves resolved and rejected once-values in the order declared', async () => {
+      const mock = createMockFn()
+      mock.mockResolvedValueOnce('first').mockRejectedValueOnce(new Error('second'))
+
+      await expect(mock()).resolves.toBe('first')
+      await expect(mock()).rejects.toThrow('second')
+    })
+
+    it('falls back to the persistent behaviour once the queue is drained', () => {
+      const reference = vi.fn()
+      reference.mockReturnValue('persistent')
+      reference.mockReturnValueOnce('once')
+      expect([reference(), reference()]).toEqual(['once', 'persistent'])
+
+      const mock = createMockFn()
+      mock.mockReturnValue('persistent')
+      mock.mockReturnValueOnce('once')
+      expect([mock(), mock()]).toEqual(['once', 'persistent'])
+    })
+
+    it('returns undefined when the queue is drained and nothing persistent is set', () => {
+      const mock = createMockFn()
+      mock.mockReturnValueOnce('once')
+
+      expect(mock()).toBe('once')
+      expect(mock()).toBeUndefined()
+    })
+  })
+
+  describe('reset semantics', () => {
+    it('mockReset clears the persistent behaviour and the queue', () => {
+      const mock = createMockFn()
+      mock.mockReturnValue('persistent')
+      mock.mockReturnValueOnce('once')
+
+      mock.mockReset()
+
+      expect(mock()).toBeUndefined()
+    })
+
+    it('mockClear keeps the behaviour and clears only the call record', () => {
+      const mock = createMockFn()
+      mock.mockReturnValue('kept')
+      mock()
+
+      mock.mockClear()
+
+      expect(mock.mock.calls).toHaveLength(0)
+      expect(mock()).toBe('kept')
+    })
+  })
+
+  describe('recording', () => {
+    it('records arguments and results in order', () => {
+      const mock = createMockFn((n: number) => n * 2)
+
+      mock(1)
+      mock(2)
+
+      expect(mock.mock.calls).toEqual([[1], [2]])
+      expect(mock.mock.results.map(r => r.value)).toEqual([2, 4])
+    })
+
+    it('records a throw as a throw result and still propagates it', () => {
+      const mock = createMockFn(() => {
+        throw new Error('boom')
+      })
+
+      expect(() => mock()).toThrow('boom')
+      expect(mock.mock.results[0].type).toBe('throw')
+    })
+
+    it('is recognised as a mock by both isMockFunction implementations', () => {
+      const mock = createMockFn()
+
+      expect(isMockFunction(mock)).toBe(true)
+      expect(vi.isMockFunction(mock)).toBe(true)
+    })
+  })
+})
