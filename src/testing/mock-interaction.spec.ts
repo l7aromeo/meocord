@@ -429,6 +429,76 @@ describe('createMockInteraction', () => {
       ;(interaction as any).options = customOptions
       expect((interaction as any).options.getSubcommand()).toBe('ping')
     })
+
+    // discord.js declares targetUser / targetMessage as prototype getters with no
+    // setter. A plain assignment against a getter-only accessor is a no-op, so the
+    // write has to shadow the accessor with an own data property or test setup
+    // silently vanishes and the later read falls through to an empty auto-stub.
+    it('a write to a prototype getter shadows it with an own value', () => {
+      const interaction = createMockInteraction(UserContextMenuCommandInteraction)
+      const target = createMockUser()
+      ;(interaction as any).targetUser = target
+      expect((interaction as any).targetUser).toBe(target)
+    })
+
+    it('a write to a prototype getter is visible to prototype methods reading it', () => {
+      const interaction = createMockInteraction(MessageContextMenuCommandInteraction)
+      const message = createMockMessage()
+      ;(interaction as any).targetMessage = message
+      expect((interaction as any).targetMessage).toBe(message)
+    })
+  })
+
+  // Properties that discord.js declares `readonly` cannot be assigned once the
+  // returned type is assignable to the real class. Passing them at construction
+  // keeps setup type-safe without reaching for a cast.
+  describe('initial props', () => {
+    it('applies a plain property', () => {
+      const interaction = createMockInteraction(ButtonInteraction, { customId: 'gi-profile-1-2' })
+      expect(interaction.customId).toBe('gi-profile-1-2')
+    })
+
+    it('applies a property discord.js declares readonly', () => {
+      const interaction = createMockInteraction(ModalSubmitInteraction, { customId: 'gi-wish-import-1' })
+      expect(interaction.customId).toBe('gi-wish-import-1')
+    })
+
+    it('applies a property backed by a prototype getter', () => {
+      const target = createMockUser()
+      const interaction = createMockInteraction(UserContextMenuCommandInteraction, { targetUser: target })
+      expect(interaction.targetUser).toBe(target)
+    })
+
+    it('leaves the auto-stub in place for properties not passed', () => {
+      const interaction = createMockInteraction(ButtonInteraction, { customId: 'x' })
+      expect(interaction.reply).toBeTypeOf('function')
+    })
+
+    it('does not disturb the type guards', () => {
+      const interaction = createMockInteraction(ButtonInteraction, { customId: 'x' })
+      expect(interaction.isButton()).toBe(true)
+    })
+  })
+
+  // These assert a compile-time contract, so the gate is `tsc --noEmit -p
+  // tsconfig.test.json`, not the runtime assertion. A mock that cannot be handed
+  // to the code under test without a cast pushes one cast into every call site.
+  describe('assignability to the real discord.js class', () => {
+    it('is accepted where the real class is expected, without a cast', () => {
+      const interaction = createMockInteraction(ButtonInteraction, { customId: 'gi-profile-1-2' })
+      const handler = (received: ButtonInteraction): string => received.customId
+
+      expect(handler(interaction)).toBe('gi-profile-1-2')
+    })
+
+    it('keeps the mock API on methods after narrowing to the real class', async () => {
+      const interaction = createMockInteraction(ButtonInteraction, { customId: 'x' })
+      interaction.reply.mockResolvedValue(undefined as never)
+
+      await (interaction as ButtonInteraction).reply({ content: 'hi' })
+
+      expect(interaction.reply).toHaveBeenCalledWith({ content: 'hi' })
+    })
   })
 })
 
