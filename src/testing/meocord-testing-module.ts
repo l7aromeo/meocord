@@ -51,9 +51,16 @@ export class TestingModuleBuilder {
 
   constructor(private readonly options: TestingModuleOptions) {}
 
-  overrideProvider<T>(token: ServiceIdentifier<T>): { useValue: (value: T) => TestingModuleBuilder } {
+  /**
+   * A double covers the methods under test, not the whole class — and a class
+   * with any private member (a service holding a logger, say) can never be
+   * satisfied by an object literal at all. `Partial<T>` still rejects a
+   * misspelled method name, which is the check that actually earns its keep.
+   * Matches `overrideGuard`, which has always taken `Partial<GuardInterface>`.
+   */
+  overrideProvider<T>(token: ServiceIdentifier<T>): { useValue: (value: Partial<T>) => TestingModuleBuilder } {
     return {
-      useValue: (value: T) => {
+      useValue: (value: Partial<T>) => {
         this.overrides.set(token, { provide: token, useValue: value })
         return this
       },
