@@ -6,15 +6,19 @@
 
 import { vi } from 'vitest'
 
+// Logger is constructed with `new`, so the implementation has to be a class or
+// function — vitest 4 refuses to construct an arrow.
 vi.mock('@src/common/index.js', () => ({
-  Logger: vi.fn().mockImplementation(() => ({
-    log: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    debug: vi.fn(),
-    info: vi.fn(),
-    verbose: vi.fn(),
-  })),
+  Logger: vi.fn(
+    class {
+      log = vi.fn()
+      error = vi.fn()
+      warn = vi.fn()
+      debug = vi.fn()
+      info = vi.fn()
+      verbose = vi.fn()
+    },
+  ),
 }))
 
 vi.mock('@src/util/index.js', () => ({

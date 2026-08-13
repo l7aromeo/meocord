@@ -34,15 +34,20 @@ vi.mock('child_process', () => ({
   exec: mockExec,
 }))
 
+// Logger is constructed with `new`, so the implementation has to be a class or
+// function — vitest 4 refuses to construct an arrow. The shared log/error mocks
+// stay shared: every instance points at the same two functions.
 vi.mock('@src/common/index.js', () => ({
-  Logger: vi.fn().mockImplementation(() => ({
-    log: mockLoggerLog,
-    error: mockLoggerError,
-    warn: vi.fn(),
-    info: vi.fn(),
-    debug: vi.fn(),
-    verbose: vi.fn(),
-  })),
+  Logger: vi.fn(
+    class {
+      log = mockLoggerLog
+      error = mockLoggerError
+      warn = vi.fn()
+      info = vi.fn()
+      debug = vi.fn()
+      verbose = vi.fn()
+    },
+  ),
 }))
 
 const {
