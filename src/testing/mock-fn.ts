@@ -86,14 +86,16 @@ export function isMockFunction(fn: unknown): fn is MockInstance {
  * fn.mock.calls             // → [[2], [2]]
  */
 export function createMockFn<T extends (...args: any[]) => any = (...args: any[]) => any>(impl?: T): MockedFunction<T> {
+  // One persistent implementation and one queue of single-use ones, which is how
+  // jest and vitest model this. mockReturnValue, mockResolvedValue,
+  // mockRejectedValue and mockImplementation all write the same slot, so the last
+  // call wins; the four `*Once` variants all push onto the same queue, so they are
+  // consumed in the order they were declared regardless of which kind they are.
+  // Keeping a slot per kind instead gave a fixed precedence, where a stored
+  // resolved value beat a later mockRejectedValue and the override was silently
+  // dropped.
   let currentImpl: ((...args: any[]) => any) | undefined = impl as ((...args: any[]) => any) | undefined
-  let returnOnce: any[] = []
-  let returnValue: { set: boolean; value: any } = { set: false, value: undefined }
-  let resolvedOnce: any[] = []
-  let resolvedValue: { set: boolean; value: any } = { set: false, value: undefined }
-  let rejectedOnce: any[] = []
-  let rejectedValue: { set: boolean; value: any } = { set: false, value: undefined }
-  const implOnce: ((...args: any[]) => any)[] = []
+  let onceQueue: ((...args: any[]) => any)[] = []
   let name = 'vi.fn'
 
   const calls: any[][] = []
@@ -107,20 +109,8 @@ export function createMockFn<T extends (...args: any[]) => any = (...args: any[]
     let type: 'return' | 'throw' = 'return'
     let value: any
     try {
-      if (implOnce.length > 0) {
-        value = implOnce.shift()!.apply(this, args)
-      } else if (returnOnce.length > 0) {
-        value = returnOnce.shift()
-      } else if (returnValue.set) {
-        value = returnValue.value
-      } else if (resolvedOnce.length > 0) {
-        value = Promise.resolve(resolvedOnce.shift())
-      } else if (resolvedValue.set) {
-        value = Promise.resolve(resolvedValue.value)
-      } else if (rejectedOnce.length > 0) {
-        value = Promise.reject(rejectedOnce.shift())
-      } else if (rejectedValue.set) {
-        value = Promise.reject(rejectedValue.value)
+      if (onceQueue.length > 0) {
+        value = onceQueue.shift()!.apply(this, args)
       } else if (currentImpl !== undefined) {
         value = currentImpl.apply(this, args)
       } else {
@@ -156,27 +146,27 @@ export function createMockFn<T extends (...args: any[]) => any = (...args: any[]
   Object.defineProperty(mockFn, 'mock', { value: mock, enumerable: false })
 
   mockFn.mockReturnValue = ((v: any) => {
-    returnValue = { set: true, value: v }
+    currentImpl = () => v
     return mockFn
   }) as MockInstance<T>['mockReturnValue']
   mockFn.mockReturnValueOnce = ((v: any) => {
-    returnOnce.push(v)
+    onceQueue.push(() => v)
     return mockFn
   }) as MockInstance<T>['mockReturnValueOnce']
   mockFn.mockResolvedValue = ((v: any) => {
-    resolvedValue = { set: true, value: v }
+    currentImpl = () => Promise.resolve(v)
     return mockFn
   }) as MockInstance<T>['mockResolvedValue']
   mockFn.mockResolvedValueOnce = ((v: any) => {
-    resolvedOnce.push(v)
+    onceQueue.push(() => Promise.resolve(v))
     return mockFn
   }) as MockInstance<T>['mockResolvedValueOnce']
   mockFn.mockRejectedValue = ((v: any) => {
-    rejectedValue = { set: true, value: v }
+    currentImpl = () => Promise.reject(v)
     return mockFn
   }) as MockInstance<T>['mockRejectedValue']
   mockFn.mockRejectedValueOnce = ((v: any) => {
-    rejectedOnce.push(v)
+    onceQueue.push(() => Promise.reject(v))
     return mockFn
   }) as MockInstance<T>['mockRejectedValueOnce']
   mockFn.mockImplementation = ((fn: any) => {
@@ -184,7 +174,7 @@ export function createMockFn<T extends (...args: any[]) => any = (...args: any[]
     return mockFn
   }) as MockInstance<T>['mockImplementation']
   mockFn.mockImplementationOnce = ((fn: any) => {
-    implOnce.push(fn)
+    onceQueue.push(fn)
     return mockFn
   }) as MockInstance<T>['mockImplementationOnce']
   mockFn.mockClear = (() => {
@@ -197,13 +187,7 @@ export function createMockFn<T extends (...args: any[]) => any = (...args: any[]
     calls.length = 0
     results.length = 0
     instances.length = 0
-    returnOnce = []
-    returnValue = { set: false, value: undefined }
-    resolvedOnce = []
-    resolvedValue = { set: false, value: undefined }
-    rejectedOnce = []
-    rejectedValue = { set: false, value: undefined }
-    implOnce.length = 0
+    onceQueue = []
     currentImpl = impl as ((...args: any[]) => any) | undefined
     return mockFn
   }) as MockInstance<T>['mockReset']
