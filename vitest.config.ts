@@ -36,6 +36,15 @@ export default defineConfig({
     // instead, and each test file runs in an isolated worker so spies don't leak.
     restoreMocks: false,
     include: ['src/**/*.spec.ts'],
+    // Type-level behaviour is erased before a runtime test can observe it, so
+    // the assertions in *.test-d.ts run through tsc instead. Negative cases use
+    // @ts-expect-error, which fails once the rejected form starts compiling —
+    // that is what stops a regression here from passing silently.
+    typecheck: {
+      enabled: true,
+      include: ['src/**/*.test-d.ts'],
+      tsconfig: './tsconfig.test.json',
+    },
     coverage: {
       // istanbul (not v8) — v8 coverage needs Node's inspector API, which Bun
       // doesn't implement. Istanbul instruments at transform time and works

@@ -44,7 +44,21 @@ import {
  * Recursively transforms all methods of T into MockedFunction and all
  * nested objects into DeepMocked. Depth cap at 5 prevents infinite recursion
  * on circular discord.js types (e.g. Guild ↔ GuildMember).
- * -readonly removes readonly modifiers so test setup can write any property.
+ *
+ * Intersected with `T` so the mock is accepted wherever the real class is
+ * expected. A mapped type alone can never be: it iterates `keyof T`, and the
+ * private members classes use as brands — discord.js stamps
+ * `private readonly _cacheType` on `BaseInteraction` — are not in `keyof T`.
+ * Without the intersection every call site has to launder the mock through
+ * `as unknown as T`, which defeats the point of typing it at all.
+ *
+ * The intersection is honest rather than a convenient lie: the object really is
+ * `Object.create(Class.prototype)`, so its prototype chain is the real one, and
+ * TypeScript `private` is erased at runtime.
+ *
+ * `readonly` survives from the `T` side, so properties the class declares
+ * readonly cannot be assigned after construction. Pass those to the factory as
+ * {@link MockProps} instead.
  */
 export type DeepMocked<T, Depth extends number[] = []> = Depth['length'] extends 5
   ? T
@@ -54,7 +68,29 @@ export type DeepMocked<T, Depth extends number[] = []> = Depth['length'] extends
         : T[K] extends object
           ? DeepMocked<T[K], [...Depth, 0]>
           : T[K]
-    }
+    } & T
+
+/**
+ * Property overrides accepted at construction by the mock factories.
+ *
+ * Setup belongs here rather than in a post-construction assignment: the returned
+ * mock is assignable to the real discord.js class, so anything that class declares
+ * `readonly` — `ModalSubmitInteraction#customId`, `#fields`, `MessageComponentInteraction#message`
+ * — cannot be written afterwards without a cast.
+ */
+export type MockProps<T> = {
+  // Method-valued keys stay loose on purpose. discord.js `Base` declares
+  // `valueOf(): string`, and an object literal carries `Object.prototype.valueOf`
+  // (`() => Object`), so a precise signature here rejects every literal on a
+  // property nobody is trying to override. Overriding a method is better done
+  // through the returned mock's `.mockImplementation()` anyway.
+  //
+  // Object-valued keys take `T[K]` with no DeepMocked branch: DeepMocked<X> is
+  // an intersection containing X, so `DeepMocked<X> | X` collapses to X. Keeping
+  // the branch would only make the compiler instantiate the recursion again for
+  // every nested property.
+  -readonly [K in keyof T]?: T[K] extends (...args: any[]) => any ? (...args: any[]) => any : T[K]
+}
 
 // ---------------------------------------------------------------------------
 // stubDeep — Proxy that auto-creates a mock fn on any property access
@@ -109,8 +145,12 @@ function stubDeep(instance: object, externalStubs?: Map<string, StubValue>): obj
       return stub
     },
 
+    // defineProperty rather than assignment: many discord.js properties are
+    // prototype getters with no setter (targetUser, targetMessage, createdAt),
+    // and a plain write against one of those is a silent no-op. Defining an own
+    // data property shadows the accessor, which is what test setup means.
     set(target, prop, value) {
-      Reflect.set(target, prop, value, target)
+      Object.defineProperty(target, prop, { value, writable: true, enumerable: true, configurable: true })
       return true
     },
   })
@@ -223,7 +263,10 @@ function findPrototypeMethod(instance: object, name: string): ((...args: unknown
  * await interaction.reply({}) // throws — already replied
  * ```
  */
-export function createMockInteraction<T extends object>(Class: InteractionClass<T>): DeepMocked<T> {
+export function createMockInteraction<T extends object>(
+  Class: InteractionClass<T>,
+  props?: MockProps<T>,
+): DeepMocked<T> {
   const instance = Object.create(Class.prototype) as Record<string, unknown>
   const stubs = new Map<string, Mock>()
 
@@ -322,6 +365,15 @@ export function createMockInteraction<T extends object>(Class: InteractionClass<
           instance.deferred = true
         }),
       )
+    }
+  }
+
+  // Applied last so an explicit prop wins over the type fields and the reply
+  // state machine. defineProperty rather than assignment for the same reason the
+  // Proxy uses it: several of these shadow a getter-only prototype accessor.
+  if (props !== undefined) {
+    for (const [key, value] of Object.entries(props)) {
+      Object.defineProperty(instance, key, { value, writable: true, enumerable: true, configurable: true })
     }
   }
 
