@@ -13,7 +13,13 @@ import {
   User,
   UserContextMenuCommandInteraction,
 } from 'discord.js'
-import { createMockInteraction, createMockUser, type DeepMocked, type MockProps } from './mock-interaction.js'
+import {
+  createChatInputOptions,
+  createMockInteraction,
+  createMockUser,
+  type DeepMocked,
+  type MockProps,
+} from './mock-interaction.js'
 import type { MockedFunction } from './mock-fn.js'
 
 /**
@@ -97,6 +103,22 @@ describe('MockProps', () => {
   it('leaves every property optional', () => {
     expectTypeOf<MockProps<ButtonInteraction>>().toExtend<Record<string, never> | object>()
     expectTypeOf(createMockInteraction(ButtonInteraction, {})).toExtend<ButtonInteraction>()
+  })
+})
+
+// The single most common line of setup in a slash-command test. It has to work
+// without a cast, or the cast spreads to every chat-input spec in every project.
+describe('createChatInputOptions', () => {
+  it('assigns to interaction.options without a cast', () => {
+    const interaction = createMockInteraction(ChatInputCommandInteraction)
+    interaction.options = createChatInputOptions({ name: 'Alice' })
+    expectTypeOf(interaction.options.getString('name')).toEqualTypeOf<string | null>()
+  })
+
+  it('is accepted as a construction-time prop', () => {
+    expectTypeOf(
+      createMockInteraction(ChatInputCommandInteraction, { options: createChatInputOptions({ name: 'Alice' }) }),
+    ).toExtend<ChatInputCommandInteraction>()
   })
 })
 

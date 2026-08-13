@@ -33,6 +33,7 @@ import {
   ThreadMemberManager,
   User,
   UserManager,
+  type CacheType,
   type Channel,
 } from 'discord.js'
 
@@ -603,7 +604,16 @@ export interface ChatInputOptions {
  * interaction.options.getNumber('uid') // → 12345678
  * ```
  */
-export function createChatInputOptions(opts: ChatInputOptions = {}): DeepMocked<CommandInteractionOptionResolver> {
+// `any` is the default rather than `CacheType` because TypeScript types a generic
+// class's `prototype` with `any` for its parameters, and createMockInteraction infers
+// T from exactly that — `createMockInteraction(ChatInputCommandInteraction)` produces
+// an interaction whose `options` is `CommandInteractionOptionResolver<any>`. Defaulting
+// to `CacheType` instead makes CacheTypeReducer widen getChannel's return with a `null`
+// the target rejects, and the resolver stops being assignable to the property it exists
+// to fill. Pass Cached explicitly when the interaction under test is pinned.
+export function createChatInputOptions<Cached extends CacheType = any>(
+  opts: ChatInputOptions = {},
+): DeepMocked<CommandInteractionOptionResolver<Cached>> {
   const { subcommandGroup = null, subcommand = null, ...values } = opts
 
   function resolveOrThrow<U>(name: string, value: U | null, required?: boolean): U | null {
@@ -660,5 +670,5 @@ export function createChatInputOptions(opts: ChatInputOptions = {}): DeepMocked<
   base.getMember = createMockFn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
   base.getMentionable = createMockFn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
 
-  return stubDeep(base) as unknown as DeepMocked<CommandInteractionOptionResolver>
+  return stubDeep(base) as unknown as DeepMocked<CommandInteractionOptionResolver<Cached>>
 }
