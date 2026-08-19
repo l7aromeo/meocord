@@ -15,6 +15,9 @@ dist/
 # Logs
 *.log
 
+# Scratch application built by scripts/verify-generated.ts
+.generated-check/
+
 # Cache and temporary files
 .prettier_cache/
 .eslintcache

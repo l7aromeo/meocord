@@ -153,7 +153,7 @@ const specConfig = {
 }
 
 export default [
-  { ignores: ['dist/*', 'rollup.config.js'] },
+  { ignores: ['dist/*', '.generated-check/*', 'rollup.config.js'] },
   ...recommendedTypeScriptConfigs,
   eslintConfigPrettier,
   typescriptConfig,

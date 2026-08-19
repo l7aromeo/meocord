@@ -902,9 +902,12 @@ npx meocord start --prod
 2. Create a feature branch: `git checkout -b feat/your-feature`
 3. Commit with conventional commits: `git commit -m "feat: add X"`
 4. Run `bun run lint` and `bun run test` before pushing
-5. Push and open a pull request against `main`
+5. If you touched anything under `src/bin/`, also run `bun run build && bun run verify:generated`
+6. Push and open a pull request against `main`
 
-Include a description of what changed and why, and add tests for any new behaviour. Use `fix:` / `feat:` / `docs:` prefixes so [semantic-release](https://semantic-release.gitbook.io/) can version correctly — `test:` commits do not trigger a release.
+Include a description of what changed and why, and add tests for any new behaviour.
+
+`verify:generated` generates one controller of every type through the built CLI — flat and nested, in separate throwaway projects — and typechecks the result against the published package. Rendering a template says nothing about whether the code it produces compiles, and two bugs lived behind exactly that gap. It runs in CI as part of the Build job, so you do not have to remember it; running it locally is just faster than waiting. Use `fix:` / `feat:` / `docs:` prefixes so [semantic-release](https://semantic-release.gitbook.io/) can version correctly — `test:` commits do not trigger a release.
 
 ---
 
