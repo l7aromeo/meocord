@@ -28,7 +28,7 @@ export class ControllerGeneratorHelper {
   generateController(args: { controllerName: string | undefined }, type: ControllerType): void {
     const { parts, kebabCaseName, className } = validateAndFormatName(args.controllerName)
     const controllerDir = path.join(process.cwd(), 'src', 'controllers', type, ...parts)
-    const template = this.buildControllerTemplate(className, type)
+    const template = this.buildControllerTemplate(className, type, parts)
 
     this.generateControllerStructure(controllerDir, kebabCaseName, className, type, template)
   }
@@ -40,8 +40,8 @@ export class ControllerGeneratorHelper {
    * @returns The populated template string for the controller.
    * @throws Will throw an error if the controller type is unsupported.
    */
-  buildControllerTemplate(className: string, type: ControllerType): string {
-    const templateConfig = this.getTemplateConfig(type, className)
+  buildControllerTemplate(className: string, type: ControllerType, parts: string[] = []): string {
+    const templateConfig = this.getTemplateConfig(type, className, parts)
     if (!templateConfig) {
       throw new Error(`Unsupported controller type: ${type}`)
     }
@@ -54,7 +54,7 @@ export class ControllerGeneratorHelper {
    * @param className - The name of the controller class.
    * @returns An object containing the template path and variables, or `undefined` if not found.
    */
-  private getTemplateConfig(type: ControllerType, className: string) {
+  private getTemplateConfig(type: ControllerType, className: string, parts: string[] = []) {
     const baseDir = path.resolve(__dirname, '..', 'builder-template', 'controller')
     const templates: Record<ControllerType, string> = {
       [ControllerType.BUTTON]: 'button.controller.template',
@@ -73,7 +73,11 @@ export class ControllerGeneratorHelper {
     }
 
     const template = templates[type] ? path.resolve(baseDir, templates[type]) : undefined
-    return template ? { template, variables: { className } } : undefined
+    // The builder is written beside the controller, so a nested controller name moves
+    // it too. Hard-coding `@src/controllers/<type>/builders/...` only ever pointed at
+    // the top-level one, which for a nested name does not exist.
+    const builderImportPath = ['@src/controllers', type, ...parts, 'builders/sample.builder'].join('/')
+    return template ? { template, variables: { className, builderImportPath } } : undefined
   }
 
   /**
