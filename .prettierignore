@@ -1,0 +1,10 @@
+# Build output and lockfiles are generated; formatting them is churn.
+dist
+bun.lock
+
+# TypeScript and JavaScript are formatted through eslint-plugin-prettier, which
+# applies the same config with the project's lint rules alongside it.
+*.ts
+*.js
+*.mjs
+*.cjs
