@@ -16,7 +16,10 @@
   - [meocord.config.ts](#meocordconfigts)
   - [ESLint](#eslint)
 - [CLI Reference](#cli-reference)
+- [Command Types](#command-types)
 - [Command Parameters](#command-parameters)
+- [Subcommands](#subcommands)
+- [Autocomplete](#autocomplete)
 - [Guards](#guards)
 - [Custom Decorators](#custom-decorators)
 - [Testing](#testing)
@@ -28,7 +31,7 @@
 
 ## Features
 
-- **Decorator-based controllers** — Handle slash commands, buttons, modals, select menus, context menus, messages, and reactions with `@Command`, `@Controller`, and `@UseGuard` decorators. No routing boilerplate.
+- **Decorator-based controllers** — Handle every Discord interaction type — slash commands and their subcommands, autocomplete, buttons, modals, all five select menus, context menus, activity entry points, messages, and reactions — with `@Command`, `@Autocomplete`, `@Controller`, and `@UseGuard` decorators. No routing boilerplate.
 - **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators.
 - **Guard system** — Pre-execution hooks for auth, rate limiting, metrics, and anything else. Apply per-method or per-class with `@UseGuard`. Guards receive the full interaction context.
 - **Full CLI** — `meocord create`, `build`, `start`, `generate`. Scaffolds controllers, services, and guards; handles Webpack builds for both development and production.
@@ -220,13 +223,13 @@ export default [
 npx meocord --help
 ```
 
-| Command    | Alias | Description                          |
-|------------|-------|--------------------------------------|
-| `create`   | —     | Scaffold a new MeoCord application   |
-| `build`    | —     | Compile the application via Webpack  |
-| `start`    | —     | Start the application                |
+| Command    | Alias | Description                            |
+| ---------- | ----- | -------------------------------------- |
+| `create`   | —     | Scaffold a new MeoCord application     |
+| `build`    | —     | Compile the application via Webpack    |
+| `start`    | —     | Start the application                  |
 | `generate` | `g`   | Scaffold controllers, services, guards |
-| `show`     | —     | Display framework info               |
+| `show`     | —     | Display framework info                 |
 
 **Common flags:**
 
@@ -236,7 +239,68 @@ npx meocord build --dev           # development build
 npx meocord start --dev           # dev mode with live-reload
 npx meocord start --build --prod  # production build + start
 npx meocord g co slash "profile"  # generate a slash controller
+npx meocord g co autocomplete "search"  # generate an autocomplete controller
 npx meocord g --help              # list all generator sub-commands
+```
+
+---
+
+## Command Types
+
+`@Command` binds a method to one kind of interaction, and the interaction class the handler receives follows from that. Every type Discord sends is covered.
+
+| `CommandType`             | Handler receives                                                            | Routed by  |
+| ------------------------- | --------------------------------------------------------------------------- | ---------- |
+| `SLASH`                   | `ChatInputCommandInteraction`                                               | name       |
+| `CONTEXT_MENU`            | `UserContextMenuCommandInteraction \| MessageContextMenuCommandInteraction` | name       |
+| `PRIMARY_ENTRY_POINT`     | `PrimaryEntryPointCommandInteraction`                                       | name       |
+| `BUTTON`                  | `ButtonInteraction`                                                         | `customId` |
+| `SELECT_MENU`             | `StringSelectMenuInteraction`                                               | `customId` |
+| `USER_SELECT_MENU`        | `UserSelectMenuInteraction`                                                 | `customId` |
+| `ROLE_SELECT_MENU`        | `RoleSelectMenuInteraction`                                                 | `customId` |
+| `MENTIONABLE_SELECT_MENU` | `MentionableSelectMenuInteraction`                                          | `customId` |
+| `CHANNEL_SELECT_MENU`     | `ChannelSelectMenuInteraction`                                              | `customId` |
+| `MODAL_SUBMIT`            | `ModalSubmitInteraction`                                                    | `customId` |
+
+Autocomplete has its own decorator — see [Autocomplete](#autocomplete).
+
+The four entity select menus are separate types because Discord sends them as separate component types carrying different resolved data. Declaring `SELECT_MENU` for a user select menu is a type error, not a silent mismatch:
+
+```typescript
+@Command('assign/{taskId}', CommandType.USER_SELECT_MENU)
+async assign(interaction: UserSelectMenuInteraction, { taskId }) {
+  await interaction.reply(`Assigned to ${interaction.users.map(user => user.username).join(', ')}`)
+}
+```
+
+### Slash command options
+
+A slash handler's second argument holds the options the command was invoked with, keyed by name. Entity options arrive resolved — a `User`, `Role`, `GuildChannel` or `Attachment`, not the snowflake:
+
+```typescript
+@Command('kick', KickCommandBuilder)
+async kick(interaction: ChatInputCommandInteraction, { target, reason }) {
+  // target is a User, reason is a string
+  await interaction.reply(`Kicked ${target.username}: ${reason}`)
+}
+```
+
+### Entry point commands
+
+Activity entry points have no builder class in `@discordjs/builders`, so their builder returns the REST body directly. `handler: AppHandler` is what makes Discord send the interaction to the bot at all:
+
+```typescript
+@CommandBuilder(CommandType.PRIMARY_ENTRY_POINT)
+export class LaunchCommandBuilder {
+  build() {
+    return {
+      type: ApplicationCommandType.PrimaryEntryPoint as const,
+      name: 'launch',
+      description: 'Launch the activity',
+      handler: EntryPointCommandHandlerType.AppHandler,
+    }
+  }
+}
 ```
 
 ---
@@ -303,6 +367,76 @@ Where two patterns trade a literal for a parameter in opposite positions — `a/
 
 An unroutable interaction replies "Command not found!" to the user and logs a warning naming the `customId` or command that failed to match. If a control appears dead, that log line is the first place to look.
 
+Autocomplete cannot be replied to, so an unclaimed option is answered with an empty list instead and the warning names the command and option.
+
+A handler that throws is logged and gets the same treatment — except when it had already replied or deferred, in which case MeoCord leaves the response alone rather than sending a second one Discord would reject.
+
+### Failures never take the bot down
+
+discord.js calls event listeners without awaiting them, so anything that rejects out of one is an unhandled rejection — which terminates the process by default. MeoCord wraps every listener it registers, so one bad interaction, one unresolvable controller, or one reaction on a deleted message costs that event and nothing else. The error is logged against the event that produced it, so a genuine misconfiguration still shows up on the first interaction rather than staying hidden.
+
+Where the failure happened before the handler ran, the user is still told: a command interaction gets the error reply, an autocomplete gets its window closed. A reaction whose message can no longer be fetched — deleted, or in a channel the bot lost access to — is skipped quietly, since that is an ordinary outcome rather than a fault.
+
+---
+
+## Subcommands
+
+Discord sends `/settings notify email` as a single interaction named `settings`, so a command with subcommands would otherwise have one handler for all of them. Name the full path — parts separated by a space, the way Discord displays them — to give each subcommand its own method:
+
+```typescript
+@Controller()
+export class SettingsController {
+  // The builder is declared once, on the command itself.
+  @Command('settings', SettingsCommandBuilder)
+  async settings(interaction: ChatInputCommandInteraction) {
+    await interaction.reply('Pick a subcommand.')
+  }
+
+  @Command('settings notify email', CommandType.SLASH)
+  async notifyEmail(interaction: ChatInputCommandInteraction, { enabled }) {
+    await interaction.reply(`Email notifications ${enabled ? 'on' : 'off'}`)
+  }
+}
+```
+
+Subcommand handlers take the plain `CommandType.SLASH` and no builder: the subcommand is already described by the parent's builder, and registering a second command for it would be rejected by Discord. Options are flattened, so `notifyEmail` receives `{ enabled }` rather than the wrapping subcommand.
+
+The full path is always tried before the bare command name, whatever order the controllers were registered in, and a subcommand nobody claimed falls back to the command's own handler. A group is never dropped on the way down — `settings notify email` does not fall back to `settings email`, because another group could declare its own `email`.
+
+---
+
+## Autocomplete
+
+Autocomplete is a separate interaction from the command it belongs to: Discord sends it while the user is still typing, it is answered with `respond()` rather than a reply, and the window closes after three seconds. `@Autocomplete` binds a handler to it.
+
+```typescript
+@Controller()
+export class SearchController {
+  constructor(private catalog: CatalogService) {}
+
+  @Autocomplete('search', 'query')
+  async completeQuery(interaction: AutocompleteInteraction) {
+    const { value } = interaction.options.getFocused(true)
+    const matches = this.catalog.find(value).slice(0, 25)
+
+    await interaction.respond(matches.map(name => ({ name, value: name })))
+  }
+}
+```
+
+The option must be declared with `.setAutocomplete(true)` on the command builder — that is what makes Discord send the interaction.
+
+Omit the option name to handle every option of a command and branch on `getFocused(true)` yourself. An option-specific handler always wins over a command-wide one, so the two can coexist. The first argument is the command path, so subcommands work the same way as they do for `@Command`:
+
+```typescript
+@Autocomplete('settings notify email', 'address')
+async completeAddress(interaction: AutocompleteInteraction, { region }) { /* … */ }
+```
+
+The second argument holds the options already filled in, which is what lets one option's suggestions depend on another's value.
+
+If no handler claims an option, MeoCord answers with an empty list and logs which command and option are missing one — a visibly empty menu rather than a client stuck loading.
+
 ---
 
 ## Guards
@@ -359,9 +493,7 @@ import { UseGuard } from 'meocord/decorator'
 import { DefaultGuard, RateLimiterGuard } from '@src/guards/index.js'
 
 export const Protected = (limit = 5) =>
-  applyDecorators(
-    UseGuard(DefaultGuard, { provide: RateLimiterGuard, params: { limit } }),
-  )
+  applyDecorators(UseGuard(DefaultGuard, { provide: RateLimiterGuard, params: { limit } }))
 ```
 
 ```typescript
@@ -441,7 +573,11 @@ Creates a smart mock instance of any discord.js class. The full prototype chain 
 
 **Type guards run real logic** — `isButton()`, `isRepliable()`, `isChatInputCommand()`, etc. are backed by the actual discord.js prototype methods. The right fields (`type`, `componentType`, `commandType`) are set based on the class you pass in, so no manual `.mockReturnValue(true)` setup is needed. All type guard methods are still mock functions and can be overridden per test.
 
-**Reply state machine** — for repliable interactions, `replied` and `deferred` start as `false`. Calling `reply()` or `deferReply()` twice throws, just like a real interaction. `followUp()`, `editReply()`, and `deleteReply()` throw if called before any reply. The ephemeral flag is tracked on `interaction.ephemeral`. All reply methods are still mock functions so call assertions work normally.
+**Reply state machine** — for repliable interactions, `replied` and `deferred` start as `false`. Calling `reply()` or `deferReply()` twice throws, just like a real interaction. `followUp()`, `editReply()`, and `deleteReply()` throw if called before any reply. The ephemeral flag is tracked on `interaction.ephemeral`, read from `flags` only — the deprecated `ephemeral: true` reply option is not honoured. All reply methods are still mock functions so call assertions work normally.
+
+Autocomplete interactions are not repliable but get the equivalent for their own single-shot response: `responded` starts as `false`, `respond()` sets it, and a second call throws.
+
+Guards discord.js has deprecated are deliberately left unwired — `isSelectMenu()` returns `undefined` rather than reproducing behaviour the library is removing. Use `isStringSelectMenu()`.
 
 > **Framework-agnostic** — the mocks returned here are plain mock functions that stamp `_isMockFunction` and expose `.mock.calls`, the exact contract both `jest` and `vitest` check. Use them with either framework's `expect(...).toHaveBeenCalledWith(...)` / `toHaveBeenCalledTimes(...)` — no jest or vitest import is required to produce them. For typed stubs in your own code, import `MockedFunction`, `createMockFn`, and `DeepMocked` from `meocord/testing`.
 
@@ -453,17 +589,17 @@ const interaction = createMockInteraction(ChatInputCommandInteraction)
 
 // instanceof works at every level
 expect(interaction).toBeInstanceOf(ChatInputCommandInteraction) // true
-expect(interaction).toBeInstanceOf(BaseInteraction)            // true
+expect(interaction).toBeInstanceOf(BaseInteraction) // true
 
 // type guards work — no manual setup needed
 interaction.isChatInputCommand() // → true
-interaction.isRepliable()        // → true
-interaction.isButton()           // → false
+interaction.isRepliable() // → true
+interaction.isButton() // → false
 
 // reply state machine
-interaction.replied   // → false
+interaction.replied // → false
 await interaction.reply({ content: 'hi' })
-interaction.replied   // → true
+interaction.replied // → true
 await interaction.reply({ content: 'again' }) // → throws (already replied)
 
 // still a mock fn — call assertions work normally
@@ -519,14 +655,37 @@ interaction.options = createChatInputOptions({
   duration: 7,
 })
 
-interaction.options.getSubcommandGroup()       // → 'admin'
-interaction.options.getSubcommand(true)        // → 'ban'
-interaction.options.getUser('user')            // → { id: '123456789' }
-interaction.options.getString('reason')        // → 'spam'
-interaction.options.getNumber('duration')      // → 7
-interaction.options.getString('duration')      // → null (wrong type)
-interaction.options.getNumber('x', true)       // → throws (absent + required)
+interaction.options.getSubcommandGroup() // → 'admin'
+interaction.options.getSubcommand(true) // → 'ban'
+interaction.options.getUser('user') // → { id: '123456789' }
+interaction.options.getString('reason') // → 'spam'
+interaction.options.getNumber('duration') // → 7
+interaction.options.getString('duration') // → null (wrong type)
+interaction.options.getNumber('x', true) // → throws (absent + required)
 ```
+
+`data` is materialised too, nested under the subcommand path exactly as Discord sends it. That is what the framework reads to build a handler's second argument, so a params assertion sees the same record production would:
+
+```typescript
+interaction.options.data
+// → [{ name: 'admin', type: SubcommandGroup, options: [{ name: 'ban', type: Subcommand, options: [...] }] }]
+```
+
+Entity options are set on both `value` (the snowflake) and their own resolved field, so a handler that reads only one of the two is caught rather than silently passing. Pass a `createMockInteraction(User, …)`, `Role`, channel or `Attachment` mock and it lands on `user`/`role`/`channel`/`attachment`.
+
+For autocomplete, `focused` names the option being typed:
+
+```typescript
+const interaction = createMockInteraction(AutocompleteInteraction)
+interaction.options = createChatInputOptions({ focused: 'query', query: 'ad' })
+
+interaction.options.getFocused(true) // → { name: 'query', value: 'ad', focused: true, … }
+interaction.options.getFocused() // → 'ad'
+```
+
+Omit it and `getFocused` throws, the same as the real resolver does when no option is focused.
+
+`subcommandGroup`, `subcommand` and `focused` are reserved keys — an option of your own cannot use those names.
 
 All methods are mock functions — override any per test with `.mockReturnValue()`.
 
@@ -535,18 +694,12 @@ All methods are mock functions — override any per test with `.mockReturnValue(
 Convenience wrappers for common discord.js classes. All methods are auto-stubbed as mock functions. Nested managers (`client.users`, `guild.members`, etc.) are independent nested stubs.
 
 ```typescript
-import {
-  createMockFn,
-  createMockUser,
-  createMockClient,
-  createMockGuild,
-  createMockChannel,
-} from 'meocord/testing'
+import { createMockFn, createMockUser, createMockClient, createMockGuild, createMockChannel } from 'meocord/testing'
 import { TextChannel } from 'discord.js'
 
-const user    = createMockUser()
-const client  = createMockClient()
-const guild   = createMockGuild()
+const user = createMockUser()
+const client = createMockClient()
+const guild = createMockGuild()
 const channel = createMockChannel(TextChannel)
 
 // override nested manager methods per test (createMockFn works with vitest and jest matchers)
@@ -564,15 +717,15 @@ import { createMockMessage } from 'meocord/testing'
 
 const msg = createMockMessage()
 
-msg.deleted  // → false
+msg.deleted // → false
 await msg.delete()
-msg.deleted  // → true
-await msg.delete()          // → throws (already deleted)
+msg.deleted // → true
+await msg.delete() // → throws (already deleted)
 await msg.edit({ content: 'x' }) // → throws (already deleted)
 
 // edit() and reply() resolve to a new Message mock
 const edited = await createMockMessage().edit({ content: 'updated' })
-edited.delete  // → a mock fn
+edited.delete // → a mock fn
 
 // still a mock fn — assertions work
 expect(msg.delete).toHaveBeenCalledTimes(1)
@@ -610,8 +763,10 @@ const module = MeoCordTestingModule.create({
   controllers: [GreetingSlashController],
   providers: [{ provide: GreetingService, useValue: mockGreetingService }],
 })
-  .overrideGuard(MetricsGuard).useValue({ canActivate: () => true })
-  .overrideGuard(RateLimiterGuard).useValue({ canActivate: () => true })
+  .overrideGuard(MetricsGuard)
+  .useValue({ canActivate: () => true })
+  .overrideGuard(RateLimiterGuard)
+  .useValue({ canActivate: () => true })
   .compile()
 ```
 
@@ -626,7 +781,8 @@ const module = MeoCordTestingModule.create({
   controllers: [GreetingSlashController],
   providers: [{ provide: GreetingService, useValue: realGreetingService }],
 })
-  .overrideProvider(GreetingService).useValue({ buildGreeting: createMockFn() })
+  .overrideProvider(GreetingService)
+  .useValue({ buildGreeting: createMockFn() })
   .compile()
 ```
 
@@ -656,7 +812,8 @@ describe('GreetingSlashController', () => {
       controllers: [GreetingSlashController],
       providers: [{ provide: GreetingService, useValue: greetingService }],
     })
-      .overrideGuard(RateLimiterGuard).useValue({ canActivate: () => true })
+      .overrideGuard(RateLimiterGuard)
+      .useValue({ canActivate: () => true })
       .compile()
 
     controller = module.get(GreetingSlashController)
