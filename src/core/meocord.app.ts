@@ -6,6 +6,7 @@
 
 import {
   type ActivityOptions,
+  type AutocompleteInteraction,
   type CacheType,
   Client,
   type Interaction,
@@ -19,6 +20,7 @@ import { type Container } from 'inversify'
 import { Logger } from '@src/common/index.js'
 import {
   findAmbiguousRoutes,
+  getAutocompleteHandlers,
   getCommandMap,
   getMessageHandlers,
   getReactionHandlers,
@@ -26,10 +28,18 @@ import {
 } from '@src/decorator/controller.decorator.js'
 import { sample } from 'lodash-es'
 import { EmbedUtil } from '@src/util/index.js'
+import {
+  describeInteraction,
+  focusedOptionName,
+  hasCustomId,
+  matchesCommandType,
+  resolveCommandPaths,
+  resolveOptionParams,
+} from '@src/util/interaction.util.js'
 import { CommandType } from '@src/enum/index.js'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 import { type ReactionHandlerOptions } from '@src/interface/index.js'
-import { type CommandMetadata } from '@src/interface/command-decorator.interface.js'
+import { type AutocompleteMetadata, type CommandMetadata } from '@src/interface/command-decorator.interface.js'
 import Table from 'cli-table3'
 
 interface ComponentRoute {
@@ -38,15 +48,31 @@ interface ComponentRoute {
   pattern: string
 }
 
-/** Identifies an unmatched interaction for the log, by whichever field would have routed it. */
-function describeUnmatched(interaction: Interaction): string {
-  if (interaction.isChatInputCommand() || interaction.isContextMenuCommand()) {
-    return `command "${interaction.commandName}"`
+interface AutocompleteRoute {
+  controllerClass: new (...args: any[]) => any
+  meta: AutocompleteMetadata
+}
+
+/**
+ * The name a builder registers under, which is what Discord deduplicates on.
+ *
+ * Read from the built payload rather than from the `@Command` argument: a builder is
+ * free to name the command something other than the string it was handed, and it is
+ * the payload Discord sees.
+ */
+function commandNameOf(builder: NonNullable<CommandMetadata['builder']>): string | undefined {
+  try {
+    const json =
+      typeof (builder as { toJSON?: () => unknown }).toJSON === 'function'
+        ? ((builder as { toJSON: () => unknown }).toJSON() as { name?: string })
+        : (builder as { name?: string })
+    return typeof json?.name === 'string' ? json.name : undefined
+  } catch {
+    // A builder missing a required field throws from toJSON. Surfacing that is the
+    // registration call's job, where it is reported against the command Discord
+    // rejected -- deduplication should not be what turns it into a startup crash.
+    return undefined
   }
-  if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
-    return `customId "${interaction.customId}"`
-  }
-  return `interaction type ${interaction.type}`
 }
 
 export class MeoCordApp {
@@ -68,6 +94,45 @@ export class MeoCordApp {
     process.on('SIGTERM', () => this.gracefulShutdown())
   }
 
+  /**
+   * Runs an event handler so a failure inside it cannot take the process down.
+   *
+   * discord.js calls listeners without awaiting them, so a rejection escaping one has
+   * nothing left to settle it: Node reports an unhandled rejection, which terminates
+   * the process by default. Losing the whole bot because one reaction landed on a
+   * deleted message, or one controller could not be resolved, is a worse failure than
+   * the one that caused it -- every other user is served by the same process.
+   *
+   * Nothing is silenced. The error is logged against the event that produced it, so a
+   * genuine misconfiguration -- an unbound controller, a missing dependency -- shows
+   * up on the very first interaction rather than staying hidden.
+   *
+   * @param event - The gateway event being handled, named in the log.
+   * @param run - The handler to run.
+   */
+  private async runListener(event: string, run: () => Promise<void>): Promise<void> {
+    try {
+      await run()
+    } catch (error) {
+      this.logger.error(`Unhandled error while handling "${event}":`, error)
+    }
+  }
+
+  /**
+   * Rotates the bot's activity.
+   *
+   * Guarded separately from {@link runListener}: this runs on a timer rather than an
+   * event, and a throw from a timer callback is an uncaught exception no listener
+   * wrapper can reach.
+   */
+  private updateActivity(): void {
+    try {
+      this.bot.user?.setActivity(sample(this.activities))
+    } catch (error) {
+      this.logger.error('Could not update the bot activity:', error)
+    }
+  }
+
   private getInstance(controllerClass: new (...args: any[]) => any): any {
     if (!this.controllerInstancesCache.has(controllerClass)) {
       this.controllerInstancesCache.set(controllerClass, this.container.get(controllerClass))
@@ -79,29 +144,30 @@ export class MeoCordApp {
     try {
       this.logger.log('Starting bot...')
 
-      this.bot.on('clientReady', async () => {
-        this.activityInterval = setInterval(() => {
-          this.bot.user?.setActivity(sample(this.activities))
-        }, 10000)
+      this.bot.on('clientReady', () =>
+        this.runListener('clientReady', async () => {
+          this.activityInterval = setInterval(() => this.updateActivity(), 10000)
+          await this.registerCommands()
+        }),
+      )
 
-        await this.registerCommands()
-      })
+      this.bot.on('interactionCreate', interaction =>
+        this.runListener('interactionCreate', () => this.handleInteraction(interaction)),
+      )
 
-      this.bot.on('interactionCreate', async interaction => {
-        await this.handleInteraction(interaction)
-      })
+      this.bot.on('messageCreate', message => this.runListener('messageCreate', () => this.handleMessage(message)))
 
-      this.bot.on('messageCreate', async message => {
-        await this.handleMessage(message)
-      })
+      this.bot.on('messageReactionAdd', (reaction, user) =>
+        this.runListener('messageReactionAdd', () =>
+          this.handleReaction(reaction, { user, action: ReactionHandlerAction.ADD }),
+        ),
+      )
 
-      this.bot.on('messageReactionAdd', async (reaction, user) => {
-        await this.handleReaction(reaction, { user, action: ReactionHandlerAction.ADD })
-      })
-
-      this.bot.on('messageReactionRemove', async (reaction, user) => {
-        await this.handleReaction(reaction, { user, action: ReactionHandlerAction.REMOVE })
-      })
+      this.bot.on('messageReactionRemove', (reaction, user) =>
+        this.runListener('messageReactionRemove', () =>
+          this.handleReaction(reaction, { user, action: ReactionHandlerAction.REMOVE }),
+        ),
+      )
 
       await this.bot.login(this.discordToken)
       this.logger.log('Bot is online!')
@@ -111,7 +177,11 @@ export class MeoCordApp {
   }
 
   async registerCommands() {
-    const builders: NonNullable<CommandMetadata['builder']>[] = []
+    // Keyed by registered name: a command whose subcommands live in separate methods
+    // declares the same name more than once, and sending its builder twice makes
+    // Discord reject the whole payload. The first builder wins, and a second one that
+    // is not the same object is reported rather than silently dropped.
+    const buildersByName = new Map<string, NonNullable<CommandMetadata['builder']>>()
 
     for (const controllerClass of this.controllerClasses) {
       const instance = this.getInstance(controllerClass)
@@ -123,12 +193,23 @@ export class MeoCordApp {
         if (!Array.isArray(commandMetadataArray)) continue
 
         for (const { builder, type } of commandMetadataArray) {
-          if (type in CommandType && builder) {
-            builders.push(builder)
+          if (!(type in CommandType) || !builder) continue
+
+          const registeredName = commandNameOf(builder) ?? commandName
+          const existing = buildersByName.get(registeredName)
+          if (existing === undefined) {
+            buildersByName.set(registeredName, builder)
+          } else if (existing !== builder) {
+            this.logger.warn(
+              `Command "${registeredName}" is built more than once; only the first builder is registered. ` +
+                `Declare the builder on one @Command and give the others the plain CommandType.`,
+            )
           }
         }
       }
     }
+
+    const builders = [...buildersByName.values()]
 
     try {
       if (this.bot.application) {
@@ -148,9 +229,11 @@ export class MeoCordApp {
                 ? 'UserContextMenu'
                 : json?.type === 3
                   ? 'MessageContextMenu'
-                  : builder instanceof SlashCommandBuilder
-                    ? 'SlashCommand'
-                    : 'Command'
+                  : json?.type === 4
+                    ? 'PrimaryEntryPoint'
+                    : builder instanceof SlashCommandBuilder
+                      ? 'SlashCommand'
+                      : 'Command'
           const name = json?.name || (builder as any).name
           const subCommands =
             Array.isArray(json?.options) && json.options.length
@@ -204,7 +287,17 @@ export class MeoCordApp {
    * refusing to start would turn a latent mis-route into an outage on upgrade.
    */
   private reportAmbiguousRoutes(routes: ComponentRoute[]): void {
-    const collisions = findAmbiguousRoutes(routes.map(({ pattern }) => pattern))
+    // Grouped by command type first: dispatch only considers routes whose component
+    // type matches the interaction, so a button and a select menu sharing a pattern
+    // are never in competition and reporting them would be a false alarm.
+    const byType = new Map<CommandType, string[]>()
+    for (const { meta, pattern } of routes) {
+      const patterns = byType.get(meta.type) ?? []
+      patterns.push(pattern)
+      byType.set(meta.type, patterns)
+    }
+
+    const collisions = [...byType.values()].flatMap(patterns => findAmbiguousRoutes(patterns))
     if (collisions.length === 0) return
 
     this.logger.warn(
@@ -215,12 +308,74 @@ export class MeoCordApp {
     )
   }
 
-  private async handleInteraction(interaction: Interaction<CacheType>) {
+  /**
+   * Every `@Autocomplete` handler, ordered so an option-specific handler is found
+   * before a command-wide one.
+   *
+   * Cached alongside the component table: autocomplete fires on every keystroke, and
+   * rebuilding the list per keystroke would put reflection on the hottest path the
+   * framework has.
+   */
+  private autocompleteRoutes?: AutocompleteRoute[]
+
+  private getAutocompleteRoutes(): AutocompleteRoute[] {
+    if (this.autocompleteRoutes) return this.autocompleteRoutes
+
+    const routes: AutocompleteRoute[] = []
+    for (const controllerClass of this.controllerClasses) {
+      for (const meta of getAutocompleteHandlers(this.getInstance(controllerClass))) {
+        routes.push({ controllerClass, meta })
+      }
+    }
+
+    routes.sort((a, b) => Number(Boolean(b.meta.optionName)) - Number(Boolean(a.meta.optionName)))
+    this.autocompleteRoutes = routes
+    return routes
+  }
+
+  /**
+   * Dispatches an interaction, and makes sure a failure anywhere in that still reaches
+   * the person who triggered it.
+   *
+   * {@link executeCommand} already reports what a handler throws, but everything
+   * *before* the handler can fail too — resolving a controller through the container
+   * is the common case — and a component that fails there would otherwise look dead
+   * with nothing said to the user and nothing in the log.
+   */
+  private async handleInteraction(interaction: Interaction<CacheType>): Promise<void> {
+    try {
+      await this.dispatchInteraction(interaction)
+    } catch (error) {
+      this.logger.error(`Error dispatching ${describeInteraction(interaction)}:`, error)
+
+      // Autocomplete has no reply to fall back on; closing its window is the only
+      // thing that stops the client showing a loading state until it times out.
+      if (interaction.isAutocomplete()) {
+        await this.respondEmpty(interaction)
+        return
+      }
+
+      await this.replyWithError(interaction, 'An error occurred while executing the command.')
+    }
+  }
+
+  private async dispatchInteraction(interaction: Interaction<CacheType>) {
+    // Autocomplete first, and on its own path: it is answered with `respond()` rather
+    // than a reply, it has no customId to route on, and the "Command not found!" reply
+    // the other paths end in cannot be sent to it at all.
+    if (interaction.isAutocomplete()) {
+      await this.handleAutocomplete(interaction)
+      return
+    }
+
     // Component interactions route on a pattern, so they go through the ranked table.
-    // Slash and context-menu commands match their name exactly and cannot overlap.
-    if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
+    // Commands match their registered name exactly and cannot overlap.
+    if (hasCustomId(interaction)) {
       const customId = interaction.customId
       for (const { controllerClass, meta } of this.getComponentRoutes()) {
+        // A button and a select menu may legitimately share a customId shape, so the
+        // pattern alone does not identify the handler -- the component type does.
+        if (!matchesCommandType(meta.type, interaction)) continue
         const match = meta.regex!.exec(customId)
         if (!match) continue
         ;(interaction as Interaction & { dynamicParams: Record<string, string> }).dynamicParams = match.groups ?? {}
@@ -229,22 +384,16 @@ export class MeoCordApp {
       }
     }
 
-    for (const controllerClass of this.controllerClasses) {
-      const controllerInstance = this.getInstance(controllerClass)
-      const commandMap = getCommandMap(controllerInstance)
-      if (!commandMap) continue
+    // Paths are walked outside the controller loop so the full subcommand path always
+    // beats the bare command name, whatever order the controllers were registered in.
+    for (const path of this.resolveNameRoutes(interaction)) {
+      for (const controllerClass of this.controllerClasses) {
+        const controllerInstance = this.getInstance(controllerClass)
+        const commandMap = getCommandMap(controllerInstance)
+        const commandMetadata = commandMap?.[path]?.find(meta => matchesCommandType(meta.type, interaction))
+        if (!commandMetadata) continue
 
-      let commandMetadataArray: CommandMetadata<string>[] | undefined = undefined
-      let commandIdentifier: string | undefined = undefined
-
-      if (interaction.isChatInputCommand() || interaction.isContextMenuCommand()) {
-        commandIdentifier = interaction.commandName
-        commandMetadataArray = commandMap[commandIdentifier]
-      }
-
-      if (commandMetadataArray && commandMetadataArray.length > 0) {
-        const commandMetadata = commandMetadataArray[0]
-        await this.executeCommand(controllerInstance, commandMetadata, interaction, commandIdentifier)
+        await this.executeCommand(controllerInstance, commandMetadata, interaction, path)
         return
       }
     }
@@ -254,13 +403,71 @@ export class MeoCordApp {
     // a customId whose value broke its pattern, or a handler nobody wrote -- stays
     // invisible until somebody reports the dead button.
     this.logger.warn(
-      `No handler matched ${describeUnmatched(interaction)}. Check that a @Command pattern is ` +
+      `No handler matched ${describeInteraction(interaction)}. Check that a @Command pattern is ` +
         `declared for it and that its controller is registered.`,
     )
 
-    if (interaction.isRepliable()) {
-      const embed = EmbedUtil.createErrorEmbed('Command not found!')
-      await interaction.reply({ embeds: [embed], flags: MessageFlagsBitField.Flags.Ephemeral })
+    await this.replyWithError(interaction, 'Command not found!')
+  }
+
+  /**
+   * The names a command interaction can be handled under, most specific first.
+   *
+   * Empty for anything that is not a registered command, which is how a component
+   * whose customId matched no pattern falls through to the unmatched warning instead
+   * of being looked up under a name it does not have.
+   */
+  private resolveNameRoutes(interaction: Interaction<CacheType>): string[] {
+    if (interaction.isChatInputCommand()) return resolveCommandPaths(interaction)
+    if (interaction.isContextMenuCommand() || interaction.isPrimaryEntryPointCommand()) {
+      return [interaction.commandName]
+    }
+    return []
+  }
+
+  /**
+   * Answers an autocomplete interaction from the `@Autocomplete` handler that claims it.
+   *
+   * Discord closes the window after three seconds and shows a loading state until
+   * something arrives, so an unclaimed option is answered with an empty list rather
+   * than left to time out -- a visibly empty menu is a better failure than a stuck one,
+   * and the warning says which option is missing a handler.
+   */
+  private async handleAutocomplete(interaction: AutocompleteInteraction<CacheType>): Promise<void> {
+    const focusedName = focusedOptionName(interaction)
+
+    for (const path of resolveCommandPaths(interaction)) {
+      for (const { controllerClass, meta } of this.getAutocompleteRoutes()) {
+        if (meta.commandPath !== path) continue
+        if (meta.optionName !== undefined && meta.optionName !== focusedName) continue
+
+        try {
+          const controllerInstance = this.getInstance(controllerClass)
+          this.logger.log('[AUTOCOMPLETE]', `[${path}]`, `[${meta.methodName}]`)
+          await controllerInstance[meta.methodName](interaction, resolveOptionParams(interaction))
+        } catch (error) {
+          this.logger.error(`Error handling ${describeInteraction(interaction)}:`, error)
+          await this.respondEmpty(interaction)
+        }
+        return
+      }
+    }
+
+    this.logger.warn(
+      `No handler matched ${describeInteraction(interaction)}. Declare an @Autocomplete handler for it, ` +
+        `or drop setAutocomplete(true) from the option.`,
+    )
+    await this.respondEmpty(interaction)
+  }
+
+  /** Closes an autocomplete window that nothing else answered. */
+  private async respondEmpty(interaction: AutocompleteInteraction<CacheType>): Promise<void> {
+    if (interaction.responded) return
+    try {
+      await interaction.respond([])
+    } catch (error) {
+      // The three-second window may already have closed, which is not actionable.
+      this.logger.debug(`Could not close autocomplete window: ${String(error)}`)
     }
   }
 
@@ -276,42 +483,44 @@ export class MeoCordApp {
   ): Promise<void> {
     const { methodName, type } = commandMetadata
 
+    // No interaction-type check here: both callers pick the route with
+    // `matchesCommandType` before getting this far, and `@Command` re-checks the
+    // interaction on the way into the handler.
     try {
-      if (
-        (type === CommandType.SLASH && interaction.isChatInputCommand()) ||
-        (type === CommandType.BUTTON && interaction.isButton()) ||
-        (type === CommandType.SELECT_MENU && interaction.isStringSelectMenu()) ||
-        (type === CommandType.CONTEXT_MENU && interaction.isUserContextMenuCommand()) ||
-        (type === CommandType.CONTEXT_MENU && interaction.isMessageContextMenuCommand()) ||
-        (type === CommandType.MODAL_SUBMIT && interaction.isModalSubmit())
-      ) {
-        this.logger.log('[INTERACTION]', `[${CommandType[type]}]`, `[${methodName}]`)
+      this.logger.log('[INTERACTION]', `[${type}]`, `[${methodName}]`)
 
-        let dynamicParams: Record<string, unknown> = {}
+      let dynamicParams: Record<string, unknown> = {}
 
-        if (interaction.isChatInputCommand() && interaction.options) {
-          dynamicParams = interaction.options.data.reduce<Record<string, unknown>>((acc, opt) => {
-            acc[opt.name] = opt.value
-            return acc
-          }, {})
-        } else if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
-          dynamicParams = (interaction as Interaction & { dynamicParams?: Record<string, string> }).dynamicParams ?? {}
-        }
-
-        await controllerInstance[methodName](interaction, dynamicParams)
-        return
+      if (interaction.isChatInputCommand()) {
+        dynamicParams = resolveOptionParams(interaction)
+      } else if (hasCustomId(interaction)) {
+        dynamicParams = (interaction as Interaction & { dynamicParams?: Record<string, string> }).dynamicParams ?? {}
       }
 
-      this.logger.warn(
-        `Interaction type mismatch for command "${commandIdentifier}". Interaction type: ${interaction.type}.`,
-      )
+      await controllerInstance[methodName](interaction, dynamicParams)
     } catch (error) {
       this.logger.error(`Error executing command "${commandIdentifier}":`, error)
+      await this.replyWithError(interaction, 'An error occurred while executing the command.')
+    }
+  }
 
-      if (interaction.isRepliable()) {
-        const embed = EmbedUtil.createErrorEmbed('An error occurred while executing the command.')
-        await interaction.reply({ embeds: [embed], flags: MessageFlagsBitField.Flags.Ephemeral })
-      }
+  /**
+   * Tells the user something went wrong, if the interaction can still hear it.
+   *
+   * A handler that replies and *then* throws is the common shape of a failure, and
+   * replying twice throws in turn -- out of the catch block, where nothing is left to
+   * handle it. Whatever the interaction's state, reporting an error must not be able
+   * to become a second, worse one.
+   */
+  private async replyWithError(interaction: Interaction<CacheType>, message: string): Promise<void> {
+    if (!interaction.isRepliable() || interaction.replied || interaction.deferred) return
+
+    try {
+      const embed = EmbedUtil.createErrorEmbed(message)
+      await interaction.reply({ embeds: [embed], flags: MessageFlagsBitField.Flags.Ephemeral })
+    } catch (error) {
+      // Unknown or already-acknowledged interaction; the user cannot be told anything.
+      this.logger.debug(`Could not deliver the error reply: ${String(error)}`)
     }
   }
 
@@ -355,7 +564,15 @@ export class MeoCordApp {
     reaction: MessageReaction | PartialMessageReaction,
     { user, action }: ReactionHandlerOptions,
   ) {
-    await reaction.message.fetch()
+    // A reaction arrives for messages the bot may no longer be able to read -- deleted,
+    // or in a channel it lost access to -- and `fetch` rejects for all of them. That is
+    // an ordinary outcome rather than a fault, so the reaction is skipped quietly.
+    try {
+      await reaction.message.fetch()
+    } catch (error) {
+      this.logger.debug(`Skipping a reaction whose message could not be fetched: ${String(error)}`)
+      return
+    }
 
     const relevantControllers = this.controllerClasses.filter(controllerClass => {
       const instance = this.getInstance(controllerClass)

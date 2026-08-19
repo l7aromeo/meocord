@@ -1,0 +1,12 @@
+import { RoleSelectMenuInteraction } from 'discord.js'
+import { Controller, Command } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+
+@Controller()
+export class {{className}}RoleSelectMenuController {
+
+  @Command('role-select-menu', CommandType.ROLE_SELECT_MENU)
+  async handleRoleSelectMenu(interaction: RoleSelectMenuInteraction) {
+    await interaction.reply(`Selected: ${interaction.roles.map(role => role.name).join(', ')}`)
+  }
+}

@@ -209,9 +209,12 @@ describe('createMockInteraction', () => {
       expect(interaction.isPrimaryEntryPointCommand()).toBe(true)
     })
 
-    it('StringSelectMenuInteraction auto-returns true for deprecated isSelectMenu()', () => {
+    // `isSelectMenu` is deprecated in discord.js, so the mock deliberately leaves it
+    // unwired rather than reproducing behaviour the library is removing.
+    it('does not wire the deprecated isSelectMenu() guard', () => {
       const interaction = createMockInteraction(StringSelectMenuInteraction)
-      expect(interaction.isSelectMenu()).toBe(true)
+      expect(interaction.isStringSelectMenu()).toBe(true)
+      expect(interaction.isSelectMenu()).toBeUndefined()
     })
 
     it('user can still override type guard return value', () => {

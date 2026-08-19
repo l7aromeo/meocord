@@ -1,0 +1,16 @@
+import { AutocompleteInteraction } from 'discord.js'
+import { Controller, Autocomplete } from 'meocord/decorator'
+
+@Controller()
+export class {{className}}AutocompleteController {
+
+  // The option this completes must be declared with `.setAutocomplete(true)` on the
+  // slash command builder, otherwise Discord never sends the interaction.
+  @Autocomplete('sample-slash', 'query')
+  async completeQuery(interaction: AutocompleteInteraction) {
+    const { value } = interaction.options.getFocused(true)
+    const choices = ['alpha', 'beta', 'gamma'].filter(choice => choice.startsWith(value))
+
+    await interaction.respond(choices.map(choice => ({ name: choice, value: choice })))
+  }
+}

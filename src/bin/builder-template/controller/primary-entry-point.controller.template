@@ -1,0 +1,12 @@
+import { PrimaryEntryPointCommandInteraction } from 'discord.js'
+import { Controller, Command } from 'meocord/decorator'
+import { SampleCommandBuilder } from '@src/controllers/primary-entry-point/builders/sample.builder'
+
+@Controller()
+export class {{className}}PrimaryEntryPointController {
+
+  @Command('sample-entry-point', SampleCommandBuilder)
+  async handleEntryPoint(interaction: PrimaryEntryPointCommandInteraction) {
+    await interaction.reply('Launching the activity.')
+  }
+}
