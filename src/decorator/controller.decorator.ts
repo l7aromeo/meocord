@@ -7,31 +7,28 @@
 import 'reflect-metadata'
 import { injectable } from 'inversify'
 import {
-  ButtonInteraction,
-  ChatInputCommandInteraction,
-  ContextMenuCommandBuilder,
-  ContextMenuCommandInteraction,
+  type AutocompleteInteraction,
   Message,
   MessageReaction,
-  ModalSubmitInteraction,
   type OmitPartialGroupDMChannel,
   type PartialMessageReaction,
-  SlashCommandBuilder,
-  type SlashCommandSubcommandsOnlyBuilder,
-  StringSelectMenuInteraction,
 } from 'discord.js'
 import { CommandType, MetadataKey } from '@src/enum/index.js'
 import { type ReactionHandlerOptions } from '@src/interface/index.js'
 import {
+  type AutocompleteMetadata,
+  type BuildableCommandType,
   type CommandBuilderBase,
   type CommandBuilderConstructor,
   type CommandInteractionType,
   type CommandMetadata,
 } from '@src/interface/command-decorator.interface.js'
+import { isCustomIdRouted, matchesCommandType } from '@src/util/interaction.util.js'
 
 const COMMAND_METADATA_KEY = Symbol('commands')
 const MESSAGE_HANDLER_METADATA_KEY = Symbol('message_handlers')
 const REACTION_HANDLER_METADATA_KEY = Symbol('reaction_handlers')
+const AUTOCOMPLETE_METADATA_KEY = Symbol('autocomplete_handlers')
 
 /**
  * Decorator to register message handlers in the controller.
@@ -189,8 +186,13 @@ function createRegexFromPattern(pattern: string): { regex: RegExp; params: strin
 /**
  * Decorator to register command methods in a controller.
  *
- * @param commandName - The name or pattern of the command.
- * @param builderOrType - A command builder class or a command type from `CommandType`.
+ * @param commandName - What the command is addressed by. Commands registered with
+ *   Discord use their name, and a subcommand its full path — `settings notify email`,
+ *   parts separated by a space, the way Discord displays it. Components use a customId
+ *   pattern, where `{name}` captures one `/`-separated segment.
+ * @param builderOrType - A command builder class, or a `CommandType` for a handler that
+ *   registers nothing of its own: every component, and every subcommand of a command
+ *   whose builder already describes it.
  *
  * @example
  * ```typescript
@@ -199,16 +201,26 @@ function createRegexFromPattern(pattern: string): { regex: RegExp; params: strin
  *   await interaction.reply('This is the help command!')
  * }
  *
- * @Command('stats-{id}', CommandType.BUTTON)
- * public async handleStats(message: ButtonInteraction, { id }) {
- *   await message.reply(`Fetching stats for ID: ${id}`);
+ * @Command('settings notify email', CommandType.SLASH)
+ * public async handleNotifyEmail(interaction: ChatInputCommandInteraction, { enabled }) {
+ *   await interaction.reply(`Email notifications ${enabled ? 'on' : 'off'}`)
+ * }
+ *
+ * @Command('stats/{id}', CommandType.BUTTON)
+ * public async handleStats(interaction: ButtonInteraction, { id }) {
+ *   await interaction.reply(`Fetching stats for ID: ${id}`);
+ * }
+ *
+ * @Command('assign/{taskId}', CommandType.USER_SELECT_MENU)
+ * public async handleAssign(interaction: UserSelectMenuInteraction, { taskId }) {
+ *   await interaction.reply(`Assigned ${interaction.users.size} user(s) to ${taskId}`)
  * }
  * ```
  */
-export function Command<
-  CBC extends CommandType.SLASH | CommandType.CONTEXT_MENU,
-  T extends CommandBuilderConstructor<CBC> | CommandType,
->(commandName: string, builderOrType: T) {
+export function Command<CBC extends BuildableCommandType, T extends CommandBuilderConstructor<CBC> | CommandType>(
+  commandName: string,
+  builderOrType: T,
+) {
   return function <P extends Record<string, any>, R extends Promise<void> | void>(
     target: object,
     propertyKey: string,
@@ -223,14 +235,7 @@ export function Command<
 
     // Wrap original method for interaction type validation
     _descriptor.value = function (interaction, params) {
-      const expectedInteraction =
-        (commandType === CommandType.BUTTON && interaction instanceof ButtonInteraction) ||
-        (commandType === CommandType.SELECT_MENU && interaction instanceof StringSelectMenuInteraction) ||
-        (commandType === CommandType.SLASH && interaction instanceof ChatInputCommandInteraction) ||
-        (commandType === CommandType.CONTEXT_MENU && interaction instanceof ContextMenuCommandInteraction) ||
-        (commandType === CommandType.MODAL_SUBMIT && interaction instanceof ModalSubmitInteraction)
-
-      if (!expectedInteraction) {
+      if (!matchesCommandType(commandType, interaction)) {
         throw new Error(`Invalid interaction type passed to @Command for method: ${propertyKey}`)
       }
 
@@ -240,8 +245,7 @@ export function Command<
     // Retrieve existing metadata or initialize it
     const commands: Record<string, CommandMetadata[]> = Reflect.getMetadata(COMMAND_METADATA_KEY, target) || {}
 
-    let builderInstance:
-      SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder | ContextMenuCommandBuilder | undefined
+    let builderInstance: CommandMetadata['builder']
     let commandType: CommandType
     let regex: RegExp | undefined
     let dynamicParams: string[] = []
@@ -259,7 +263,7 @@ export function Command<
       commandType = builderOrType
     }
 
-    if (commandType !== CommandType.SLASH && commandType !== CommandType.CONTEXT_MENU) {
+    if (isCustomIdRouted(commandType)) {
       const { regex: generatedRegex, params, specificity: patternSpecificity } = createRegexFromPattern(commandName)
       regex = generatedRegex
       dynamicParams = params
@@ -292,6 +296,58 @@ export function Command<
  */
 export function getCommandMap<T extends string>(controller: any): Record<string, CommandMetadata<T>[]> {
   return Reflect.getMetadata(COMMAND_METADATA_KEY, controller)
+}
+
+/**
+ * Decorator to register an autocomplete handler for a chat input command's option.
+ *
+ * Autocomplete is a separate interaction from the command it belongs to, and Discord
+ * sends it while the user is still typing. It is not a `@Command`: nothing is
+ * registered for it — the option's own `setAutocomplete(true)` is what turns it on —
+ * and it is answered with `interaction.respond()` rather than a reply. Leaving it
+ * unhandled is not silent to the user: the client shows a loading state until the
+ * three-second window closes.
+ *
+ * @param commandPath - The command to complete, e.g. `settings` or `settings notify email`
+ *   for a subcommand. Parts are separated by a single space, as Discord displays them.
+ * @param optionName - The option to complete. Omit to handle every option of the command,
+ *   branching on `interaction.options.getFocused(true)`.
+ *
+ * @example
+ * ```typescript
+ * @Autocomplete('search', 'query')
+ * async completeQuery(interaction: AutocompleteInteraction) {
+ *   const { value } = interaction.options.getFocused(true)
+ *   await interaction.respond(this.search(value).map(name => ({ name, value: name })))
+ * }
+ * ```
+ */
+export function Autocomplete<R extends void | Promise<void>>(commandPath: string, optionName?: string) {
+  return function <P extends Record<string, any>>(
+    target: object,
+    propertyKey: string,
+    _descriptor:
+      | TypedPropertyDescriptor<(interaction: AutocompleteInteraction, params: P) => R>
+      | TypedPropertyDescriptor<(interaction: AutocompleteInteraction) => R>,
+  ) {
+    const handlers: AutocompleteMetadata[] = Reflect.getMetadata(AUTOCOMPLETE_METADATA_KEY, target) || []
+    handlers.push({ commandPath, optionName, methodName: propertyKey.toString() })
+    Reflect.defineMetadata(AUTOCOMPLETE_METADATA_KEY, handlers, target)
+  }
+}
+
+/**
+ * Retrieves autocomplete handler metadata from a given controller.
+ *
+ * Handlers naming an option come first, so a command-wide handler acts as the fallback
+ * for options no specific handler claimed rather than shadowing them by declaration order.
+ *
+ * @param controller - The controller class instance.
+ * @returns The registered autocomplete handlers, most specific first.
+ */
+export function getAutocompleteHandlers(controller: any): AutocompleteMetadata[] {
+  const handlers: AutocompleteMetadata[] = Reflect.getMetadata(AUTOCOMPLETE_METADATA_KEY, controller) || []
+  return [...handlers].sort((a, b) => Number(Boolean(b.optionName)) - Number(Boolean(a.optionName)))
 }
 
 /**

@@ -8,7 +8,10 @@ import 'reflect-metadata'
 import { createMockFn, type MockedFunction, type Mock } from './mock-fn.js'
 import {
   ApplicationCommandManager,
+  ApplicationCommandOptionType,
   ApplicationCommandType,
+  Attachment,
+  BaseChannel,
   ChannelManager,
   Client,
   ClientUser,
@@ -26,6 +29,7 @@ import {
   Message,
   MessageManager,
   MessageMentions,
+  Role,
   RoleManager,
   TextChannel,
   ThreadChannel,
@@ -35,6 +39,7 @@ import {
   UserManager,
   type CacheType,
   type Channel,
+  type CommandInteractionOption,
 } from 'discord.js'
 
 // ---------------------------------------------------------------------------
@@ -212,7 +217,9 @@ const TYPE_GUARD_METHODS = [
   'isMentionableSelectMenu',
   'isChannelSelectMenu',
   'isAnySelectMenu',
-  'isSelectMenu',
+  // `isSelectMenu` is intentionally absent: discord.js deprecated it in favour of
+  // `isStringSelectMenu`, and wiring it here would emit a deprecation warning on every
+  // mock that has it on its prototype.
   'isModalSubmit',
   'isAutocomplete',
   'isRepliable',
@@ -302,9 +309,11 @@ export function createMockInteraction<T extends object>(
     const alreadyReplied = () => new Error('The reply to this interaction has already been sent or deferred.')
     const notYetReplied = (method: string) => new Error(`Cannot call ${method}() before replying or deferring.`)
 
+    // Only `flags` is read: the `ephemeral: true` reply option is deprecated in
+    // discord.js, and honouring it here would let a test pass against a call the
+    // library has stopped supporting.
     const hasEphemeralFlag = (options?: Record<string, unknown>): boolean => {
       if (!options) return false
-      if (options.ephemeral === true) return true
       const { flags } = options
       if (typeof flags === 'number') return (flags & 64) !== 0
       if (typeof flags === 'bigint') return (flags & 64n) !== 0n
@@ -367,6 +376,21 @@ export function createMockInteraction<T extends object>(
         }),
       )
     }
+  }
+
+  // Autocomplete is not repliable, but it has a response of its own: Discord accepts
+  // one `respond()` per interaction and rejects the second. Without `responded` set
+  // here it would read as an auto-stubbed object -- truthy -- and any code that checks
+  // it before answering would decide the window was already closed.
+  if (instance.type === InteractionType.ApplicationCommandAutocomplete) {
+    instance.responded = false
+    stubs.set(
+      'respond',
+      createMockFn(async () => {
+        if (instance.responded) throw new Error('The reply to this interaction has already been sent or deferred.')
+        instance.responded = true
+      }),
+    )
   }
 
   // Applied last so an explicit prop wins over the type fields and the reply
@@ -683,6 +707,8 @@ export function createMockMessage(): DeepMocked<Message> {
 export interface ChatInputOptions {
   subcommandGroup?: string | null
   subcommand?: string | null
+  /** The option the user is currently typing, for autocomplete interactions. */
+  focused?: string | null
   [name: string]: string | number | boolean | { id: string } | null | undefined
 }
 
@@ -706,6 +732,67 @@ export interface ChatInputOptions {
  * interaction.options.getNumber('uid') // → 12345678
  * ```
  */
+/** The option type Discord would have sent for a given JavaScript value. */
+function optionTypeOf(value: unknown): ApplicationCommandOptionType {
+  if (typeof value === 'boolean') return ApplicationCommandOptionType.Boolean
+  if (typeof value === 'number') return ApplicationCommandOptionType.Number
+  if (value instanceof User) return ApplicationCommandOptionType.User
+  if (value instanceof GuildMember) return ApplicationCommandOptionType.User
+  if (value instanceof Role) return ApplicationCommandOptionType.Role
+  if (value instanceof BaseChannel) return ApplicationCommandOptionType.Channel
+  if (value instanceof Attachment) return ApplicationCommandOptionType.Attachment
+  if (typeof value === 'object' && value !== null) return ApplicationCommandOptionType.Mentionable
+  return ApplicationCommandOptionType.String
+}
+
+/**
+ * Shapes one supplied option the way the gateway sends it.
+ *
+ * An entity option arrives as a snowflake in `value` *and* as the resolved object on
+ * its own field, and code that reads only one of the two is exactly what this lets a
+ * test catch — so both are set.
+ */
+function toOptionData(name: string, value: ChatInputOptions[string]): CommandInteractionOption {
+  const type = optionTypeOf(value)
+  const isEntity = typeof value === 'object' && value !== null
+
+  const option: Record<string, unknown> = { name, type, value: isEntity ? value.id : value }
+
+  if (value instanceof User) option.user = value
+  else if (value instanceof GuildMember) option.member = value
+  else if (value instanceof Role) option.role = value
+  else if (value instanceof BaseChannel) option.channel = value
+  else if (value instanceof Attachment) option.attachment = value
+  else if (isEntity) option.user = value
+
+  return option as unknown as CommandInteractionOption
+}
+
+/**
+ * Nests the supplied options under the subcommand path they were invoked through,
+ * matching the shape Discord sends rather than a flat list.
+ */
+function buildOptionData(
+  subcommandGroup: string | null,
+  subcommand: string | null,
+  values: Record<string, ChatInputOptions[string]>,
+): CommandInteractionOption[] {
+  const leaves = Object.entries(values).map(([name, value]) => toOptionData(name, value))
+
+  if (subcommand === null) return leaves
+
+  const sub = { name: subcommand, type: ApplicationCommandOptionType.Subcommand, options: leaves }
+  if (subcommandGroup === null) return [sub as unknown as CommandInteractionOption]
+
+  return [
+    {
+      name: subcommandGroup,
+      type: ApplicationCommandOptionType.SubcommandGroup,
+      options: [sub],
+    } as unknown as CommandInteractionOption,
+  ]
+}
+
 // `any` is the default rather than `CacheType` because TypeScript types a generic
 // class's `prototype` with `any` for its parameters, and createMockInteraction infers
 // T from exactly that — `createMockInteraction(ChatInputCommandInteraction)` produces
@@ -716,7 +803,7 @@ export interface ChatInputOptions {
 export function createChatInputOptions<Cached extends CacheType = any>(
   opts: ChatInputOptions = {},
 ): DeepMocked<CommandInteractionOptionResolver<Cached>> {
-  const { subcommandGroup = null, subcommand = null, ...values } = opts
+  const { subcommandGroup = null, subcommand = null, focused = null, ...values } = opts
 
   function resolveOrThrow<U>(name: string, value: U | null, required?: boolean): U | null {
     if (value === null) {
@@ -771,6 +858,17 @@ export function createChatInputOptions<Cached extends CacheType = any>(
   base.getChannel = createMockFn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
   base.getMember = createMockFn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
   base.getMentionable = createMockFn<(name: string, required?: boolean) => { id: string } | null>(getObjectOption)
+
+  base.getFocused = createMockFn((getFull?: boolean) => {
+    if (focused === null) throw new Error('No focused option found.')
+    const option = toOptionData(focused, values[focused] ?? null)
+    return getFull === true ? { ...option, focused: true } : option.value
+  })
+
+  // `data` is what the framework reads to build a handler's params, and it is the one
+  // part of the resolver that is not a method — so it has to be materialised here
+  // rather than auto-stubbed, or every params assertion would see an empty record.
+  base.data = buildOptionData(subcommandGroup, subcommand, values)
 
   return stubDeep(base) as unknown as DeepMocked<CommandInteractionOptionResolver<Cached>>
 }

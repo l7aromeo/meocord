@@ -1,0 +1,26 @@
+import {
+  ApplicationCommandType,
+  ApplicationIntegrationType,
+  EntryPointCommandHandlerType,
+  InteractionContextType,
+} from 'discord.js'
+import { CommandBuilder } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+
+// Entry point commands have no builder class in @discordjs/builders, so the raw REST
+// body is returned instead — MeoCord registers it as-is. `AppHandler` is what makes
+// Discord send the interaction here; `DiscordLaunchActivity` opens the activity without
+// ever reaching the bot.
+@CommandBuilder(CommandType.PRIMARY_ENTRY_POINT)
+export class SampleCommandBuilder {
+  build() {
+    return {
+      type: ApplicationCommandType.PrimaryEntryPoint as const,
+      name: 'sample-entry-point',
+      description: 'Launch the activity',
+      handler: EntryPointCommandHandlerType.AppHandler,
+      integration_types: [ApplicationIntegrationType.GuildInstall],
+      contexts: [InteractionContextType.Guild],
+    }
+  }
+}

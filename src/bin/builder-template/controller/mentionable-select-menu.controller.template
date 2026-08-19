@@ -1,0 +1,12 @@
+import { MentionableSelectMenuInteraction } from 'discord.js'
+import { Controller, Command } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+
+@Controller()
+export class {{className}}MentionableSelectMenuController {
+
+  @Command('mentionable-select-menu', CommandType.MENTIONABLE_SELECT_MENU)
+  async handleMentionableSelectMenu(interaction: MentionableSelectMenuInteraction) {
+    await interaction.reply(`Selected ${interaction.users.size} user(s) and ${interaction.roles.size} role(s).`)
+  }
+}

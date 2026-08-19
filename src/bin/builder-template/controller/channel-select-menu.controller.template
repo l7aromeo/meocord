@@ -1,0 +1,12 @@
+import { ChannelSelectMenuInteraction } from 'discord.js'
+import { Controller, Command } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+
+@Controller()
+export class {{className}}ChannelSelectMenuController {
+
+  @Command('channel-select-menu', CommandType.CHANNEL_SELECT_MENU)
+  async handleChannelSelectMenu(interaction: ChannelSelectMenuInteraction) {
+    await interaction.reply(`Selected: ${interaction.channels.map(channel => channel.toString()).join(', ')}`)
+  }
+}

@@ -60,10 +60,16 @@ export class ControllerGeneratorHelper {
       [ControllerType.BUTTON]: 'button.controller.template',
       [ControllerType.MODAL_SUBMIT]: 'modal-submit.controller.template',
       [ControllerType.SELECT_MENU]: 'select-menu.controller.template',
+      [ControllerType.USER_SELECT_MENU]: 'user-select-menu.controller.template',
+      [ControllerType.ROLE_SELECT_MENU]: 'role-select-menu.controller.template',
+      [ControllerType.MENTIONABLE_SELECT_MENU]: 'mentionable-select-menu.controller.template',
+      [ControllerType.CHANNEL_SELECT_MENU]: 'channel-select-menu.controller.template',
       [ControllerType.REACTION]: 'reaction.controller.template',
       [ControllerType.MESSAGE]: 'message.controller.template',
       [ControllerType.CONTEXT_MENU]: 'context-menu.controller.template',
       [ControllerType.SLASH]: 'slash.controller.template',
+      [ControllerType.AUTOCOMPLETE]: 'autocomplete.controller.template',
+      [ControllerType.PRIMARY_ENTRY_POINT]: 'primary-entry-point.controller.template',
     }
 
     const template = templates[type] ? path.resolve(baseDir, templates[type]) : undefined
@@ -126,6 +132,7 @@ export class ControllerGeneratorHelper {
     const templates: Partial<Record<ControllerType, string>> = {
       [ControllerType.CONTEXT_MENU]: 'context-menu.builder.template',
       [ControllerType.SLASH]: 'slash.builder.template',
+      [ControllerType.PRIMARY_ENTRY_POINT]: 'primary-entry-point.builder.template',
     }
 
     const template = templates[type] ? path.resolve(baseDir, templates[type]) : undefined

@@ -1,0 +1,12 @@
+import { UserSelectMenuInteraction } from 'discord.js'
+import { Controller, Command } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+
+@Controller()
+export class {{className}}UserSelectMenuController {
+
+  @Command('user-select-menu', CommandType.USER_SELECT_MENU)
+  async handleUserSelectMenu(interaction: UserSelectMenuInteraction) {
+    await interaction.reply(`Selected: ${interaction.users.map(user => user.username).join(', ')}`)
+  }
+}

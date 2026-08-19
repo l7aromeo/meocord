@@ -101,3 +101,13 @@ export interface MeoCordConfig {
    */
   webpack?: (config: MeoCordWebpackConfig) => MeoCordWebpackConfig | undefined
 }
+
+export type {
+  AutocompleteMetadata,
+  BuildableCommandType,
+  CommandBuilderBase,
+  CommandBuildResult,
+  CommandBuilderConstructor,
+  CommandInteractionType,
+  CommandMetadata,
+} from './command-decorator.interface.js'

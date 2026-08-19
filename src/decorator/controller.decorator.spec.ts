@@ -5,8 +5,10 @@
  */
 
 import {
+  Autocomplete,
   Command,
   Controller,
+  getAutocompleteHandlers,
   findAmbiguousRoutes,
   getCommandMap,
   getMessageHandlers,
@@ -15,6 +17,16 @@ import {
   ReactionHandler,
 } from '@src/decorator/controller.decorator.js'
 import { CommandType, MetadataKey } from '@src/enum/index.js'
+import {
+  ButtonInteraction,
+  ChannelSelectMenuInteraction,
+  MentionableSelectMenuInteraction,
+  PrimaryEntryPointCommandInteraction,
+  RoleSelectMenuInteraction,
+  StringSelectMenuInteraction,
+  UserSelectMenuInteraction,
+} from 'discord.js'
+import { createMockInteraction } from '@src/testing/index.js'
 
 describe('@MessageHandler', () => {
   it('registers a handler with a keyword', () => {
@@ -324,5 +336,137 @@ describe('getReactionHandlers', () => {
   it('returns empty array for a class with no handlers', () => {
     class NoHandlers {}
     expect(getReactionHandlers(NoHandlers.prototype)).toEqual([])
+  })
+})
+
+describe('@Command interaction type validation', () => {
+  const controllerFor = (type: CommandType) => {
+    class TestController {
+      received: unknown
+
+      @Command('thing', type)
+      handle(interaction: any) {
+        this.received = interaction
+      }
+    }
+    return new TestController()
+  }
+
+  // Each entity select menu is its own component type on the wire. Accepting one for
+  // another would hand the handler an interaction whose resolved data it cannot read.
+  const cases: [CommandType, { prototype: any; name: string }][] = [
+    [CommandType.SELECT_MENU, StringSelectMenuInteraction],
+    [CommandType.USER_SELECT_MENU, UserSelectMenuInteraction],
+    [CommandType.ROLE_SELECT_MENU, RoleSelectMenuInteraction],
+    [CommandType.MENTIONABLE_SELECT_MENU, MentionableSelectMenuInteraction],
+    [CommandType.CHANNEL_SELECT_MENU, ChannelSelectMenuInteraction],
+    [CommandType.PRIMARY_ENTRY_POINT, PrimaryEntryPointCommandInteraction],
+  ]
+
+  it.each(cases)('passes a matching interaction through for %s', (type, InteractionClass) => {
+    const controller = controllerFor(type)
+    const interaction = createMockInteraction(InteractionClass)
+
+    controller.handle(interaction)
+
+    expect(controller.received).toBe(interaction)
+  })
+
+  it.each(cases)('rejects a button where %s was declared', type => {
+    const controller = controllerFor(type)
+
+    expect(() => controller.handle(createMockInteraction(ButtonInteraction))).toThrow(
+      'Invalid interaction type passed to @Command for method: handle',
+    )
+  })
+
+  it('rejects a string select menu where a user select menu was declared', () => {
+    const controller = controllerFor(CommandType.USER_SELECT_MENU)
+
+    expect(() => controller.handle(createMockInteraction(StringSelectMenuInteraction))).toThrow(
+      'Invalid interaction type passed to @Command',
+    )
+  })
+
+  // A subcommand handler is declared with the plain CommandType and no builder, so
+  // nothing extra is registered with Discord for it.
+  it('registers a subcommand path without a builder', () => {
+    class TestController {
+      @Command('settings notify email', CommandType.SLASH)
+      handle(..._args: any[]) {}
+    }
+
+    const meta = getCommandMap(TestController.prototype)['settings notify email'][0]
+    expect(meta.builder).toBeUndefined()
+    expect(meta.regex).toBeUndefined()
+  })
+
+  // Entry point commands are registered by name like any other command, so they must
+  // not be run through the customId pattern parser -- which would reject a name
+  // containing a placeholder-looking character.
+  it('does not build a customId pattern for an entry point command', () => {
+    class TestController {
+      @Command('launch', CommandType.PRIMARY_ENTRY_POINT)
+      handle(..._args: any[]) {}
+    }
+
+    expect(getCommandMap(TestController.prototype)['launch'][0].regex).toBeUndefined()
+  })
+})
+
+describe('@Autocomplete', () => {
+  it('registers a handler for one option of a command', () => {
+    class TestController {
+      @Autocomplete('search', 'query')
+      complete(..._args: any[]) {}
+    }
+
+    expect(getAutocompleteHandlers(TestController.prototype)).toEqual([
+      { commandPath: 'search', optionName: 'query', methodName: 'complete' },
+    ])
+  })
+
+  it('registers a command-wide handler when no option is named', () => {
+    class TestController {
+      @Autocomplete('search')
+      complete(..._args: any[]) {}
+    }
+
+    expect(getAutocompleteHandlers(TestController.prototype)[0]).toMatchObject({
+      commandPath: 'search',
+      optionName: undefined,
+    })
+  })
+
+  it('accepts a subcommand path', () => {
+    class TestController {
+      @Autocomplete('settings notify email', 'address')
+      complete(..._args: any[]) {}
+    }
+
+    expect(getAutocompleteHandlers(TestController.prototype)[0].commandPath).toBe('settings notify email')
+  })
+
+  // A command-wide handler is a fallback, not a shadow: declaring it first must not
+  // stop an option-specific handler from claiming the option it was written for.
+  it('orders option-specific handlers ahead of command-wide ones', () => {
+    class TestController {
+      @Autocomplete('search')
+      completeAnything(..._args: any[]) {}
+
+      @Autocomplete('search', 'query')
+      completeQuery(..._args: any[]) {}
+    }
+
+    expect(getAutocompleteHandlers(TestController.prototype).map(handler => handler.methodName)).toEqual([
+      'completeQuery',
+      'completeAnything',
+    ])
+  })
+
+  it('returns an empty list for a controller with no autocomplete handlers', () => {
+    class NoHandlers {}
+
+    expect(getAutocompleteHandlers(NoHandlers.prototype)).toEqual([])
   })
 })

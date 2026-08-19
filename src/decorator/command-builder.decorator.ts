@@ -6,8 +6,8 @@
 
 import 'reflect-metadata'
 import { injectable } from 'inversify'
-import { CommandType, MetadataKey } from '@src/enum/index.js'
-import { type CommandBuilderBase } from '@src/interface/command-decorator.interface.js'
+import { MetadataKey } from '@src/enum/index.js'
+import { type BuildableCommandType, type CommandBuilderBase } from '@src/interface/command-decorator.interface.js'
 
 /**
  * This decorator is used to mark a class as a Discord command builder that later can be registered on the `@Command` decorator.
@@ -27,7 +27,7 @@ import { type CommandBuilderBase } from '@src/interface/command-decorator.interf
  * @returns A decorator function that makes the target class injectable
  *          and assigns the `commandType` metadata.
  */
-export function CommandBuilder<T extends CommandType.SLASH | CommandType.CONTEXT_MENU>(commandType: T) {
+export function CommandBuilder<T extends BuildableCommandType>(commandType: T) {
   return function (target: new () => CommandBuilderBase<T>) {
     // Check if the class is already injectable; if not, make it injectable dynamically
     if (!Reflect.hasMetadata(MetadataKey.Injectable, target)) {

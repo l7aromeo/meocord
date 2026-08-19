@@ -33,15 +33,11 @@ export class GeneratorCLI {
       .alias('co')
       .description('Generate a controller component')
       .addArgument(
-        new Argument('<type>', 'Type of the controller (e.g., button, context-menu, etc.)').choices([
-          'button',
-          'context-menu',
-          'message',
-          'modal-submit',
-          'reaction',
-          'select-menu',
-          'slash',
-        ]),
+        // Derived from the enum rather than listed by hand, so a new controller kind
+        // cannot be added to the framework and stay unreachable from the CLI.
+        new Argument('<type>', 'Type of the controller (e.g., button, context-menu, etc.)').choices(
+          Object.values(ControllerType),
+        ),
       )
       .addArgument(new Argument('<name>', 'Name of the controller'))
       .action(async (type, name) => {
