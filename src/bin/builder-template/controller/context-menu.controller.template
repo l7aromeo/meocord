@@ -1,5 +1,5 @@
 import { UserContextMenuCommandInteraction, MessageContextMenuCommandInteraction } from 'discord.js'
-import { Controller, Command, CommandType } from 'meocord/decorator'
+import { Controller, Command } from 'meocord/decorator'
 import { SampleCommandBuilder } from '@src/controllers/context-menu/builders/sample.builder'
 
 @Controller()

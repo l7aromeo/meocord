@@ -28,10 +28,12 @@ vi.mock('@src/util/index.js', () => ({
 }))
 
 import {
+  ApplicationCommandType,
   AutocompleteInteraction,
   ButtonInteraction,
   ChannelSelectMenuInteraction,
   ChatInputCommandInteraction,
+  EntryPointCommandHandlerType,
   MentionableSelectMenuInteraction,
   MessageReaction,
   PrimaryEntryPointCommandInteraction,
@@ -43,7 +45,7 @@ import {
 import { Logger } from '@src/common/index.js'
 import { EmbedUtil } from '@src/util/index.js'
 import { createChatInputOptions, createMockInteraction } from '@src/testing/index.js'
-import { Autocomplete, Command, Controller, ReactionHandler } from '@src/decorator/index.js'
+import { Autocomplete, Command, CommandBuilder, Controller, ReactionHandler } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { MeoCordApp } from '@src/core/meocord.app.js'
 
@@ -692,6 +694,39 @@ describe('MeoCordApp', () => {
 
       await expect(app.registerCommands()).resolves.toBeUndefined()
       expect(set).toHaveBeenCalledTimes(1)
+    })
+
+    // Entry point commands have no builder class in @discordjs/builders, so their
+    // builder returns the REST body itself -- no toJSON to read the name from.
+    it('registers an entry point command from a raw REST body', async () => {
+      const set = vi.fn<(commands: unknown[]) => Promise<unknown[]>>().mockResolvedValue([])
+      mockClient.application = { commands: { set } } as any
+
+      // `as const` for the same reason the generated builder template uses it: without
+      // it `type` widens to ApplicationCommandType and the body stops being an entry
+      // point one.
+      const body = {
+        type: ApplicationCommandType.PrimaryEntryPoint as const,
+        name: 'launch',
+        description: 'Launch the activity',
+        handler: EntryPointCommandHandlerType.AppHandler,
+      }
+
+      @CommandBuilder(CommandType.PRIMARY_ENTRY_POINT)
+      class LaunchBuilder {
+        build = () => body
+      }
+
+      @Controller()
+      class LaunchController {
+        @Command('launch', LaunchBuilder as any)
+        async launch(_interaction: PrimaryEntryPointCommandInteraction) {}
+      }
+
+      const app = new MeoCordApp([LaunchController] as any, createMockContainer() as any, mockClient as any, 't')
+      await app.registerCommands()
+
+      expect(set).toHaveBeenCalledWith([body])
     })
 
     it('warns when two different builders claim the same command name', async () => {
