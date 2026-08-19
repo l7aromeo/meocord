@@ -1,6 +1,6 @@
 import { ChatInputCommandInteraction } from 'discord.js'
 import { Controller, Command } from 'meocord/decorator'
-import { SampleCommandBuilder } from '@src/controllers/slash/builders/sample.builder'
+import { SampleCommandBuilder } from '{{builderImportPath}}'
 
 @Controller()
 export class {{className}}SlashController {

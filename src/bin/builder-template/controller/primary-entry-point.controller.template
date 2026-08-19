@@ -1,6 +1,6 @@
 import { PrimaryEntryPointCommandInteraction } from 'discord.js'
 import { Controller, Command } from 'meocord/decorator'
-import { SampleCommandBuilder } from '@src/controllers/primary-entry-point/builders/sample.builder'
+import { SampleCommandBuilder } from '{{builderImportPath}}'
 
 @Controller()
 export class {{className}}PrimaryEntryPointController {

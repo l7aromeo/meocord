@@ -239,9 +239,33 @@ npx meocord build --dev           # development build
 npx meocord start --dev           # dev mode with live-reload
 npx meocord start --build --prod  # production build + start
 npx meocord g co slash "profile"  # generate a slash controller
-npx meocord g co autocomplete "search"  # generate an autocomplete controller
 npx meocord g --help              # list all generator sub-commands
 ```
+
+### Generating a controller
+
+```shell
+npx meocord g co <type> <name>
+```
+
+`<type>` is one of:
+
+`button` · `modal-submit` · `select-menu` · `user-select-menu` · `role-select-menu` · `mentionable-select-menu` · `channel-select-menu` · `reaction` · `message` · `slash` · `autocomplete` · `context-menu` · `primary-entry-point`
+
+Each one lands in its own directory, named after the type:
+
+```
+src/controllers/<type>/
+├── <name>.<type>.controller.ts
+├── <name>.<type>.controller.spec.ts
+└── builders/sample.builder.ts     # slash, context-menu and primary-entry-point only
+```
+
+A builder is generated only for the three types Discord registers by name. Everything else is addressed by `customId` or, for autocomplete, by the command path it completes — there is nothing to register.
+
+`<name>` may contain `/` to nest: `npx meocord g co button "admin/ban"` writes into `src/controllers/button/admin/`.
+
+Directory layout is organisational only. Controllers are wired up by the `controllers` array on `@MeoCord()`, not by where they sit on disk.
 
 ---
 
@@ -262,7 +286,9 @@ npx meocord g --help              # list all generator sub-commands
 | `CHANNEL_SELECT_MENU`     | `ChannelSelectMenuInteraction`                                              | `customId` |
 | `MODAL_SUBMIT`            | `ModalSubmitInteraction`                                                    | `customId` |
 
-Autocomplete has its own decorator — see [Autocomplete](#autocomplete).
+Autocomplete has its own decorator — see [Autocomplete](#autocomplete). It has no `CommandType` member, because it registers nothing and is answered with `respond()` rather than a reply. `@MessageHandler` and `@ReactionHandler` are outside `CommandType` for the same reason: `CommandType` is the set of things `@Command` can bind to, not the set of things MeoCord handles.
+
+The kebab-case `ControllerType` used by the CLI is a wider list — it names every kind of controller that can be scaffolded, including the three that are not commands.
 
 The four entity select menus are separate types because Discord sends them as separate component types carrying different resolved data. Declaring `SELECT_MENU` for a user select menu is a type error, not a silent mismatch:
 
