@@ -12,6 +12,8 @@ import * as meocordCommon from '@src/common/index.js'
 import * as meocordDecorator from '@src/decorator/index.js'
 import * as meocordEnum from '@src/enum/index.js'
 import * as meocordTesting from '@src/testing/index.js'
+import { Command } from '@src/decorator/controller.decorator.js'
+import { CommandType } from '@src/enum/index.js'
 
 const templateDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'builder-template')
 
@@ -80,6 +82,51 @@ describe('generator templates', () => {
     '%s imports %s from a module that exports it (%s)',
     (_template, name, module) => {
       expect(Object.keys(RUNTIME_MODULES[module])).toContain(name)
+    },
+  )
+})
+
+const COMMAND_CALL = /@Command\(\s*'([^']+)'\s*,\s*CommandType\.(\w+)\s*\)/g
+
+interface TemplateCommand {
+  template: string
+  pattern: string
+  type: CommandType
+}
+
+function commandsOf(file: string): TemplateCommand[] {
+  const source = readFileSync(file, 'utf8')
+  const template = path.relative(templateDir, file)
+
+  return [...source.matchAll(COMMAND_CALL)].map(([, pattern, member]) => ({
+    template,
+    pattern,
+    type: CommandType[member as keyof typeof CommandType],
+  }))
+}
+
+const allCommands = templateFiles(templateDir).flatMap(commandsOf)
+
+// An invalid pattern is not a compile error -- `@Command` throws while the class is
+// being defined, so a template carrying one typechecks, ships, and takes the user's
+// bot down on the first import. `verify:generated` cannot see it either: it only
+// typechecks the generated files, it never loads them.
+describe('generator template command patterns', () => {
+  it('finds command patterns to check', () => {
+    expect(allCommands.length).toBeGreaterThan(0)
+  })
+
+  it.each(allCommands.map(({ template, pattern, type }) => [template, pattern, type] as const))(
+    '%s declares a registrable pattern: %s',
+    (_template, pattern, type) => {
+      expect(type).toBeDefined()
+
+      const declare = () => {
+        const descriptor = { value: () => undefined } as TypedPropertyDescriptor<() => void>
+        Command(pattern, type)({}, 'handle', descriptor as never)
+      }
+
+      expect(declare).not.toThrow()
     },
   )
 })
