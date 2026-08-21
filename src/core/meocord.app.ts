@@ -255,8 +255,8 @@ export class MeoCordApp {
    *
    * Built once and cached, so dispatch stays a single ordered walk with an early exit
    * rather than paying to rank anything per interaction. Ordering here is what lets
-   * `gi-profile-summary-{ownerId}-{uid}` keep the ids it owns when
-   * `gi-profile-{uuid}-{uid}` would also match them — without it, the winner would be
+   * `gi-profile/summary/{ownerId}/{uid}` keep the ids it owns when
+   * `gi-profile/{uuid}/{uid}` would also match them — without it, the winner would be
    * whichever controller happened to be registered first.
    */
   private componentRoutes?: ComponentRoute[]

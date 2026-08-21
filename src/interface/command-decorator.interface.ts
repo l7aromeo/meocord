@@ -83,9 +83,11 @@ export interface CommandMetadata<T extends string = string> {
   dynamicParams?: T[]
   /**
    * How specific this pattern is; higher wins when more than one route matches the
-   * same customId. A greedy parameter can overlap a more literal sibling —
-   * `gi-profile-{uuid:*}-{uid}` also matches an id meant for
-   * `gi-profile-summary-{ownerId}-{uid}` — so dispatch cannot rely on declaration order.
+   * same customId. A parameter takes whatever fills its segment, so a broad pattern can
+   * also match an id a more literal sibling owns — `gi-profile/{uuid}/{uid}` matches
+   * `gi-profile/summary/123/456` just as `gi-profile/summary/{ownerId}/{uid}` does — and
+   * ranking is what settles it, since declaration order would make the winner depend on
+   * file layout.
    */
   specificity?: number
 }

@@ -140,7 +140,7 @@ function isGuardWithParams(guard: any): guard is GuardWithParams {
  * @example
  * ```typescript
  * // Method-level usage
- * @Command('profile-{id}', CommandType.BUTTON)
+ * @Command('profile/{id}', CommandType.BUTTON)
  * @UseGuard(
  *   { provide: RateLimiterGuard, params: { limit: 2, window: 3000 } },
  *   ButtonInteractionGuard
