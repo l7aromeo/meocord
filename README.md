@@ -231,18 +231,33 @@ npx meocord --help
 | `generate` | `g`   | Scaffold controllers, services, guards |
 | `show`     | —     | Display framework info                 |
 
-**Common flags:**
+Every command's own flags:
+
+| Command    | Flags                                                   |
+| ---------- | ------------------------------------------------------- |
+| `create`   | `--use-npm` · `--use-yarn` · `--use-pnpm` · `--use-bun` |
+| `build`    | `-d, --dev` · `-p, --prod`                              |
+| `start`    | `-b, --build` · `-d, --dev` · `-p, --prod`              |
+| `show`     | `-w, --warranty` · `-c, --license`                      |
+| `generate` | see the sub-commands below                              |
+
+`meocord -V` / `--version` prints the installed version.
 
 ```shell
 npx meocord build --prod          # production build
-npx meocord build --dev           # development build
 npx meocord start --dev           # dev mode with live-reload
 npx meocord start --build --prod  # production build + start
-npx meocord g co slash "profile"  # generate a slash controller
-npx meocord g --help              # list all generator sub-commands
 ```
 
-### Generating a controller
+### Generators
+
+| Sub-command  | Alias | Generates                           |
+| ------------ | ----- | ----------------------------------- |
+| `controller` | `co`  | a controller, its spec, its builder |
+| `service`    | `s`   | a service and its spec              |
+| `guard`      | `gu`  | a guard and its spec                |
+
+#### Controllers
 
 ```shell
 npx meocord g co <type> <name>
