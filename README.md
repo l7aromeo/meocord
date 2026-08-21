@@ -922,7 +922,22 @@ npx meocord start --prod
 
 Include a description of what changed and why, and add tests for any new behaviour.
 
-`verify:generated` generates one controller of every type through the built CLI — flat and nested, in separate throwaway projects — and typechecks the result against the published package. Rendering a template says nothing about whether the code it produces compiles, and two bugs lived behind exactly that gap. It runs in CI as part of the Build job, so you do not have to remember it; running it locally is just faster than waiting. Use `fix:` / `feat:` / `docs:` prefixes so [semantic-release](https://semantic-release.gitbook.io/) can version correctly — `test:` commits do not trigger a release.
+`verify:generated` generates one controller of every type through the built CLI — flat and nested, in separate throwaway projects — and typechecks the result against the published package. Rendering a template says nothing about whether the code it produces compiles, and two bugs lived behind exactly that gap. It runs in CI as part of the Build job, so you do not have to remember it; running it locally is just faster than waiting.
+
+### Commit messages and releases
+
+Commit messages drive versioning through [semantic-release](https://semantic-release.gitbook.io/). Only these publish:
+
+| Prefix                         | Release |
+| ------------------------------ | ------- |
+| `feat:`                        | minor   |
+| `fix:`                         | patch   |
+| `perf:`                        | patch   |
+| `BREAKING CHANGE:` in the body | major   |
+
+Everything else — `docs:`, `test:`, `ci:`, `chore:`, `refactor:`, `style:` — lands on `main` without publishing and ships with whatever releasable commit comes next.
+
+Pick the prefix by what reaches the installed package, not by which file you edited. JSDoc is compiled into the published `.d.ts` and is what a user reads in their editor, so correcting a wrong `@example` is a `fix:` even though you only touched a comment. A README-only change is `docs:`.
 
 ---
 
