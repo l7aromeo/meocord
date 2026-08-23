@@ -22,6 +22,7 @@ import { execSync } from 'child_process'
 import * as p from '@clack/prompts'
 import { detectInstalledPMs, getInstallCommand, type PackageManager } from '@src/util/package-manager.util.js'
 import { configureCommandHelp, ensureReady } from '@src/util/meocord-cli.util.js'
+import { resolveOwnVersion } from '@src/util/package-version.util.js'
 import { buildAppCommand, resolveRuntime } from '@src/util/runtime.util.js'
 import packageJson from '../../package.json' with { type: 'json' }
 import { fileURLToPath } from 'url'
@@ -41,7 +42,7 @@ export class MeoCordCLI {
   private readonly mainJSPath = path.join(this.projectRoot, 'dist', 'main.js')
   private readonly webpackConfigPath = path.resolve(__dirname, '..', '..', '..', 'webpack.config.js')
   private readonly generatorCLI = new GeneratorCLI(this.appName)
-  private readonly version = packageJson.version
+  private readonly version = resolveOwnVersion(__dirname, packageJson.version)
 
   /**
    * Binary the application is spawned with, so it runs on the same runtime as the CLI
