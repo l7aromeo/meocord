@@ -7,13 +7,18 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { AppGeneratorHelper, type AppTemplateVariables } from '@src/bin/helper/app-generator.helper.js'
+import {
+  AppGeneratorHelper,
+  runtimePrefixFor,
+  type AppTemplateVariables,
+} from '@src/bin/helper/app-generator.helper.js'
 
 const VARIABLES: AppTemplateVariables = {
   appName: 'my-cool-bot',
   displayName: 'My Cool Bot',
   version: '3.1.0',
   packageManager: 'bun',
+  runtimePrefix: runtimePrefixFor('bun'),
 }
 
 describe('AppGeneratorHelper', () => {
@@ -94,5 +99,54 @@ describe('AppGeneratorHelper', () => {
     expect(read(path.join('src', 'controllers', 'slash', 'builders', 'sample.builder.ts'))).toContain(
       'setName(commandName)',
     )
+  })
+})
+
+// Without `--bun`, bun honours the CLI's node interpreter line and hands it to node,
+// which an image built on bun alone does not have.
+describe('runtimePrefixFor', () => {
+  it('puts the framework on bun when the project was created with bun', () => {
+    expect(runtimePrefixFor('bun')).toBe('bun --bun ')
+  })
+
+  it.each(['npm', 'pnpm', 'yarn'])('adds nothing for %s, whose runtime is already node', pm => {
+    expect(runtimePrefixFor(pm)).toBe('')
+  })
+
+  // The template writes `{{runtimePrefix}}meocord` with nothing between them, so the
+  // separator has to come from the value or the two words run together.
+  it('separates itself from the command that follows', () => {
+    expect(runtimePrefixFor('bun').endsWith(' ')).toBe(true)
+  })
+})
+
+describe('generated scripts', () => {
+  const render = (packageManager: string) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'meocord-scripts-'))
+    new AppGeneratorHelper().generateApp(dir, {
+      ...VARIABLES,
+      packageManager,
+      runtimePrefix: runtimePrefixFor(packageManager),
+    })
+    const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'))
+    fs.rmSync(dir, { recursive: true, force: true })
+    return manifest.scripts as Record<string, string>
+  }
+
+  it('runs the framework under bun for a bun project', () => {
+    expect(render('bun')['start:dev']).toBe('bun --bun meocord start --dev')
+  })
+
+  // Only the framework's own commands move; the linter and the test runner are left
+  // where they are rather than being dragged onto a runtime they were not chosen for.
+  it('leaves the other scripts alone', () => {
+    const scripts = render('bun')
+
+    expect(scripts.test).toBe('vitest run')
+    expect(scripts.lint).not.toContain('bun --bun')
+  })
+
+  it.each(['npm', 'pnpm', 'yarn'])('calls the framework directly for a %s project', pm => {
+    expect(render(pm)['start:dev']).toBe('meocord start --dev')
   })
 })

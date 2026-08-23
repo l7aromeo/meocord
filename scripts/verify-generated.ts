@@ -121,6 +121,7 @@ function verifyApp(): void {
     // typecheck against the framework already linked into the check.
     version: '0.0.0',
     packageManager: 'npm',
+    runtimePrefix: '',
   })
 
   // The framework is linked rather than installed: the version the template pins is not

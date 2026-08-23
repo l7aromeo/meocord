@@ -33,6 +33,37 @@ export interface AppTemplateVariables extends Record<string, string> {
   version: string
   /** Package manager the application was created with, used in its README examples. */
   packageManager: string
+  /**
+   * Prefix that puts the framework's own commands on the chosen runtime.
+   *
+   * Only the `meocord` scripts carry it. Applying the runtime project-wide, through
+   * bun's `[run] bun = true`, would also move the linter and the test runner onto it,
+   * which is a much larger claim than the application needs to make.
+   */
+  runtimePrefix: string
+}
+
+/**
+ * The prefix each package manager needs for the framework to run on its runtime.
+ *
+ * The separating space belongs to the value, because the template writes
+ * `{{runtimePrefix}}meocord` with nothing between them — a package manager that needs
+ * no prefix has to render as `meocord …` rather than ` meocord …`. Trimming an entry
+ * here would join it to the command that follows.
+ */
+const RUNTIME_PREFIXES: Record<string, string> = {
+  // Without `--bun`, bun honours the CLI's `#!/usr/bin/env node` line and hands it to
+  // node, which an image built on bun alone does not have.
+  bun: 'bun --bun ',
+}
+
+/**
+ * The script prefix for a package manager.
+ *
+ * @param packageManager - Package manager the application was created with.
+ */
+export function runtimePrefixFor(packageManager: string): string {
+  return RUNTIME_PREFIXES[packageManager] ?? ''
 }
 
 /** The name a packaged template is written under. */

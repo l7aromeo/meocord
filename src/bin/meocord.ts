@@ -13,7 +13,7 @@ import { spawn, ChildProcess } from 'node:child_process'
 import { capitalize } from 'lodash-es'
 import wait from '@src/util/wait.util.js'
 import { GeneratorCLI } from '@src/bin/generator.js'
-import { AppGeneratorHelper } from '@src/bin/helper/app-generator.helper.js'
+import { AppGeneratorHelper, runtimePrefixFor } from '@src/bin/helper/app-generator.helper.js'
 import * as fs from 'node:fs'
 import { compileAndValidateConfig, setEnvironment, validateDiscordToken } from '@src/util/common.util.js'
 import { prepareModifiedTsConfig } from '@src/util/tsconfig.util.js'
@@ -275,6 +275,7 @@ copies or substantial portions of the Software.
         displayName: appName,
         version: this.version,
         packageManager: pm,
+        runtimePrefix: runtimePrefixFor(pm),
       })
     } catch (error) {
       s.stop('Failed to create the app.')
@@ -638,10 +639,24 @@ function isProcessEntry(): boolean {
   if (invoked === undefined) return true
 
   try {
-    return fs.realpathSync(invoked) === __filename
+    return samePath(fs.realpathSync(invoked), __filename)
   } catch {
     return true
   }
+}
+
+/**
+ * Whether two resolved paths name the same file.
+ *
+ * Windows paths differ in case and separator without naming different files — npm's
+ * shim passes the script path in whatever form it recorded — and a comparison that
+ * missed would leave the CLI exiting without a word, since it would decide it was
+ * merely being imported.
+ */
+function samePath(left: string, right: string): boolean {
+  const normalise = (value: string) => (process.platform === 'win32' ? path.resolve(value).toLowerCase() : value)
+
+  return normalise(left) === normalise(right)
 }
 
 // Importing this module must not launch the command parser: its own tests do exactly
