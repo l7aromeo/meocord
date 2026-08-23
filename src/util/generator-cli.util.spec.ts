@@ -6,13 +6,13 @@
 
 import { vi } from 'vitest'
 
-const { mockExistsSync, mockMkdirSync, mockWriteFileSync, mockReadFileSync, mockExec, mockLoggerLog, mockLoggerError } =
+const { mockExistsSync, mockMkdirSync, mockWriteFileSync, mockReadFileSync, mockExecFile, mockLoggerLog, mockLoggerError } =
   vi.hoisted(() => ({
     mockExistsSync: vi.fn(),
     mockMkdirSync: vi.fn(),
     mockWriteFileSync: vi.fn(),
     mockReadFileSync: vi.fn(),
-    mockExec: vi.fn(),
+    mockExecFile: vi.fn(),
     mockLoggerLog: vi.fn(),
     mockLoggerError: vi.fn(),
   }))
@@ -31,7 +31,7 @@ vi.mock('fs', () => ({
 }))
 
 vi.mock('child_process', () => ({
-  exec: mockExec,
+  execFile: mockExecFile,
 }))
 
 // Logger is constructed with `new`, so the implementation has to be a class or
@@ -129,7 +129,8 @@ describe('createDirectoryIfNotExists', () => {
 describe('generateFile', () => {
   beforeEach(() => {
     mockWriteFileSync.mockReset()
-    mockExec.mockReset()
+    mockExecFile.mockReset()
+    mockExistsSync.mockReset()
   })
 
   it('calls writeFileSync with the file path and content', () => {
@@ -137,9 +138,27 @@ describe('generateFile', () => {
     expect(mockWriteFileSync).toHaveBeenCalledWith('/some/file.ts', 'export const x = 1')
   })
 
-  it('calls exec to run eslint fix on the file', () => {
+  // A project with its own rules still gets them applied to what was generated.
+  it('formats with the project\'s own eslint when it has one', () => {
+    mockExistsSync.mockReturnValue(true)
+
     generateFile('/some/file.ts', 'content')
-    expect(mockExec).toHaveBeenCalledWith(expect.stringContaining('/some/file.ts'))
+
+    expect(mockExecFile).toHaveBeenCalledWith(
+      expect.stringContaining('eslint'),
+      ['--fix', '/some/file.ts'],
+      expect.any(Function),
+    )
+  })
+
+  // Reaching for npx would start downloading eslint into a project that deliberately
+  // has none, once per generated file, and the call is not awaited so nothing shows it.
+  it('does not reach for eslint when the project has none', () => {
+    mockExistsSync.mockReturnValue(false)
+
+    generateFile('/some/file.ts', 'content')
+
+    expect(mockExecFile).not.toHaveBeenCalled()
   })
 })
 

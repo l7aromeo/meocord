@@ -25,6 +25,7 @@
 - [Testing](#testing)
 - [Deployment](#deployment)
 - [Contributing](#contributing)
+- [Release Notes](#release-notes)
 - [License](#license)
 
 ---
@@ -85,21 +86,38 @@ Building needs no token; only starting does.
 
 ### Quick Example
 
-A minimal slash command controller:
+A minimal slash command. A command Discord knows about needs a builder — that is what gets registered. The
+builder receives the name from `@Command`, so the two cannot drift apart:
+
+```typescript
+import { SlashCommandBuilder } from 'discord.js'
+import { CommandBuilder } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+
+@CommandBuilder(CommandType.SLASH)
+export class GreetingCommandBuilder {
+  build(commandName: string) {
+    return new SlashCommandBuilder()
+      .setName(commandName)
+      .setDescription('Greets someone')
+      .addStringOption(option => option.setName('name').setDescription('Who to greet').setRequired(true))
+  }
+}
+```
 
 ```typescript
 import { Controller, Command, UseGuard } from 'meocord/decorator'
-import { CommandType } from 'meocord/enum'
 import { type ChatInputCommandInteraction } from 'discord.js'
-import { RateLimiterGuard } from '@src/guards/rate-limiter.guard.js'
+import { GreetingCommandBuilder } from '@src/controllers/slash/builders/greeting.builder.js'
+import { RateLimitGuard } from '@src/guards/rate-limit.guard.js'
 import { GreetingService } from '@src/services/greeting.service.js'
 
 @Controller()
 export class GreetingSlashController {
   constructor(private readonly greetingService: GreetingService) {}
 
-  @Command('greet', CommandType.SLASH)
-  @UseGuard({ provide: RateLimiterGuard, params: { limit: 3, window: 10_000 } })
+  @Command('greet', GreetingCommandBuilder)
+  @UseGuard({ provide: RateLimitGuard, params: { limit: 3, windowInSeconds: 10 } })
   async greet(interaction: ChatInputCommandInteraction) {
     const name = interaction.options.getString('name', true)
     const message = await this.greetingService.buildGreeting(name)
@@ -136,6 +154,10 @@ export class App {}
 
 ```
 .
+├── README.md
+├── .env.example
+├── .gitignore
+├── .prettierrc.mjs
 ├── meocord.config.ts
 ├── eslint.config.ts
 ├── vitest.config.ts
@@ -852,7 +874,7 @@ import {
 import { ChatInputCommandInteraction } from 'discord.js'
 import { GreetingSlashController } from '@src/controllers/slash/greeting.slash.controller.js'
 import { GreetingService } from '@src/services/greeting.service.js'
-import { RateLimiterGuard } from '@src/guards/rate-limiter.guard.js'
+import { RateLimitGuard } from '@src/guards/rate-limit.guard.js'
 
 describe('GreetingSlashController', () => {
   let controller: GreetingSlashController

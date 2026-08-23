@@ -6,7 +6,7 @@
 
 import fs from 'fs'
 import path from 'path'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { Logger } from '@src/common/index.js'
 import { camelCase, kebabCase, startCase } from 'lodash-es'
 import { fileURLToPath } from 'url'
@@ -84,11 +84,28 @@ export function createDirectoryIfNotExists(directory: string) {
 export function generateFile(filePath: string, content: string): void {
   try {
     fs.writeFileSync(filePath, content)
-    logger.log(`Guard file created at: ${path.relative(process.cwd(), filePath)}`)
-    exec(`npx eslint --fix ${filePath}`)
+    logger.log(`Created ${path.relative(process.cwd(), filePath)}`)
+    formatWithLocalESLint(filePath)
   } catch (error) {
-    logger.error(`Failed to create guard file at ${filePath}`, error)
+    logger.error(`Failed to create ${filePath}`, error)
   }
+}
+
+/**
+ * Formats a generated file with the project's own ESLint, when it has one.
+ *
+ * Reaching for `npx` instead would start downloading ESLint into a project that
+ * deliberately does not have it, once per generated file, with no way to see it happen —
+ * the call is not awaited. A project with its own rules still gets them applied.
+ */
+function formatWithLocalESLint(filePath: string): void {
+  const binary = path.resolve(process.cwd(), 'node_modules', '.bin', process.platform === 'win32' ? 'eslint.cmd' : 'eslint')
+  if (!fs.existsSync(binary)) return
+
+  execFile(binary, ['--fix', filePath], () => {
+    // Formatting is a courtesy; a project whose rules reject the template should still
+    // end up with the file it asked for.
+  })
 }
 
 /**
