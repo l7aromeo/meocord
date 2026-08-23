@@ -8,3 +8,7 @@ bun.lock
 *.js
 *.mjs
 *.cjs
+
+# Templates with no format of their own; prettier cannot infer a parser for them.
+src/bin/app-template/_gitignore.template
+src/bin/app-template/_env.example.template
