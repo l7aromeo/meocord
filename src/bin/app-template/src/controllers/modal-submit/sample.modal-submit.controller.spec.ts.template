@@ -1,0 +1,17 @@
+import { MeoCordTestingModule } from 'meocord/testing'
+import { SampleModalSubmitController } from '@src/controllers/modal-submit/sample.modal-submit.controller.js'
+
+describe('SampleModalSubmitController', () => {
+  let controller: SampleModalSubmitController
+
+  beforeEach(() => {
+    const module = MeoCordTestingModule.create({
+      controllers: [SampleModalSubmitController],
+    }).compile()
+    controller = module.get(SampleModalSubmitController)
+  })
+
+  it('should be defined', () => {
+    expect(controller).toBeDefined()
+  })
+})

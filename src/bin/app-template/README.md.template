@@ -1,0 +1,61 @@
+# {{displayName}}
+
+A Discord bot built with [MeoCord](https://github.com/l7aromeo/meocord).
+
+## Setup
+
+Copy the example environment file and add your bot token:
+
+```shell
+cp .env.example .env
+```
+
+`.env` is gitignored. Never commit a real token — if one is pushed, reset it in the
+[Discord developer portal](https://discord.com/developers/applications) rather than
+rewriting history.
+
+## Running
+
+```shell
+{{packageManager}} run start:dev    # watch mode, rebuilds and restarts on change
+{{packageManager}} run start:prod   # production
+```
+
+The bot runs on whichever runtime you launch it with — launch with bun and it is a bun
+process, launch with node and it is a node process.
+
+## Building
+
+```shell
+{{packageManager}} run build:dev
+{{packageManager}} run build:prod
+```
+
+## Generating components
+
+```shell
+npx meocord g co slash "profile"     # a slash controller, its spec and its builder
+npx meocord g s "profile"            # a service
+npx meocord g gu "rate-limit"        # a guard
+npx meocord g --help                 # every generator
+```
+
+Register whatever you generate in the `controllers` array in `src/app.ts` — controllers
+are wired up by that list, not by where they sit on disk.
+
+## Testing
+
+```shell
+{{packageManager}} run test
+{{packageManager}} run test:coverage
+```
+
+`meocord/testing` provides `MeoCordTestingModule` for building a controller with its
+dependencies, plus `createMockInteraction` and friends for driving it without a Discord
+connection.
+
+## Linting
+
+```shell
+{{packageManager}} run lint
+```

@@ -66,12 +66,22 @@ npx meocord create <your-app-name> --use-pnpm
 npx meocord create <your-app-name> --use-yarn
 ```
 
-Set your Discord bot token in `meocord.config.ts`, then start the bot:
+The generated project is named after what you passed, pins the framework version that
+created it, and comes with a working slash command, button, select menu, modal, context
+menu, message and reaction controller, plus a guard, a service and a spec for each.
+
+Add your bot token and start:
 
 ```shell
-npx meocord start --dev   # development with live-reload
+cd <your-app-name>
+cp .env.example .env       # then put your token in DISCORD_TOKEN
+npx meocord start --dev    # development with live-reload
 npx meocord start --build --prod  # production build + start
 ```
+
+The token is read from the environment rather than written into `meocord.config.ts`,
+which is committed — `.env` is gitignored so a token cannot be pushed by accident.
+Building needs no token; only starting does.
 
 ### Quick Example
 

@@ -23,6 +23,7 @@ import { existsSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync }
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { ControllerType } from '../src/enum/controller.enum.js'
+import { AppGeneratorHelper } from '../src/bin/helper/app-generator.helper.js'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const workDir = path.join(repoRoot, '.generated-check')
@@ -101,6 +102,37 @@ function verify(label: string, name: string, types: ControllerType[]): void {
   console.log(`  ${label}: ${types.length} controller types typecheck clean`)
 }
 
+/**
+ * Renders the packaged application template and typechecks the result.
+ *
+ * The template ships with the framework, so a change to either can break the other. The
+ * application is generated from `dist`, and its dependencies are the ones the consumer
+ * would resolve, so nothing here passes on the repository's own installs.
+ */
+function verifyApp(): void {
+  const dir = path.join(workDir, 'app')
+  rmSync(dir, { recursive: true, force: true })
+  mkdirSync(dir, { recursive: true })
+
+  new AppGeneratorHelper().generateApp(dir, {
+    appName: 'generated-check',
+    displayName: 'Generated Check',
+    // The manifest is what a real install would resolve; a range is not needed to
+    // typecheck against the framework already linked into the check.
+    version: '0.0.0',
+    packageManager: 'npm',
+  })
+
+  // The framework is linked rather than installed: the version the template pins is not
+  // published yet, and it is this build the template has to work against.
+  mkdirSync(path.join(dir, 'node_modules'), { recursive: true })
+  symlinkSync(repoRoot, path.join(dir, 'node_modules', 'meocord'), 'dir')
+  symlinkSync(path.join(repoRoot, 'node_modules', 'discord.js'), path.join(dir, 'node_modules', 'discord.js'), 'dir')
+
+  execFileSync(tsc, ['--noEmit', '-p', 'tsconfig.json'], { cwd: dir, stdio: 'inherit' })
+  console.log('  app: template typechecks clean')
+}
+
 function main(): void {
   if (!existsSync(cli)) {
     console.error(`Built CLI not found at ${path.relative(repoRoot, cli)}. Run "bun run build" first.`)
@@ -118,6 +150,7 @@ function main(): void {
     // A nested name moves the controller and its builder together, so the import
     // between them has to move with them.
     verify('nested', 'admin/nested', types)
+    verifyApp()
 
     console.log('Generated applications build.')
   } catch (error) {

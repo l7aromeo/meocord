@@ -40,7 +40,9 @@ vi.mock('@src/util/wait.util.js', () => ({
   default: mockWait,
 }))
 
-const { findModulePackageDir, compileAndValidateConfig, setEnvironment } = await import('@src/util/common.util.js')
+const { findModulePackageDir, compileAndValidateConfig, setEnvironment, validateDiscordToken } = await import(
+  '@src/util/common.util.js',
+)
 
 describe('setEnvironment', () => {
   const originalNodeEnv = process.env.NODE_ENV
@@ -111,17 +113,18 @@ describe('compileAndValidateConfig', () => {
     consoleSpy.mockRestore()
   })
 
-  it('calls process.exit(1) when discordToken is missing', async () => {
+  // Producing a bundle needs no credentials, so a configuration without a token is not a
+  // reason to refuse to build.
+  it('does not call process.exit when only the token is missing', async () => {
     mockExistsSync.mockReturnValue(true)
     mockLoadMeoCordConfig.mockReturnValue({ appName: 'TestApp' })
-    mockWait.mockResolvedValue(undefined)
 
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await compileAndValidateConfig()
 
-    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(exitSpy).not.toHaveBeenCalled()
 
     exitSpy.mockRestore()
     consoleSpy.mockRestore()
@@ -135,6 +138,43 @@ describe('compileAndValidateConfig', () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await compileAndValidateConfig()
+
+    expect(exitSpy).not.toHaveBeenCalled()
+
+    exitSpy.mockRestore()
+    consoleSpy.mockRestore()
+  })
+})
+
+// Connecting to the gateway is the point at which a token is actually required.
+describe('validateDiscordToken', () => {
+  beforeEach(() => {
+    mockLoadMeoCordConfig.mockReset()
+    mockWait.mockClear()
+  })
+
+  it('calls process.exit(1) when the token is missing', async () => {
+    mockLoadMeoCordConfig.mockReturnValue({ appName: 'TestApp' })
+    mockWait.mockResolvedValue(undefined)
+
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await validateDiscordToken()
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+
+    exitSpy.mockRestore()
+    consoleSpy.mockRestore()
+  })
+
+  it('does not call process.exit when a token is configured', async () => {
+    mockLoadMeoCordConfig.mockReturnValue({ discordToken: 'valid-token' })
+
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await validateDiscordToken()
 
     expect(exitSpy).not.toHaveBeenCalled()
 

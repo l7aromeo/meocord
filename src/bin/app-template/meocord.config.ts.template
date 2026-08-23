@@ -1,0 +1,25 @@
+import 'dotenv/config'
+import { type MeoCordConfig } from 'meocord/interface'
+
+export default {
+  appName: '{{displayName}}',
+  // Read from the environment rather than written here: this file is committed, and a
+  // token pasted into it is a token pushed to the remote. Copy .env.example to .env.
+  discordToken: process.env.DISCORD_TOKEN!,
+  webpack: config => {
+    config.module.rules?.push({
+      test: /\.(md|html)$/i,
+      type: 'asset/source',
+    })
+    config.module.rules?.push({
+      test: /\.(gif|jpg|jpeg|png|svg|woff|woff2|eot|ttf|otf)$/i,
+      type: 'asset/resource',
+      exclude: /node_modules/,
+      generator: {
+        filename: 'assets/[name][ext]',
+      },
+    })
+
+    return config
+  },
+} satisfies MeoCordConfig
