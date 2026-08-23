@@ -198,7 +198,9 @@ describe('ensureReady', () => {
     mockExistsSync.mockReturnValue(true)
 
     mockReadFileSync.mockImplementation((p: unknown) => {
-      const pathStr = String(p)
+      // Normalised because the code under test joins paths with the platform separator,
+      // and a Windows backslash would not match the POSIX fixture below.
+      const pathStr = String(p).replaceAll('\\', '/')
       if (pathStr.includes('/some/path/meocord')) {
         return JSON.stringify({ name: 'meocord' }) as any
       }
@@ -222,7 +224,9 @@ describe('ensureReady', () => {
     mockWait.mockResolvedValue(undefined)
 
     mockReadFileSync.mockImplementation((p: unknown) => {
-      const pathStr = String(p)
+      // Normalised because the code under test joins paths with the platform separator,
+      // and a Windows backslash would not match the POSIX fixture below.
+      const pathStr = String(p).replaceAll('\\', '/')
       if (pathStr.includes('/some/path/meocord')) {
         return JSON.stringify({ name: 'meocord' }) as any
       }
