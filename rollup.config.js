@@ -58,15 +58,20 @@ const swcPlugin = swc({
 
 const resolvePlugin = resolve({ extensions: ['.ts', '.js'] })
 
+/**
+ * Whether an id belongs to something outside this package.
+ *
+ * Decided by the shape of the specifier rather than its first character: a resolved
+ * path on Windows begins with a drive letter, so testing for one would classify every
+ * source file in the package as a dependency and refuse to build.
+ */
 const external = id => {
-  // Internal path aliases are NOT external
   if (id.startsWith('@src/')) return false
-  // Node built-ins
-  if (/^node:/.test(id)) return true
-  if (/^(fs|path|os|url|module|child_process)$/.test(id)) return true
-  // All node_modules
-  if (/^[a-zA-Z@]/.test(id)) return true
-  return false
+  if (id.startsWith('.')) return false
+  if (path.isAbsolute(id)) return false
+
+  // What is left is a bare specifier: a node builtin or a package.
+  return true
 }
 
 /** Suppress expected warnings for type-only barrel files */
