@@ -105,6 +105,48 @@ jobs:
       - name: Report coverage
         run: bun run test:coverage
 
+  # Windows resolves a bin differently: npm never runs the file through its shebang,
+  # it parses the line and writes a `.cmd` that runs the program named there. Nothing
+  # on a POSIX runner exercises that, so the packaged CLI is installed and driven here.
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run tests
+        run: bun run test
+
+      - name: Build package
+        run: bun run build
+
+      - name: Install the packaged CLI globally
+        run: |
+          npm pack --pack-destination ${{ runner.temp }}
+          npm install -g ${{ runner.temp }}/meocord-*.tgz
+        shell: bash
+
+      - name: Drive the CLI through its Windows shim
+        run: |
+          meocord --version
+          meocord create "Windows Smoke" --use-npm
+          cd windows-smoke
+          npm run build:dev
+          npm test
+        shell: bash
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -130,7 +172,7 @@ jobs:
   release:
     name: Release
     if: github.event_name == 'push'
-    needs: [lint, test-result, coverage, build]
+    needs: [lint, test-result, coverage, build, windows]
     runs-on: ubuntu-latest
     environment: Production
     concurrency:

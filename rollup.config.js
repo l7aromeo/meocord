@@ -77,36 +77,6 @@ const onwarn = (warning, warn) => {
   warn(warning)
 }
 
-/**
- * The interpreter line for the published CLI.
- *
- * `#!/usr/bin/env node` binds the CLI to a runtime that need not be installed: a machine
- * with only bun -- `bun install -g meocord`, or an image built on `oven/bun` -- cannot
- * run it at all, because the kernel resolves the interpreter before any of the program
- * exists. A `/bin/sh` line that picks whichever runtime is present removes that.
- *
- * The second line is read by both: `sh` runs the null command and then replaces itself
- * with the runtime, while JavaScript sees a string expression followed by a comment.
- * node is preferred so that nothing about an existing install changes; bun is reached
- * only when node is absent.
- *
- * Injected here rather than written in the source because prettier and eslint would
- * reformat a line that has to stay exactly as it is.
- */
-const CLI_SHEBANG = ['#!/bin/sh', '":" //; exec "$(command -v node || command -v bun || echo node)" "$0" "$@"'].join(
-  '\n',
-)
-
-/** Applies {@link CLI_SHEBANG} to the CLI entry, which is the only executable output. */
-const shebangPlugin = {
-  name: 'meocord-cli-shebang',
-  renderChunk(code, chunk) {
-    if (chunk.fileName !== 'bin/meocord.js') return null
-
-    return { code: `${CLI_SHEBANG}\n${code.replace(/^#![^\n]*\n/, '')}`, map: null }
-  },
-}
-
 /** CJS build: library entries only (no CLI) */
 const cjsBuild = {
   input: libraryEntries,
@@ -133,7 +103,6 @@ const esmBuild = {
     swcPlugin,
     json(),
     resolvePlugin,
-    shebangPlugin,
     copy({
       targets: [
         {
