@@ -55,7 +55,12 @@ export default defineConfig({
       // disk and its parser chokes on TS `type` import modifiers.
       all: false,
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.spec.ts', 'src/bin/**', 'src/**/index.ts'],
+      // *.test-d.ts are typecheck-only and never execute, and istanbul's parser rejects
+      // the TS `type` import modifiers they use.
+      // Excluded because there is nothing to measure, not to flatter the number:
+      // specs and type tests are the tests themselves, `src/interface` declares types
+      // that erase at runtime, and `src/bin` is the CLI rather than the framework.
+      exclude: ['src/**/*.spec.ts', 'src/**/*.test-d.ts', 'src/interface/**', 'src/bin/**', 'src/**/index.ts'],
     },
   },
 })

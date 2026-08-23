@@ -936,23 +936,22 @@ That matters for more than tidiness. Pinning `node` would oblige a bun-only imag
 
 Development works the same way. The watcher runs the bundle through the same command production does, so a runtime that works in `--dev` cannot quietly differ from the one that ships.
 
-#### Running the CLI itself on bun
+#### The CLI runs on whatever is installed
 
-The resolution above covers the bot. The CLI process is decided before any of its code runs, by the shebang — so in an image with **no node at all**, bun has to be told to ignore it. Either flag it per command:
+The CLI picks its own runtime the same way. Its interpreter line resolves node first and
+falls back to bun, so an image built on bun alone — with no node binary at all — runs it
+without a flag:
 
 ```shell
-bun --bun meocord start --prod
+bun install -g meocord
+meocord create my-bot     # works with no node installed
 ```
 
-or set it once for the project, which is what a bun-only Dockerfile wants:
+Nothing changes for an existing install: where node is present, the CLI still runs on
+node exactly as before.
 
-```toml
-# bunfig.toml
-[run]
-bun = true
-```
-
-Then plain `bun run start` runs both the CLI and the bot on bun, and node need not exist.
+`bun --bun meocord …`, or `bun = true` under `[run]` in `bunfig.toml`, still force the
+CLI onto bun on a machine that has both. Neither is required any more.
 
 #### Pinning a specific binary
 

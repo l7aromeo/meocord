@@ -19,7 +19,7 @@
  */
 
 import { execFileSync } from 'child_process'
-import { existsSync, mkdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { ControllerType } from '../src/enum/controller.enum.js'
@@ -133,6 +133,30 @@ function verifyApp(): void {
   console.log('  app: template typechecks clean')
 }
 
+/**
+ * Checks that the published CLI can start without a particular runtime installed.
+ *
+ * `#!/usr/bin/env node` binds the CLI to a runtime that need not be present: a machine
+ * with only bun cannot run it, because the kernel resolves the interpreter before the
+ * program exists. The line is injected at build time, so nothing in the sources shows
+ * whether it survived.
+ */
+function verifyShebang(): void {
+  const [interpreter, selector] = readFileSync(cli, 'utf8').split('\n', 2)
+
+  if (!interpreter.startsWith('#!/bin/sh')) {
+    throw new Error(`CLI interpreter line is "${interpreter}", which ties it to one runtime.`)
+  }
+
+  for (const runtime of ['node', 'bun']) {
+    if (!selector.includes(runtime)) {
+      throw new Error(`CLI interpreter line never reaches ${runtime}: ${selector}`)
+    }
+  }
+
+  console.log('  cli: starts under either runtime')
+}
+
 function main(): void {
   if (!existsSync(cli)) {
     console.error(`Built CLI not found at ${path.relative(repoRoot, cli)}. Run "bun run build" first.`)
@@ -151,6 +175,7 @@ function main(): void {
     // between them has to move with them.
     verify('nested', 'admin/nested', types)
     verifyApp()
+    verifyShebang()
 
     console.log('Generated applications build.')
   } catch (error) {
