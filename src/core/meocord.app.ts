@@ -6,6 +6,7 @@
 
 import {
   type ActivityOptions,
+  ApplicationCommandType,
   type AutocompleteInteraction,
   type CacheType,
   Client,
@@ -53,26 +54,56 @@ interface AutocompleteRoute {
   meta: AutocompleteMetadata
 }
 
+/** What Discord assumes a command body is when it carries no type of its own. */
+const DEFAULT_APPLICATION_COMMAND_TYPE = ApplicationCommandType.ChatInput
+
 /**
- * The name a builder registers under, which is what Discord deduplicates on.
+ * The body a builder registers, which is what Discord sees.
  *
- * Read from the built payload rather than from the `@Command` argument: a builder is
- * free to name the command something other than the string it was handed, and it is
- * the payload Discord sees.
+ * Read from the built payload rather than from the `@Command` arguments: a builder is
+ * free to describe the command differently from the strings it was handed.
  */
-function commandNameOf(builder: NonNullable<CommandMetadata['builder']>): string | undefined {
+function payloadOf(builder: NonNullable<CommandMetadata['builder']>): { name?: unknown; type?: unknown } {
   try {
-    const json =
-      typeof (builder as { toJSON?: () => unknown }).toJSON === 'function'
-        ? ((builder as { toJSON: () => unknown }).toJSON() as { name?: string })
-        : (builder as { name?: string })
-    return typeof json?.name === 'string' ? json.name : undefined
+    return typeof (builder as { toJSON?: () => unknown }).toJSON === 'function'
+      ? ((builder as { toJSON: () => unknown }).toJSON() as { name?: unknown; type?: unknown })
+      : (builder as { name?: unknown; type?: unknown })
   } catch {
     // A builder missing a required field throws from toJSON. Surfacing that is the
     // registration call's job, where it is reported against the command Discord
     // rejected -- deduplication should not be what turns it into a startup crash.
-    return undefined
+    return {}
   }
+}
+
+/** The name a builder registers under. */
+function commandNameOf(builder: NonNullable<CommandMetadata['builder']>): string | undefined {
+  const { name } = payloadOf(builder)
+
+  return typeof name === 'string' ? name : undefined
+}
+
+/**
+ * The application command type a builder registers as.
+ *
+ * A slash builder may leave the field out, so an absent type is read as the chat input
+ * one Discord would infer — which keeps untyped slash builders colliding with each
+ * other rather than each claiming a key of its own.
+ */
+function commandTypeOf(builder: NonNullable<CommandMetadata['builder']>): ApplicationCommandType {
+  const { type } = payloadOf(builder)
+
+  return typeof type === 'number' ? type : DEFAULT_APPLICATION_COMMAND_TYPE
+}
+
+/**
+ * The identity Discord gives a command.
+ *
+ * The numeric type leads, so the two halves can never be read apart wrongly: everything
+ * before the first separator is the type, everything after it is the name.
+ */
+function registrationKey(builder: NonNullable<CommandMetadata['builder']>, fallbackName: string): string {
+  return `${commandTypeOf(builder)}:${commandNameOf(builder) ?? fallbackName}`
 }
 
 export class MeoCordApp {
@@ -177,11 +208,13 @@ export class MeoCordApp {
   }
 
   async registerCommands() {
-    // Keyed by registered name: a command whose subcommands live in separate methods
-    // declares the same name more than once, and sending its builder twice makes
-    // Discord reject the whole payload. The first builder wins, and a second one that
-    // is not the same object is reported rather than silently dropped.
-    const buildersByName = new Map<string, NonNullable<CommandMetadata['builder']>>()
+    // Keyed by type and name together, because that pair is what Discord treats as one
+    // command: a user context menu and a message context menu are free to share a name,
+    // and keying on the name alone would drop one of them from the payload. Within a
+    // single type the name is unique, so a command whose subcommands live in separate
+    // methods still contributes its builder once — sending it twice makes Discord
+    // reject the whole payload.
+    const buildersByCommand = new Map<string, NonNullable<CommandMetadata['builder']>>()
 
     for (const controllerClass of this.controllerClasses) {
       const instance = this.getInstance(controllerClass)
@@ -195,21 +228,24 @@ export class MeoCordApp {
         for (const { builder, type } of commandMetadataArray) {
           if (!(type in CommandType) || !builder) continue
 
-          const registeredName = commandNameOf(builder) ?? commandName
-          const existing = buildersByName.get(registeredName)
+          const key = registrationKey(builder, commandName)
+          const existing = buildersByCommand.get(key)
+
           if (existing === undefined) {
-            buildersByName.set(registeredName, builder)
+            buildersByCommand.set(key, builder)
           } else if (existing !== builder) {
             this.logger.warn(
-              `Command "${registeredName}" is built more than once; only the first builder is registered. ` +
-                `Declare the builder on one @Command and give the others the plain CommandType.`,
+              `Command "${commandNameOf(builder) ?? commandName}" is built more than once for the same ` +
+                `application command type; only the first builder is registered. Two builders of one type ` +
+                `cannot both own a name, so declare the builder on a single @Command and give the others ` +
+                `the plain CommandType.`,
             )
           }
         }
       }
     }
 
-    const builders = [...buildersByName.values()]
+    const builders = [...buildersByCommand.values()]
 
     try {
       if (this.bot.application) {
