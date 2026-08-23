@@ -134,17 +134,28 @@ jobs:
 
       - name: Install the packaged CLI globally
         run: |
-          npm pack --pack-destination ${{ runner.temp }}
-          npm install -g ${{ runner.temp }}/meocord-*.tgz
+          npm pack --ignore-scripts
+          npm install -g ./meocord-*.tgz
         shell: bash
 
+      # Exercises the shim npm writes from the interpreter line, which is the part of
+      # resolving a bin that no POSIX runner touches.
       - name: Drive the CLI through its Windows shim
         run: |
           meocord --version
-          meocord create "Windows Smoke" --use-npm
-          cd windows-smoke
-          npm run build:dev
-          npm test
+          meocord --help
+        shell: bash
+
+      # Generation is what walks and writes paths, so it is run where the separator and
+      # the case rules differ. `create` is not used here: it installs the version the
+      # template pins, which is only published during a release.
+      - name: Generate a controller on Windows
+        run: |
+          mkdir generated && cd generated
+          echo '{"name":"generated","private":true}' > package.json
+          meocord g co slash Sample
+          test -f src/controllers/slash/sample.slash.controller.ts
+          test -f src/controllers/slash/builders/sample.builder.ts
         shell: bash
 
   build:
