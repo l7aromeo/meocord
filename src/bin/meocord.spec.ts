@@ -34,7 +34,13 @@ import { MeoCordCLI } from '@src/bin/meocord.js'
 import { RUNTIME_OVERRIDE_ENV } from '@src/util/runtime.util.js'
 
 /** Stands in for the spawned application; `.on` is chained straight off `spawn`. */
-const createChild = () => ({ on: vi.fn().mockReturnThis(), kill: vi.fn(), killed: false })
+const createChild = () => ({
+  on: vi.fn().mockReturnThis(),
+  once: vi.fn().mockReturnThis(),
+  removeAllListeners: vi.fn().mockReturnThis(),
+  kill: vi.fn(),
+  killed: false,
+})
 
 const spawnMock = vi.mocked(spawn)
 
@@ -45,18 +51,32 @@ const lastSpawn = () => {
   return { command, args, options }
 }
 
+/** What bun exports when it runs a package script. */
+const BUN_LAUNCHER = {
+  npm_config_user_agent: 'bun/1.4.0 npm/? node/v26.3.0 darwin arm64',
+  npm_execpath: '/Users/dev/.bun/bin/bun',
+}
+
 describe('spawning the application', () => {
   let exitSpy: ReturnType<typeof vi.spyOn>
+  let launcherEnv: Record<string, string | undefined>
 
   beforeEach(() => {
     spawnMock.mockReturnValue(createChild() as never)
     vi.spyOn(process.stdout, 'write').mockReturnValue(true)
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+
+    // The suite is itself run through a package manager, so these are already set in the
+    // ambient environment. Clearing them keeps each case testing the signal it names.
+    launcherEnv = { npm_config_user_agent: process.env.npm_config_user_agent, npm_execpath: process.env.npm_execpath }
+    delete process.env.npm_config_user_agent
+    delete process.env.npm_execpath
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
     delete process.env[RUNTIME_OVERRIDE_ENV]
+    Object.assign(process.env, launcherEnv)
   })
 
   // The CLI is launched by whichever runtime the user chose -- `bun --bun meocord start`
@@ -140,39 +160,92 @@ describe('spawning the application', () => {
     })
   })
 
-  // nodemon runs its target with node unless told otherwise, so the watcher needs the
-  // runtime named explicitly or dev mode drifts from what production does.
+  // Someone who typed `bun` expects a bun process. Pinning the binary the CLI happens to
+  // be executing would hand them node, because the bin's shebang defers to it.
+  describe('following the launcher', () => {
+    beforeEach(() => Object.assign(process.env, BUN_LAUNCHER))
+
+    it('runs the application on the runtime that launched the CLI', async () => {
+      await new MeoCordCLI().startProd()
+
+      expect(lastSpawn().command).toBe(BUN_LAUNCHER.npm_execpath)
+    })
+
+    it('runs the dev application on the runtime that launched the CLI', () => {
+      const cli = new MeoCordCLI() as unknown as { restartApp: () => void }
+      cli.restartApp()
+
+      expect(lastSpawn().command).toBe(BUN_LAUNCHER.npm_execpath)
+    })
+  })
+
+  // Watching and production reach the bundle through the same command, so a runtime
+  // that works in development cannot silently differ from the one that ships.
   describe('dev watcher', () => {
-    const spawnWatcher = () => {
-      const cli = new MeoCordCLI() as unknown as { spawnWatcher: () => unknown }
-      cli.spawnWatcher()
-      return lastSpawn()
-    }
+    const watcher = () => new MeoCordCLI() as unknown as { restartApp: () => void; appProcess: unknown }
 
-    it('tells nodemon to exec the binary executing the CLI', () => {
-      const { command, args } = spawnWatcher()
+    it('runs the application exactly as production does', async () => {
+      await new MeoCordCLI().startProd()
+      const production = lastSpawn()
 
-      expect(command).toBe('npx')
-      expect(args[args.indexOf('--exec') + 1]).toBe(process.execPath)
+      spawnMock.mockClear()
+      watcher().restartApp()
+      const development = lastSpawn()
+
+      expect(development.command).toBe(production.command)
+      expect(development.args).toEqual(production.args)
+    })
+
+    it('runs the entry file with the resolved runtime', () => {
+      watcher().restartApp()
+
+      const { command, args } = lastSpawn()
+      expect(command).toBe(process.execPath)
+      expect(args).toEqual([expect.stringContaining('main.js')])
     })
 
     it('honours the runtime override', () => {
       process.env[RUNTIME_OVERRIDE_ENV] = '/opt/custom/bun'
 
-      const { args } = spawnWatcher()
+      watcher().restartApp()
 
-      expect(args[args.indexOf('--exec') + 1]).toBe('/opt/custom/bun')
-    })
-
-    it('passes the entry file as an argument rather than a command string', () => {
-      const { command, args } = spawnWatcher()
-
-      expect(command).toBe('npx')
-      expect(args.at(-1)).toContain('main.js')
+      expect(lastSpawn().command).toBe('/opt/custom/bun')
     })
 
     it('does not run through a shell', () => {
-      expect(spawnWatcher().options).not.toHaveProperty('shell', true)
+      watcher().restartApp()
+
+      expect(lastSpawn().options).not.toHaveProperty('shell', true)
+    })
+
+    // Both processes hold the same gateway session, so the replacement has to wait for
+    // the old one to let go rather than racing it for the login.
+    it('waits for the running application to exit before replacing it', () => {
+      const cli = watcher()
+      cli.restartApp()
+
+      const first = spawnMock.mock.results.at(-1)?.value as {
+        once: ReturnType<typeof vi.fn>
+        kill: ReturnType<typeof vi.fn>
+        removeAllListeners: ReturnType<typeof vi.fn>
+      }
+      spawnMock.mockClear()
+
+      cli.restartApp()
+
+      expect(first.kill).toHaveBeenCalled()
+      expect(spawnMock).not.toHaveBeenCalled()
+
+      const onExit = first.once.mock.calls.find(([event]) => event === 'exit')?.[1] as () => void
+      onExit()
+
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('spawns immediately when nothing is running yet', () => {
+      watcher().restartApp()
+
+      expect(spawnMock).toHaveBeenCalledTimes(1)
     })
   })
 })

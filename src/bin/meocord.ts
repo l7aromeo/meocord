@@ -22,7 +22,7 @@ import { execSync } from 'child_process'
 import * as p from '@clack/prompts'
 import { detectInstalledPMs, getInstallCommand, type PackageManager } from '@src/util/package-manager.util.js'
 import { configureCommandHelp, ensureReady } from '@src/util/meocord-cli.util.js'
-import { buildAppCommand, buildWatchCommand, resolveRuntime } from '@src/util/runtime.util.js'
+import { buildAppCommand, resolveRuntime } from '@src/util/runtime.util.js'
 import packageJson from '../../package.json' with { type: 'json' }
 import { fileURLToPath } from 'url'
 import TsconfigPathsPlugin from 'tsconfig-paths-webpack-plugin'
@@ -428,13 +428,43 @@ copies or substantial portions of the Software.
     }
   }
 
+  /** The running application, while a watch session owns one. */
+  private appProcess: ChildProcess | null = null
+
   /**
-   * Runs the built application under a watcher that restarts it after each rebuild.
+   * Replaces the running application with one built from the current sources.
    *
-   * @returns The watcher process.
+   * The replacement is spawned only once the previous process has exited. Both would
+   * hold the same gateway session, and claiming it before the first lets go produces a
+   * login conflict rather than a reload.
    */
-  private spawnWatcher(): ChildProcess {
-    const { command, args } = buildWatchCommand(this.runtime, this.mainJSPath)
+  private restartApp(): void {
+    const previous = this.appProcess
+    this.appProcess = null
+
+    if (!previous || previous.killed) {
+      this.appProcess = this.spawnApp()
+      return
+    }
+
+    previous.removeAllListeners('exit')
+    previous.once('exit', () => {
+      this.appProcess = this.spawnApp()
+    })
+    previous.kill()
+  }
+
+  /**
+   * Runs the built application.
+   *
+   * Shared by both start modes so watching and production launch the bundle the same
+   * way; a watcher that spawned it differently could pass in development and fail in
+   * production on the difference alone.
+   *
+   * @returns The application process.
+   */
+  private spawnApp(): ChildProcess {
+    const { command, args } = buildAppCommand(this.runtime, this.mainJSPath)
 
     return spawn(command, args, {
       cwd: this.projectRoot,
@@ -459,7 +489,6 @@ copies or substantial portions of the Software.
         process.exit(1)
       }
 
-      let nodemonProcess: ChildProcess | null = null
       let isRunning = false
 
       const watch = () =>
@@ -472,13 +501,7 @@ copies or substantial portions of the Software.
           if (stats?.hasErrors()) {
             this.logger.error('Build failed due to errors in the compilation process:', stats.compilation.errors)
           } else {
-            if (nodemonProcess) {
-              nodemonProcess.kill()
-              nodemonProcess = null
-            }
-
-            nodemonProcess = this.spawnWatcher()
-
+            this.restartApp()
             isRunning = true
           }
         })
@@ -489,12 +512,12 @@ copies or substantial portions of the Software.
       const fsWatcher = fs.watch(path.resolve(process.cwd(), 'meocord.config.ts'), () => {
         clearTimeout(debounceWatcher)
         debounceWatcher = setTimeout(async () => {
-          if (isRunning && nodemonProcess) {
+          if (isRunning && this.appProcess) {
             isRunning = false
             this.logger.log('MeoCord config change detected, reloading config...')
-            if (nodemonProcess && !nodemonProcess.killed) {
-              nodemonProcess.kill()
-              nodemonProcess = null
+            if (this.appProcess && !this.appProcess.killed) {
+              this.appProcess.kill()
+              this.appProcess = null
             }
             await new Promise(resolve => compiler.close(resolve))
             watch()
@@ -506,15 +529,15 @@ copies or substantial portions of the Software.
       process.on('SIGINT', async () => {
         if (sigintReceived) {
           // Second Ctrl+C — force kill and exit immediately
-          if (nodemonProcess && !nodemonProcess.killed) nodemonProcess.kill('SIGKILL')
+          if (this.appProcess && !this.appProcess.killed) this.appProcess.kill('SIGKILL')
           process.exit(1)
         }
         sigintReceived = true
-        // Nodemon and the bot already received SIGINT from the process group.
-        // Clean up parent-owned resources and wait for nodemon to exit.
+        // The application already received SIGINT from the process group. Clean up
+        // parent-owned resources and wait for it to exit on its own terms.
         fsWatcher.close()
-        if (nodemonProcess && !nodemonProcess.killed) {
-          nodemonProcess.on('exit', async () => {
+        if (this.appProcess && !this.appProcess.killed) {
+          this.appProcess.on('exit', async () => {
             await new Promise(resolve => compiler.close(resolve))
             process.exit(0)
           })
@@ -545,11 +568,7 @@ copies or substantial portions of the Software.
       this.clearConsole()
       this.logger.log('Starting...')
 
-      const appCommand = buildAppCommand(this.runtime, this.mainJSPath)
-      const start = spawn(appCommand.command, appCommand.args, {
-        cwd: this.projectRoot,
-        stdio: 'inherit',
-      }).on('spawn', this.clearConsole)
+      const start = this.spawnApp().on('spawn', this.clearConsole)
 
       start.on('exit', code => {
         process.exit(code ?? 0)
