@@ -22,7 +22,7 @@ describe('detectInstalledPMs', () => {
 
   it('returns only installed package managers', () => {
     mockExecSync.mockImplementation((cmd: unknown) => {
-      if (cmd === 'which bun' || cmd === 'which npm') return Buffer.from('/usr/bin/found')
+      if (cmd === 'bun --version' || cmd === 'npm --version') return Buffer.from('1.0.0')
       throw new Error('not found')
     })
 
@@ -31,6 +31,17 @@ describe('detectInstalledPMs', () => {
     expect(result).toContain('npm')
     expect(result).not.toContain('yarn')
     expect(result).not.toContain('pnpm')
+  })
+
+  // `which` is a separate binary a minimal image need not carry, and Windows has none.
+  it('asks each candidate for its version rather than looking it up on the path', () => {
+    mockExecSync.mockImplementation(() => Buffer.from('1.0.0'))
+
+    detectInstalledPMs()
+
+    const probes = mockExecSync.mock.calls.map(([command]) => command)
+    expect(probes).toEqual(expect.arrayContaining(['bun --version', 'npm --version']))
+    expect(probes.filter((command: unknown) => String(command).startsWith('which'))).toEqual([])
   })
 
   it('returns empty array when no PMs are installed', () => {
