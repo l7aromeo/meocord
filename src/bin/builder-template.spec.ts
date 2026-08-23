@@ -15,7 +15,10 @@ import * as meocordTesting from '@src/testing/index.js'
 import { Command } from '@src/decorator/controller.decorator.js'
 import { CommandType } from '@src/enum/index.js'
 
-const templateDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'builder-template')
+const binDir = path.dirname(fileURLToPath(import.meta.url))
+
+/** Every packaged template: the ones `generate` renders and the one `create` renders. */
+const templateDirs = [path.join(binDir, 'builder-template'), path.join(binDir, 'app-template')]
 
 /**
  * The modules a template may import runtime values from, and what they really export.
@@ -48,9 +51,14 @@ function templateFiles(dir: string): string[] {
   })
 }
 
+function labelFor(file: string): string {
+  const root = templateDirs.find(dir => file.startsWith(dir)) ?? binDir
+  return path.join(path.basename(root), path.relative(root, file))
+}
+
 function importsOf(file: string): TemplateImport[] {
   const source = readFileSync(file, 'utf8')
-  const template = path.relative(templateDir, file)
+  const template = labelFor(file)
   const imports: TemplateImport[] = []
 
   for (const [, clause, module] of source.matchAll(NAMED_IMPORT)) {
@@ -67,7 +75,8 @@ function importsOf(file: string): TemplateImport[] {
   return imports
 }
 
-const allImports = templateFiles(templateDir).flatMap(importsOf)
+const allTemplates = templateDirs.flatMap(dir => templateFiles(dir))
+const allImports = allTemplates.flatMap(importsOf)
 
 // Rendering a template proves nothing about whether the code it produces compiles.
 // `context-menu` imported `CommandType` from `meocord/decorator`, which does not
@@ -96,7 +105,7 @@ interface TemplateCommand {
 
 function commandsOf(file: string): TemplateCommand[] {
   const source = readFileSync(file, 'utf8')
-  const template = path.relative(templateDir, file)
+  const template = labelFor(file)
 
   return [...source.matchAll(COMMAND_CALL)].map(([, pattern, member]) => ({
     template,
@@ -105,7 +114,7 @@ function commandsOf(file: string): TemplateCommand[] {
   }))
 }
 
-const allCommands = templateFiles(templateDir).flatMap(commandsOf)
+const allCommands = allTemplates.flatMap(commandsOf)
 
 // An invalid pattern is not a compile error -- `@Command` throws while the class is
 // being defined, so a template carrying one typechecks, ships, and takes the user's

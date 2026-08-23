@@ -109,6 +109,10 @@ const esmBuild = {
           src: 'src/bin/builder-template',
           dest: 'dist/esm/bin',
         },
+        {
+          src: 'src/bin/app-template',
+          dest: 'dist/esm/bin',
+        },
       ],
     }),
   ],

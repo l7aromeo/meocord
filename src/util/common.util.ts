@@ -60,8 +60,18 @@ export async function compileAndValidateConfig() {
     process.exit(1)
   }
 
-  const meocordConfig = loadMeoCordConfig()
-  if (!meocordConfig?.discordToken) {
+  loadMeoCordConfig()
+}
+
+/**
+ * Ensures a Discord token is configured.
+ *
+ * Kept apart from {@link compileAndValidateConfig} because producing a bundle needs no
+ * credentials — only connecting to the gateway does. Requiring one to build meant a
+ * freshly created application could not be built until a token had been obtained.
+ */
+export async function validateDiscordToken() {
+  if (!loadMeoCordConfig()?.discordToken) {
     console.error(chalk.red('Discord token is missing!'))
     await wait(100)
     process.exit(1)

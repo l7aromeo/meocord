@@ -1,0 +1,38 @@
+{
+  "name": "{{appName}}",
+  "version": "0.1.0",
+  "description": "",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build:dev": "meocord build --dev",
+    "build:prod": "meocord build --prod",
+    "start:dev": "meocord start --dev",
+    "start:prod": "meocord start --prod",
+    "lint": "eslint --fix && tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.2.4",
+    "meocord": "^{{version}}"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@typescript-eslint/parser": "^8.58.1",
+    "@vitest/coverage-istanbul": "^4.1.10",
+    "eslint": "^10.2.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import-x": "^4.16.2",
+    "eslint-plugin-prettier": "^5.5.5",
+    "eslint-plugin-unused-imports": "^4.4.1",
+    "globals": "^17.5.0",
+    "prettier": "^3.8.2",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.1",
+    "unplugin-swc": "^1.5.7",
+    "vitest": "^4.1.10"
+  }
+}

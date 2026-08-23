@@ -13,8 +13,9 @@ import { spawn, ChildProcess } from 'node:child_process'
 import { capitalize } from 'lodash-es'
 import wait from '@src/util/wait.util.js'
 import { GeneratorCLI } from '@src/bin/generator.js'
+import { AppGeneratorHelper } from '@src/bin/helper/app-generator.helper.js'
 import * as fs from 'node:fs'
-import { compileAndValidateConfig, setEnvironment } from '@src/util/common.util.js'
+import { compileAndValidateConfig, setEnvironment, validateDiscordToken } from '@src/util/common.util.js'
 import { prepareModifiedTsConfig } from '@src/util/tsconfig.util.js'
 import { Command } from 'commander'
 import { simpleGit } from 'simple-git'
@@ -35,6 +36,45 @@ const __dirname = path.dirname(__filename)
 /**
  * A Command Line Interface (CLI) for managing the MeoCord application.
  */
+/**
+ * Oldest Node the framework supports, mirroring `engines.node`.
+ *
+ * A test holds the two together, since a floor that drifted from the manifest would warn
+ * about versions npm is happy to install on.
+ */
+export const MINIMUM_NODE_MAJOR = 22
+
+/**
+ * Warns when the running Node is older than the framework supports.
+ *
+ * Advisory only. Comparing against the newest LTS release meant warning about being a
+ * patch behind, and reaching the network to find out meant a failed request could stop
+ * the command outright — for a check whose only outcome is a warning.
+ */
+function warnIfNodeIsBelowSupported(): void {
+  const major = Number.parseInt(process.versions.node.split('.')[0], 10)
+
+  if (Number.isFinite(major) && major < MINIMUM_NODE_MAJOR) {
+    p.log.warn(
+      `Node ${process.versions.node} is older than the supported minimum (v${MINIMUM_NODE_MAJOR}). ` +
+        `The app will be created, but may not run.`,
+    )
+  }
+}
+
+/**
+ * The package manager's own complaint, which `execSync` buries on the thrown object.
+ *
+ * Its `message` says only that a command exited non-zero, which is never the part worth
+ * reading.
+ */
+function installFailure(error: unknown): Error {
+  const { stderr, message } = (error ?? {}) as { stderr?: Buffer | string; message?: string }
+  const reported = stderr?.toString().trim()
+
+  return new Error(reported || message || String(error))
+}
+
 export class MeoCordCLI {
   private readonly appName = 'MeoCord'
   readonly logger = new Logger(this.appName)
@@ -42,6 +82,7 @@ export class MeoCordCLI {
   private readonly mainJSPath = path.join(this.projectRoot, 'dist', 'main.js')
   private readonly webpackConfigPath = path.resolve(__dirname, '..', '..', '..', 'webpack.config.js')
   private readonly generatorCLI = new GeneratorCLI(this.appName)
+  private readonly appGeneratorHelper = new AppGeneratorHelper()
   private readonly version = resolveOwnVersion(__dirname, packageJson.version)
 
   /**
@@ -143,6 +184,10 @@ copies or substantial portions of the Software.
           await compileAndValidateConfig()
         }
 
+        // Checked for every start, including one that skips the build: this is the point
+        // where the application actually needs to log in.
+        await validateDiscordToken()
+
         if (options.build) {
           await this.build(mode)
           await this.compileConfig()
@@ -169,7 +214,6 @@ copies or substantial portions of the Software.
       .replace(/^-+|-+$/g, '')
 
     const appPath = path.resolve(process.cwd(), kebabCaseAppName)
-    const gitRepo = 'https://github.com/l7aromeo/meocord-template.git'
 
     p.intro(`meocord v${this.version}`)
 
@@ -180,37 +224,7 @@ copies or substantial portions of the Software.
       process.exit(1)
     }
 
-    // Check Node.js version against latest LTS
-    interface NodeRelease {
-      version: string
-      lts: string | false
-    }
-    let latestLTS: string | null = null
-    try {
-      const res = await fetch('https://nodejs.org/dist/index.json')
-      const releases = (await res.json()) as NodeRelease[]
-      const ltsRelease = releases.find(r => r.lts !== false)
-      if (ltsRelease) latestLTS = ltsRelease.version.slice(1)
-    } catch {
-      p.cancel('No internet connection. Creating a MeoCord app requires network access.')
-      await wait(100)
-      process.exit(1)
-    }
-
-    if (latestLTS) {
-      const [major, minor, patch] = process.version.slice(1).split('.').map(Number)
-      const [minMajor, minMinor, minPatch] = latestLTS.split('.').map(Number)
-
-      if (
-        major < minMajor ||
-        (major === minMajor && minor < minMinor) ||
-        (major === minMajor && minor === minMinor && patch < minPatch)
-      ) {
-        p.log.warn(
-          `Your Node.js (${process.version}) is behind the latest LTS (v${latestLTS}). Consider upgrading for best compatibility.`,
-        )
-      }
-    }
+    warnIfNodeIsBelowSupported()
 
     // Determine package manager
     const installedPMs = detectInstalledPMs()
@@ -254,43 +268,40 @@ copies or substantial portions of the Software.
 
     const s = p.spinner()
 
-    // Clone template
     s.start(`Creating a new MeoCord app: ${kebabCaseAppName}`)
     try {
-      await simpleGit().clone(gitRepo, appPath)
+      this.appGeneratorHelper.generateApp(appPath, {
+        appName: kebabCaseAppName,
+        displayName: appName,
+        version: this.version,
+        packageManager: pm,
+      })
     } catch (error) {
-      s.stop('Failed to fetch template.')
-      p.cancel(error instanceof Error ? error.message : String(error))
-      await wait(100)
-      process.exit(1)
+      s.stop('Failed to create the app.')
+      await this.abortCreate(appPath, error)
     }
     s.stop(`App created at: ${appPath}`)
 
-    // Initialize git
     s.start('Initializing Git repository...')
     try {
-      fs.rmSync(path.join(appPath, '.git'), { recursive: true, force: true })
       const git = simpleGit(appPath)
       await git.init()
       await git.add('./*')
       await git.commit('Initial commit')
     } catch (error) {
       s.stop('Failed to initialize Git.')
-      p.cancel(error instanceof Error ? error.message : String(error))
-      await wait(100)
-      process.exit(1)
+      await this.abortCreate(appPath, error)
     }
     s.stop('Git repository initialized.')
 
-    // Install dependencies
     s.start(`Installing dependencies with ${pm}...`)
     try {
-      execSync(getInstallCommand(pm), { cwd: appPath, stdio: 'ignore' })
+      // Output is captured rather than discarded: a failed install is only actionable
+      // if the resolver's complaint survives to the error message.
+      execSync(getInstallCommand(pm), { cwd: appPath, stdio: 'pipe' })
     } catch (error) {
       s.stop('Failed to install dependencies.')
-      p.cancel(error instanceof Error ? error.message : String(error))
-      await wait(100)
-      process.exit(1)
+      await this.abortCreate(appPath, installFailure(error))
     }
     s.stop('Dependencies installed.')
 
@@ -591,6 +602,19 @@ copies or substantial portions of the Software.
       await wait(100)
       process.exit(1)
     }
+  }
+
+  /**
+   * Reports why creation failed and removes what was written.
+   *
+   * A directory left behind from a failed attempt is indistinguishable from one the user
+   * meant to keep, and the next attempt refuses to start because the name is taken.
+   */
+  private async abortCreate(appPath: string, error: unknown): Promise<never> {
+    fs.rmSync(appPath, { recursive: true, force: true })
+    p.cancel(error instanceof Error ? error.message : String(error))
+    await wait(100)
+    process.exit(1)
   }
 
   /**
