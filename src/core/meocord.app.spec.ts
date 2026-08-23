@@ -666,6 +666,11 @@ describe('MeoCordApp', () => {
 
       expect(set).toHaveBeenCalledTimes(1)
       expect(set.mock.calls[0][0]).toHaveLength(1)
+
+      // The same builder arriving twice is how subcommands split across methods are
+      // declared, which is intended rather than a mistake to report.
+      const warn = vi.mocked(Logger).mock.results[0]?.value.warn
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('built more than once'))
     })
 
     // A builder missing a required field throws from toJSON. Deduplication reads the
@@ -694,6 +699,10 @@ describe('MeoCordApp', () => {
 
       await expect(app.registerCommands()).resolves.toBeUndefined()
       expect(set).toHaveBeenCalledTimes(1)
+
+      // Falling back to the @Command name keeps the command in the payload; a builder
+      // that cannot describe itself is the registration call's problem to report.
+      expect(set.mock.calls[0][0]).toHaveLength(1)
     })
 
     // Entry point commands have no builder class in @discordjs/builders, so their
@@ -727,6 +736,93 @@ describe('MeoCordApp', () => {
       await app.registerCommands()
 
       expect(set).toHaveBeenCalledWith([body])
+    })
+
+    // Discord identifies a command by its type together with its name, so a user context
+    // menu and a message context menu are free to share one. Keying on the name alone
+    // dropped half of every such pair from the payload without the user asking for it.
+    describe('a name shared across application command types', () => {
+      const contextMenuBuilder = (name: string, type: ApplicationCommandType) => ({
+        toJSON: () => ({ name, type }),
+      })
+
+      const registerPair = async (first: ApplicationCommandType, second: ApplicationCommandType) => {
+        const set = vi.fn<(commands: unknown[]) => Promise<unknown[]>>().mockResolvedValue([])
+        mockClient.application = { commands: { set } } as any
+
+        class FirstBuilder {
+          build = () => contextMenuBuilder('Genshin Profile', first) as any
+        }
+        class SecondBuilder {
+          build = () => contextMenuBuilder('Genshin Profile', second) as any
+        }
+        Reflect.defineMetadata('commandType', CommandType.CONTEXT_MENU, FirstBuilder)
+        Reflect.defineMetadata('commandType', CommandType.CONTEXT_MENU, SecondBuilder)
+
+        @Controller()
+        class ProfileController {
+          @Command('Genshin Profile', FirstBuilder as any)
+          @Command('Genshin Profile', SecondBuilder as any)
+          async profile(..._args: any[]) {}
+        }
+
+        const app = new MeoCordApp([ProfileController] as any, createMockContainer() as any, mockClient as any, 't')
+        await app.registerCommands()
+
+        return set
+      }
+
+      it('registers both when the types differ', async () => {
+        const set = await registerPair(ApplicationCommandType.User, ApplicationCommandType.Message)
+
+        expect(set.mock.calls[0][0]).toHaveLength(2)
+      })
+
+      it('does not warn when the types differ', async () => {
+        await registerPair(ApplicationCommandType.User, ApplicationCommandType.Message)
+
+        const warn = vi.mocked(Logger).mock.results[0]?.value.warn
+        expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('built more than once'))
+      })
+
+      // Two builders of one type genuinely cannot both own the name.
+      it('still registers one and warns when the types match', async () => {
+        const set = await registerPair(ApplicationCommandType.User, ApplicationCommandType.User)
+
+        expect(set.mock.calls[0][0]).toHaveLength(1)
+        const warn = vi.mocked(Logger).mock.results[0]?.value.warn
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('built more than once'))
+      })
+    })
+
+    // A slash builder may leave the type out of its body; two that do must still be read
+    // as the same command rather than each claiming a key of its own.
+    it('treats slash builders with no declared type as one command', async () => {
+      const set = vi.fn<(commands: unknown[]) => Promise<unknown[]>>().mockResolvedValue([])
+      mockClient.application = { commands: { set } } as any
+
+      class FirstBuilder {
+        build = () => ({ toJSON: () => ({ name: 'settings', options: [] }) }) as any
+      }
+      class SecondBuilder {
+        build = () => ({ toJSON: () => ({ name: 'settings', options: [] }) }) as any
+      }
+      Reflect.defineMetadata('commandType', CommandType.SLASH, FirstBuilder)
+      Reflect.defineMetadata('commandType', CommandType.SLASH, SecondBuilder)
+
+      @Controller()
+      class SettingsController {
+        @Command('settings', FirstBuilder as any)
+        async one(..._args: any[]) {}
+
+        @Command('settings', SecondBuilder as any)
+        async two(..._args: any[]) {}
+      }
+
+      const app = new MeoCordApp([SettingsController] as any, createMockContainer() as any, mockClient as any, 't')
+      await app.registerCommands()
+
+      expect(set.mock.calls[0][0]).toHaveLength(1)
     })
 
     it('warns when two different builders claim the same command name', async () => {
