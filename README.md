@@ -243,6 +243,8 @@ Every command's own flags:
 
 `meocord -V` / `--version` prints the installed version.
 
+`start` accepts one environment variable, `MEOCORD_RUNTIME`, which pins the binary the application is run with — see [Which runtime the bot runs on](#which-runtime-the-bot-runs-on).
+
 ```shell
 npx meocord build --prod          # production build
 npx meocord start --dev           # dev mode with live-reload
@@ -907,6 +909,25 @@ Start in production:
 
 ```shell
 npx meocord start --prod
+```
+
+### Which runtime the bot runs on
+
+`start` runs the built application with **the same binary that is running the CLI**. Launch it with bun and the bot is a bun process; launch it with node and it is a node process. Nothing to configure, and no extra launcher process sitting in the tree:
+
+```shell
+bun --bun meocord start --prod   # dist/main.js runs under bun
+npx meocord start --prod         # dist/main.js runs under node
+```
+
+This is worth caring about beyond process count. The runtime decides the allocator, and for a bot doing heavy native work — canvas rendering through a napi module, say — glibc's malloc and bun's mimalloc give very different resident-memory curves for the same workload, because they differ in how eagerly they return freed pages to the OS.
+
+Dev mode follows the same rule: the watcher is told which runtime to exec, so `start --dev` and `start --prod` agree.
+
+To pin a specific binary instead — a particular install, or a different runtime for comparison — set `MEOCORD_RUNTIME`:
+
+```shell
+MEOCORD_RUNTIME=/usr/local/bin/bun npx meocord start --prod
 ```
 
 ---

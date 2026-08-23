@@ -22,6 +22,7 @@ import { execSync } from 'child_process'
 import * as p from '@clack/prompts'
 import { detectInstalledPMs, getInstallCommand, type PackageManager } from '@src/util/package-manager.util.js'
 import { configureCommandHelp, ensureReady } from '@src/util/meocord-cli.util.js'
+import { buildAppCommand, buildWatchCommand, resolveRuntime } from '@src/util/runtime.util.js'
 import packageJson from '../../package.json' with { type: 'json' }
 import { fileURLToPath } from 'url'
 import TsconfigPathsPlugin from 'tsconfig-paths-webpack-plugin'
@@ -33,7 +34,7 @@ const __dirname = path.dirname(__filename)
 /**
  * A Command Line Interface (CLI) for managing the MeoCord application.
  */
-class MeoCordCLI {
+export class MeoCordCLI {
   private readonly appName = 'MeoCord'
   readonly logger = new Logger(this.appName)
   private readonly projectRoot = process.cwd()
@@ -41,6 +42,12 @@ class MeoCordCLI {
   private readonly webpackConfigPath = path.resolve(__dirname, '..', '..', '..', 'webpack.config.js')
   private readonly generatorCLI = new GeneratorCLI(this.appName)
   private readonly version = packageJson.version
+
+  /**
+   * Binary the application is spawned with, so it runs on the same runtime as the CLI
+   * rather than on whichever one happens to be named in the source.
+   */
+  private readonly runtime = resolveRuntime(process.env, process.execPath)
 
   /**
    * Configures and runs the MeoCord CLI.
@@ -422,6 +429,20 @@ copies or substantial portions of the Software.
   }
 
   /**
+   * Runs the built application under a watcher that restarts it after each rebuild.
+   *
+   * @returns The watcher process.
+   */
+  private spawnWatcher(): ChildProcess {
+    const { command, args } = buildWatchCommand(this.runtime, this.mainJSPath)
+
+    return spawn(command, args, {
+      cwd: this.projectRoot,
+      stdio: 'inherit',
+    })
+  }
+
+  /**
    * Starts the MeoCord application in development mode with live updates.
    */
   async startDev() {
@@ -456,11 +477,7 @@ copies or substantial portions of the Software.
               nodemonProcess = null
             }
 
-            nodemonProcess = spawn('npx -y nodemon', ['-q', this.mainJSPath], {
-              shell: true,
-              cwd: this.projectRoot,
-              stdio: 'inherit',
-            })
+            nodemonProcess = this.spawnWatcher()
 
             isRunning = true
           }
@@ -528,8 +545,8 @@ copies or substantial portions of the Software.
       this.clearConsole()
       this.logger.log('Starting...')
 
-      const start = spawn(`node ${this.mainJSPath}`, {
-        shell: true,
+      const appCommand = buildAppCommand(this.runtime, this.mainJSPath)
+      const start = spawn(appCommand.command, appCommand.args, {
         cwd: this.projectRoot,
         stdio: 'inherit',
       }).on('spawn', this.clearConsole)
@@ -564,10 +581,32 @@ copies or substantial portions of the Software.
   }
 }
 
-// Create an instance of the CLI and run it
-const cli = new MeoCordCLI()
-cli.run().catch(async error => {
-  cli.logger.error('Failed to initialize CLI:', error?.message || error)
-  await wait(100)
-  process.exit(1)
-})
+/**
+ * Whether this file is what the process was started with.
+ *
+ * The bin ships behind a `node_modules/.bin` symlink, so `argv[1]` is the link while
+ * `import.meta.url` is its target; the two only agree once the link is resolved.
+ * Anything undecidable counts as a launch, so the published CLI still starts in cases
+ * this cannot classify.
+ */
+function isProcessEntry(): boolean {
+  const invoked = process.argv[1]
+  if (invoked === undefined) return true
+
+  try {
+    return fs.realpathSync(invoked) === __filename
+  } catch {
+    return true
+  }
+}
+
+// Importing this module must not launch the command parser: its own tests do exactly
+// that to inspect how the application is spawned.
+if (isProcessEntry()) {
+  const cli = new MeoCordCLI()
+  cli.run().catch(async error => {
+    cli.logger.error('Failed to initialize CLI:', error?.message || error)
+    await wait(100)
+    process.exit(1)
+  })
+}
