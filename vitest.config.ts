@@ -38,7 +38,7 @@ export default defineConfig({
     include: ['src/**/*.spec.ts'],
     // Type-level behaviour is erased before a runtime test can observe it, so
     // the assertions in *.test-d.ts run through tsc instead. Negative cases use
-    // @ts-expect-error, which fails once the rejected form starts compiling —
+    // `@ts-expect-error`, which fails once the rejected form starts compiling —
     // that is what stops a regression here from passing silently.
     typecheck: {
       enabled: true,
@@ -50,13 +50,11 @@ export default defineConfig({
       // doesn't implement. Istanbul instruments at transform time and works
       // under Bun, which is what CI uses to run the suite.
       provider: 'istanbul',
-      // all: false — only instrument modules actually imported during the run
-      // (post-SWC-transformed JS). With all: true, istanbul reads raw .ts from
-      // disk and its parser chokes on TS `type` import modifiers.
-      all: false,
+      // Naming `include` is what pulls in files no test ever imported, so a module with
+      // no spec at all is reported at zero rather than left out of the percentage.
+      // Those files are read from disk as TypeScript, which is why anything istanbul's
+      // parser cannot read has to be excluded below rather than left to chance.
       include: ['src/**/*.ts'],
-      // *.test-d.ts are typecheck-only and never execute, and istanbul's parser rejects
-      // the TS `type` import modifiers they use.
       // Excluded because there is nothing to measure, not to flatter the number:
       // specs and type tests are the tests themselves, `src/interface` declares types
       // that erase at runtime, and `src/bin` is the CLI rather than the framework.
