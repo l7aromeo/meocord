@@ -913,21 +913,43 @@ npx meocord start --prod
 
 ### Which runtime the bot runs on
 
-`start` runs the built application with **the same binary that is running the CLI**. Launch it with bun and the bot is a bun process; launch it with node and it is a node process. Nothing to configure, and no extra launcher process sitting in the tree:
+`start` runs the bot on **the runtime you launched it with**. There is nothing to configure and no config key to set — if you typed `bun`, you get a bun process:
 
 ```shell
-bun --bun meocord start --prod   # dist/main.js runs under bun
-npx meocord start --prod         # dist/main.js runs under node
+bun run start          # dist/main.js runs under bun
+npm run start          # dist/main.js runs under node
 ```
 
-This is worth caring about beyond process count. The runtime decides the allocator, and for a bot doing heavy native work — canvas rendering through a napi module, say — glibc's malloc and bun's mimalloc give very different resident-memory curves for the same workload, because they differ in how eagerly they return freed pages to the OS.
+Two signals decide it, most explicit first: the runtime executing the CLI, and — when the CLI itself was handed to node — the runner that launched it. `bun run` honours the bin's `#!/usr/bin/env node` shebang, so bun sets `npm_execpath` to its own binary and that is what the bot is spawned with. npm, pnpm and yarn point it at a `.js` file instead, which cannot run the bundle, so those fall through to node as expected.
 
-Dev mode follows the same rule: the watcher is told which runtime to exec, so `start --dev` and `start --prod` agree.
+That matters for more than tidiness. Pinning `node` would oblige a bun-only image to install a second runtime purely to launch, or to carry `--bun` on every command. It also decides the allocator: for a bot doing heavy native work — canvas rendering through a napi module, say — glibc's malloc and bun's mimalloc produce very different resident-memory curves on the same workload, because they differ in how eagerly freed pages go back to the OS.
 
-To pin a specific binary instead — a particular install, or a different runtime for comparison — set `MEOCORD_RUNTIME`:
+Development works the same way. The watcher runs the bundle through the same command production does, so a runtime that works in `--dev` cannot quietly differ from the one that ships.
+
+#### Running the CLI itself on bun
+
+The resolution above covers the bot. The CLI process is decided before any of its code runs, by the shebang — so in an image with **no node at all**, bun has to be told to ignore it. Either flag it per command:
 
 ```shell
-MEOCORD_RUNTIME=/usr/local/bin/bun npx meocord start --prod
+bun --bun meocord start --prod
+```
+
+or set it once for the project, which is what a bun-only Dockerfile wants:
+
+```toml
+# bunfig.toml
+[run]
+bun = true
+```
+
+Then plain `bun run start` runs both the CLI and the bot on bun, and node need not exist.
+
+#### Pinning a specific binary
+
+To override both signals — a particular install, or a different runtime for comparison — set `MEOCORD_RUNTIME`:
+
+```shell
+MEOCORD_RUNTIME=/usr/local/bin/bun npm run start
 ```
 
 ---
