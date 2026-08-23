@@ -134,27 +134,21 @@ function verifyApp(): void {
 }
 
 /**
- * Checks that the published CLI can start without a particular runtime installed.
+ * Checks the CLI's interpreter line is one npm can shim on Windows.
  *
- * `#!/usr/bin/env node` binds the CLI to a runtime that need not be present: a machine
- * with only bun cannot run it, because the kernel resolves the interpreter before the
- * program exists. The line is injected at build time, so nothing in the sources shows
- * whether it survived.
+ * npm does not run the file through its shebang there; `cmd-shim` parses the line,
+ * takes the program out of it, and writes a `.cmd` that runs that program against the
+ * script. Only the `#!/usr/bin/env <prog>` form yields a program Windows can resolve —
+ * `#!/bin/sh` produces a shim that tries to execute a path no Windows machine has.
  */
 function verifyShebang(): void {
-  const [interpreter, selector] = readFileSync(cli, 'utf8').split('\n', 2)
+  const [interpreter] = readFileSync(cli, 'utf8').split('\n', 1)
 
-  if (!interpreter.startsWith('#!/bin/sh')) {
-    throw new Error(`CLI interpreter line is "${interpreter}", which ties it to one runtime.`)
+  if (interpreter !== '#!/usr/bin/env node') {
+    throw new Error(`CLI interpreter line is "${interpreter}", which npm cannot shim on Windows.`)
   }
 
-  for (const runtime of ['node', 'bun']) {
-    if (!selector.includes(runtime)) {
-      throw new Error(`CLI interpreter line never reaches ${runtime}: ${selector}`)
-    }
-  }
-
-  console.log('  cli: starts under either runtime')
+  console.log('  cli: interpreter line is shimmable on Windows')
 }
 
 function main(): void {
