@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a capability MeoCord does not have
+labels: ['enhancement']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: >
+        What you are trying to build, and where MeoCord gets in the way. Describe the situation
+        rather than the API you have in mind — the workaround you are using today is useful here.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you would like to write instead. Sketch the decorator or API if you have one.
+      render: typescript
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Anything you tried, or other shapes this could take.
+
+  - type: checkboxes
+    id: breaking
+    attributes:
+      label: Compatibility
+      options:
+        - label: This would change existing behaviour or break existing bots
