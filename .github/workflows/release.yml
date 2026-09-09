@@ -5,12 +5,13 @@ on:
     branches:
       - main
       - beta
-      - alpha
   pull_request:
     branches:
       - main
       - beta
-      - alpha
+  # Publishing is gated by merging the release pull request, so this is not how a
+  # release is started. It is here to re-run the job after a publish fails partway.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -182,7 +183,7 @@ jobs:
 
   release:
     name: Release
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request'
     needs: [lint, test-result, coverage, build, windows]
     runs-on: ubuntu-latest
     environment: Production
@@ -190,15 +191,23 @@ jobs:
       group: release-${{ github.ref }}
     permissions:
       contents: write
-      issues: write
       pull-requests: write
+      # Publishing uses npm trusted publishing: npm exchanges this token with the
+      # registry for short-lived credentials, so there is no npm token in the repo.
+      # It is also what signs the provenance attestation.
       id-token: write
+    env:
+      # The action commits the version bump. Husky's pre-commit hook runs the full
+      # lint, which has already passed on this commit and cannot fix a generated
+      # CHANGELOG anyway, so it is skipped rather than run twice.
+      HUSKY: 0
     steps:
+      # persist-credentials stays at its default: the action pushes the
+      # `changeset-release/*` branch, and it uses this checkout's credentials to do it.
       - name: Checkout code
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -224,7 +233,17 @@ jobs:
       - name: Verify generated applications build
         run: bun run verify:generated
 
-      - name: Run semantic-release
+      # With pending changesets, this opens or updates the release pull request and
+      # stops. With none — which is the state right after that pull request merges —
+      # it publishes the version already committed. So the merge is the trigger, and
+      # nothing reaches npm without one.
+      - name: Open the release pull request, or publish
+        uses: changesets/action@v1
+        with:
+          version: bun run release:version
+          publish: bun run release:publish
+          title: 'chore: release'
+          commit: 'chore: release'
+          createGithubReleases: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bun run semantic-release

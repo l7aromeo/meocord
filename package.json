@@ -1,7 +1,7 @@
 {
   "name": "meocord",
-  "description": "Decorator-based Discord bot framework built on discord.js. Brings NestJS-style controllers, dependency injection, guards, and testing utilities to bot development — with a full CLI and TypeScript-first design.",
-  "version": "0.0.0-development",
+  "description": "Decorator-based Discord bot framework built on discord.js. Brings NestJS-style controllers, dependency injection, guards, and testing utilities to bot development \u2014 with a full CLI and TypeScript-first design.",
+  "version": "3.2.1",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -16,7 +16,10 @@
     "verify:generated": "bun scripts/verify-generated.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:typecheck": "tsc --noEmit --project tsconfig.test.json"
+    "test:typecheck": "tsc --noEmit --project tsconfig.test.json",
+    "changeset": "changeset",
+    "release:version": "changeset version",
+    "release:publish": "changeset publish"
   },
   "bin": "./dist/esm/bin/meocord.js",
   "repository": {
@@ -74,6 +77,7 @@
     "package.json",
     "LICENSE",
     "AUTHOR.md",
+    "CHANGELOG.md",
     "README.md"
   ],
   "dependencies": {
@@ -95,14 +99,13 @@
     "webpack-node-externals": "^3.0.0"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.2",
     "@eslint/js": "^10.0.1",
     "@rollup/plugin-alias": "^6.0.0",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-swc": "^0.4.1",
-    "@semantic-release/commit-analyzer": "^13.0.1",
-    "@semantic-release/github": "^12.0.9",
-    "@semantic-release/release-notes-generator": "^14.1.1",
     "@types/lodash-es": "^4.17.12",
     "@types/webpack-node-externals": "^3.0.4",
     "@typescript-eslint/parser": "^8.67.0",
@@ -119,7 +122,6 @@
     "rollup": "^4.62.5",
     "rollup-plugin-copy": "^3.5.0",
     "rollup-plugin-dts": "^6.5.1",
-    "semantic-release": "^25.0.9",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.67.0",
     "@vitest/coverage-istanbul": "^4.1.11",
