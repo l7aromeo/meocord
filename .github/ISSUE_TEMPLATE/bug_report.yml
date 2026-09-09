@@ -1,0 +1,122 @@
+name: Bug report
+description: Something in MeoCord behaves differently than documented
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please do not use this form for security vulnerabilities —
+        see [SECURITY.md](https://github.com/l7aromeo/meocord/blob/main/SECURITY.md) instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: >
+        A minimal controller and the interaction that triggers the problem. A link to a repository
+        is ideal; a pasted controller is fine. This is the single thing that most affects how fast
+        a bug gets fixed.
+      render: typescript
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Where the problem shows up. Pick the closest one.
+      options:
+        - Controllers and command routing
+        - Guards
+        - Dependency injection
+        - Decorators and metadata
+        - Autocomplete
+        - Testing utilities
+        - CLI — create / generate
+        - CLI — build / start
+        - Types and editor experience
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: command-type
+    attributes:
+      label: Command type
+      description: Leave blank if the problem is not tied to one.
+      multiple: true
+      options:
+        - SLASH
+        - CONTEXT_MENU
+        - PRIMARY_ENTRY_POINT
+        - BUTTON
+        - SELECT_MENU
+        - USER_SELECT_MENU
+        - ROLE_SELECT_MENU
+        - MENTIONABLE_SELECT_MENU
+        - CHANNEL_SELECT_MENU
+        - MODAL_SUBMIT
+        - Message handler
+        - Reaction handler
+
+  - type: input
+    id: meocord-version
+    attributes:
+      label: MeoCord version
+      description: Output of `meocord --version`.
+      placeholder: 3.2.1
+    validations:
+      required: true
+
+  - type: input
+    id: discordjs-version
+    attributes:
+      label: discord.js version
+      placeholder: 14.27.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      description: What runs the bot. Decorator metadata and module resolution differ between these.
+      options:
+        - Node
+        - Bun
+        - Deno
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: runtime-version
+    attributes:
+      label: Runtime version
+      placeholder: node 22.14.0
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15.3 / Ubuntu 24.04 / Windows 11
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Any error or stack trace. Redact your bot token before pasting.
+      render: shell

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/l7aromeo/meocord/discussions
+    about: Usage questions, design discussion, and anything not yet a concrete bug or request.
+  - name: Report a security vulnerability
+    url: https://github.com/l7aromeo/meocord/security/advisories/new
+    about: Report privately. Never open a public issue for a vulnerability.
+  - name: Documentation
+    url: https://github.com/l7aromeo/meocord#readme
+    about: The README covers controllers, guards, testing, and deployment.
