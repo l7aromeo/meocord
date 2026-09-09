@@ -1,6 +1,6 @@
 /**
  * MeoCord Framework
- * Copyright (c) 2025 Ukasyah Rahmatullah Zada
+ * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
  * SPDX-License-Identifier: MIT
  */
 

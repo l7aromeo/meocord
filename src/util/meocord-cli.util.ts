@@ -1,6 +1,6 @@
 /**
  * MeoCord Framework
- * Copyright (c) 2025 Ukasyah Rahmatullah Zada
+ * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
  * SPDX-License-Identifier: MIT
  */
 import { Argument, Command, Help, Option } from 'commander'
@@ -32,7 +32,7 @@ export function configureCommandHelp(command: Command) {
  * @returns The formatted help text.
  */
 export function formatHelp(cmd: Command, helper: Help, options: readonly Option[]): string {
-  let helpText = `MeoCord Copyright (c) 2025 Ukasyah Rahmatullah Zada — MIT License\n\n`
+  let helpText = `MeoCord Copyright (c) 2025-present Ukasyah Rahmatullah Zada — MIT License\n\n`
 
   helpText += `${helper.commandUsage(cmd)}\n\n`
   helpText += `${helper.commandDescription(cmd)}\n\n`
