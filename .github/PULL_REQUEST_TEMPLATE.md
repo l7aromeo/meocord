@@ -5,15 +5,16 @@
 ## Release impact
 
 <!--
-The commit prefix decides whether this publishes. Judge by what reaches the installed package,
-not by which file you edited — JSDoc compiles into the shipped .d.ts, so fixing a wrong @example
-is a `fix:`, not `docs:`. See CONTRIBUTING.md.
+A change that reaches the published package carries its own release note. Run
+`bun run changeset` and commit the file it writes. Judge by what a consumer installs, not by
+which file you edited — JSDoc compiles into the shipped .d.ts, so fixing a wrong @example is a
+`patch`. See CONTRIBUTING.md.
 -->
 
-- [ ] `feat:` — minor
-- [ ] `fix:` / `perf:` — patch
-- [ ] `BREAKING CHANGE:` in the body — major
-- [ ] Non-releasing (`docs:`, `test:`, `ci:`, `chore:`, `refactor:`, `style:`)
+- [ ] `major` — makes a working bot stop working
+- [ ] `minor` — new capability, nothing existing breaks
+- [ ] `patch` — fix, performance, or a correction to what ships
+- [ ] No changeset: nothing here reaches the published package
 
 ## Checklist
 
@@ -21,4 +22,5 @@ is a `fix:`, not `docs:`. See CONTRIBUTING.md.
 - [ ] `bun run test` passes
 - [ ] Tests cover the new behaviour, or this changes no behaviour
 - [ ] If `src/bin/` was touched: `bun run build && bun run verify:generated` passes
+- [ ] A changeset is committed, or this reaches nothing a consumer installs
 - [ ] Public API changes are reflected in the README and in the JSDoc a user reads in their editor

@@ -1,9 +1,9 @@
 version: 2
 updates:
-  # Runtime dependencies ship inside the published package, so their updates are `fix:`
-  # and publish a patch. Dev dependencies never reach a consumer, so they are `chore:`
-  # and land without a release. Majors are split out of the groups because they are the
-  # ones that need reading rather than merging.
+  # A runtime dependency ships inside the published package, so a bump to one is a `patch`
+  # a consumer should see in the changelog — add a changeset to the pull request before
+  # merging it. Dev dependencies and actions reach no consumer and need none. Majors are
+  # split out of the groups because they are the ones that need reading rather than merging.
   - package-ecosystem: bun
     directory: /
     schedule:
@@ -11,8 +11,8 @@ updates:
       day: monday
     open-pull-requests-limit: 5
     commit-message:
-      prefix: fix(deps)
-      prefix-development: chore(deps-dev)
+      prefix: deps
+      prefix-development: deps-dev
     groups:
       production:
         dependency-type: production
@@ -35,7 +35,7 @@ updates:
       day: monday
     open-pull-requests-limit: 3
     commit-message:
-      prefix: ci(deps)
+      prefix: ci
     groups:
       actions:
         patterns: ['*']
