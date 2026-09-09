@@ -59,6 +59,16 @@ export default defineConfig({
       // specs and type tests are the tests themselves, `src/interface` declares types
       // that erase at runtime, and `src/bin` is the CLI rather than the framework.
       exclude: ['src/**/*.spec.ts', 'src/**/*.test-d.ts', 'src/interface/**', 'src/bin/**', 'src/**/index.ts'],
+      // A floor, not a target. Set just under what the suite covers today so a change that
+      // drops coverage fails the Coverage job on its own — without it that job can only fail
+      // when Test already has, which makes it a required check that checks nothing. Raise
+      // these as coverage grows; never lower them to make a red build green.
+      thresholds: {
+        statements: 85,
+        branches: 75,
+        functions: 85,
+        lines: 86,
+      },
     },
   },
 })
