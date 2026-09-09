@@ -1,5 +1,10 @@
 # MeoCord Framework
 
+[![npm version](https://img.shields.io/npm/v/meocord.svg)](https://www.npmjs.com/package/meocord)
+[![CI](https://github.com/l7aromeo/meocord/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/l7aromeo/meocord/actions/workflows/release.yml)
+[![node](https://img.shields.io/node/v/meocord)](https://www.npmjs.com/package/meocord)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 **MeoCord** is a decorator-based Discord bot framework built on top of discord.js. It brings a NestJS-style architecture — controllers, services, guards, and dependency injection — to bot development, with a full CLI, TypeScript-first design, and testing utilities included out of the box.
 
 ---
@@ -1003,31 +1008,9 @@ MEOCORD_RUNTIME=/usr/local/bin/bun npm run start
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feat/your-feature`
-3. Commit with conventional commits: `git commit -m "feat: add X"`
-4. Run `bun run lint` and `bun run test` before pushing
-5. If you touched anything under `src/bin/`, also run `bun run build && bun run verify:generated`
-6. Push and open a pull request against `main`
+Issues, questions, and pull requests are welcome. [CONTRIBUTING.md](./CONTRIBUTING.md) covers getting set up, what each check exists to catch, and how commit messages drive releases — read the commit conventions before opening a pull request, since the prefix decides whether a change publishes.
 
-Include a description of what changed and why, and add tests for any new behaviour.
-
-`verify:generated` generates one controller of every type through the built CLI — flat and nested, in separate throwaway projects — and typechecks the result against the published package. Rendering a template says nothing about whether the code it produces compiles, and two bugs lived behind exactly that gap. It runs in CI as part of the Build job, so you do not have to remember it; running it locally is just faster than waiting.
-
-### Commit messages and releases
-
-Commit messages drive versioning through [semantic-release](https://semantic-release.gitbook.io/). Only these publish:
-
-| Prefix                         | Release |
-| ------------------------------ | ------- |
-| `feat:`                        | minor   |
-| `fix:`                         | patch   |
-| `perf:`                        | patch   |
-| `BREAKING CHANGE:` in the body | major   |
-
-Everything else — `docs:`, `test:`, `ci:`, `chore:`, `refactor:`, `style:` — lands on `main` without publishing and ships with whatever releasable commit comes next.
-
-Pick the prefix by what reaches the installed package, not by which file you edited. JSDoc is compiled into the published `.d.ts` and is what a user reads in their editor, so correcting a wrong `@example` is a `fix:` even though you only touched a comment. A README-only change is `docs:`.
+Participation is governed by the [Code of Conduct](./CODE_OF_CONDUCT.md). For vulnerabilities, follow [SECURITY.md](./SECURITY.md) rather than opening an issue.
 
 ---
 
