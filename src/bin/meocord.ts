@@ -258,7 +258,11 @@ copies or substantial portions of the Software.
         initialValue: defaultPM,
       })
 
-      if (p.isCancel(selected)) {
+      // `select` types its cancel sentinel as plain `symbol`, while `isCancel` narrows only
+      // that sentinel's own `unique symbol` — so the guard leaves `symbol` in its false
+      // branch and `pm` stops being a PackageManager. The prompt returns a symbol in no
+      // other case, so the cancel is detected on that instead.
+      if (typeof selected === 'symbol') {
         p.cancel('Operation cancelled.')
         process.exit(0)
       }
