@@ -1,0 +1,41 @@
+version: 2
+updates:
+  # Runtime dependencies ship inside the published package, so their updates are `fix:`
+  # and publish a patch. Dev dependencies never reach a consumer, so they are `chore:`
+  # and land without a release. Majors are split out of the groups because they are the
+  # ones that need reading rather than merging.
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: fix(deps)
+      prefix-development: chore(deps-dev)
+    groups:
+      production:
+        dependency-type: production
+        update-types: [minor, patch]
+      development:
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # discord.js is a peer dependency: the range is a compatibility contract with the
+      # consumer, not something to bump on a schedule. Widen it deliberately instead.
+      - dependency-name: discord.js
+      # Pinned exactly on purpose — @swc/core is the transform behind emitDecoratorMetadata,
+      # and a floating patch there changes what every generated app compiles to.
+      - dependency-name: '@swc/core'
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: ci(deps)
+    groups:
+      actions:
+        patterns: ['*']
