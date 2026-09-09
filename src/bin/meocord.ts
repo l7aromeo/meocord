@@ -2,7 +2,7 @@
 
 /**
  * MeoCord Framework
- * Copyright (c) 2025 Ukasyah Rahmatullah Zada
+ * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
  * SPDX-License-Identifier: MIT
  */
 
@@ -127,7 +127,7 @@ SOFTWARE.
           console.log(`
 MIT License
 
-Copyright (c) 2025 Ukasyah Rahmatullah Zada
+Copyright (c) 2025-present Ukasyah Rahmatullah Zada
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
