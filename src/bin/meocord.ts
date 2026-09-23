@@ -7,7 +7,7 @@
  */
 
 import path from 'path'
-import { createRsbuild, type RsbuildConfig } from '@rsbuild/core'
+import { createRsbuild } from '@rsbuild/core'
 import { Logger } from '@src/common/index.js'
 import { spawn, ChildProcess } from 'node:child_process'
 import { capitalize } from 'lodash-es'
@@ -26,7 +26,7 @@ import { resolveOwnVersion } from '@src/util/package-version.util.js'
 import { buildAppCommand, resolveRuntime } from '@src/util/runtime.util.js'
 import packageJson from '../../package.json' with { type: 'json' }
 import { fileURLToPath } from 'url'
-import { createRsbuildConfig } from '@src/build/rsbuild-config.js'
+import { assertNoWebpackHook, createRsbuildConfig } from '@src/build/rsbuild-config.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -318,17 +318,19 @@ copies or substantial portions of the Software.
    * `rsbuild` hook, if it declares one, is given the chance to modify it. Previously this
    * was a `webpack.config.js` shipped at the package root and re-read at runtime.
    */
-  private async createBundler(mode: 'production' | 'development', overrides?: Partial<RsbuildConfig>) {
+  private async createBundler(mode: 'production' | 'development') {
     // Loaded here rather than at module scope: reading it eagerly broke caching in bun
     // Docker builds, where the config file is not present when this module first loads.
     const meocordConfig = loadMeoCordConfig()
+
+    assertNoWebpackHook(meocordConfig)
 
     const base = createRsbuildConfig({
       mode,
       bundleDependencies: meocordConfig?.bundleDependencies,
       externals: meocordConfig?.externals,
     })
-    const config = { ...(meocordConfig?.rsbuild?.(base) ?? base), ...overrides }
+    const config = meocordConfig?.rsbuild?.(base) ?? base
 
     return createRsbuild({ cwd: this.projectRoot, config })
   }
@@ -365,21 +367,30 @@ copies or substantial portions of the Software.
     try {
       // Deliberately built without the application's `rsbuild` hook: this compiles the very
       // file that declares that hook, so applying it here would let a config shape its own
-      // compilation. Dependencies stay external -- the output is read by the config loader,
-      // not run as an application.
-      const base = createRsbuildConfig({ mode: 'development', entry: configPath })
+      // compilation. It does follow `bundleDependencies`, though: the config imports packages
+      // too (dotenv, usually), and a bot bundled to run without node_modules would otherwise
+      // fail on its own config file.
+      const meocordConfig = loadMeoCordConfig()
+      const bundleDependencies = meocordConfig?.bundleDependencies ?? false
+      const base = createRsbuildConfig({
+        mode: 'development',
+        entry: configPath,
+        bundleDependencies,
+        externals: meocordConfig?.externals,
+      })
       const rsbuild = await createRsbuild({
         cwd: this.projectRoot,
         config: {
           ...base,
           source: { ...base.source, entry: { 'meocord.config': configPath } },
           output: {
-            target: 'node',
-            module: true,
-            autoExternal: true,
+            ...base.output,
             distPath: { root: path.resolve(this.projectRoot, 'dist'), js: '' },
             filename: { js: '[name].mjs' },
             minify: { js: false },
+            sourceMap: false,
+            // Runs beside the application build in the same dist; cleaning would delete it.
+            cleanDistPath: false,
           },
         },
       })

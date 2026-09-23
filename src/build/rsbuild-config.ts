@@ -8,6 +8,22 @@ import path from 'path'
 import { type RsbuildConfig } from '@rsbuild/core'
 import { prepareModifiedTsConfig } from '@src/util/tsconfig.util.js'
 
+/**
+ * Native accelerators discord.js reaches for at runtime and works without.
+ *
+ * `bufferutil` and `utf-8-validate` are `ws`'s optional peers; `zlib-sync` is loaded by
+ * `@discordjs/ws` without being declared at all, falling back to uncompressed identify when it
+ * is absent. A bundler cannot tell "optional" from "missing", so bundling dependencies failed on
+ * `Can't resolve 'zlib-sync'` for every bot until these were left as runtime imports -- where a
+ * missing one is caught and ignored, exactly as it is when nothing is bundled.
+ *
+ * They are externalised as `node-commonjs` rather than plain names. A plain name in an ESM build
+ * becomes a hoisted top-level `import`, which throws `Cannot find package 'bufferutil'` before the
+ * bot runs a line -- the opposite of the try/catch `ws` wraps around it. `node-commonjs` keeps a
+ * runtime `require` at the original call site, so the library's own fallback still applies.
+ */
+export const DISCORD_OPTIONAL_NATIVES: readonly string[] = ['zlib-sync', 'bufferutil', 'utf-8-validate']
+
 /** How the bundler is asked to build an application. */
 export interface RsbuildConfigOptions {
   /** Production enables minification; development keeps readable output. */
@@ -79,11 +95,32 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
       // Inverted deliberately: autoExternal leaves dependencies as runtime imports, so
       // bundling them means turning it off.
       autoExternal: !bundleDependencies,
-      externals,
+      externals: [Object.fromEntries(DISCORD_OPTIONAL_NATIVES.map(name => [name, `node-commonjs ${name}`])), ...externals],
       // Rsbuild would put the bundle in dist/static/js and assets in dist/static/*. The
       // application's entry is dist/main.js, which is what `meocord start` runs.
       distPath: { root: path.resolve(cwd, 'dist'), js: '', image: 'assets', svg: 'assets', font: 'assets', media: 'assets' },
-      filename: { js: '[name].js' },
+      // No content hash: the webpack build wrote `assets/[name][ext]`, and a bot reads these
+      // from disk rather than serving them from a CDN, so there is no cache to bust. Each
+      // accepts a function too, for applications whose same-named files in different folders
+      // would otherwise collide.
+      filename: { js: '[name].js', image: '[name][ext]', svg: '[name][ext]', font: '[name][ext]', media: '[name][ext]' },
+      // What `import image from './x.png'` evaluates to at runtime. A bot passes that string
+      // to fs or to a Discord attachment, so it has to be a real path on disk -- which is what
+      // webpack's `publicPath` produced, and what Rsbuild's web-oriented default would not.
+      assetPrefix: `${path.resolve(cwd, 'dist')}/`,
+      // Rsbuild inlines assets under 4 KB as base64 data URIs, so the same import would give a
+      // path for a large file and a `data:` string for a small one. A bot reads its assets
+      // with fs, where a data URI is ENOENT -- icons broke at runtime while the build passed.
+      // webpack's `asset/resource` always emitted a file.
+      dataUriLimit: 0,
+      // What the webpack build defaulted to. Rsbuild emits none in production, which would
+      // leave a crashed bot's stack trace pointing into the bundle instead of the source.
+      sourceMap: { js: mode === 'production' ? 'source-map' : 'eval-source-map' },
+      // Rsbuild empties dist before building by default. MeoCord runs two builds into the same
+      // directory -- the application, and meocord.config.ts into dist/meocord.config.mjs -- so
+      // whichever runs second would erase the other: `meocord build` reported success with
+      // nothing in dist but the config. The webpack build never cleaned dist either.
+      cleanDistPath: false,
       minify: {
         // Off by default for Node targets in Rsbuild 2, so production builds would ship
         // unminified unless this is stated.
@@ -105,4 +142,26 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
       chunkSplit: { strategy: 'all-in-one' },
     },
   }
+}
+
+/**
+ * Refuses a MeoCord config that still carries the pre-4.0 `webpack` hook.
+ *
+ * Without this, such a config builds "successfully" with the customisation silently dropped --
+ * assets landing in the wrong place, markdown imported as a path instead of its text. Refusing
+ * is kinder than a green build that ships something else.
+ *
+ * Read as a property rather than tested with `in`: a config loaded from source comes back as
+ * jiti's interop proxy, where property access reaches the default export but `in` and
+ * Object.keys only see `default` -- so `'webpack' in config` is false even when it is set.
+ */
+export function assertNoWebpackHook(config: object | undefined): void {
+  if ((config as Record<string, unknown> | undefined)?.webpack === undefined) return
+
+  throw new Error(
+    'meocord.config.ts still declares a `webpack` hook, which MeoCord no longer runs. ' +
+      'Rename it to `rsbuild` and reshape its body for Rsbuild: images, fonts, svg and media ' +
+      'need no rules any more, `output.filename` accepts a function for custom asset paths, ' +
+      'and raw rules go through `tools.rspack`. See the 4.0.0 release notes.',
+  )
 }

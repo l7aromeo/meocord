@@ -18,6 +18,9 @@ dist/
 # Scratch application built by scripts/verify-generated.ts
 .generated-check/
 
+# Scratch application built by src/build/rsbuild-pipeline.spec.ts
+.rsbuild-spec/
+
 # Cache and temporary files
 .prettier_cache/
 .eslintcache
