@@ -151,7 +151,8 @@ You do not need to check these; they are listed so you know what was kept:
   `dist/meocord.config.mjs`.
 - Asset imports resolve to absolute paths on disk, ready for `fs`, canvas, or a Discord attachment. No asset
   is ever inlined as a data URI, whatever its size.
-- Source maps: `source-map` in production, `eval-source-map` in development.
+- Source map types: `source-map` in production, `eval-source-map` in development. Where a production map
+  points is different; see [Build and start](#4-build-and-start).
 - Production builds are minified and keep class and function names, which dependency injection relies on.
 
 ## 3. Replace `MeoCordWebpackConfig`
@@ -180,7 +181,7 @@ npx meocord build --prod
 npx meocord start --prod
 ```
 
-Two things behave differently, both for the better:
+Three things behave differently:
 
 - **Builds read `meocord.config.ts` every time.** MeoCord 3 read the compiled copy the previous build left
   in `dist`, so a config edit took effect one build late, and the watcher's reload on a config change
@@ -188,6 +189,10 @@ Two things behave differently, both for the better:
 - **`meocord start` runs bun with `--no-install`.** Without it, bun downloads any package it cannot find at
   runtime. If you launch `dist/main.js` with bun directly — a Docker `CMD`, for example — add the flag
   yourself: `bun --no-install dist/main.js`.
+- **Production source maps name real paths.** `dist/main.js.map` lists each source relative to `dist`, as
+  `../src/app.ts`, where webpack wrote `webpack://<your-app>/./src/app.ts`. Node and bun resolve either, so
+  stack traces are unaffected. An error tracker that uploads source maps and rewrites or matches paths by the
+  `webpack://` prefix needs that rule updated.
 
 ## 5. Optional: deploy without `node_modules`
 
