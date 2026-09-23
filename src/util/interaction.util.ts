@@ -18,14 +18,8 @@ import {
 import { CommandType } from '@src/enum/controller.enum.js'
 
 /**
- * The discord.js class each command type is handled by.
- *
- * One table rather than a chain of `isButton() || isStringSelectMenu() || ...`: the
- * registration guard in `@Command`, the dispatcher, and the type-level
- * `CommandInteractionType` all have to agree on what a command type accepts, and a
- * chain repeated in three files drifts the moment a fifth select menu appears. Adding
- * a `CommandType` member without an entry here is a compile error, not a silent
- * fall-through to "Command not found!".
+ * The discord.js class check for each command type, shared by `@Command`, the dispatcher and
+ * `CommandInteractionType`. A `CommandType` without an entry here fails to compile.
  */
 const INTERACTION_MATCHERS: Record<CommandType, (interaction: unknown) => boolean> = {
   [CommandType.SLASH]: interaction => interaction instanceof ChatInputCommandInteraction,
@@ -47,24 +41,15 @@ const NAME_ROUTED_TYPES: ReadonlySet<CommandType> = new Set([
   CommandType.PRIMARY_ENTRY_POINT,
 ])
 
-/**
- * Whether an interaction is the kind the given command type handles.
- *
- * @param type - The command type declared on `@Command`.
- * @param interaction - The interaction being dispatched.
- */
+/** Whether an interaction is the kind the given command type handles. */
 export function matchesCommandType(type: CommandType, interaction: unknown): boolean {
   const matches = INTERACTION_MATCHERS[type]
   return matches !== undefined && matches(interaction)
 }
 
 /**
- * Whether the command type is routed by matching a customId pattern.
- *
- * Components carry an application-defined customId and so are matched by pattern;
- * commands carry a name Discord itself registered and are matched exactly.
- *
- * @param type - The command type declared on `@Command`.
+ * Whether a command type is routed by customId pattern: components carry an application-defined
+ * customId, while commands are matched by the name Discord registered.
  */
 export function isCustomIdRouted(type: CommandType): boolean {
   return !NAME_ROUTED_TYPES.has(type)
@@ -73,11 +58,7 @@ export function isCustomIdRouted(type: CommandType): boolean {
 /** The interactions that carry an application-defined customId. */
 export type CustomIdInteraction = Extract<Interaction, { customId: string }>
 
-/**
- * Whether an interaction carries a customId, and so can be routed by pattern.
- *
- * @param interaction - The interaction being dispatched.
- */
+/** Whether an interaction carries a customId, and so can be routed by pattern. */
 export function hasCustomId(interaction: Interaction): interaction is CustomIdInteraction {
   return interaction instanceof MessageComponentInteraction || interaction instanceof ModalSubmitInteraction
 }
@@ -86,19 +67,9 @@ export function hasCustomId(interaction: Interaction): interaction is CustomIdIn
 export const COMMAND_PATH_SEPARATOR = ' '
 
 /**
- * The route keys a chat input interaction can be handled by, most specific first.
- *
- * Discord sends `/settings notify email` as one interaction named `settings`, so
- * routing on `commandName` alone gives every subcommand of a command the same handler
- * — and the framework would run whichever one was declared first. The full path is
- * tried before the bare name so a command can either split its subcommands across
- * methods or keep handling them in one, but never both by accident.
- *
- * A group is never dropped on the way down: `settings notify email` does not fall back
- * to `settings email`, because a second group could declare its own `email` and the
- * two would be indistinguishable.
- *
- * @param interaction - The chat input or autocomplete interaction being dispatched.
+ * The route keys a chat input interaction can be handled by, most specific first:
+ * `settings notify email`, then `settings`. Discord names the whole interaction `settings`, so the
+ * full path comes first; a group is never skipped, since two groups may share a subcommand name.
  * @returns The keys to look up, most specific first.
  */
 export function resolveCommandPaths(interaction: ChatInputCommandInteraction | AutocompleteInteraction): string[] {
@@ -123,26 +94,16 @@ const NESTING_OPTION_TYPES: ReadonlySet<ApplicationCommandOptionType> = new Set(
 ])
 
 /**
- * The value a handler should receive for one option.
- *
- * Discord sends entity options as a snowflake plus a `resolved` payload, and discord.js
- * puts that payload on the option as `user`/`role`/`channel`/`attachment`. Passing
- * `value` alone would hand the handler a bare id string for `@user`, forcing every
- * handler to re-fetch what the gateway already delivered.
+ * The value a handler receives for one option: the resolved user, role, channel or attachment
+ * discord.js attaches, rather than a bare snowflake to re-fetch.
  */
 function resolveOptionValue(option: CommandInteractionOption): unknown {
   return option.attachment ?? option.channel ?? option.role ?? option.user ?? option.member ?? option.value
 }
 
 /**
- * Flattens a chat input interaction's options into the params record handlers receive.
- *
- * Subcommand and subcommand-group options are containers, not values — for
- * `/settings notify email true` the top level holds only `notify`. Recursing past them
- * means a subcommand handler sees `{ email: true }`, the same shape a flat command's
- * handler sees.
- *
- * @param interaction - The chat input or autocomplete interaction being dispatched.
+ * Flattens an interaction's options into the params record handlers receive, looking through
+ * subcommand and group containers, so `/settings notify email true` yields `{ email: true }`.
  * @returns Each supplied option keyed by name, with entity options resolved.
  */
 export function resolveOptionParams(
@@ -168,14 +129,8 @@ export function resolveOptionParams(
 }
 
 /**
- * The name of the option the user is currently typing, or `undefined`.
- *
- * `getFocused` throws when nothing is focused rather than returning null, and it is
- * absent altogether on a hand-built test double. Neither is worth failing a dispatch
- * over — an autocomplete with no focused option simply matches no option-specific
- * handler.
- *
- * @param interaction - The autocomplete interaction being dispatched.
+ * The name of the option the user is typing, or undefined when nothing is focused; `getFocused`
+ * throws then, and hand-built test doubles lack it entirely.
  */
 export function focusedOptionName(interaction: AutocompleteInteraction): string | undefined {
   if (typeof interaction.options?.getFocused !== 'function') return undefined

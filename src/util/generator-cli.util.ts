@@ -11,10 +11,8 @@ const __dirname = path.dirname(__filename)
 const logger = new Logger('MeoCord')
 
 /**
- * Converts a given name to a properly formatted class name.
- * @param originalName - The original name to be converted to a class name.
- * @returns The formatted class name.
- * @throws Will exit the process if the generated class name is invalid.
+ * Converts a name to a PascalCase class name.
+ * @throws Exits the process when the result is not a valid class name.
  */
 export function toClassName(originalName: string): string {
   const className = startCase(camelCase(originalName)).replace(/\s/g, '')
@@ -29,12 +27,8 @@ export function toClassName(originalName: string): string {
 }
 
 /**
- * Validates and formats a given name, splitting it into parts,
- * converting it to kebab-case, and generating a class name.
- * @param originalName - The name to validate and format. It can include slashes for nested paths.
- * @returns An object containing the name parts, kebab-case name, and class name.
- * @throws Will exit the process if the name is undefined, invalid,
- *         or the generated class name is invalid.
+ * Splits a name like `admin/ban` into its folders, kebab-case file name, class name and command name.
+ * @throws Exits the process when the name is missing or invalid.
  */
 export function validateAndFormatName(originalName?: string): {
   parts: string[]
@@ -62,26 +56,16 @@ export function validateAndFormatName(originalName?: string): {
 }
 
 /**
- * The Discord command name a generated controller registers.
- *
- * The whole path, not only its last segment: `admin/ban` becomes `admin-ban`. Files are kept
- * apart by their directories, but a Discord command name is global to the application, so two
- * controllers named `ban` in different folders must not both register `ban`.
- *
- * @param parts - The folders the name is nested in.
- * @param kebabCaseName - The name's last segment, already kebab-cased.
+ * The Discord command name a generated controller registers: the whole path, so `admin/ban` becomes
+ * `admin-ban`, since command names are global to the application while files are kept apart by folder.
  */
 export function commandNameFor(parts: string[], kebabCaseName: string): string {
   return [...parts.map(part => kebabCase(part)), kebabCaseName].filter(Boolean).join('-')
 }
 
 /**
- * Stops a generator before it writes anything, if any file it would write already exists.
- *
- * Checked for every file up front rather than one at a time, so a refusal never leaves half a
- * component behind, and a file the user has edited is never replaced.
- *
- * @param filePaths - Absolute paths the generator is about to create.
+ * Exits before a generator writes anything if any file it would write already exists, so a refusal
+ * never leaves half a component behind or replaces an edited file.
  */
 export function assertFilesAbsent(filePaths: string[]): void {
   const existing = filePaths.filter(filePath => fs.existsSync(filePath))
@@ -95,10 +79,7 @@ export function assertFilesAbsent(filePaths: string[]): void {
   process.exit(1)
 }
 
-/**
- * Ensures that a given directory exists. Creates the directory and any necessary parent directories if they do not exist.
- * @param directory - The absolute path of the directory to create.
- */
+/** Creates a directory and its parents if it does not exist. */
 export function createDirectoryIfNotExists(directory: string) {
   if (!fs.existsSync(directory)) {
     fs.mkdirSync(directory, { recursive: true })
@@ -106,15 +87,8 @@ export function createDirectoryIfNotExists(directory: string) {
 }
 
 /**
- * Writes the provided content to a new file and runs ESLint on the file for formatting.
- *
- * Never replaces a file: the write is exclusive, so an existing file is left exactly as it was.
- * Generators check with {@link assertFilesAbsent} before writing anything; this is the last line
- * behind that. A failed write sets a non-zero exit code rather than ending with the success status
- * of a run that produced nothing.
- *
- * @param filePath - The absolute path of the file to create.
- * @param content - The content to write to the file.
+ * Creates a file and formats it with the project's ESLint. The write is exclusive, so an existing file
+ * is never replaced; a failed write sets a non-zero exit code.
  */
 export function generateFile(filePath: string, content: string): void {
   const relative = path.relative(process.cwd(), filePath)
@@ -149,13 +123,7 @@ function formatWithLocalESLint(filePath: string): void {
   })
 }
 
-/**
- * Builds and returns a template string for a given class name using a specific template file.
- * @param className - The name of the class to insert into the template.
- * @param templateFileName - The name of the template file to use.
- * @returns The populated template string.
- * @throws Will throw an error if the template file cannot be read.
- */
+/** Renders a builder template, replacing `{{className}}` and any `extra` placeholders. */
 export function buildTemplate(className: string, templateFileName: string, extra: Record<string, string> = {}): string {
   const filePath = path.resolve(__dirname, '..', 'bin', 'builder-template', templateFileName)
   let template = fs.readFileSync(filePath, 'utf-8')
@@ -167,13 +135,7 @@ export function buildTemplate(className: string, templateFileName: string, extra
   return template
 }
 
-/**
- * Populates a template file with the provided variables by replacing placeholders in the template.
- * @param filePath - The path to the template file.
- * @param variables - An object containing variable names and their replacement values.
- * @returns The populated template string.
- * @throws Will throw an error if the template file cannot be read.
- */
+/** Renders a template file, replacing each `{{name}}` placeholder with its value. */
 export function populateTemplate(filePath: string, variables: Record<string, string>): string {
   let template = fs.readFileSync(filePath, 'utf-8')
   for (const [key, value] of Object.entries(variables)) {

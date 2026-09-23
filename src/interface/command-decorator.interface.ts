@@ -38,16 +38,11 @@ export type PrimaryEntryPointCommandData = RESTPostAPIPrimaryEntryPointApplicati
 }
 
 /**
- * The payload `build()` returns for a given command type.
+ * The payload `build()` returns for a command type.
  *
- * A slash command's builder changes type as it is chained: adding an option narrows
- * `SlashCommandBuilder` to `SlashCommandOptionsOnlyBuilder`, adding a subcommand to
- * `SlashCommandSubcommandsOnlyBuilder`. All three are accepted; the options form is the most
- * common builder there is, one command with an option.
- *
- * `PRIMARY_ENTRY_POINT` yields a raw REST body rather than a builder because
- * `@discordjs/builders` ships none for it; `ApplicationCommandManager#set` accepts the
- * JSON body directly, so nothing is lost.
+ * - `SLASH`: a `SlashCommandBuilder`, including the narrowed forms chaining options or subcommands
+ *   produces (`SlashCommandOptionsOnlyBuilder`, `SlashCommandSubcommandsOnlyBuilder`).
+ * - `PRIMARY_ENTRY_POINT`: the raw REST body, since `@discordjs/builders` has no builder for it.
  */
 export type CommandBuildResult<T extends BuildableCommandType> = T extends CommandType.SLASH
   ? SlashCommandBuilder | SlashCommandOptionsOnlyBuilder | SlashCommandSubcommandsOnlyBuilder
@@ -82,12 +77,8 @@ export interface CommandMetadata<T extends string = string> {
   regex?: RegExp
   dynamicParams?: T[]
   /**
-   * How specific this pattern is; higher wins when more than one route matches the
-   * same customId. A parameter takes whatever fills its segment, so a broad pattern can
-   * also match an id a more literal sibling owns — `gi-profile/{uuid}/{uid}` matches
-   * `gi-profile/summary/123/456` just as `gi-profile/summary/{ownerId}/{uid}` does — and
-   * ranking is what settles it, since declaration order would make the winner depend on
-   * file layout.
+   * How specific this pattern is; the highest wins when several routes match one customId, so
+   * `gi-profile/summary/{ownerId}/{uid}` beats `gi-profile/{uuid}/{uid}` whatever the declaration order.
    */
   specificity?: number
 }

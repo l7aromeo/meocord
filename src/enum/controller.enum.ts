@@ -15,13 +15,9 @@ export enum ControllerType {
 }
 
 /**
- * The kinds of interaction a `@Command` method can be bound to.
- *
- * Each member names one Discord interaction shape rather than a family of them, so a
- * handler's parameter type follows from its command type alone. That is why the four
- * entity select menus are separate members instead of one `SELECT_MENU`: Discord sends
- * them as distinct component types (5-8) carrying different resolved data, and
- * collapsing them would leave the handler with a union it has to re-narrow by hand.
+ * The kind of interaction a `@Command` method handles. Each member is one Discord interaction type,
+ * so the handler's parameter type follows from it; entity select menus are separate members for
+ * that reason.
  */
 export enum CommandType {
   /** Chat input command, or one subcommand of it. */

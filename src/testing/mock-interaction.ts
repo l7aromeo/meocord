@@ -41,24 +41,10 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * Recursively transforms all methods of T into MockedFunction and all
- * nested objects into DeepMocked. Depth cap at 5 prevents infinite recursion
- * on circular discord.js types (e.g. Guild ↔ GuildMember).
+ * A mock of `T`: every method a mock function, every nested object mocked in turn, five levels deep.
  *
- * Intersected with `T` so the mock is accepted wherever the real class is
- * expected. A mapped type alone can never be: it iterates `keyof T`, and the
- * private members classes use as brands — discord.js stamps
- * `private readonly _cacheType` on `BaseInteraction` — are not in `keyof T`.
- * Without the intersection every call site has to launder the mock through
- * `as unknown as T`, which defeats the point of typing it at all.
- *
- * The intersection is honest rather than a convenient lie: the object really is
- * `Object.create(Class.prototype)`, so its prototype chain is the real one, and
- * TypeScript `private` is erased at runtime.
- *
- * `readonly` survives from the `T` side, so properties the class declares
- * readonly cannot be assigned after construction. Pass those to the factory as
- * {@link MockProps} instead.
+ * Assignable wherever `T` is expected, since the mock is built on `T`'s real prototype. Properties
+ * `T` declares `readonly` cannot be assigned afterwards; pass them to the factory as {@link MockProps}.
  */
 export type DeepMocked<T, Depth extends number[] = []> = Depth['length'] extends 5
   ? T
@@ -71,24 +57,20 @@ export type DeepMocked<T, Depth extends number[] = []> = Depth['length'] extends
     } & T
 
 /**
- * Property overrides accepted at construction by the mock factories.
+ * Property values a mock factory applies at construction.
  *
- * Setup belongs here rather than in a post-construction assignment: the returned
- * mock is assignable to the real discord.js class, so anything that class declares
- * `readonly` — `ModalSubmitInteraction#customId`, `#fields`, `MessageComponentInteraction#message`
- * — cannot be written afterwards without a cast.
+ * Use it for anything the discord.js class declares `readonly`, such as
+ * `ModalSubmitInteraction#customId` or `MessageComponentInteraction#message`, which the returned
+ * mock does not let you assign afterwards.
+ *
+ * @example
+ * ```ts
+ * const modal = createMockInteraction(ModalSubmitInteraction, { customId: 'feedback' })
+ * ```
  */
 export type MockProps<T> = {
-  // Method-valued keys stay loose on purpose. discord.js `Base` declares
-  // `valueOf(): string`, and an object literal carries `Object.prototype.valueOf`
-  // (`() => Object`), so a precise signature here rejects every literal on a
-  // property nobody is trying to override. Overriding a method is better done
-  // through the returned mock's `.mockImplementation()` anyway.
-  //
-  // Object-valued keys take `T[K]` with no DeepMocked branch: DeepMocked<X> is
-  // an intersection containing X, so `DeepMocked<X> | X` collapses to X. Keeping
-  // the branch would only make the compiler instantiate the recursion again for
-  // every nested property.
+  // Methods stay loosely typed: every literal carries `Object.prototype.valueOf`, which clashes with
+  // discord.js `Base#valueOf(): string`. Objects take `T[K]` alone, since `DeepMocked<X> | X` is X.
   -readonly [K in keyof T]?: T[K] extends (...args: any[]) => any ? (...args: any[]) => any : T[K]
 }
 
@@ -239,30 +221,22 @@ function findPrototypeMethod(instance: object, name: string): ((...args: unknown
 // ---------------------------------------------------------------------------
 
 /**
- * Creates a smart mock instance of any discord.js class. The prototype chain
- * is preserved so `instanceof` checks at every level pass.
+ * Creates a mock instance of a discord.js class, keeping its prototype so `instanceof` holds.
  *
- * **Type guards** (`isButton()`, `isRepliable()`, etc.) run the real discord.js
- * prototype logic — no manual `.mockReturnValue(true)` setup needed. They are
- * still mock functions so you can override them per test.
+ * Type guards such as `isButton()` run the real discord.js logic. Replies behave like a real
+ * interaction: `reply()` or `deferReply()` twice throws, and `followUp()`, `editReply()` and
+ * `deleteReply()` throw before a reply. Every method is a mock function you can override.
  *
- * **Reply state machine** — `replied` and `deferred` start as `false`. Calling
- * `reply()` or `deferReply()` twice throws, just like a real interaction would.
- * `followUp()`, `editReply()`, and `deleteReply()` throw if called before any
- * reply. These are still mock functions so call assertions work normally.
- *
- * All other methods are auto-stubbed as a mock fn via Proxy.
+ * @param Class - The discord.js class to mock.
+ * @param props - Values for properties the class declares `readonly`; see {@link MockProps}.
  *
  * @example
  * ```ts
  * const interaction = createMockInteraction(ButtonInteraction)
- * interaction.guildId = 'guild-123'
- * interaction.isButton()     // → true  (real logic, no setup)
- * interaction.isRepliable()  // → true  (real logic, no setup)
- * interaction.replied        // → false (real state)
+ * interaction.isButton()                       // true
  * await interaction.reply({ content: 'hi' })
- * interaction.replied        // → true
- * await interaction.reply({}) // throws — already replied
+ * interaction.replied                          // true
+ * await interaction.reply({ content: 'again' }) // throws: already replied
  * ```
  */
 export function createMockInteraction<T extends object>(
@@ -404,13 +378,8 @@ export function createMockInteraction<T extends object>(
 // ---------------------------------------------------------------------------
 
 /**
- * A mock fn that also answers property access with another one, so a nested call
- * like `cache.store.flush()` works without declaring `store` up front.
- *
- * stubDeep cannot serve this: it decides between a mock fn and a nested object by
- * looking up the prototype chain, and a service double has no prototype to read.
- * Everything here is callable instead, which is the right default when the shape
- * being mocked is an interface that erases at runtime.
+ * A mock function that answers property access with another one, so `cache.store.flush()` works
+ * on a double whose shape is an interface with nothing at runtime to read it from.
  */
 function stubCallable(): Mock {
   const fn = createMockFn()
@@ -441,19 +410,10 @@ function stubCallable(): Mock {
 }
 
 /**
- * Creates a mock of any type, with no runtime class required.
+ * Creates a mock of any type, with no class needed, for service doubles and interfaces.
  *
- * `createMockInteraction` needs a class to build a prototype chain from, which is
- * what makes `instanceof` and the real type guards work. A service double needs
- * none of that, and frequently has no class to pass at all — an injected
- * dependency may be an interface, which does not exist at runtime.
- *
- * Every property is a mock fn, created on first access and cached, so a double
- * only has to declare what the test actually cares about. The result is assignable
- * to `T`, so it can be handed to `useValue` or a constructor without a cast.
- *
- * Properties supplied through {@link MockProps} are used as given rather than
- * wrapped, so call assertions do not apply to them.
+ * Every property is a mock function created on first access, and the result is assignable to `T`.
+ * Values passed as `props` are used as given rather than wrapped in mock functions.
  *
  * @example
  * ```ts
@@ -464,8 +424,6 @@ function stubCallable(): Mock {
  *   controllers: [AlertController],
  *   providers: [{ provide: NotificationService, useValue: notifications }],
  * }).compile()
- *
- * expect(notifications.notify).toHaveBeenCalledWith('hello')
  * ```
  */
 export function createMock<T extends object>(props?: MockProps<T>): DeepMocked<T> {
@@ -509,12 +467,8 @@ export function createMock<T extends object>(props?: MockProps<T>): DeepMocked<T
 export const createMockUser = (): DeepMocked<User> => createMockInteraction(User)
 
 /**
- * Creates a mock {@link Client}.
- *
- * Manager methods that are constructor-assigned (not on the prototype) are
- * pre-initialized as a mock fn so they work out of the box without manual
- * setup: `users.fetch`, `channels.fetch`, `guilds.fetch`, and
- * `application.commands.fetch`.
+ * Creates a mock {@link Client}, with `users.fetch`, `channels.fetch`, `guilds.fetch` and
+ * `application.commands.fetch` ready to stub.
  */
 export function createMockClient(): DeepMocked<Client> {
   const instance = Object.create(Client.prototype) as Record<string, unknown>
@@ -534,13 +488,8 @@ export function createMockClient(): DeepMocked<Client> {
 }
 
 /**
- * Creates a mock {@link Guild}.
- *
- * Manager properties are constructor-assigned in discord.js. This factory
- * pre-initializes each as a prototype-based stub so all methods are
- * auto-stubbed as a mock fn.
- *
- * Pre-initialized: `members`, `channels`, `roles`, `bans`.
+ * Creates a mock {@link Guild}, with the `members`, `channels`, `roles` and `bans` managers ready
+ * to stub.
  */
 export function createMockGuild(): DeepMocked<Guild> {
   const instance = Object.create(Guild.prototype) as Record<string, unknown>
@@ -554,14 +503,9 @@ export function createMockGuild(): DeepMocked<Guild> {
 }
 
 /**
- * Creates a mock channel of the given class (e.g. `TextChannel`, `DMChannel`).
- *
- * Manager properties that are constructor-assigned in discord.js are
- * pre-initialized as prototype-based stubs so all methods are auto-stubbed
- * as a mock fn:
- * - Guild text channels (`TextChannel`, `NewsChannel`): `messages`, `threads`
- * - `DMChannel`: `messages`
- * - `ThreadChannel`: `messages`, `members`
+ * Creates a mock channel of the given class, such as `TextChannel` or `DMChannel`, with its
+ * `messages` manager ready to stub, plus `threads` on guild text channels and `members` on threads.
+ * @param Class - The discord.js channel class to mock.
  */
 export function createMockChannel<T extends Channel>(Class: InteractionClass<T>): DeepMocked<T> {
   const instance = Object.create(Class.prototype) as Record<string, unknown>
@@ -585,29 +529,8 @@ export function createMockChannel<T extends Channel>(Class: InteractionClass<T>)
   return stubDeep(instance) as DeepMocked<T>
 }
 
-/**
- * Creates a smart mock {@link Message}.
- *
- * Tracks a `deleted` boolean. `delete()`, `edit()`, `reply()`, `react()`,
- * `pin()`, and `unpin()` throw if the message has already been deleted.
- * `edit()` and `reply()` resolve to a new mock `Message` instance.
- *
- * Constructor-assigned and getter properties are pre-initialized as
- * prototype-based stubs so `msg.author.send`, `msg.member.fetch`,
- * `msg.channel.send`, `msg.guild.members.fetch`, `msg.thread.fetch`,
- * and `msg.mentions.has` all work out of the box.
- *
- * All methods remain mock functions — overridable per test.
- *
- * Note: `createMockInteraction`'s `followUp()` and `editReply()` stubs return
- * a `createMockMessage()` by default, matching the official return types.
- */
 
-/**
- * Internal guild stub for use inside createMockMessage.
- * Reuses the same manager stubs as createMockGuild but avoids
- * a circular reference in the module.
- */
+/** The guild a mock message carries: a guild with the same stubbed managers as createMockGuild. */
 function createMockGuildForMessage(): object {
   const guild = Object.create(Guild.prototype) as Record<string, unknown>
   guild.members = stubDeep(Object.create(GuildMemberManager.prototype))
@@ -617,6 +540,21 @@ function createMockGuildForMessage(): object {
   return stubDeep(guild)
 }
 
+/**
+ * Creates a mock {@link Message} that tracks whether it has been deleted.
+ *
+ * `delete()`, `edit()`, `reply()`, `react()`, `pin()` and `unpin()` throw once the message is
+ * deleted; `edit()` and `reply()` resolve to a new mock message. Nested members such as
+ * `msg.author.send` and `msg.guild.members.fetch` are ready to use, and every method is a mock
+ * function you can override per test.
+ *
+ * @example
+ * ```ts
+ * const message = createMockMessage()
+ * await message.delete()
+ * message.deleted // true
+ * ```
+ */
 export function createMockMessage(): DeepMocked<Message> & { deleted: boolean } {
   const instance = Object.create(Message.prototype) as Record<string, unknown>
   const stubs = new Map<string, Mock>()
@@ -706,26 +644,6 @@ export interface ChatInputOptions {
   [name: string]: string | number | boolean | { id: string } | null | undefined
 }
 
-/**
- * Builds a typed options resolver from a plain record. Mirrors how the real
- * `CommandInteractionOptionResolver` works: declare what options the command
- * was invoked with, and the resolver finds them by name.
- *
- * All explicit methods are mock functions — override per test with `.mockReturnValue()`.
- * Methods not listed (e.g. `getAttachment`) are auto-stubbed by the Proxy.
- *
- * @example
- * ```ts
- * const interaction = createMockInteraction(ChatInputCommandInteraction)
- * interaction.options = createChatInputOptions({
- *   subcommandGroup: 'daily',
- *   subcommand: 'notes',
- *   uid: 12345678,
- * })
- * interaction.options.getSubcommand()  // → 'notes'
- * interaction.options.getNumber('uid') // → 12345678
- * ```
- */
 /** The option type Discord would have sent for a given JavaScript value. */
 function optionTypeOf(value: unknown): ApplicationCommandOptionType {
   if (typeof value === 'boolean') return ApplicationCommandOptionType.Boolean
@@ -787,13 +705,26 @@ function buildOptionData(
   ]
 }
 
-// `any` is the default rather than `CacheType` because TypeScript types a generic
-// class's `prototype` with `any` for its parameters, and createMockInteraction infers
-// T from exactly that — `createMockInteraction(ChatInputCommandInteraction)` produces
-// an interaction whose `options` is `CommandInteractionOptionResolver<any>`. Defaulting
-// to `CacheType` instead makes CacheTypeReducer widen getChannel's return with a `null`
-// the target rejects, and the resolver stops being assignable to the property it exists
-// to fill. Pass Cached explicitly when the interaction under test is pinned.
+/**
+ * Builds a typed options resolver from a plain record, found by name like the real
+ * `CommandInteractionOptionResolver`. Every method is a mock function, and methods not listed
+ * (such as `getAttachment`) are stubbed automatically.
+ *
+ * @typeParam Cached - Defaults to `any` to match `createMockInteraction(ChatInputCommandInteraction)`;
+ *   pass it explicitly when the interaction under test is cache-pinned.
+ *
+ * @example
+ * ```ts
+ * const interaction = createMockInteraction(ChatInputCommandInteraction)
+ * interaction.options = createChatInputOptions({
+ *   subcommandGroup: 'daily',
+ *   subcommand: 'notes',
+ *   uid: 12345678,
+ * })
+ * interaction.options.getSubcommand()  // 'notes'
+ * interaction.options.getNumber('uid') // 12345678
+ * ```
+ */
 export function createChatInputOptions<Cached extends CacheType = any>(
   opts: ChatInputOptions = {},
 ): DeepMocked<CommandInteractionOptionResolver<Cached>> {

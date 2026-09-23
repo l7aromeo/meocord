@@ -54,14 +54,9 @@ export function writePlatformManifest(distDir: string): void {
 }
 
 /**
- * Stops a bundle from starting on a platform its native addons were not built for.
- *
- * A binary for the wrong platform does not fail at startup. It fails when something first loads
- * it -- for an image library, the first command that renders one -- with a dynamic linker error
- * that names a file rather than the cause. Checking the manifest up front turns that into one
- * clear message before the bot goes online.
- *
- * @param distDir - Directory holding the manifest. Defaults to the directory of the entry script.
+ * Stops a bundle from starting on a platform its native addons were not built for, with one clear
+ * message instead of a linker error on the first command that loads an addon.
+ * @param distDir - Directory holding the manifest. Defaults to the entry script's directory.
  */
 export function assertBuiltForThisPlatform(distDir = process.argv[1] ? path.dirname(process.argv[1]) : undefined): void {
   if (!distDir) return

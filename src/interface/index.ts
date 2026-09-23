@@ -2,92 +2,89 @@ import { BaseInteraction, Message, MessageReaction, type PartialUser, User } fro
 import { type RsbuildConfig } from '@rsbuild/core'
 
 /**
- * Rsbuild's configuration type, as the `rsbuild` hook receives it.
- *
- * Re-exported so an application can type a helper for that hook without importing
- * `@rsbuild/core` itself -- which pnpm does not allow for a package the application does not
- * depend on directly.
+ * Rsbuild's configuration type, as the `rsbuild` hook receives it. Import it from here to type a
+ * helper for that hook without depending on `@rsbuild/core`.
  */
 export type { RsbuildConfig }
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 
 /**
- * Interface for Guard classes.
- * Guards are used to handle permission checks before executing a method.
- * Each guard must implement the `canActivate` method, which is responsible for determining
- * whether the method should be allowed to execute based on the provided context (Interaction, Message, or Reaction) and arguments.
+ * A guard, run by `@UseGuard` before a handler to decide whether it may run.
+ *
+ * @example
+ * ```ts
+ * @Guard()
+ * export class OwnerOnlyGuard implements GuardInterface {
+ *   canActivate(interaction: ButtonInteraction, { ownerId }: { ownerId: string }): boolean {
+ *     return interaction.user.id === ownerId
+ *   }
+ * }
+ * ```
  */
 export interface GuardInterface {
   /**
-   * Determines if the method should be allowed to execute based on the context (Interaction, Message, or Reaction) and additional arguments.
-   * @param context - The context object, typically representing a user action in Discord (Interaction, Message, or Reaction).
-   * @param args - Additional arguments that might be required for the guard's logic.
-   * @returns A `Promise` resolving to `true` if the method can proceed, otherwise `false`,
-   *          or a `boolean` value directly.
+   * Decides whether the guarded handler runs.
+   *
+   * @param context - The interaction, message or reaction being handled.
+   * @param args - The handler's remaining arguments, such as the params parsed from a customId.
+   * @returns `true` to run the handler, `false` to skip it.
    */
   canActivate(context: BaseInteraction | Message | MessageReaction, ...args: any[]): Promise<boolean> | boolean
 }
 
-/**
- * Interface for handling reactions in a Discord message.
- */
+/** The second argument a `@ReactionHandler` method receives. */
 export interface ReactionHandlerOptions {
-  /** The user object, which can be either a full or partial user. */
+  /** The user who added or removed the reaction. */
   user: User | PartialUser
-  /** The action performed on the reaction, such as adding or removing it. */
+  /** Whether the reaction was added or removed. */
   action: ReactionHandlerAction
 }
 
 /**
- * Configuration interface for the MeoCord application.
- * This interface defines optional configurations for the application, including
- * metadata, authentication tokens, and bundler configuration overrides.
+ * The configuration `meocord.config.ts` exports.
+ *
+ * @example
+ * ```ts
+ * import 'dotenv/config'
+ * import { type MeoCordConfig } from 'meocord/interface'
+ *
+ * export default {
+ *   appName: 'My Bot',
+ *   discordToken: process.env.DISCORD_TOKEN!,
+ * } satisfies MeoCordConfig
+ * ```
  */
 export interface MeoCordConfig {
-  /**
-   * The name of the application.
-   * If not specified, it defaults to 'MeoCord'.
-   */
+  /** Shown as a prefix on every log line. Omitted when unset. */
   appName?: string
-  /**
-   * The Discord bot token used for authenticating with the Discord API.
-   */
+  /** The Discord bot token. Read it from the environment rather than committing it. */
   discordToken: string
   /**
-   * Put everything the bot needs inside `dist`, so it runs without `node_modules`.
+   * Bundles everything the bot needs into `dist`, so it runs without `node_modules`.
    *
-   * Off by default: dependencies stay runtime imports, so `dist` needs `node_modules` beside it.
-   * Turn it on to deploy `dist` alone.
+   * Native addons such as `sharp` are copied with their platform binary into `dist/node_modules`.
+   * A build with native addons only starts on the platform it was built on.
    *
-   * Plain JavaScript is bundled into `main.js`. Native addons -- packages shipping a compiled
-   * `.node` binary, like `sharp` -- are found while building, kept out of the bundle, and copied
-   * with their platform binary into `dist/node_modules`. Such a build only runs on the platform it
-   * was built on; it records that platform, and refuses to start anywhere else.
+   * @defaultValue `false`
    */
   bundleDependencies?: boolean
   /**
-   * Modules to keep out of the bundle.
-   *
-   * Native addons need not be listed; they are found and packed on their own. Anything listed here
-   * as a package name is also copied into `dist/node_modules` when {@link bundleDependencies} is on.
+   * Modules to keep out of the bundle. With {@link bundleDependencies}, listed package names are
+   * copied into `dist/node_modules`; native addons are found without being listed.
    *
    * @example
    * ```ts
-   * // Loaded by the runtime rather than bundled, e.g. for instrumentation.
    * externals: ['@opentelemetry/api']
    * ```
    */
   externals?: (string | RegExp)[]
   /**
-   * Function to customize the Rsbuild configuration.
-   * Allows overriding and extending the default bundler setup for the application.
+   * Customises the Rsbuild configuration the bot is built with.
    *
-   * Rsbuild handles images, fonts, svg and media itself, so they need no rules;
-   * `output.distPath` controls where they land. Raw bundler rules go through `tools.rspack`,
-   * which takes a webpack-shaped config.
+   * Images, fonts, svg and media need no rules. Raw bundler rules go through `tools.rspack`.
    *
-   * @param config - The configuration to modify.
-   * @returns A modified configuration, or `undefined` to keep the default.
+   * @param config - The configuration MeoCord builds with.
+   * @returns The modified configuration, or `undefined` to keep it as is.
    */
   rsbuild?: (config: RsbuildConfig) => RsbuildConfig | undefined
 }

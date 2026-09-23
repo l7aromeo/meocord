@@ -7,17 +7,9 @@ let cachedConfig: MeoCordConfig | undefined
 let configLoaded = false
 
 /**
- * Loads the configuration a built application runs with: `dist/meocord.config.mjs`, which
- * `meocord build` compiles from `meocord.config.ts`.
- *
- * Reads only the compiled file, which is plain JavaScript and needs no transpiler, tsconfig or
- * source. Reading `meocord.config.ts` is {@link loadMeoCordSourceConfig}'s job, and it lives in its
- * own module because it needs jiti: this one is imported by the logger and the factory, so a
- * bot built with `bundleDependencies` bundles whatever it imports.
- *
- * The result is cached after the first load.
- *
- * @returns The configuration, or undefined when there is no compiled config or it fails to load.
+ * Loads the configuration a built application runs with, `dist/meocord.config.mjs`, and caches it.
+ * Imports no transpiler, since the logger and the factory import this module into every bot.
+ * @returns The configuration, or undefined when the compiled config is missing or fails to load.
  */
 export function loadMeoCordConfig(): MeoCordConfig | undefined {
   if (configLoaded) return cachedConfig

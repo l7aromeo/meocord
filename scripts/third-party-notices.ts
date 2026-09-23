@@ -1,14 +1,7 @@
 /**
- * Writes THIRD_PARTY_NOTICES.md from the packages MeoCord depends on, as installed.
- *
- * Generated rather than written by hand so it cannot drift: `--check` compares the file against
- * what would be generated -- formatted by prettier, like every other Markdown file -- and fails
- * when they differ, which is how CI catches a dependency added without its notice. Versions are
- * left out on purpose -- they change with every update, and the license and source of a package
- * do not.
- *
- *   bun scripts/third-party-notices.ts          write the file
- *   bun scripts/third-party-notices.ts --check  fail if it is out of date
+ * Writes THIRD_PARTY_NOTICES.md from the installed dependencies, formatted by prettier.
+ * `--check` fails when the file differs from what would be written, so CI catches a missing notice.
+ * Versions are left out: they change on every update, while license and source do not.
  */
 
 import { existsSync, readFileSync, writeFileSync } from 'fs'

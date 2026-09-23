@@ -1,12 +1,4 @@
-/**
- * Helper function to fix common JSON formatting issues in tsconfig.json, such as:
- * - Removing single-line comments.
- * - Removing trailing commas.
- * - Stripping newlines.
- *
- * @param {string} jsonString - The raw JSON string to fix.
- * @returns {string} The corrected JSON string.
- */
+/** Makes tsconfig-style JSON parseable: strips line comments, trailing commas and newlines. */
 export function fixJSON(jsonString: string): string {
   return jsonString
     .replace(/\/\/.*$/gm, '') // Remove single-line comments

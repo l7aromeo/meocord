@@ -2,11 +2,8 @@ import 'reflect-metadata'
 import { vi } from 'vitest'
 import { MeoCordTestingModule } from './meocord-testing-module.js'
 
-// A test double covers the methods under test, never the whole class, and a
-// class with any private member — every service that holds a logger — can never
-// be satisfied by an object literal at all. The compile-time half of this
-// contract lives in meocord-testing-module.test-d.ts; the `providers` array is
-// only checked at runtime, since `Provider[]` erases its type parameter.
+// A double covers only the methods under test, and a class with a private member cannot be an
+// object literal. Types are checked in meocord-testing-module.test-d.ts; `providers` only at runtime.
 describe('providers', () => {
   class NotificationService {
     private readonly prefix = '[bot] '

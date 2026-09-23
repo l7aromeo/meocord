@@ -16,13 +16,8 @@ export class ServiceGeneratorHelper {
   }
 
   /**
-   * Generates a service file based on the provided service name.
-   * Validates and formats the service name, creates the necessary directories,
-   * and generates the service file using a predefined template.
-   *
-   * @param serviceName - The name of the service to generate.
-   *                      It can include slashes for nested paths.
-   * @throws Exits the process if the service name is not provided or invalid.
+   * Generates a service and its spec. The name may contain slashes for nested directories.
+   * @throws Exits the process when the name is missing or invalid.
    */
   generateService(serviceName?: string): void {
     if (!serviceName) {

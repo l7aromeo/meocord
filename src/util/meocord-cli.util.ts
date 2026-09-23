@@ -18,14 +18,7 @@ export function configureCommandHelp(command: Command) {
   })
 }
 
-/**
- * Formats the help output for a command.
- *
- * @param cmd - The command for which to format help.
- * @param helper - The helper object for formatting.
- * @param options - The options available for the command.
- * @returns The formatted help text.
- */
+/** Formats a command's help output, with its options and arguments as tables. */
 export function formatHelp(cmd: Command, helper: Help, options: readonly Option[]): string {
   let helpText = `MeoCord Copyright (c) 2025-present Ukasyah Rahmatullah Zada — MIT License\n\n`
 
@@ -52,12 +45,7 @@ export function formatHelp(cmd: Command, helper: Help, options: readonly Option[
   return helpText
 }
 
-/**
- * Generates a table of commands with their aliases and descriptions.
- *
- * @param cmd - The command for which to generate the table.
- * @returns The formatted table of commands.
- */
+/** Renders a command's subcommands, with their aliases and descriptions, as a table. */
 export function generateCommandsTable(cmd: Command): string {
   const table = new CliTable3({
     head: ['Command', 'Alias', 'Description'],
@@ -72,13 +60,7 @@ export function generateCommandsTable(cmd: Command): string {
   return table.toString()
 }
 
-/**
- * Generates a table of commands with their aliases and descriptions.
- *
- * @param options
- * @param helper
- * @returns The formatted table of commands.
- */
+/** Renders a command's options, with their descriptions, as a table. */
 export function generateOptionsTable(options: readonly Option[], helper: Help): string {
   const table = new CliTable3({
     head: ['Option', 'Description'],
@@ -89,16 +71,7 @@ export function generateOptionsTable(options: readonly Option[], helper: Help): 
   return table.toString()
 }
 
-/**
- * Generates a formatted table of arguments for the specified command.
- *
- * This method creates two tables:
- * 1. A table displaying argument names and their descriptions.
- * 2. (If applicable) A table showing available choices for arguments with predefined choices.
- *
- * @param args - The list of arguments for the command.
- * @returns A string representation of the formatted tables, including available arguments and their choices.
- */
+/** Renders a command's arguments as a table, plus a table of choices for arguments that have them. */
 export function generateArgumentsTable(args: readonly Argument[]): string {
   const table = new CliTable3({
     head: ['Argument', 'Description'],

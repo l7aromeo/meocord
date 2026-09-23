@@ -5,12 +5,8 @@ export type PackageManager = 'npm' | 'yarn' | 'pnpm' | 'bun'
 const ALL_PACKAGE_MANAGERS: PackageManager[] = ['bun', 'npm', 'yarn', 'pnpm']
 
 /**
- * The package managers available on this machine.
- *
- * Each candidate is asked for its version rather than looked up with `which`: `which` is
- * a separate binary that a minimal image need not carry, and it is absent on Windows
- * entirely. Running the tool also answers the question actually being asked — whether it
- * works — rather than whether something with that name sits on the path.
+ * The package managers available on this machine, found by running each for its version, which
+ * works without `which` (absent on Windows) and confirms the tool actually runs.
  */
 export function detectInstalledPMs(): PackageManager[] {
   return ALL_PACKAGE_MANAGERS.filter(pm => {

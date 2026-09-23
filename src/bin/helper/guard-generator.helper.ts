@@ -16,13 +16,8 @@ export class GuardGeneratorHelper {
   }
 
   /**
-   * Generates a guard file based on the provided guard name.
-   * Validates and formats the guard name, creates the necessary directories,
-   * and generates the guard file using a predefined template.
-   *
-   * @param guardName - The name of the guard to generate.
-   *                      It can include slashes for nested paths.
-   * @throws Exits the process if the guard name is not provided or invalid.
+   * Generates a guard and its spec. The name may contain slashes for nested directories.
+   * @throws Exits the process when the name is missing or invalid.
    */
   generateGuard(guardName?: string): void {
     if (!guardName) {

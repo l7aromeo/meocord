@@ -17,10 +17,8 @@ const __dirname = path.dirname(__filename)
 
 export class ControllerGeneratorHelper {
   /**
-   * Generates a new controller file and an associated structure based on the provided arguments and controller type.
-   * @param args - The arguments for generating the controller, including the optional controller name.
-   * @param type - The type of the controller to generate, defined in the `ControllerType` enum.
-   * @throws Will throw an error if the controller name is invalid or if the controller type is unsupported.
+   * Generates a controller of the given type, with its spec and, for command types, its builder.
+   * @throws Exits the process when the name is invalid or the type unsupported.
    */
   generateController(args: { controllerName: string | undefined }, type: ControllerType): void {
     const { parts, kebabCaseName, className } = validateAndFormatName(args.controllerName)
@@ -43,11 +41,8 @@ export class ControllerGeneratorHelper {
   }
 
   /**
-   * Builds the controller template content by populating a template with variables.
-   * @param className - The name of the controller class.
-   * @param type - The type of the controller, defined in the `ControllerType` enum.
-   * @returns The populated template string for the controller.
-   * @throws Will throw an error if the controller type is unsupported.
+   * Renders the controller file for a controller type.
+   * @throws When the controller type is unsupported.
    */
   buildControllerTemplate(
     className: string,
@@ -62,12 +57,7 @@ export class ControllerGeneratorHelper {
     return populateTemplate(templateConfig.template, templateConfig.variables)
   }
 
-  /**
-   * Retrieves the template configuration for a specific controller type and class name.
-   * @param type - The type of the controller, defined in the `ControllerType` enum.
-   * @param className - The name of the controller class.
-   * @returns An object containing the template path and variables, or `undefined` if not found.
-   */
+  /** The controller template and its variables for a controller type, or undefined when unsupported. */
   private getTemplateConfig(type: ControllerType, className: string, parts: string[], kebabCaseName: string) {
     const baseDir = path.resolve(__dirname, '..', 'builder-template', 'controller')
     const templates: Record<ControllerType, string> = {
@@ -100,14 +90,7 @@ export class ControllerGeneratorHelper {
     return template ? { template, variables } : undefined
   }
 
-  /**
-   * Generates the controller file and its associated structure (e.g., builder files, directories).
-   * @param controllerDir - The absolute path to the controller directory.
-   * @param kebabCaseName - The kebab-case name of the controller file.
-   * @param className - The name of the controller class.
-   * @param type - The type of the controller, defined in the `ControllerType` enum.
-   * @param controllerTemplate - The populated template string for the controller file.
-   */
+  /** Writes the controller, its spec, and for command types its builder, into `controllerDir`. */
   private generateControllerStructure(
     controllerDir: string,
     kebabCaseName: string,
@@ -128,12 +111,7 @@ export class ControllerGeneratorHelper {
     generateFile(path.join(controllerDir, `${kebabCaseName}.${type}.controller.spec.ts`), specContent)
   }
 
-  /**
-   * Generates a builder file for the specified controller type and stores it in the controller directory.
-   * @param className - The name of the controller class.
-   * @param type - The type of the controller, defined in the `ControllerType` enum.
-   * @param controllerDir - The absolute path to the controller directory.
-   */
+  /** Writes the builder for command controller types into `controllerDir`; other types have none. */
   private generateBuilderFile(
     className: string,
     kebabCaseName: string,
@@ -149,12 +127,7 @@ export class ControllerGeneratorHelper {
     generateFile(this.builderFilePath(controllerDir, kebabCaseName), builderTemplate)
   }
 
-  /**
-   * Retrieves the configuration for generating a builder file based on the controller type and class name.
-   * @param type - The type of the controller, defined in the `ControllerType` enum.
-   * @param className - The name of the controller class.
-   * @returns An object containing the builder template path and variables, or `undefined` if not found.
-   */
+  /** The builder template and its variables for a controller type, or undefined when it has no builder. */
   private getBuilderConfig(type: ControllerType, className: string, kebabCaseName: string, parts: string[]) {
     const baseDir = path.resolve(__dirname, '..', 'builder-template', 'builder')
     const templates: Partial<Record<ControllerType, string>> = {

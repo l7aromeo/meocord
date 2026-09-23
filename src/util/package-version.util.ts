@@ -5,17 +5,8 @@ import path from 'node:path'
 const OWN_PACKAGE_NAME = 'meocord'
 
 /**
- * The version recorded in the package this CLI ships in.
- *
- * Read at run time rather than compiled in. The release bumps the manifest after the
- * bundle has already been built, so a version baked into the bundle is always the one
- * from before the release that published it.
- *
- * The walk stops at the first manifest naming this package: the repository root when
- * running from source, the installed package root when running from `dist`.
- *
- * @param startDir - Directory to walk up from.
- * @param fallback - Returned when no manifest for this package can be read.
+ * The version in the nearest manifest naming this package, walking up from `startDir`, or `fallback`.
+ * Read at run time, since the release bumps the manifest after the bundle is built.
  */
 export function resolveOwnVersion(startDir: string, fallback: string): string {
   let current = path.resolve(startDir)

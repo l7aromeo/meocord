@@ -4,12 +4,7 @@ import { loadMeoCordCliConfig } from '@src/util/meocord-source-config.util.js'
 import wait from '@src/util/wait.util.js'
 import chalk from 'chalk'
 
-/**
- * Finds the package directory for the given module name
- * @param {string} moduleName - The name of the module to find
- * @param {string} baseDir - The starting directory to search from (defaults to process.cwd())
- * @returns {string} - The directory path where the module's package.json is located
- */
+/** The directory of an installed package, searching `node_modules` upward from `baseDir`, or null. */
 export const findModulePackageDir = (moduleName: string, baseDir: string = process.cwd()): string | null => {
   try {
     // Resolve the node_modules directory from the base directory
@@ -38,14 +33,7 @@ export const findModulePackageDir = (moduleName: string, baseDir: string = proce
   }
 }
 
-/**
- * Compiles and validates the MeoCord configuration file.
- * Ensures that `meocord.config.ts` exists, compiles it, and checks
- * the presence of essential configuration properties like `discordToken`.
- *
- * @throws Will exit the process if the `meocord.config.ts` file is missing or
- *         if the `discordToken` property is not found in the configuration.
- */
+/** Exits the process unless `meocord.config.ts` exists, then loads it. */
 export async function compileAndValidateConfig() {
   const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
   if (!fs.existsSync(meocordConfigPath)) {
@@ -72,12 +60,7 @@ export async function validateDiscordToken() {
   }
 }
 
-/**
- * Sets the environment mode for the application.
- * Assigns the provided mode to `process.env.NODE_ENV` if it hasn't been set already.
- *
- * @param {'production' | 'development'} mode - The desired environment mode.
- */
+/** Sets `NODE_ENV` to `mode` unless it is already set. */
 export function setEnvironment(mode: 'production' | 'development') {
   if (!process.env.NODE_ENV) {
     process.env.NODE_ENV = mode

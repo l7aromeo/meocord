@@ -6,15 +6,8 @@ import { fixJSON } from '@src/util/json.util.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
 
 /**
- * Loads meocord.config.ts from source, every time, for configuring a build.
- *
- * {@link loadMeoCordConfig} reads the compiled `dist/meocord.config.mjs` and caches the result,
- * which is right at runtime -- production has no source -- and wrong while building. The compiled
- * file is the previous build's output, so a build that read it would run on the config as it was
- * last time, and the watcher's reload on a config change would reload nothing. Build time always
- * has the source, so it reads the source.
- *
- * Only the CLI imports this module. It needs jiti to run TypeScript, and a bot has no use for jiti.
+ * Loads `meocord.config.ts` from source on every call, so a build always uses the current config
+ * rather than the previous build's compiled copy. CLI-only, since it needs jiti to run TypeScript.
  */
 export function loadMeoCordSourceConfig(): MeoCordConfig | undefined {
   const configPath = path.resolve(process.cwd(), 'meocord.config.ts')
