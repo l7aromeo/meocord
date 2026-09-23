@@ -168,9 +168,11 @@ export class MeoCordApp {
   /**
    * Registers the Discord event handlers and logs in.
    *
-   * Rejects when the login fails -- an invalid token, or Discord unreachable -- so the caller can
-   * stop with a non-zero exit code. A bot that never came online is a failed start, and a
-   * supervisor such as Docker's `restart: on-failure` or systemd can only tell if the process says so.
+   * Rejects when the login fails -- an invalid token, or Discord unreachable -- and sets the exit
+   * code to 1 first. A bot that never came online is a failed start, and a supervisor such as
+   * Docker's `restart: on-failure` or systemd can only tell if the process says so. The exit code is
+   * set here rather than left to the entry point because an entry point that catches the rejection
+   * to log it has handled it, and the process would otherwise end with 0.
    */
   async start() {
     this.logger.log('Starting bot...')
@@ -200,7 +202,12 @@ export class MeoCordApp {
       ),
     )
 
-    await this.bot.login(this.discordToken)
+    try {
+      await this.bot.login(this.discordToken)
+    } catch (error) {
+      process.exitCode = 1
+      throw error
+    }
     this.logger.log('Bot is online!')
   }
 

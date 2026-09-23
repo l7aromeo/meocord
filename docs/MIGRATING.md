@@ -194,16 +194,10 @@ Four things behave differently:
   stack traces are unaffected. An error tracker that uploads source maps and rewrites or matches paths by the
   `webpack://` prefix needs that rule updated.
 - **A failed login fails the start.** `app.start()` rejects when Discord refuses the token or cannot be
-  reached, where it used to log the error and resolve — so `main.ts` went on to log "Application started"
-  and the process exited 0. Set a non-zero exit code where your entry point catches it, so Docker,
-  systemd or CI see the failure:
-
-  ```typescript
-  bootstrap().catch(error => {
-    logger.error('Error during startup:', error)
-    process.exitCode = 1
-  })
-  ```
+  reached, and the process exits with code 1. It used to log the error and resolve, so `main.ts` went on
+  to log "Application started" and the process exited 0 — which Docker's `restart: on-failure`, systemd
+  and CI read as success. The generated `main.ts` needs no change: its `catch` still logs the error.
+  Code that awaits `start()` and carries on after it failed now gets the error instead.
 
 ## 5. Optional: deploy without `node_modules`
 

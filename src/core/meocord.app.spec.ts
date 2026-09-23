@@ -108,13 +108,40 @@ describe('MeoCordApp', () => {
 
     // A failed login used to be logged and swallowed, so the entry point reported the bot as
     // started and the process exited 0 -- a clean exit to anything supervising it.
-    it('rejects when the login fails, without reporting the bot online', async () => {
-      const error = Object.assign(new Error('An invalid token was provided.'), { code: 'TokenInvalid' })
-      mockClient.login.mockRejectedValueOnce(error)
-      const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 'bad-token')
+    describe('when the login fails', () => {
+      const originalExitCode = process.exitCode
 
-      await expect(app.start()).rejects.toBe(error)
-      expect((app as any).logger.log).not.toHaveBeenCalledWith('Bot is online!')
+      afterEach(() => {
+        process.exitCode = originalExitCode
+      })
+
+      it('rejects, without reporting the bot online', async () => {
+        const error = Object.assign(new Error('An invalid token was provided.'), { code: 'TokenInvalid' })
+        mockClient.login.mockRejectedValueOnce(error)
+        const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 'bad-token')
+
+        await expect(app.start()).rejects.toBe(error)
+        expect((app as any).logger.log).not.toHaveBeenCalledWith('Bot is online!')
+      })
+
+      // An entry point that catches the rejection to log it has handled it, so without this the
+      // process still ends with 0 -- every entry point generated before this would need editing.
+      it('sets the exit code to 1, so an entry point that catches the error still exits non-zero', async () => {
+        mockClient.login.mockRejectedValueOnce(new Error('An invalid token was provided.'))
+        const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 'bad-token')
+
+        await app.start().catch(() => {})
+
+        expect(process.exitCode).toBe(1)
+      })
+
+      it('leaves the exit code alone when the login succeeds', async () => {
+        const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 'token')
+
+        await app.start()
+
+        expect(process.exitCode).toBe(originalExitCode)
+      })
     })
 
     it('starts an activity interval on clientReady', async () => {
