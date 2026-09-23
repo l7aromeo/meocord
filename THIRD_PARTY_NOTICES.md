@@ -11,28 +11,28 @@ terms those packages are offered under.
 
 Installed with MeoCord.
 
-| Package | License | Source |
-| --- | --- | --- |
-| [@clack/prompts](https://www.npmjs.com/package/@clack/prompts) | MIT | https://github.com/bombshell-dev/clack |
-| [@rsbuild/core](https://www.npmjs.com/package/@rsbuild/core) | MIT | https://github.com/web-infra-dev/rsbuild |
-| [chalk](https://www.npmjs.com/package/chalk) | MIT | https://github.com/chalk/chalk |
-| [cli-table3](https://www.npmjs.com/package/cli-table3) | MIT | https://github.com/cli-table/cli-table3 |
-| [commander](https://www.npmjs.com/package/commander) | MIT | https://github.com/tj/commander.js |
-| [dayjs](https://www.npmjs.com/package/dayjs) | MIT | https://github.com/iamkun/dayjs |
-| [inversify](https://www.npmjs.com/package/inversify) | MIT | https://github.com/inversify/monorepo |
-| [jiti](https://www.npmjs.com/package/jiti) | MIT | https://github.com/unjs/jiti |
-| [lodash-es](https://www.npmjs.com/package/lodash-es) | MIT | https://github.com/lodash/lodash |
+| Package                                                            | License    | Source                                       |
+| ------------------------------------------------------------------ | ---------- | -------------------------------------------- |
+| [@clack/prompts](https://www.npmjs.com/package/@clack/prompts)     | MIT        | https://github.com/bombshell-dev/clack       |
+| [@rsbuild/core](https://www.npmjs.com/package/@rsbuild/core)       | MIT        | https://github.com/web-infra-dev/rsbuild     |
+| [chalk](https://www.npmjs.com/package/chalk)                       | MIT        | https://github.com/chalk/chalk               |
+| [cli-table3](https://www.npmjs.com/package/cli-table3)             | MIT        | https://github.com/cli-table/cli-table3      |
+| [commander](https://www.npmjs.com/package/commander)               | MIT        | https://github.com/tj/commander.js           |
+| [dayjs](https://www.npmjs.com/package/dayjs)                       | MIT        | https://github.com/iamkun/dayjs              |
+| [inversify](https://www.npmjs.com/package/inversify)               | MIT        | https://github.com/inversify/monorepo        |
+| [jiti](https://www.npmjs.com/package/jiti)                         | MIT        | https://github.com/unjs/jiti                 |
+| [lodash-es](https://www.npmjs.com/package/lodash-es)               | MIT        | https://github.com/lodash/lodash             |
 | [reflect-metadata](https://www.npmjs.com/package/reflect-metadata) | Apache-2.0 | https://github.com/rbuckton/reflect-metadata |
-| [simple-git](https://www.npmjs.com/package/simple-git) | MIT | https://github.com/steveukx/git-js |
+| [simple-git](https://www.npmjs.com/package/simple-git)             | MIT        | https://github.com/steveukx/git-js           |
 
 ## Peer dependencies
 
 Installed by the application using MeoCord.
 
-| Package | License | Source |
-| --- | --- | --- |
-| [discord.js](https://www.npmjs.com/package/discord.js) | Apache-2.0 | https://github.com/discordjs/discord.js |
-| [dotenv](https://www.npmjs.com/package/dotenv) | BSD-2-Clause | https://github.com/motdotla/dotenv |
+| Package                                                | License      | Source                                  |
+| ------------------------------------------------------ | ------------ | --------------------------------------- |
+| [discord.js](https://www.npmjs.com/package/discord.js) | Apache-2.0   | https://github.com/discordjs/discord.js |
+| [dotenv](https://www.npmjs.com/package/dotenv)         | BSD-2-Clause | https://github.com/motdotla/dotenv      |
 
 ---
 
