@@ -46,11 +46,15 @@ export class TestingModuleBuilder {
   constructor(private readonly options: TestingModuleOptions) {}
 
   /**
-   * A double covers the methods under test, not the whole class — and a class
-   * with any private member (a service holding a logger, say) can never be
-   * satisfied by an object literal at all. `Partial<T>` still rejects a
-   * misspelled method name, which is the check that actually earns its keep.
-   * Matches `overrideGuard`, which has always taken `Partial<GuardInterface>`.
+   * Replaces a provider with a test double.
+   *
+   * The double needs only the members the test uses; misspelled member names are still rejected.
+   *
+   * @param token - The provider to replace.
+   * @example
+   * ```ts
+   * builder.overrideProvider(UserService).useValue({ findUser: vi.fn() })
+   * ```
    */
   overrideProvider<T>(token: ServiceIdentifier<T>): { useValue: (value: Partial<T>) => TestingModuleBuilder } {
     return {

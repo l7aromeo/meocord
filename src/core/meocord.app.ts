@@ -120,20 +120,8 @@ export class MeoCordApp {
   }
 
   /**
-   * Runs an event handler so a failure inside it cannot take the process down.
-   *
-   * discord.js calls listeners without awaiting them, so a rejection escaping one has
-   * nothing left to settle it: Node reports an unhandled rejection, which terminates
-   * the process by default. Losing the whole bot because one reaction landed on a
-   * deleted message, or one controller could not be resolved, is a worse failure than
-   * the one that caused it -- every other user is served by the same process.
-   *
-   * Nothing is silenced. The error is logged against the event that produced it, so a
-   * genuine misconfiguration -- an unbound controller, a missing dependency -- shows
-   * up on the very first interaction rather than staying hidden.
-   *
-   * @param event - The gateway event being handled, named in the log.
-   * @param run - The handler to run.
+   * Runs an event handler so its failure is logged against the event instead of surfacing as an
+   * unhandled rejection, which would terminate the whole bot.
    */
   private async runListener(event: string, run: () => Promise<void>): Promise<void> {
     try {
@@ -169,14 +157,20 @@ export class MeoCordApp {
   private static failedLoginSetExitCode = false
 
   /**
-   * Registers the Discord event handlers and logs in.
+   * Registers the Discord event handlers and logs the bot in.
    *
-   * Rejects when the login fails -- an invalid token, or Discord unreachable -- and sets the exit
-   * code to 1 first. A bot that never came online is a failed start, and a supervisor such as
-   * Docker's `restart: on-failure` or systemd can only tell if the process says so. The exit code is
-   * set here rather than left to the entry point because an entry point that catches the rejection
-   * to log it has handled it, and the process would otherwise end with 0. A later `start()` that
-   * logs in -- an entry point retrying -- clears the code again, if this is what set it.
+   * If the login fails, the process exit code is set to `1` before the promise rejects, so the
+   * process exits non-zero even when the caller catches the error to log it. A later `start()`
+   * that logs in clears that code again.
+   *
+   * @returns A promise that resolves once the bot is logged in.
+   * @throws The login error, such as an invalid token or Discord being unreachable.
+   *
+   * @example
+   * ```ts
+   * const app = MeoCordFactory.create(App)
+   * await app.start()
+   * ```
    */
   async start() {
     this.logger.log('Starting bot...')
@@ -223,12 +217,8 @@ export class MeoCordApp {
   }
 
   async registerCommands() {
-    // Keyed by type and name together, because that pair is what Discord treats as one
-    // command: a user context menu and a message context menu are free to share a name,
-    // and keying on the name alone would drop one of them from the payload. Within a
-    // single type the name is unique, so a command whose subcommands live in separate
-    // methods still contributes its builder once — sending it twice makes Discord
-    // reject the whole payload.
+    // Keyed by type and name: Discord treats that pair as one command, so a user and a message context
+    // menu may share a name, and a command split across methods sends its builder once.
     const buildersByCommand = new Map<string, NonNullable<CommandMetadata['builder']>>()
 
     for (const controllerClass of this.controllerClasses) {
@@ -302,13 +292,8 @@ export class MeoCordApp {
   }
 
   /**
-   * Every pattern-matched route, ordered most specific first.
-   *
-   * Built once and cached, so dispatch stays a single ordered walk with an early exit
-   * rather than paying to rank anything per interaction. Ordering here is what lets
-   * `gi-profile/summary/{ownerId}/{uid}` keep the ids it owns when
-   * `gi-profile/{uuid}/{uid}` would also match them — without it, the winner would be
-   * whichever controller happened to be registered first.
+   * Every pattern-matched route, most specific first, built once. The ordering lets
+   * `gi-profile/summary/{ownerId}/{uid}` win over `gi-profile/{uuid}/{uid}` regardless of registration order.
    */
   private componentRoutes?: ComponentRoute[]
 
@@ -360,12 +345,8 @@ export class MeoCordApp {
   }
 
   /**
-   * Every `@Autocomplete` handler, ordered so an option-specific handler is found
-   * before a command-wide one.
-   *
-   * Cached alongside the component table: autocomplete fires on every keystroke, and
-   * rebuilding the list per keystroke would put reflection on the hottest path the
-   * framework has.
+   * Every `@Autocomplete` handler, option-specific ones first. Cached, since autocomplete runs on
+   * every keystroke.
    */
   private autocompleteRoutes?: AutocompleteRoute[]
 
@@ -385,13 +366,8 @@ export class MeoCordApp {
   }
 
   /**
-   * Dispatches an interaction, and makes sure a failure anywhere in that still reaches
-   * the person who triggered it.
-   *
-   * {@link executeCommand} already reports what a handler throws, but everything
-   * *before* the handler can fail too — resolving a controller through the container
-   * is the common case — and a component that fails there would otherwise look dead
-   * with nothing said to the user and nothing in the log.
+   * Dispatches an interaction, reporting a failure before the handler, such as resolving the
+   * controller, to the user and the log as well.
    */
   private async handleInteraction(interaction: Interaction<CacheType>): Promise<void> {
     try {
@@ -477,12 +453,8 @@ export class MeoCordApp {
   }
 
   /**
-   * Answers an autocomplete interaction from the `@Autocomplete` handler that claims it.
-   *
-   * Discord closes the window after three seconds and shows a loading state until
-   * something arrives, so an unclaimed option is answered with an empty list rather
-   * than left to time out -- a visibly empty menu is a better failure than a stuck one,
-   * and the warning says which option is missing a handler.
+   * Answers an autocomplete interaction from the `@Autocomplete` handler that claims it. An unclaimed
+   * option gets an empty list and a warning, rather than a menu stuck loading until Discord times out.
    */
   private async handleAutocomplete(interaction: AutocompleteInteraction<CacheType>): Promise<void> {
     const focusedName = focusedOptionName(interaction)
@@ -556,12 +528,8 @@ export class MeoCordApp {
   }
 
   /**
-   * Tells the user something went wrong, if the interaction can still hear it.
-   *
-   * A handler that replies and *then* throws is the common shape of a failure, and
-   * replying twice throws in turn -- out of the catch block, where nothing is left to
-   * handle it. Whatever the interaction's state, reporting an error must not be able
-   * to become a second, worse one.
+   * Tells the user something went wrong, if the interaction can still take a reply. Never throws, since
+   * a handler that already replied would otherwise turn one error into two.
    */
   private async replyWithError(interaction: Interaction<CacheType>, message: string): Promise<void> {
     if (!interaction.isRepliable() || interaction.replied || interaction.deferred) return

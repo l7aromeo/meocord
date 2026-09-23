@@ -6,16 +6,10 @@ import { vi } from 'vitest'
 import { createRsbuildConfig } from '@src/build/rsbuild-config.js'
 
 /**
- * Builds a decorated application with the real pipeline and runs the output.
- *
- * Everything asserted here fails silently otherwise. Lost decorator metadata is not a compile
- * error -- inversify throws when the class is first defined, at import. A mangled class name
- * breaks injection in production while development stays fine. An asset under 4 KB, left to
- * Rsbuild's default, becomes a data URI that fs cannot read. A typecheck, and the unit tests on the config object, pass
- * through all three; only running the bundle shows them.
- *
- * The fixture lives inside the repository, in a directory git ignores, so `reflect-metadata`
- * resolves from this package's node_modules the way it would from an application's.
+ * Builds a decorated application with the real pipeline and runs the output, since lost decorator
+ * metadata, mangled class names and inlined assets all typecheck and only fail at runtime.
+ * The fixture sits in a git-ignored directory in the repository, so `reflect-metadata` resolves from
+ * this package's node_modules as it would from an application's.
  */
 const repoRoot = path.resolve(import.meta.dirname, '..', '..')
 const fixture = path.join(repoRoot, '.rsbuild-spec')

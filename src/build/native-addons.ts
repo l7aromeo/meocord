@@ -84,12 +84,8 @@ function containsNativeBinary(dir: string, depth = 0): boolean {
 }
 
 /**
- * Where an optional dependency of the package in `from` was installed, if it was.
- *
- * Nested under the package, beside it (pnpm's layout, and npm's hoisting within a scope), or
- * hoisted to the project root. Being installed does not make it this platform's: some package
- * managers install platform packages for other C libraries too, so {@link copyPackagesInto} also
- * checks what each one declares it is built for.
+ * Where a dependency of the package in `from` is installed: nested under it, beside it (pnpm, and
+ * npm within a scope), or hoisted to the root. Undefined when it is not installed.
  */
 function resolveDependencyDir(name: string, from: string, root: string): string | undefined {
   const candidates = [
@@ -113,12 +109,8 @@ function readDependencies(dir: string): { dependencies: string[]; optional: stri
 
 /**
  * The package holding the compiled addon an installed package loads, or undefined for plain
- * JavaScript.
- *
- * The binary is rarely in the package that gets imported. node-gyp packages keep it in their own
- * directory, under `build/Release`. napi-rs packages and sharp ship a JavaScript loader and publish
- * each platform's binary as a separate package, declared as an optional dependency so only the
- * matching one installs. Both layouts are checked.
+ * JavaScript. node-gyp packages keep the binary under their own `build/Release`; napi-rs packages
+ * and sharp publish it as a per-platform optional dependency.
  */
 export function nativeCarrier(dir: string, name: string, root: string): string | undefined {
   if (containsNativeBinary(dir)) return name
@@ -256,20 +248,9 @@ function isOtherPlatformPackage(source: string, platform: BuildPlatform): boolea
 }
 
 /**
- * Copies packages, with everything they need at runtime, into `<outDir>/node_modules`.
- *
- * This is what lets a bundled application run with nothing installed beside it: the packages that
- * could not be bundled travel inside the output directory, where Node finds them by walking up
- * from the bundle. Each package's installed dependencies and optional dependencies are followed --
- * that is where a platform binary lives. A dependency is copied only when its `os`, `cpu` and `libc`
- * admit the build platform: package managers differ in which of those they filter
- * installs on -- bun installs both the glibc and the musl build on Linux -- and the output has to
- * carry only binaries the platform check in `dist` would let load. Type-only `@types` packages are
- * left behind; some packages list them as runtime dependencies, and they only add weight.
- *
- * @param platform - What the binaries are for. The platform building, which is what `dist`
- *   records in its platform manifest.
- * @returns The names copied.
+ * Copies packages and their runtime dependencies into `<outDir>/node_modules`, where a bundle finds
+ * them with nothing installed beside it. Skips `@types` packages and any whose `os`, `cpu` or `libc`
+ * exclude `platform`, since bun installs both libc builds on Linux. Returns the names copied.
  */
 export function copyPackagesInto(
   packages: Map<string, string>,
@@ -300,12 +281,8 @@ export function copyPackagesInto(
 }
 
 /**
- * Refuses a bundled build that swallowed a native addon.
- *
- * Such a build does not fail on its own. It succeeds, the bot starts, and on the build machine it
- * even works, because the bundle resolves the addon back into that machine's node_modules by
- * absolute path. Anywhere else it fails the first time the addon loads -- often a command, long
- * after startup. Failing the build is the only point this can be caught.
+ * Refuses a bundled build that swallowed a native addon. Such a build works on the build machine,
+ * by resolving the addon into its node_modules, and fails anywhere else when the addon first loads.
  */
 export function assertNoBundledNativeAddons(found: Map<string, string>): void {
   if (found.size === 0) return

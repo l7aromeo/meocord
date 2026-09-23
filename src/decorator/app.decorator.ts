@@ -4,42 +4,27 @@ import { type ActivityOptions, type ClientOptions } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
 
 /**
- * `@MeoCord()` decorator for declaring the MeoCord application class.
+ * Declares the MeoCord application class: its controllers, services, client options and activities.
  *
- * This decorator stores the application options as metadata on the class.
- * All DI wiring — container creation, client binding, controller/service
- * registration — happens inside `MeoCordFactory.create()`, not here.
+ * The options are stored as metadata; `MeoCordFactory.create()` builds the application from them.
  *
- * @param {Object} options - The decorator options.
- * @param {ServiceIdentifier[]} options.controllers - The list of controllers to be registered.
- * @param {ClientOptions} options.clientOptions - The Discord client options for initializing the bot.
- * @param {ActivityOptions[]} [options.activities] - Optional activities for the bot.
- * @param {ServiceIdentifier[]} [options.services] - Optional services to be registered.
+ * @param options.controllers - Controllers to register.
+ * @param options.clientOptions - Options for the discord.js `Client`.
+ * @param options.activities - Activities the bot rotates through, if any.
+ * @param options.services - Services to register that no controller depends on.
  *
  * @example
  * ```typescript
  * @MeoCord({
  *   controllers: [PingSlashController],
  *   clientOptions: {
- *     intents: [
- *       GatewayIntentBits.Guilds,
- *       GatewayIntentBits.GuildMembers,
- *       GatewayIntentBits.GuildMessages,
- *       GatewayIntentBits.GuildMessageReactions,
- *       GatewayIntentBits.MessageContent,
- *     ],
- *     partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+ *     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
  *   },
- *   activities: [{
- *       name: `${sample(['Genshin', 'ZZZ'])} with Romeo`,
- *       type: ActivityType.Playing,
- *       url: 'https://enka.network/u/824957678/',
- *   }],
- *   services: [MyStandaloneService],
+ *   activities: [{ name: 'with slash commands', type: ActivityType.Playing }],
  * })
- * class MyApp {}
+ * class App {}
  * ```
- **/
+ */
 export function MeoCord(options: {
   controllers: ServiceIdentifier[]
   clientOptions: ClientOptions

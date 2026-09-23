@@ -38,12 +38,8 @@ export interface AppTemplateVariables extends Record<string, string> {
 }
 
 /**
- * The prefix each package manager needs for the framework to run on its runtime.
- *
- * The separating space belongs to the value, because the template writes
- * `{{runtimePrefix}}meocord` with nothing between them — a package manager that needs
- * no prefix has to render as `meocord …` rather than ` meocord …`. Trimming an entry
- * here would join it to the command that follows.
+ * The prefix each package manager needs to run the framework on its runtime.
+ * The trailing space is part of the value: the template writes `{{runtimePrefix}}meocord`.
  */
 const RUNTIME_PREFIXES: Record<string, string> = {
   // Without `--bun`, bun honours the CLI's `#!/usr/bin/env node` line and hands it to
@@ -51,11 +47,7 @@ const RUNTIME_PREFIXES: Record<string, string> = {
   bun: 'bun --bun ',
 }
 
-/**
- * The script prefix for a package manager.
- *
- * @param packageManager - Package manager the application was created with.
- */
+/** The script prefix for a package manager, such as `bun ` for bun. */
 export function runtimePrefixFor(packageManager: string): string {
   return RUNTIME_PREFIXES[packageManager] ?? ''
 }
@@ -70,23 +62,13 @@ function outputName(templateName: string): string {
 }
 
 /**
- * Writes a new application from the template packaged with this framework.
- *
- * The template ships inside the package rather than being fetched, so the application a
- * given release scaffolds is always one that release can run. A template resolved at
- * generation time drifts from the CLI asking for it, in whichever direction happens to
- * be newer.
+ * Writes a new application from the template packaged with this framework, so a release always
+ * scaffolds an application that same release can run.
  */
 export class AppGeneratorHelper {
   private readonly templateDir = path.resolve(__dirname, '..', 'app-template')
 
-  /**
-   * Renders every packaged template file into the target directory.
-   *
-   * @param targetDir - Directory to write the application into.
-   * @param variables - Values substituted into the template.
-   * @returns The written paths, relative to the target directory.
-   */
+  /** Renders every packaged template file into `targetDir`, returning the written paths relative to it. */
   generateApp(targetDir: string, variables: AppTemplateVariables): string[] {
     return this.templateFiles(this.templateDir).map(templatePath => {
       const relative = path

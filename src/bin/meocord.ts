@@ -385,11 +385,7 @@ copies or substantial portions of the Software.
     if (copied.length > 0) this.logger.info(`dist/node_modules holds ${copied.length} packages; nothing else to install.`)
   }
 
-  /**
-   * Builds the MeoCord application in the specified mode.
-   *
-   * @param mode - The build mode ('production' or 'development').
-   */
+  /** Builds the application in the given mode. */
   async build(mode: 'production' | 'development') {
     try {
       this.clearConsole()
@@ -429,11 +425,8 @@ copies or substantial portions of the Software.
     if (!fs.existsSync(configPath)) return
 
     try {
-      // Deliberately built without the application's `rsbuild` hook: this compiles the very
-      // file that declares that hook, so applying it here would let a config shape its own
-      // compilation. It does follow `bundleDependencies`, though: the config imports packages
-      // too (dotenv, usually), and a bot bundled to run without node_modules would otherwise
-      // fail on its own config file.
+      // Built without the application's `rsbuild` hook, since this file declares that hook. It follows
+      // `bundleDependencies`, because the config imports packages (dotenv) a bundled bot has no copy of.
       const meocordConfig = loadMeoCordSourceConfig()
       const bundleDependencies = meocordConfig?.bundleDependencies ?? false
       const base = createRsbuildConfig({
@@ -495,15 +488,7 @@ copies or substantial portions of the Software.
     previous.kill()
   }
 
-  /**
-   * Runs the built application.
-   *
-   * Shared by both start modes so watching and production launch the bundle the same
-   * way; a watcher that spawned it differently could pass in development and fail in
-   * production on the difference alone.
-   *
-   * @returns The application process.
-   */
+  /** Runs the built application. Both start modes use it, so watch mode launches the bundle exactly as production does. */
   private spawnApp(): ChildProcess {
     const { command, args } = buildAppCommand(this.runtime, this.mainJSPath)
 
@@ -646,12 +631,9 @@ copies or substantial portions of the Software.
 }
 
 /**
- * Whether this file is what the process was started with.
- *
- * The bin ships behind a `node_modules/.bin` symlink, so `argv[1]` is the link while
- * `import.meta.url` is its target; the two only agree once the link is resolved.
- * Anything undecidable counts as a launch, so the published CLI still starts in cases
- * this cannot classify.
+ * Whether this file is what the process was started with. `argv[1]` is the `node_modules/.bin`
+ * symlink while `import.meta.url` is its target, so both are resolved first; anything undecidable
+ * counts as a launch, so the CLI still starts.
  */
 function isProcessEntry(): boolean {
   const invoked = process.argv[1]
@@ -665,12 +647,8 @@ function isProcessEntry(): boolean {
 }
 
 /**
- * Whether two resolved paths name the same file.
- *
- * Windows paths differ in case and separator without naming different files — npm's
- * shim passes the script path in whatever form it recorded — and a comparison that
- * missed would leave the CLI exiting without a word, since it would decide it was
- * merely being imported.
+ * Whether two resolved paths name the same file, ignoring case and separators on Windows, where
+ * npm's shim passes the script path in whatever form it recorded.
  */
 function samePath(left: string, right: string): boolean {
   const normalise = (value: string) => (process.platform === 'win32' ? path.resolve(value).toLowerCase() : value)

@@ -19,11 +19,8 @@ import {
 import type { MockedFunction } from './mock-fn.js'
 
 /**
- * The runtime spec cannot cover any of this: types are erased before a test
- * runs. These assertions execute under `vitest --typecheck`, and the negative
- * cases are real assertions — an unfulfilled `@ts-expect-error` is an error in
- * its own right, so a regression that makes a rejected form compile fails here
- * rather than passing silently.
+ * Type-level assertions, run by `vitest --typecheck`. An unfulfilled `@ts-expect-error` fails, so a
+ * form that should be rejected cannot start compiling unnoticed.
  */
 
 describe('DeepMocked', () => {

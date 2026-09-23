@@ -115,21 +115,9 @@ export const PARAM_SEPARATOR = '/'
 const escapeLiteral = (literal: string): string => literal.replace(/[/\\^$*+?.()|[\]{}]/g, '\\$&')
 
 /**
- * Helper function to create regex and parameter mappings from a pattern string.
- *
- * A `{name}` matches anything up to the next `/`, the same rule Express and Rails use
- * for a path segment. That is what lets a value the application does not control — a
- * uuid, an opaque vendor id, a slug — be captured whole without the author annotating
- * anything, since a hyphen inside it is data rather than structure.
- *
- * It also keeps neighbouring patterns apart: `profile/{uuid}` and `profile/{uuid}/{id}`
- * cannot both match one id, because a parameter cannot swallow the separator between
- * them. Patterns separated by `-` instead have no such boundary, so a pair like
- * `profile-{uuid}` and `profile-{uuid}-{id}` is ambiguous — {@link findAmbiguousRoutes}
- * reports those at registration.
- *
- * @param pattern - The pattern string to parse.
- * @returns The regex, the parameter names, and how specific the pattern is.
+ * Compiles a pattern into a regex, its parameter names and its specificity. A `{name}` matches up to
+ * the next `/`, so a uuid is captured whole and `profile/{uuid}` never overlaps `profile/{uuid}/{id}`;
+ * `-`-separated patterns can, which {@link findAmbiguousRoutes} reports at registration.
  */
 function createRegexFromPattern(pattern: string): { regex: RegExp; params: string[]; specificity: number } {
   const params: string[] = []
@@ -293,19 +281,13 @@ export function getCommandMap<T extends string>(controller: any): Record<string,
 }
 
 /**
- * Decorator to register an autocomplete handler for a chat input command's option.
+ * Registers an autocomplete handler for an option of a chat input command.
  *
- * Autocomplete is a separate interaction from the command it belongs to, and Discord
- * sends it while the user is still typing. It is not a `@Command`: nothing is
- * registered for it — the option's own `setAutocomplete(true)` is what turns it on —
- * and it is answered with `interaction.respond()` rather than a reply. Leaving it
- * unhandled is not silent to the user: the client shows a loading state until the
- * three-second window closes.
+ * Enable it on the option with `setAutocomplete(true)` and answer with `interaction.respond()`.
  *
- * @param commandPath - The command to complete, e.g. `settings` or `settings notify email`
- *   for a subcommand. Parts are separated by a single space, as Discord displays them.
- * @param optionName - The option to complete. Omit to handle every option of the command,
- *   branching on `interaction.options.getFocused(true)`.
+ * @param commandPath - The command, such as `search` or `settings notify email` for a subcommand.
+ * @param optionName - The option to complete. Omit to handle every option, branching on
+ *   `interaction.options.getFocused(true)`.
  *
  * @example
  * ```typescript
@@ -331,13 +313,8 @@ export function Autocomplete<R extends void | Promise<void>>(commandPath: string
 }
 
 /**
- * Retrieves autocomplete handler metadata from a given controller.
- *
- * Handlers naming an option come first, so a command-wide handler acts as the fallback
- * for options no specific handler claimed rather than shadowing them by declaration order.
- *
- * @param controller - The controller class instance.
- * @returns The registered autocomplete handlers, most specific first.
+ * Returns a controller's autocomplete handlers, option-specific ones first.
+ * @param controller - The controller instance.
  */
 export function getAutocompleteHandlers(controller: any): AutocompleteMetadata[] {
   const handlers: AutocompleteMetadata[] = Reflect.getMetadata(AUTOCOMPLETE_METADATA_KEY, controller) || []
@@ -345,7 +322,7 @@ export function getAutocompleteHandlers(controller: any): AutocompleteMetadata[]
 }
 
 /**
- * Decorator to mark a class as a controller that can later be registered to the App class `(app.ts)` using the `@MeoCord` decorator.
+ * Marks a class as a controller, to be listed in `@MeoCord({ controllers })`.
  *
  * @example
  * ```typescript
@@ -355,8 +332,7 @@ export function getAutocompleteHandlers(controller: any): AutocompleteMetadata[]
  *
  *   @Command('ping', PingCommandBuilder)
  *   async ping(interaction: ChatInputCommandInteraction) {
- *     const response = await this.pingService.handlePing()
- *     await interaction.reply(response)
+ *     await interaction.reply(await this.pingService.handlePing())
  *   }
  * }
  * ```
@@ -370,15 +346,8 @@ export function Controller() {
 }
 
 /**
- * Finds pattern pairs that can both match one customId.
- *
- * Patterns of different segment counts are disjoint, because a parameter cannot cross
- * `/`. Within the same count, two patterns overlap unless some position holds literals
- * that differ: `a/{x}/c` and `a/b/{y}` both take `a/b/c`, and neither is more literal
- * than the other, so ranking cannot settle it either.
- *
- * @param patterns - The registered patterns.
- * @returns Each ambiguous pair, once, in the order the patterns were given.
+ * Finds pairs of customId patterns that can both match one id, such as `a/{x}/c` and `a/b/{y}`.
+ * @returns Each ambiguous pair once, in the order the patterns were given.
  */
 export function findAmbiguousRoutes(patterns: string[]): [string, string][] {
   const isParam = (segment: string): boolean => PLACEHOLDER_PATTERN.test(segment)

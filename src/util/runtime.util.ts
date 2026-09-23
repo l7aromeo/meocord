@@ -13,25 +13,15 @@ export interface RuntimeCommand {
 }
 
 /**
- * Runners that are themselves JavaScript runtimes.
- *
- * `npm_execpath` names the binary that launched the script. npm, pnpm and yarn set it to
- * a `.js` file, which cannot run the application, so only the runners listed here are
- * read as a runtime. An entry belongs here only once it has been checked against that
- * runner's real environment, since guessing wrong means spawning something that cannot
- * execute the bundle.
+ * Runners that are themselves JavaScript runtimes. npm, pnpm and yarn set `npm_execpath` to a `.js`
+ * file that cannot run the bundle, so only runners verified against their real environment are listed.
  */
 const RUNTIME_RUNNERS: ReadonlySet<string> = new Set(['bun'])
 
 /**
- * The runtime that launched the CLI, when the CLI is not itself running on it.
- *
- * `bun run` honours the bin's `#!/usr/bin/env node` shebang, so the CLI lands on node
- * even though the user asked for bun. What they chose is still recoverable: bun sets
- * `npm_config_user_agent` to `bun/<version> …` and `npm_execpath` to its own binary.
- *
- * @param env - Environment the CLI was launched with.
- * @returns The launcher's binary, or `undefined` when it cannot run the application.
+ * The runtime that launched the CLI, when the CLI itself runs on node: `bun run` honours the bin's
+ * node shebang, but sets `npm_config_user_agent` and `npm_execpath` to bun.
+ * @returns The launcher's binary, or undefined when it cannot run the application.
  */
 function launcherRuntime(env: NodeJS.ProcessEnv): string | undefined {
   const runner = env.npm_config_user_agent?.split('/')[0]
@@ -43,19 +33,9 @@ function launcherRuntime(env: NodeJS.ProcessEnv): string | undefined {
 }
 
 /**
- * The binary the application should be spawned with.
- *
- * Follows the runtime the user chose rather than naming one. Someone who typed `bun`
- * gets a bun process, and an image built on bun alone stays that way — pinning `node`
- * would oblige them to install a second runtime beside the one they picked, or to
- * remember `--bun` on every command.
- *
- * Preference runs from the most explicit signal to the least: an override, then the
- * runner that launched the CLI, then the binary executing it.
- *
- * @param env - Environment the CLI was launched with.
+ * The binary to spawn the application with, following the runtime the user chose: an override,
+ * then the runner that launched the CLI, then the binary executing it.
  * @param execPath - Binary executing the CLI, i.e. `process.execPath`.
- * @returns The binary to spawn.
  */
 export function resolveRuntime(env: NodeJS.ProcessEnv, execPath: string): string {
   const override = env[RUNTIME_OVERRIDE_ENV]?.trim()
@@ -67,18 +47,10 @@ export function resolveRuntime(env: NodeJS.ProcessEnv, execPath: string): string
   return launcherRuntime(env) ?? execPath
 }
 
-/**
- * Runs the built application directly.
- *
- * @param runtime - Binary to run the application with.
- * @param mainJsPath - Absolute path to the built entry file.
- */
+/** The command that runs the built entry file with `runtime`, adding `--no-install` for bun. */
 export function buildAppCommand(runtime: string, mainJsPath: string): RuntimeCommand {
-  // With no node_modules directory in reach, bun installs a missing package from the registry
-  // the moment something imports it. A bot bundled with `bundleDependencies` is deployed exactly
-  // that way, so discord.js probing for its optional `zlib-sync` would download it in production
-  // instead of falling back. Nothing should reach the network at startup that the build did not
-  // put there.
+  // Without node_modules in reach, bun installs a missing package the moment something imports it;
+  // `--no-install` keeps a bundled bot from downloading packages such as `zlib-sync` at startup.
   const args = isBun(runtime) ? ['--no-install', mainJsPath] : [mainJsPath]
   return { command: runtime, args }
 }

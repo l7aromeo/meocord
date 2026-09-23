@@ -4,22 +4,19 @@ import { MetadataKey } from '@src/enum/index.js'
 import { type BuildableCommandType, type CommandBuilderBase } from '@src/interface/command-decorator.interface.js'
 
 /**
- * This decorator is used to mark a class as a Discord command builder that later can be registered on the `@Command` decorator.
- * It defines the command type using metadata and dynamically makes the class injectable if it isn't already.
+ * Marks a class as the builder for a Discord command, for use with `@Command`.
+ *
+ * @param commandType - The type of command the class builds.
  *
  * @example
  * ```typescript
  * @CommandBuilder(CommandType.SLASH)
- * export class MySlashCommand implements CommandBuilderBase {
+ * export class PingCommandBuilder implements CommandBuilderBase {
  *   build(commandName: string): SlashCommandBuilder {
- *     return new SlashCommandBuilder().setName(commandName).setDescription('A sample slash command')
+ *     return new SlashCommandBuilder().setName(commandName).setDescription('Replies with pong')
  *   }
  * }
- *```
- *
- * @param commandType - The type of the command, specified from the `CommandType` enum.
- * @returns A decorator function that makes the target class injectable
- *          and assigns the `commandType` metadata.
+ * ```
  */
 export function CommandBuilder<T extends BuildableCommandType>(commandType: T) {
   return function (target: new () => CommandBuilderBase<T>) {

@@ -1,15 +1,7 @@
 /**
- * Generates one controller of every type through the built CLI and typechecks the
- * result against the published package.
- *
- * The unit suite can only assert on the text a template renders, which says nothing
- * about whether that text compiles. Two bugs lived behind exactly that gap: a template
- * importing `CommandType` from a module that does not export it, and a nested
- * controller importing a builder path that is never written. Both produced an
- * application that could not build, and every render assertion passed regardless.
- *
- * Run after `bun run build` -- it drives `dist`, not `src`, so it covers the package
- * `exports` map and the rollup template copy along with the templates themselves.
+ * Generates every component through the built CLI and typechecks the result, since a template
+ * that renders fine can still produce code that does not compile.
+ * Run after `bun run build`: it drives `dist`, so it covers the `exports` map and the template copy too.
  */
 
 import { execFileSync } from 'child_process'
@@ -78,13 +70,9 @@ function generate(dir: string, type: ControllerType, name: string): void {
 }
 
 /**
- * Generates every controller type under one name shape, in a project of its own, and
- * typechecks it.
- *
- * The isolation is the point. Generating flat and nested names side by side hides the
- * bug where a nested controller imports the top-level builder path: the flat pass
- * writes exactly that file, so the wrong import resolves and the check passes. Each
- * shape has to stand on its own.
+ * Generates every controller type under one name shape, in its own project, and typechecks it.
+ * Each shape stands alone: flat names write the top-level builder, which would let a nested
+ * controller's wrong import to it resolve.
  */
 function verify(label: string, name: string, types: ControllerType[]): void {
   const dir = path.join(workDir, label)
@@ -160,12 +148,8 @@ function verifyApp(): void {
 }
 
 /**
- * Checks the CLI's interpreter line is one npm can shim on Windows.
- *
- * npm does not run the file through its shebang there; `cmd-shim` parses the line,
- * takes the program out of it, and writes a `.cmd` that runs that program against the
- * script. Only the `#!/usr/bin/env <prog>` form yields a program Windows can resolve —
- * `#!/bin/sh` produces a shim that tries to execute a path no Windows machine has.
+ * Checks the CLI's interpreter line is `#!/usr/bin/env <prog>`, the only form npm's `cmd-shim`
+ * turns into a `.cmd` that Windows can run.
  */
 function verifyShebang(): void {
   const [interpreter] = readFileSync(cli, 'utf8').split('\n', 1)

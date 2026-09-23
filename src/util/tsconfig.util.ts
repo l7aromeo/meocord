@@ -7,15 +7,10 @@ import { fixJSON } from '@src/util/json.util.js'
 const logger = new Logger()
 
 /**
- * Prepares and modifies the project's `tsconfig.json` file for the bundler.
- * - Verifies the existence of `tsconfig.json`.
- * - Fixes invalid JSON if necessary by correcting formatting issues like comments or trailing commas.
- * - Updates paths in `compilerOptions` and other sections to absolute paths.
- * - Removes the `noEmit` option if present in `compilerOptions`.
- * - Writes the modified `tsconfig.json` to a temporary location.
- *
- * @returns {string} The absolute path to the generated temporary `tsconfig.json`.
- * @throws {Error} When `tsconfig.json` is missing or cannot be fixed/parsing fails.
+ * Writes a copy of the project's `tsconfig.json` for the bundler to a temporary file, with invalid
+ * JSON repaired, paths made absolute and `noEmit` removed.
+ * @returns The absolute path to the temporary tsconfig.
+ * @throws When `tsconfig.json` is missing or cannot be parsed.
  */
 export function prepareModifiedTsConfig(): string {
   const tsConfigPath = path.resolve(process.cwd(), 'tsconfig.json')

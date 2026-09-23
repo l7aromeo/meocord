@@ -55,31 +55,16 @@ function applyGuards(
 }
 
 /**
- * `@Guard()` decorator to mark a class as a Guard that later can be added on `@UseGuard` decorator.
+ * Marks a class as a guard, for use with {@link UseGuard}. The class implements `GuardInterface`.
  *
  * @example
  * ```typescript
  * @Guard()
-export class ButtonInteractionGuard implements GuardInterface {
-  private readonly logger = new Logger(ButtonInteractionGuard.name)
-
-  async canActivate(context: ButtonInteraction, { ownerId }: { ownerId: string }): Promise<boolean> {
-    if (context.user.id !== ownerId) {
-      this.logger.error(
-        `User with id ${context.user.id} is not allowed to use this command that initiated by user with id ${ownerId}.`,
-      )
-      const embed = generateErrorEmbed(
-        `Hi <@${context.user.id}>, this command can only be used by the person who initiated it: <@${ownerId}>.`,
-      )
-      await context.reply({
-        embeds: [embed],
-        flags: MessageFlagsBitField.Flags.Ephemeral,
-      })
-      return false
-    }
-    return true
-  }
-}
+ * export class OwnerOnlyGuard implements GuardInterface {
+ *   canActivate(interaction: ButtonInteraction, { ownerId }: { ownerId: string }): boolean {
+ *     return interaction.user.id === ownerId
+ *   }
+ * }
  * ```
  */
 export function Guard() {
@@ -90,67 +75,33 @@ export function Guard() {
   }
 }
 
-/**
- * Type for a guard with parameters.
- * This type defines a guard that requires additional parameters (other than the default constructor).
- */
+/** A guard class, and the properties set on its instance before `canActivate` runs. */
 interface GuardWithParams {
-  /**
-   * The guard class that needs to be instantiated.
-   */
+  /** The guard class to resolve. */
   provide: new (...args: any[]) => GuardInterface
 
-  /**
-   * Parameters to be passed to the guard during instantiation.
-   */
+  /** Properties assigned to the guard instance. */
   params: Record<string, any>
 }
 
-/**
- * Type guard to check if the object is a GuardWithParams.
- * This function helps to check whether a guard is parameterized or not.
- *
- * @param guard - The guard to check.
- * @returns `true` if the guard has parameters, otherwise `false`.
- */
+/** Whether a `@UseGuard` entry is a guard with params rather than a guard class. */
 function isGuardWithParams(guard: any): guard is GuardWithParams {
   return typeof guard === 'object' && 'provide' in guard && 'params' in guard
 }
 
 /**
- * `@UseGuard()` decorator to apply one or more guards to methods.
- * Guards are used to handle permission checks before executing a method.
- * Each guard must use `@Guard` decorator and implement the `canActivate` method, which determines
- * whether the method should be allowed to execute based on the provided context (Interaction, Message, or Reaction) and arguments.
- * This decorator ensures that all guards pass validation before calling the original method.
- * Supports guards that are parameterized (accepting additional parameters).
+ * Runs guards before a method, or before every method of a class; the method runs only when every
+ * guard's `canActivate` returns true.
  *
- * @param guards - One or more guard classes to apply. These can be regular guards or guards with additional parameters.
- *                 - If providing a guard with parameters, it should be an object with:
- *                   - `provide`: The guard class to instantiate. Must implement `GuardInterface`.
- *                   - `params`: A record of key-value pairs to be passed as additional properties to the guard instance.
- * @returns A method decorator function that applies the guards to the method.
+ * @param guards - Guard classes, or `{ provide, params }` to set `params` as properties on the guard
+ *   instance before it runs.
  *
  * @example
  * ```typescript
- * // Method-level usage
  * @Command('profile/{id}', CommandType.BUTTON)
- * @UseGuard(
- *   { provide: RateLimiterGuard, params: { limit: 2, window: 3000 } },
- *   ButtonInteractionGuard
- * )
- * async showProfileById(interaction: ButtonInteraction, { id }: { id: string }) {
- *   await interaction.reply(`Profile ID: ${id}`)
- * }
- *
- * // Class-level usage
- * @Controller()
- * @UseGuard(GlobalGuard)
- * class MyController {
- *   @Command('ping', CommandType.SLASH)
- *   async ping(interaction: ChatInputCommandInteraction) {
- *     await interaction.reply('Pong!')
- *   }
+ * @UseGuard({ provide: RateLimitGuard, params: { limit: 2, window: 3000 } }, OwnerOnlyGuard)
+ * async showProfile(interaction: ButtonInteraction, { id }: { id: string }) {
+ *   await interaction.reply(`Profile ${id}`)
  * }
  * ```
  */

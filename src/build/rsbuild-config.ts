@@ -3,28 +3,16 @@ import { type RsbuildConfig } from '@rsbuild/core'
 import { prepareModifiedTsConfig } from '@src/util/tsconfig.util.js'
 
 /**
- * Native accelerators discord.js reaches for at runtime and works without.
- *
- * `bufferutil` and `utf-8-validate` are `ws`'s optional peers; `zlib-sync` is loaded by
- * `@discordjs/ws` without being declared at all, falling back to uncompressed identify when it
- * is absent. A bundler cannot tell "optional" from "missing", so bundling them fails on
- * `Can't resolve 'zlib-sync'` for every bot. Left as runtime imports, a missing one is caught and
- * ignored, exactly as it is when nothing is bundled.
- *
- * They are externalised as `node-commonjs` rather than plain names. A plain name in an ESM build
- * becomes a hoisted top-level `import`, which throws `Cannot find package 'bufferutil'` before the
- * bot runs a line -- the opposite of the try/catch `ws` wraps around it. `node-commonjs` keeps a
- * runtime `require` at the original call site, so the library's own fallback still applies.
+ * Native accelerators discord.js loads when present and works without. A bundler cannot tell
+ * optional from missing, so they stay runtime imports. `node-commonjs` keeps each a `require` at its
+ * call site, inside the library's try/catch, where a plain ESM external would hoist an import that
+ * throws before the bot starts.
  */
 export const DISCORD_OPTIONAL_NATIVES: readonly string[] = ['zlib-sync', 'bufferutil', 'utf-8-validate']
 
 /**
  * The prefix an asset import is joined to at runtime: the output directory, with forward slashes.
- *
- * Rspack writes this into the bundle as a string literal without escaping it. A Windows path
- * came through as `"D:\\a\\meocord\\dist/"` in the source, where `\\a` is a bell character and
- * the other backslashes vanish -- every asset import evaluated to `D:ameocorddist/assets/...`.
- * Windows accepts forward slashes everywhere a path is read, so they are used on every platform.
+ * Rspack writes it into the bundle unescaped, so a Windows backslash would corrupt every asset path.
  */
 export function assetPrefixFor(distDir: string): string {
   return `${distDir.replace(/\\/g, '/').replace(/\/+$/, '')}/`
@@ -148,15 +136,9 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
 }
 
 /**
- * Refuses a MeoCord config that declares a `webpack` hook, which MeoCord does not run.
- *
- * Without this, such a config builds "successfully" with the customisation silently dropped --
- * assets landing in the wrong place, markdown imported as a path instead of its text. Refusing
- * is kinder than a green build that ships something else.
- *
- * Read as a property rather than tested with `in`: a config loaded from source comes back as
- * jiti's interop proxy, where property access reaches the default export but `in` and
- * Object.keys only see `default` -- so `'webpack' in config` is false even when it is set.
+ * Refuses a config that declares a `webpack` hook, which MeoCord does not run, rather than building
+ * without the customisation. Read as a property rather than with `in`: jiti's interop proxy reaches
+ * the default export's properties, but `in` and `Object.keys` only see `default`.
  */
 export function assertNoWebpackHook(config: object | undefined): void {
   if ((config as Record<string, unknown> | undefined)?.webpack === undefined) return

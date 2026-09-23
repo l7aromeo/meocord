@@ -1,13 +1,5 @@
-// ---------------------------------------------------------------------------
-// Framework-agnostic mock function
-//
-// A minimal mock-fn implementation used internally by the testing utilities so
-// that `meocord/testing` does not depend on jest OR vitest. Both jest and
-// vitest detect a mock via the `_isMockFunction` flag, and both
-// `expect(fn).toHaveBeenCalledWith(...)` / `toHaveBeenCalledTimes(...)` read
-// `fn.mock.calls` — so a mock produced here is recognized by assertions in
-// either framework.
-// ---------------------------------------------------------------------------
+// Framework-agnostic mock function, so `meocord/testing` depends on neither jest nor vitest.
+// Both detect it through `_isMockFunction` and read `fn.mock.calls` in their assertions.
 
 export interface MockResult<T = unknown> {
   type: 'return' | 'throw'
@@ -68,26 +60,23 @@ export function isMockFunction(fn: unknown): fn is MockInstance {
 }
 
 /**
- * Creates a framework-agnostic mock function. Callable; records calls on
- * `.mock.calls`; supports the mock-return/resolved/rejected/implementation
- * API used by the testing utilities and by user assertions.
+ * Creates a mock function that works with both jest's and vitest's `expect`.
+ *
+ * @param impl - The implementation to run until another is set.
  *
  * @example
- * const fn = createMockFn<(x: number) => number>((x) => x + 1)
- * fn(2)                    // → 3
+ * ```ts
+ * const fn = createMockFn((x: number) => x + 1)
+ * fn(2)                  // 3
  * fn.mockReturnValue(99)
- * fn(2)                    // → 99
- * fn.mock.calls             // → [[2], [2]]
+ * fn(2)                  // 99
+ * fn.mock.calls          // [[2], [2]]
+ * ```
  */
 export function createMockFn<T extends (...args: any[]) => any = (...args: any[]) => any>(impl?: T): MockedFunction<T> {
-  // One persistent implementation and one queue of single-use ones, which is how
-  // jest and vitest model this. mockReturnValue, mockResolvedValue,
-  // mockRejectedValue and mockImplementation all write the same slot, so the last
-  // call wins; the four `*Once` variants all push onto the same queue, so they are
-  // consumed in the order they were declared regardless of which kind they are.
-  // A slot per kind would give a fixed precedence instead, where a stored
-  // resolved value beats a later mockRejectedValue and the override is silently
-  // dropped.
+  // One persistent implementation and one queue of single-use ones, as in jest and vitest: the
+  // four setters share the slot, so the last call wins, and the `*Once` variants share the queue,
+  // so they run in declaration order.
   let currentImpl: ((...args: any[]) => any) | undefined = impl as ((...args: any[]) => any) | undefined
   let onceQueue: ((...args: any[]) => any)[] = []
   let name = 'vi.fn'
