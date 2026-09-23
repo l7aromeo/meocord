@@ -889,18 +889,20 @@ expect(msg.delete).toHaveBeenCalledTimes(1)
 
 Tests which handler a component's customId reaches — the same answer dispatch gives, across every
 controller your app registers, most specific pattern first. They read decorator metadata only, so
-they need no Discord client, config or container. Guards are not run: a route that resolves can
-still be rejected by a guard.
+they need no Discord client, config or container. They check routing alone: guards are not run, and
+whether a controller's dependencies are bound is for `MeoCordTestingModule` to test.
 
 ```typescript
 import { findRouteConflicts, resolveRoute } from 'meocord/testing'
 import { CommandType } from 'meocord/enum'
 import App from '@src/app'
+import { ProfileController } from '@src/controllers/button/profile.button.controller'
 
 it('routes the profile button to its handler', () => {
   const route = resolveRoute(App, { type: CommandType.BUTTON, customId: 'profile/111/8000' })
 
-  expect(route?.method).toBe('showProfile')
+  // The method itself rather than its name, so renaming it in your editor updates the test too.
+  expect(route?.handler).toBe(ProfileController.prototype.showProfile)
   expect(route?.params).toEqual({ ownerId: '111', uid: '8000' })
 })
 
@@ -910,7 +912,8 @@ it('has no overlapping component patterns', () => {
 })
 ```
 
-`resolveRoute` returns `undefined` when no route handles the customId.
+`resolveRoute` returns the `controller`, the `handler` method and its name as `method`, and the
+`params` the pattern captured — or `undefined` when no route handles the customId.
 
 </details>
 

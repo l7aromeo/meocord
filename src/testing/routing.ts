@@ -19,6 +19,11 @@ export interface ResolvedRoute {
   controller: ControllerClass
   /** The name of the handler method. */
   method: string
+  /**
+   * The handler method itself, for assertions that survive renaming it:
+   * `expect(route?.handler).toBe(ProfileController.prototype.showProfile)`.
+   */
+  handler: (...args: any[]) => unknown
   /** The values captured by the pattern's `{name}` segments. */
   params: Record<string, string>
 }
@@ -41,7 +46,8 @@ function controllersOf(app: ControllerClass): ControllerClass[] {
  * controller the application registers, for that component type, most specific pattern first.
  *
  * Reads decorator metadata only, so it runs in a plain unit test with no Discord client, config
- * or container. Guards are not run: a route that resolves can still be rejected by a guard.
+ * or container. It checks routing alone: guards are not run, and whether the controller's
+ * dependencies are bound is for `MeoCordTestingModule` to test.
  *
  * @param app - The application class decorated with `@MeoCord`.
  * @param component - The component type and the customId it carries.
@@ -50,7 +56,7 @@ function controllersOf(app: ControllerClass): ControllerClass[] {
  * @example
  * ```ts
  * const route = resolveRoute(App, { type: CommandType.BUTTON, customId: 'profile/111/8000' })
- * expect(route?.method).toBe('showProfile')
+ * expect(route?.handler).toBe(ProfileController.prototype.showProfile)
  * expect(route?.params).toEqual({ ownerId: '111', uid: '8000' })
  * ```
  */
@@ -65,7 +71,8 @@ export function resolveRoute(
   const matched = matchComponentRoute(routes, type => type === component.type, component.customId)
   if (!matched) return undefined
   const { route, params } = matched
-  return { controller: route.controllerClass, method: route.meta.methodName, params }
+  const method = route.meta.methodName
+  return { controller: route.controllerClass, method, handler: route.controllerClass.prototype[method], params }
 }
 
 /**
