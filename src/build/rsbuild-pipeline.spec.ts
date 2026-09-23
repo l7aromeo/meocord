@@ -117,7 +117,7 @@ describe('the Rsbuild pipeline, built and run', () => {
     const result = await buildAndRun('production')
 
     expect(result.icon).not.toMatch(/^data:/)
-    expect(path.isAbsolute(result.icon)).toBe(true)
-    expect(existsSync(result.icon)).toBe(true)
+    expect(path.isAbsolute(result.icon), `resolved to ${result.icon}`).toBe(true)
+    expect(existsSync(result.icon), `resolved to ${result.icon}`).toBe(true)
   })
 }, 60_000)

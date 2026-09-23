@@ -11,7 +11,7 @@ vi.mock('@src/util/tsconfig.util.js', () => ({
   prepareModifiedTsConfig: vi.fn().mockReturnValue('/tmp/modified-tsconfig.json'),
 }))
 
-const { assertNoWebpackHook, createRsbuildConfig, DISCORD_OPTIONAL_NATIVES } = await import(
+const { assertNoWebpackHook, assetPrefixFor, createRsbuildConfig, DISCORD_OPTIONAL_NATIVES } = await import(
   '@src/build/rsbuild-config.js'
 )
 
@@ -107,7 +107,15 @@ describe('createRsbuildConfig', () => {
     it('resolves asset imports to absolute paths under dist', () => {
       const config = createRsbuildConfig({ mode: 'production' })
 
-      expect(config.output?.assetPrefix).toBe(`${dist}/`)
+      expect(config.output?.assetPrefix).toBe(assetPrefixFor(dist))
+      expect(config.output?.assetPrefix).toBe(`${dist.replace(/\\/g, '/')}/`)
+    })
+
+    // Rspack emits the prefix unescaped, so a backslash in it corrupted every asset path on Windows.
+    it('writes the prefix with forward slashes, which survive being emitted as a string literal', () => {
+      expect(assetPrefixFor('D:\\a\\meocord\\dist')).toBe('D:/a/meocord/dist/')
+      expect(assetPrefixFor('/srv/bot/dist')).toBe('/srv/bot/dist/')
+      expect(assetPrefixFor('/srv/bot/dist/')).toBe('/srv/bot/dist/')
     })
 
     it('writes assets under dist/assets without a content hash', () => {
