@@ -101,14 +101,22 @@ something you have to arrange.
 Publishing uses npm trusted publishing — the registry issues short-lived credentials to the
 workflow, so no npm token is stored anywhere — and every release carries a provenance attestation.
 
-Prereleases use changesets' pre mode on the `beta` branch:
+Prereleases use changesets' pre mode, on `main`:
 
 ```bash
 bunx changeset pre enter beta
 ```
 
-Commit the resulting `.changeset/pre.json`. Releases from that branch publish as `x.y.z-beta.N`
-under the `beta` dist-tag rather than `latest`, until `bunx changeset pre exit` is committed.
+Committing the resulting `.changeset/pre.json` switches the release pull request to prerelease
+versions — `4.0.0-beta.0`, then `4.0.0-beta.1` — published under the `beta` dist-tag rather than
+`latest`, so `npm install meocord` keeps resolving the stable release. Changesets keep landing as
+usual in the meantime. To ship the stable version, commit the result of:
+
+```bash
+bunx changeset pre exit
+```
+
+and the next release pull request versions `4.0.0` from everything collected during the beta.
 
 ## Reporting bugs
 
