@@ -165,6 +165,9 @@ export class MeoCordApp {
     return this.controllerInstancesCache.get(controllerClass)
   }
 
+  /** Whether a failed login set the process exit code, so a later successful one knows to clear it. */
+  private static failedLoginSetExitCode = false
+
   /**
    * Registers the Discord event handlers and logs in.
    *
@@ -172,7 +175,8 @@ export class MeoCordApp {
    * code to 1 first. A bot that never came online is a failed start, and a supervisor such as
    * Docker's `restart: on-failure` or systemd can only tell if the process says so. The exit code is
    * set here rather than left to the entry point because an entry point that catches the rejection
-   * to log it has handled it, and the process would otherwise end with 0.
+   * to log it has handled it, and the process would otherwise end with 0. A later `start()` that
+   * logs in -- an entry point retrying -- clears the code again, if this is what set it.
    */
   async start() {
     this.logger.log('Starting bot...')
@@ -205,8 +209,15 @@ export class MeoCordApp {
     try {
       await this.bot.login(this.discordToken)
     } catch (error) {
-      process.exitCode = 1
+      if (process.exitCode === undefined || process.exitCode === 0) {
+        process.exitCode = 1
+        MeoCordApp.failedLoginSetExitCode = true
+      }
       throw error
+    }
+    if (MeoCordApp.failedLoginSetExitCode && process.exitCode === 1) {
+      process.exitCode = undefined
+      MeoCordApp.failedLoginSetExitCode = false
     }
     this.logger.log('Bot is online!')
   }

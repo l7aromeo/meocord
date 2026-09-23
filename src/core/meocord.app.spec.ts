@@ -135,6 +135,32 @@ describe('MeoCordApp', () => {
         expect(process.exitCode).toBe(1)
       })
 
+      // An entry point may retry. Once a retry is online the bot is running fine, and a process that
+      // later ends on its own must not report the first attempt's failure.
+      it('clears the exit code again when a retry logs in', async () => {
+        mockClient.login.mockRejectedValueOnce(new Error('Discord unreachable'))
+        const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 'token')
+
+        await app.start().catch(() => {})
+        expect(process.exitCode).toBe(1)
+        await app.start()
+
+        expect(process.exitCode).toBeUndefined()
+      })
+
+      // A code the application set for its own reasons is the application's to keep.
+      it('neither overrides nor clears an exit code the application set', async () => {
+        process.exitCode = 3
+        mockClient.login.mockRejectedValueOnce(new Error('Discord unreachable'))
+        const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 'token')
+
+        await app.start().catch(() => {})
+        expect(process.exitCode).toBe(3)
+        await app.start()
+
+        expect(process.exitCode).toBe(3)
+      })
+
       it('leaves the exit code alone when the login succeeds', async () => {
         const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 'token')
 
