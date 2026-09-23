@@ -44,6 +44,11 @@ jobs:
       - name: Run lint
         run: bun run lint
 
+      # Generated from the installed packages, so a dependency added without regenerating it
+      # fails here rather than shipping a notice that leaves it out.
+      - name: Check third-party notices
+        run: bun run notices:check
+
   test:
     name: Test (node ${{ matrix.node }})
     runs-on: ubuntu-latest

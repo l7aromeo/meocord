@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import { buildAppCommand, resolveRuntime, RUNTIME_OVERRIDE_ENV } from '@src/util/runtime.util.js'
 
 describe('resolveRuntime', () => {

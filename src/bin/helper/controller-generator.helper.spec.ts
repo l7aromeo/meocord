@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import { ControllerType } from '@src/enum/controller.enum.js'
 import { ControllerGeneratorHelper } from '@src/bin/helper/controller-generator.helper.js'
 import { toClassName } from '@src/util/generator-cli.util.js'

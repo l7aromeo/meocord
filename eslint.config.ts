@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import { importX } from 'eslint-plugin-import-x'
 import globals from 'globals'
 import tsParser from '@typescript-eslint/parser'
@@ -12,7 +6,6 @@ import eslintTs from 'typescript-eslint'
 import eslintConfigPrettier from 'eslint-config-prettier'
 import eslintPluginPrettier from 'eslint-plugin-prettier'
 import unusedImports from 'eslint-plugin-unused-imports'
-import headers from 'eslint-plugin-headers'
 
 const tsFiles = ['**/*.ts']
 const jsFiles = ['**/*.js']
@@ -32,7 +25,6 @@ const languageOptions = {
 const typescriptConfig = {
   files: tsFiles,
   plugins: {
-    headers,
     'import-x': importX,
     prettier: eslintPluginPrettier,
     'unused-imports': unusedImports,
@@ -68,21 +60,12 @@ const typescriptConfig = {
         argsIgnorePattern: '^_',
       },
     ],
-    'headers/header-format': [
-      'error',
-      {
-        source: 'string',
-        content:
-          'MeoCord Framework\n' + 'Copyright (c) 2025-present Ukasyah Rahmatullah Zada\n' + 'SPDX-License-Identifier: MIT',
-      },
-    ],
   },
 }
 
 const javaScriptConfig = {
   files: jsFiles,
   plugins: {
-    headers,
     'import-x': importX,
     prettier: eslintPluginPrettier,
     'unused-imports': unusedImports,
@@ -109,7 +92,6 @@ const javaScriptConfig = {
 const webpackConfig = {
   files: ['webpack.config.js'],
   plugins: {
-    headers,
     'import-x': importX,
     prettier: eslintPluginPrettier,
     'unused-imports': unusedImports,

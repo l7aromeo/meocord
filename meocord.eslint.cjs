@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 const { importX } = require('eslint-plugin-import-x')
 const globals = require('globals')
 const tsParser = require('@typescript-eslint/parser')

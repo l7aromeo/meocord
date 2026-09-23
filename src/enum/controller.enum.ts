@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 export enum ControllerType {
   BUTTON = 'button',
   MODAL_SUBMIT = 'modal-submit',

@@ -1087,10 +1087,12 @@ Participation is governed by the [Code of Conduct](./CODE_OF_CONDUCT.md). For vu
 
 ## Release Notes
 
-Full changelog is available on the [GitHub Releases](https://github.com/l7aromeo/meocord/releases) page.
+Every release is recorded in [CHANGELOG.md](./CHANGELOG.md) and on the [GitHub Releases](https://github.com/l7aromeo/meocord/releases) page.
 
 ---
 
 ## License
 
-**MeoCord Framework** is licensed under the [MIT License](./LICENSE).
+MeoCord is released under the [MIT License](./LICENSE), which covers the whole repository.
+
+It builds on open-source packages under their own licenses, listed in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md).

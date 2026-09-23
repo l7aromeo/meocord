@@ -1,10 +1,4 @@
 /**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
-/**
  * Composes multiple class or method decorators into a single decorator.
  *
  * @example

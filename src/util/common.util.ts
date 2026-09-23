@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import fs from 'fs'
 import path from 'path'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'

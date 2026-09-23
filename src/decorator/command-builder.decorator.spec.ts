@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import { CommandBuilder } from '@src/decorator/command-builder.decorator.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { CommandType } from '@src/enum/index.js'

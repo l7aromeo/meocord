@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import { execSync } from 'child_process'
 
 export type PackageManager = 'npm' | 'yarn' | 'pnpm' | 'bun'
