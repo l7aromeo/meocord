@@ -35,39 +35,74 @@
   "license": "MIT",
   "exports": {
     "./core": {
-      "types": "./dist/types/core/index.d.ts",
-      "import": "./dist/esm/core/index.js",
-      "require": "./dist/cjs/core/index.cjs"
+      "import": {
+        "types": "./dist/types/core/index.d.ts",
+        "default": "./dist/esm/core/index.js"
+      },
+      "require": {
+        "types": "./dist/types/core/index.d.cts",
+        "default": "./dist/cjs/core/index.cjs"
+      }
     },
     "./decorator": {
-      "types": "./dist/types/decorator/index.d.ts",
-      "import": "./dist/esm/decorator/index.js",
-      "require": "./dist/cjs/decorator/index.cjs"
+      "import": {
+        "types": "./dist/types/decorator/index.d.ts",
+        "default": "./dist/esm/decorator/index.js"
+      },
+      "require": {
+        "types": "./dist/types/decorator/index.d.cts",
+        "default": "./dist/cjs/decorator/index.cjs"
+      }
     },
     "./common": {
-      "types": "./dist/types/common/index.d.ts",
-      "import": "./dist/esm/common/index.js",
-      "require": "./dist/cjs/common/index.cjs"
+      "import": {
+        "types": "./dist/types/common/index.d.ts",
+        "default": "./dist/esm/common/index.js"
+      },
+      "require": {
+        "types": "./dist/types/common/index.d.cts",
+        "default": "./dist/cjs/common/index.cjs"
+      }
     },
     "./interface": {
-      "types": "./dist/types/interface/index.d.ts",
-      "import": "./dist/esm/interface/index.js",
-      "require": "./dist/cjs/interface/index.cjs"
+      "import": {
+        "types": "./dist/types/interface/index.d.ts",
+        "default": "./dist/esm/interface/index.js"
+      },
+      "require": {
+        "types": "./dist/types/interface/index.d.cts",
+        "default": "./dist/cjs/interface/index.cjs"
+      }
     },
     "./enum": {
-      "types": "./dist/types/enum/index.d.ts",
-      "import": "./dist/esm/enum/index.js",
-      "require": "./dist/cjs/enum/index.cjs"
+      "import": {
+        "types": "./dist/types/enum/index.d.ts",
+        "default": "./dist/esm/enum/index.js"
+      },
+      "require": {
+        "types": "./dist/types/enum/index.d.cts",
+        "default": "./dist/cjs/enum/index.cjs"
+      }
     },
     "./testing": {
-      "types": "./dist/types/testing/index.d.ts",
-      "import": "./dist/esm/testing/index.js",
-      "require": "./dist/cjs/testing/index.cjs"
+      "import": {
+        "types": "./dist/types/testing/index.d.ts",
+        "default": "./dist/esm/testing/index.js"
+      },
+      "require": {
+        "types": "./dist/types/testing/index.d.cts",
+        "default": "./dist/cjs/testing/index.cjs"
+      }
     },
     "./eslint": {
-      "types": "./meocord.eslint.d.ts",
-      "import": "./meocord.eslint.mjs",
-      "require": "./meocord.eslint.cjs"
+      "import": {
+        "types": "./meocord.eslint.d.ts",
+        "default": "./meocord.eslint.mjs"
+      },
+      "require": {
+        "types": "./meocord.eslint.d.cts",
+        "default": "./meocord.eslint.cjs"
+      }
     }
   },
   "files": [
@@ -75,6 +110,7 @@
     "meocord.eslint.mjs",
     "meocord.eslint.cjs",
     "meocord.eslint.d.ts",
+    "meocord.eslint.d.cts",
     "package.json",
     "LICENSE",
     "AUTHOR.md",
