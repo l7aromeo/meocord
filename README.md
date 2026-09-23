@@ -885,6 +885,36 @@ expect(msg.delete).toHaveBeenCalledTimes(1)
 </details>
 
 <details>
+<summary><b><code>resolveRoute</code> / <code>findRouteConflicts</code></b></summary>
+
+Tests which handler a component's customId reaches — the same answer dispatch gives, across every
+controller your app registers, most specific pattern first. They read decorator metadata only, so
+they need no Discord client, config or container. Guards are not run: a route that resolves can
+still be rejected by a guard.
+
+```typescript
+import { findRouteConflicts, resolveRoute } from 'meocord/testing'
+import { CommandType } from 'meocord/enum'
+import App from '@src/app'
+
+it('routes the profile button to its handler', () => {
+  const route = resolveRoute(App, { type: CommandType.BUTTON, customId: 'profile/111/8000' })
+
+  expect(route?.method).toBe('showProfile')
+  expect(route?.params).toEqual({ ownerId: '111', uid: '8000' })
+})
+
+// Patterns that can match the same customId, as a failing test rather than a startup warning.
+it('has no overlapping component patterns', () => {
+  expect(findRouteConflicts(App)).toEqual([])
+})
+```
+
+`resolveRoute` returns `undefined` when no route handles the customId.
+
+</details>
+
+<details>
 <summary><b><code>createMock</code></b></summary>
 
 Mocks any type without a runtime class — use it for the services a controller depends on. `createMockInteraction` needs a class to build a prototype chain from, which is what makes `instanceof` and the real type guards work; a service double needs none of that, and an injected dependency may be an interface that does not exist at runtime at all.

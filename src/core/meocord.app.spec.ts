@@ -38,8 +38,8 @@ import {
 } from 'discord.js'
 import { Logger } from '@src/common/index.js'
 import { EmbedUtil } from '@src/util/index.js'
-import { createChatInputOptions, createMockInteraction } from '@src/testing/index.js'
-import { Autocomplete, Command, CommandBuilder, Controller, ReactionHandler } from '@src/decorator/index.js'
+import { createChatInputOptions, createMockInteraction, resolveRoute } from '@src/testing/index.js'
+import { Autocomplete, Command, CommandBuilder, Controller, MeoCord, ReactionHandler } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { MeoCordApp } from '@src/core/meocord.app.js'
 
@@ -286,6 +286,29 @@ describe('MeoCordApp', () => {
 
         expect(calls).toEqual([{ handler: 'specific', params: { ownerId: '123', uid: '456' } }])
         mockClient = createMockClient()
+      }
+    })
+
+    // resolveRoute is the public answer to "which handler does this id reach"; it has to be dispatch's.
+    it('agrees with resolveRoute on which handler an id reaches', async () => {
+      const { BroadController, SpecificController, calls } = controllers()
+      @MeoCord({ controllers: [BroadController, SpecificController], clientOptions: { intents: [] } })
+      class App {}
+      const app = new MeoCordApp(
+        [BroadController, SpecificController] as any,
+        createMockContainer() as any,
+        mockClient as any,
+        'token',
+      )
+      await app.start()
+
+      for (const customId of ['gi-profile/summary/123/456', 'gi-profile/abc-def/789']) {
+        calls.length = 0
+        mockClient.emit('interactionCreate', press(customId))
+        await vi.advanceTimersByTimeAsync(0)
+
+        const route = resolveRoute(App, { type: CommandType.BUTTON, customId })
+        expect(calls).toEqual([{ handler: route?.method, params: route?.params }])
       }
     })
 

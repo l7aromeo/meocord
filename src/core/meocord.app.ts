@@ -14,7 +14,6 @@ import {
 import { type Container } from 'inversify'
 import { Logger } from '@src/common/index.js'
 import {
-  findAmbiguousRoutes,
   getAutocompleteHandlers,
   getCommandMap,
   getMessageHandlers,
@@ -36,12 +35,12 @@ import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 import { type ReactionHandlerOptions } from '@src/interface/index.js'
 import { type AutocompleteMetadata, type CommandMetadata } from '@src/interface/command-decorator.interface.js'
 import Table from 'cli-table3'
-
-interface ComponentRoute {
-  controllerClass: new (...args: any[]) => any
-  meta: CommandMetadata<string>
-  pattern: string
-}
+import {
+  buildComponentRoutes,
+  type ComponentRoute,
+  findComponentRouteConflicts,
+  matchComponentRoute,
+} from '@src/core/component-routes.js'
 
 interface AutocompleteRoute {
   controllerClass: new (...args: any[]) => any
@@ -300,46 +299,24 @@ export class MeoCordApp {
   private getComponentRoutes(): ComponentRoute[] {
     if (this.componentRoutes) return this.componentRoutes
 
-    const routes: ComponentRoute[] = []
-    for (const controllerClass of this.controllerClasses) {
-      const commandMap = getCommandMap(this.getInstance(controllerClass))
-      if (!commandMap) continue
-      for (const [pattern, metaArray] of Object.entries(commandMap)) {
-        if (!Array.isArray(metaArray)) continue
-        for (const meta of metaArray) {
-          if (meta.regex) routes.push({ controllerClass, meta, pattern })
-        }
-      }
-    }
-
-    routes.sort((a, b) => (b.meta.specificity ?? 0) - (a.meta.specificity ?? 0))
+    const routes = buildComponentRoutes(this.controllerClasses)
     this.reportAmbiguousRoutes(routes)
     this.componentRoutes = routes
     return routes
   }
 
   /**
-   * Warns rather than throws: an app whose patterns overlap boots and works today, and
-   * refusing to start would turn a latent mis-route into an outage on upgrade.
+   * Warns rather than throws: an app whose patterns overlap boots and works, and refusing to start
+   * would turn a latent mis-route into an outage.
    */
   private reportAmbiguousRoutes(routes: ComponentRoute[]): void {
-    // Grouped by command type first: dispatch only considers routes whose component
-    // type matches the interaction, so a button and a select menu sharing a pattern
-    // are never in competition and reporting them would be a false alarm.
-    const byType = new Map<CommandType, string[]>()
-    for (const { meta, pattern } of routes) {
-      const patterns = byType.get(meta.type) ?? []
-      patterns.push(pattern)
-      byType.set(meta.type, patterns)
-    }
-
-    const collisions = [...byType.values()].flatMap(patterns => findAmbiguousRoutes(patterns))
-    if (collisions.length === 0) return
+    const conflicts = findComponentRouteConflicts(routes)
+    if (conflicts.length === 0) return
 
     this.logger.warn(
-      `${collisions.length} pattern pair(s) can match the same customId, so which one runs is decided by ` +
+      `${conflicts.length} pattern pair(s) can match the same customId, so which one runs is decided by ` +
         `ranking rather than by the ids themselves:\n` +
-        collisions.map(([left, right]) => `  "${left}"  vs  "${right}"`).join('\n') +
+        conflicts.map(({ patterns: [left, right] }) => `  "${left}"  vs  "${right}"`).join('\n') +
         `\nA parameter stops at "${PARAM_SEPARATOR}", so separating these segments with it makes them distinct.`,
     )
   }
@@ -399,14 +376,12 @@ export class MeoCordApp {
     // Commands match their registered name exactly and cannot overlap.
     if (hasCustomId(interaction)) {
       const customId = interaction.customId
-      for (const { controllerClass, meta } of this.getComponentRoutes()) {
-        // A button and a select menu may legitimately share a customId shape, so the
-        // pattern alone does not identify the handler -- the component type does.
-        if (!matchesCommandType(meta.type, interaction)) continue
-        const match = meta.regex!.exec(customId)
-        if (!match) continue
-        ;(interaction as Interaction & { dynamicParams: Record<string, string> }).dynamicParams = match.groups ?? {}
-        await this.executeCommand(this.getInstance(controllerClass), meta, interaction, customId)
+      // The component type as well as the pattern: a button and a select menu may share a customId shape.
+      const matched = matchComponentRoute(this.getComponentRoutes(), type => matchesCommandType(type, interaction), customId)
+      if (matched) {
+        const { route, params } = matched
+        ;(interaction as Interaction & { dynamicParams: Record<string, string> }).dynamicParams = params
+        await this.executeCommand(this.getInstance(route.controllerClass), route.meta, interaction, customId)
         return
       }
     }
