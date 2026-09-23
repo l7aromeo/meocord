@@ -56,8 +56,8 @@ export interface MeoCordConfig {
   /**
    * Put everything the bot needs inside `dist`, so it runs without `node_modules`.
    *
-   * Off by default, matching how the build has always behaved: dependencies stay runtime imports,
-   * so `dist` needs `node_modules` beside it. Turn it on to deploy `dist` alone.
+   * Off by default: dependencies stay runtime imports, so `dist` needs `node_modules` beside it.
+   * Turn it on to deploy `dist` alone.
    *
    * Plain JavaScript is bundled into `main.js`. Native addons -- packages shipping a compiled
    * `.node` binary, like `sharp` -- are found while building, kept out of the bundle, and copied

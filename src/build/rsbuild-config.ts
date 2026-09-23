@@ -7,9 +7,9 @@ import { prepareModifiedTsConfig } from '@src/util/tsconfig.util.js'
  *
  * `bufferutil` and `utf-8-validate` are `ws`'s optional peers; `zlib-sync` is loaded by
  * `@discordjs/ws` without being declared at all, falling back to uncompressed identify when it
- * is absent. A bundler cannot tell "optional" from "missing", so bundling dependencies failed on
- * `Can't resolve 'zlib-sync'` for every bot until these were left as runtime imports -- where a
- * missing one is caught and ignored, exactly as it is when nothing is bundled.
+ * is absent. A bundler cannot tell "optional" from "missing", so bundling them fails on
+ * `Can't resolve 'zlib-sync'` for every bot. Left as runtime imports, a missing one is caught and
+ * ignored, exactly as it is when nothing is bundled.
  *
  * They are externalised as `node-commonjs` rather than plain names. A plain name in an ESM build
  * becomes a hoisted top-level `import`, which throws `Cannot find package 'bufferutil'` before the

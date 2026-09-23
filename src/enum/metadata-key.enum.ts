@@ -7,7 +7,6 @@
 export const enum MetadataKey {
   /**
    * Set by Inversify 8's `injectable()` decorator.
-   * Renamed from the legacy `'inversify:injectable'` string used in older versions.
    */
   Injectable = '@inversifyjs/core/classIsInjectableFlagReflectKey',
 

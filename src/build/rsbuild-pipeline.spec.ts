@@ -10,8 +10,8 @@ import { createRsbuildConfig } from '@src/build/rsbuild-config.js'
  *
  * Everything asserted here fails silently otherwise. Lost decorator metadata is not a compile
  * error -- inversify throws when the class is first defined, at import. A mangled class name
- * breaks injection in production while development stays fine. An asset under 4 KB became a
- * data URI that fs could not read. A typecheck, and the unit tests on the config object, pass
+ * breaks injection in production while development stays fine. An asset under 4 KB, left to
+ * Rsbuild's default, becomes a data URI that fs cannot read. A typecheck, and the unit tests on the config object, pass
  * through all three; only running the bundle shows them.
  *
  * The fixture lives inside the repository, in a directory git ignores, so `reflect-metadata`

@@ -61,8 +61,8 @@ export async function compileAndValidateConfig() {
  * Ensures a Discord token is configured.
  *
  * Kept apart from {@link compileAndValidateConfig} because producing a bundle needs no
- * credentials — only connecting to the gateway does. Requiring one to build meant a
- * freshly created application could not be built until a token had been obtained.
+ * credentials — only connecting to the gateway does. Requiring one to build would stop a
+ * freshly created application from building until it has a token.
  */
 export async function validateDiscordToken() {
   if (!loadMeoCordCliConfig()?.discordToken) {

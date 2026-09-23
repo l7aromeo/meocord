@@ -29,7 +29,7 @@ const tsc = path.join(repoRoot, 'node_modules', '.bin', 'tsc')
  *
  * A `paths` mapping in the scratch tsconfig would work too, but it would resolve
  * straight to the declaration files and skip the package `exports` map -- which is
- * itself something that can be wrong, and was worth covering.
+ * itself something that can be wrong, and is worth covering.
  */
 const linkedPackage = path.join(repoRoot, 'node_modules', 'meocord')
 
@@ -138,8 +138,8 @@ function verifyApp(): void {
 
   // Every generator runs inside the application, and the result is checked with the application's
   // own tsconfigs rather than the scaffold above: those are stricter (noUnusedParameters,
-  // verbatimModuleSyntax), and they are what a user's `lint` script runs. A guard whose template
-  // failed both passed here while only controllers were generated, into the scaffold.
+  // verbatimModuleSyntax), and they are what a user's `lint` script runs. Controllers alone, in the
+  // scaffold, would let a guard or service template that fails them through.
   const cliIn = (...args: string[]) => execFileSync(process.execPath, [cli, ...args], { cwd: dir, stdio: 'pipe' })
   for (const name of ['Generated', 'admin/generated']) {
     for (const type of Object.values(ControllerType)) cliIn('g', 'co', type, name)

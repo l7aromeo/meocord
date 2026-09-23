@@ -61,7 +61,7 @@ describe('loadMeoCordConfig', () => {
   })
 
   // The logger and the factory import this module, so a bot bundled with bundleDependencies
-  // carries whatever it imports. jiti was 89% of a minimal bot's bundle.
+  // carries whatever it imports. jiti would be most of a minimal bot's bundle.
   it('imports no transpiler', () => {
     const source = readFileSync(path.join(import.meta.dirname, 'meocord-config-loader.util.ts'), 'utf8')
     const imports = [...source.matchAll(/^import .* from '([^']+)'/gm)].map(match => match[1])
