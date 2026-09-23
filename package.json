@@ -18,7 +18,7 @@
     "test:coverage": "vitest run --coverage",
     "test:typecheck": "tsc --noEmit --project tsconfig.test.json",
     "changeset": "changeset",
-    "release:version": "changeset version",
+    "release:version": "changeset version && prettier --write CHANGELOG.md",
     "release:publish": "changeset publish",
     "notices": "bun scripts/third-party-notices.ts",
     "notices:check": "bun scripts/third-party-notices.ts --check"
