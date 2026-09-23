@@ -1055,7 +1055,7 @@ dist/
 └── meocord.platform.json  (if there are native addons)
 ```
 
-Plain JavaScript dependencies are bundled into `main.js`. **Native addons** — packages that ship a compiled `.node` binary, like `sharp`, canvas bindings or database drivers — cannot be inlined into JavaScript, so MeoCord finds them itself while building, keeps them out of the bundle, and copies each one, with its platform binary and what it needs at runtime, into `dist/node_modules`. There is nothing to list: the build tells you which it packed.
+Plain JavaScript dependencies are bundled into `main.js`. **Native addons** — packages that ship a compiled `.node` binary, like `sharp`, canvas bindings or database drivers — cannot be inlined into JavaScript, so MeoCord finds them itself while building, keeps them out of the bundle, and copies each one, with its platform binary and what it needs at runtime, into `dist/node_modules`. There is nothing to list: the build tells you which it packed. Only binaries for the platform building are copied, going by the `os`, `cpu` and `libc` each platform package declares — so a glibc build carries no musl binaries even where the package manager installed both, as bun does.
 
 ```
 Native addons packed into dist: meo-canvas, sharp
