@@ -1,5 +1,36 @@
 # meocord
 
+## 4.0.0-beta.1
+
+### Major Changes
+
+- [#33](https://github.com/l7aromeo/meocord/pull/33) [`21b06ae`](https://github.com/l7aromeo/meocord/commit/21b06ae6810cfe203abadcadc6f7b7247c7b305b) Thanks [@l7aromeo](https://github.com/l7aromeo)! - Require Node.js 22.13 or newer, up from 22.0. A built bot loads its compiled config with `require()`
+  of an ES module. Node 22.12 runs that without a flag but still warns on every start and crashes on a
+  config that throws; 22.13 is the first 22 release that does neither. Bun is unaffected. See the
+  [migration guide](https://github.com/l7aromeo/meocord/blob/main/docs/MIGRATING.md#before-you-start-nodejs-2213).
+
+### Patch Changes
+
+- [#33](https://github.com/l7aromeo/meocord/pull/33) [`21b06ae`](https://github.com/l7aromeo/meocord/commit/21b06ae6810cfe203abadcadc6f7b7247c7b305b) Thanks [@l7aromeo](https://github.com/l7aromeo)! - Keep jiti out of bots built with `bundleDependencies`. A built bot loaded `dist/meocord.config.mjs`,
+  already compiled JavaScript, through jiti, and the logger and the factory both reach that loader,
+  so jiti was bundled into every bot: 190 KB, 89% of a minimal bot's `main.js`, and a
+  `Critical dependency` warning on every build. The compiled config is now loaded with `require()`,
+  and jiti is only used by the CLI to read `meocord.config.ts`. A minimal bot bundles to 22 KB.
+
+  A built bot no longer falls back to reading `meocord.config.ts` when `dist/meocord.config.mjs` is
+  missing, and `meocord build` now fails when the config does not compile, instead of warning and
+  producing a bot that cannot start.
+
+- [#31](https://github.com/l7aromeo/meocord/pull/31) [`f50bafc`](https://github.com/l7aromeo/meocord/commit/f50bafce5bcf04b555a7638fedeb6986cf7ea9d5) Thanks [@l7aromeo](https://github.com/l7aromeo)! - Resolve asset imports to files under `dist` in development builds too. `meocord start --dev` gave
+  `import logo from './logo.png'` the path `/assets/logo.png`, at the root of the filesystem, so a bot
+  reading an imported font or image failed in development while production worked.
+
+- [#32](https://github.com/l7aromeo/meocord/pull/32) [`72b228c`](https://github.com/l7aromeo/meocord/commit/72b228ceaca2dca33ed660aff0ec1bc2aa59bfc2) Thanks [@l7aromeo](https://github.com/l7aromeo)! - Pack only the build platform's native binaries with `bundleDependencies`. Every installed platform
+  package was copied into `dist/node_modules`, and bun installs both the glibc and the musl build on
+  Linux, so a glibc build of a bot using sharp carried about 19 MB of musl binaries it could never
+  load. A package whose `os`, `cpu` or `libc` does not match the platform building is now left out,
+  whichever package manager installed it.
+
 ## 4.0.0-beta.0
 
 ### Major Changes
