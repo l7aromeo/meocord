@@ -31,7 +31,7 @@ import {
   type NativePackage,
 } from '@src/build/native-addons.js'
 import { PLATFORM_MANIFEST, writePlatformManifest } from '@src/util/platform.util.js'
-import { loadMeoCordSourceConfig } from '@src/util/meocord-config-loader.util.js'
+import { loadMeoCordSourceConfig } from '@src/util/meocord-source-config.util.js'
 import { type MeoCordConfig } from '@src/interface/index.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -461,8 +461,11 @@ copies or substantial portions of the Software.
 
       await rsbuild.build()
       this.logger.info('Config compiled to dist/meocord.config.mjs')
-    } catch {
-      this.logger.warn('Failed to compile meocord.config.ts — runtime will fall back to source config.')
+    } catch (error) {
+      // The built application reads only the compiled config, so without it the bot cannot start.
+      this.logger.error(`Failed to compile meocord.config.ts: ${error instanceof Error ? error.message : error}`)
+      await wait(100)
+      process.exit(1)
     }
   }
 

@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
+import { loadMeoCordCliConfig } from '@src/util/meocord-source-config.util.js'
 import wait from '@src/util/wait.util.js'
 import chalk from 'chalk'
 
@@ -54,7 +54,7 @@ export async function compileAndValidateConfig() {
     process.exit(1)
   }
 
-  loadMeoCordConfig()
+  loadMeoCordCliConfig()
 }
 
 /**
@@ -65,7 +65,7 @@ export async function compileAndValidateConfig() {
  * freshly created application could not be built until a token had been obtained.
  */
 export async function validateDiscordToken() {
-  if (!loadMeoCordConfig()?.discordToken) {
+  if (!loadMeoCordCliConfig()?.discordToken) {
     console.error(chalk.red('Discord token is missing!'))
     await wait(100)
     process.exit(1)

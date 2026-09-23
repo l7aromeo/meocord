@@ -4,7 +4,7 @@
   "version": "4.0.0-beta.0",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "scripts": {
     "format": "prettier --write \"**/*.md\" \"src/bin/app-template/**/*.template\"",

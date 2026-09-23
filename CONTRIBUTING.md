@@ -13,7 +13,7 @@ Thanks for taking the time. Issues, questions, and pull requests are all welcome
 
 ## Getting set up
 
-MeoCord builds and tests with [Bun](https://bun.sh), and ships to consumers running Node `>=22`.
+MeoCord builds and tests with [Bun](https://bun.sh), and ships to consumers running Node `>=22.13`.
 
 ```bash
 git clone https://github.com/l7aromeo/meocord.git

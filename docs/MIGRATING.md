@@ -1,18 +1,28 @@
 # Migrating from MeoCord 3 to 4
 
-MeoCord 4 builds with [Rsbuild](https://rsbuild.rs) instead of webpack, and requires dotenv 18. Most bots
-need two changes: upgrade dotenv, and rename one hook in `meocord.config.ts`. Everything else is either
-unchanged or new and optional.
+MeoCord 4 builds with [Rsbuild](https://rsbuild.rs) instead of webpack, and requires dotenv 18 and Node.js
+22.13. Most bots need two changes: upgrade dotenv, and rename one hook in `meocord.config.ts`. Everything
+else is either unchanged or new and optional.
 
 ## Checklist
 
+- [ ] Run Node.js 22.13 or newer, if you run Node 22
 - [ ] Upgrade `dotenv` to 18
 - [ ] Rename the `webpack` hook in `meocord.config.ts` to `rsbuild`, and reshape its body
 - [ ] Replace any use of the `MeoCordWebpackConfig` type
 - [ ] Run `meocord build` and `meocord start`
 - [ ] Optional: turn on `bundleDependencies` to deploy without `node_modules`
 
-Node.js 22 and discord.js 14 are still what MeoCord needs; neither requirement changed.
+MeoCord 4 needs Node.js 22.13 or newer; MeoCord 3 accepted any Node 22. discord.js 14 is still what it
+needs. Bun is unaffected.
+
+## Before you start: Node.js 22.13
+
+A built bot loads its compiled config with `require()` of an ES module. Node runs that without a flag from
+22.12, but 22.12 still prints an experimental warning on every start and crashes on a config that throws,
+rather than letting MeoCord report it; 22.13 does neither. On 22.0 to 22.11 the bot cannot load its config
+and stops before logging in. Check with `node --version`, and update the Node version in your Dockerfile, CI
+or hosting settings if it pins an older 22.
 
 ## 1. Upgrade dotenv to 18
 

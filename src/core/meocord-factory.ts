@@ -43,7 +43,7 @@ export class MeoCordFactory {
 
     const meocordConfig = loadMeoCordConfig()
     if (!meocordConfig) {
-      throw new Error('MeoCord config not found. Ensure meocord.config.ts exists.')
+      throw new Error('MeoCord config not found: dist/meocord.config.mjs is missing or failed to load. Run `meocord build`.')
     }
 
     // Before anything is resolved: a controller or service is what first loads a native addon, and

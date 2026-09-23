@@ -53,7 +53,7 @@
 
 ### Prerequisites
 
-- **Runtime**: Node.js 22 or newer, or Bun 1.x+
+- **Runtime**: Node.js 22.13 or newer, or Bun 1.x+
 - **TypeScript**: 5.0+ with `skipLibCheck` enabled, as generated apps have it; 5.8+ with it off
 - **Package manager**: npm, yarn, pnpm, or bun
 - **Peer dependencies**: `discord.js` 14 and `dotenv` 18 — `meocord create` installs both
