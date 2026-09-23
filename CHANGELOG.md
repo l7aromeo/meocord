@@ -2,6 +2,10 @@
 
 ## 4.0.0
 
+MeoCord 4 builds with Rsbuild instead of webpack, requires Node.js 22.13 and dotenv 18, and can
+deploy a bot without `node_modules`. Most bots need two changes; see the
+[migration guide](https://github.com/l7aromeo/meocord/blob/main/docs/MIGRATING.md).
+
 ### Major Changes
 
 - [#22](https://github.com/l7aromeo/meocord/pull/22) [`4deb96f`](https://github.com/l7aromeo/meocord/commit/4deb96fd73f86a29c46b9bb080c13e6267246cb1) Thanks [@l7aromeo](https://github.com/l7aromeo)! - Build with [Rsbuild](https://rsbuild.rs) instead of webpack. Production builds are several times
