@@ -98,10 +98,12 @@ describe('createRsbuildConfig', () => {
       expect(config.output?.dataUriLimit).toBe(0)
     })
 
-    it('resolves asset imports to absolute paths under dist', () => {
-      const config = createRsbuildConfig({ mode: 'production' })
+    it.each(['production', 'development'] as const)('resolves asset imports to absolute paths under dist in %s', mode => {
+      const config = createRsbuildConfig({ mode })
 
+      // Production reads output.assetPrefix and development reads dev.assetPrefix, whose default is `/`.
       expect(config.output?.assetPrefix).toBe(assetPrefixFor(dist))
+      expect(config.dev?.assetPrefix).toBe(assetPrefixFor(dist))
       expect(config.output?.assetPrefix).toBe(`${dist.replace(/\\/g, '/')}/`)
     })
 
