@@ -1,5 +1,30 @@
 # meocord
 
+## 4.0.0-beta.2
+
+### Major Changes
+
+- [#36](https://github.com/l7aromeo/meocord/pull/36) [`45e564e`](https://github.com/l7aromeo/meocord/commit/45e564e6baff17313037372ec56baa1711a3584c) Thanks [@l7aromeo](https://github.com/l7aromeo)! - **Breaking:** `app.start()` rejects when the login fails. It logged the error and resolved, so a bot
+  with an invalid token went on to log "Application started" and exit with code 0, which Docker's
+  `restart: on-failure`, systemd and CI all read as success. New applications' `main.ts` sets
+  `process.exitCode = 1` when startup fails; add the same to an existing entry point's `catch`. See the
+  [migration guide](https://github.com/l7aromeo/meocord/blob/main/docs/MIGRATING.md#4-build-and-start).
+
+### Patch Changes
+
+- [#37](https://github.com/l7aromeo/meocord/pull/37) Thanks [@l7aromeo](https://github.com/l7aromeo)! - Type the CommonJS build as CommonJS. Every entry point's `require` condition resolved to the ESM
+  declarations, so a CommonJS TypeScript project was told `meocord/core` is an ES module it cannot
+  `require`, even with `skipLibCheck`. Each entry now ships `.d.cts` declarations for `require`, and
+  `meocord/eslint` types its `module.exports` array as what `require` returns.
+
+- [#35](https://github.com/l7aromeo/meocord/pull/35) [`b93a771`](https://github.com/l7aromeo/meocord/commit/b93a771b19664345fec4222d5a2c29dcf5b31a0d) Thanks [@l7aromeo](https://github.com/l7aromeo)! - Generate code that passes a new application's own `lint`. A generated guard failed `tsc` and ESLint
+  — `GuardInterface` imported as a value, and an unused `context` parameter — and generated message and
+  reaction controllers imported names they never used, which only the application's ESLint, run in the
+  background after generating, removed. New applications also typecheck `meocord.config.ts`: the
+  template's `tsconfig.json` includes it instead of excluding it, so a type error in the config fails
+  `lint`, and editors resolve `paths` aliases imported there. `noEmit` stays on, so `tsc` writes nothing
+  beside it.
+
 ## 4.0.0-beta.1
 
 ### Major Changes
