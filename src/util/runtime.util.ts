@@ -80,6 +80,22 @@ export function resolveRuntime(env: NodeJS.ProcessEnv, execPath: string): string
  * @param mainJsPath - Absolute path to the built entry file.
  */
 export function buildAppCommand(runtime: string, mainJsPath: string): RuntimeCommand {
-  return { command: runtime, args: [mainJsPath] }
+  // With no node_modules directory in reach, bun installs a missing package from the registry
+  // the moment something imports it. A bot bundled with `bundleDependencies` is deployed exactly
+  // that way, so discord.js probing for its optional `zlib-sync` would download it in production
+  // instead of falling back. Nothing should reach the network at startup that the build did not
+  // put there.
+  const args = isBun(runtime) ? ['--no-install', mainJsPath] : [mainJsPath]
+  return { command: runtime, args }
+}
+
+/**
+ * Whether a runtime binary is bun, by the name it was resolved to.
+ *
+ * Split on both separators rather than through path.basename, which only knows the separator
+ * of the platform it runs on.
+ */
+function isBun(runtime: string): boolean {
+  return /^bun(\.exe)?$/i.test(runtime.split(/[\\/]/).pop() ?? '')
 }
 

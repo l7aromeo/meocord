@@ -83,10 +83,24 @@ describe('resolveRuntime — following the launcher', () => {
 
 describe('buildAppCommand', () => {
   it('runs the entry file with the resolved runtime', () => {
-    expect(buildAppCommand('/usr/local/bin/bun', '/app/dist/main.js')).toEqual({
-      command: '/usr/local/bin/bun',
+    expect(buildAppCommand('/usr/local/bin/node', '/app/dist/main.js')).toEqual({
+      command: '/usr/local/bin/node',
       args: ['/app/dist/main.js'],
     })
+  })
+
+  // Without node_modules in reach, bun fetches a missing import from the registry at runtime,
+  // which is how a bundled bot is deployed.
+  it('stops bun installing packages while the bot runs', () => {
+    expect(buildAppCommand('/usr/local/bin/bun', '/app/dist/main.js')).toEqual({
+      command: '/usr/local/bin/bun',
+      args: ['--no-install', '/app/dist/main.js'],
+    })
+    expect(buildAppCommand('C:\\bun\\bun.exe', 'C:\\app\\dist\\main.js').args[0]).toBe('--no-install')
+  })
+
+  it('passes nothing extra to node', () => {
+    expect(buildAppCommand('/usr/bin/node', '/app/dist/main.js').args).toEqual(['/app/dist/main.js'])
   })
 
   // Concatenating the two into one string is what a shell would then have to re-split,

@@ -40,10 +40,10 @@
 - **Decorator-based controllers** — Handle every Discord interaction type — slash commands and their subcommands, autocomplete, buttons, modals, all five select menus, context menus, activity entry points, messages, and reactions — with `@Command`, `@Autocomplete`, `@Controller`, and `@UseGuard` decorators. No routing boilerplate.
 - **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators.
 - **Guard system** — Pre-execution hooks for auth, rate limiting, metrics, and anything else. Apply per-method or per-class with `@UseGuard`. Guards receive the full interaction context.
-- **Full CLI** — `meocord create`, `build`, `start`, `generate`. Scaffolds controllers, services, and guards; handles Webpack builds for both development and production.
+- **Full CLI** — `meocord create`, `build`, `start`, `generate`. Scaffolds controllers, services, and guards; builds with Rsbuild for both development and production.
 - **Testing utilities** — `MeoCordTestingModule`, `createMockInteraction`, `createMockMessage`, `createMockUser`, `createMockClient`, `createMockGuild`, `createMockChannel`, `createChatInputOptions`, and `overrideGuard` let you test controllers against real guard logic without a Discord connection. Type guards and reply state machines work out of the box.
 - **TypeScript-first** — Strict types throughout. Decorator metadata, `DeepMocked<T>` for test mocks, and typed config interfaces included.
-- **Extensible build** — Expose a Webpack config hook in `meocord.config.ts` to add rules, plugins, or loaders without ejecting.
+- **Extensible build** — An Rsbuild config hook in `meocord.config.ts` to adjust the build without ejecting, and an option to bundle dependencies so production runs without `node_modules`.
 
 ---
 
@@ -211,7 +211,7 @@ export class App {}
 
 ### `meocord.config.ts`
 
-The top-level config file. At minimum it needs `discordToken`. The `webpack` hook lets you extend the build without ejecting.
+The top-level config file. At minimum it needs `discordToken`. The `rsbuild` hook lets you adjust the build without ejecting.
 
 ```typescript
 import { type MeoCordConfig } from 'meocord/interface'
@@ -219,14 +219,46 @@ import { type MeoCordConfig } from 'meocord/interface'
 export default {
   appName: 'MyBot',
   discordToken: process.env.TOKEN!,
-  webpack: config => {
-    config.module.rules?.push({
-      // add custom rules here
-    })
+  rsbuild: config => {
+    // Import .md and .html files as their text.
+    config.tools ??= {}
+    config.tools.rspack = (_rspackConfig, { addRules }) => {
+      addRules([{ test: /\.(md|html)$/i, type: 'asset/source' }])
+    }
     return config
   },
 } satisfies MeoCordConfig
 ```
+
+MeoCord builds with [Rsbuild](https://rsbuild.rs). The hook receives its configuration and returns it, modified. A few things it handles for you, so you do not need rules for them:
+
+- **Images, fonts, svg and media** are emitted to `dist/assets/`, and importing one gives you its absolute path on disk — ready for `fs`, canvas, or a Discord attachment. Nothing is ever inlined as a data URI, whatever its size.
+- **Custom asset paths** — `output.filename.image` (and `svg`, `font`, `media`) accept a function, for when two files share a name in different folders:
+
+  ```typescript
+  rsbuild: config => {
+    config.output ??= {}
+    config.output.distPath = { ...config.output.distPath, image: '' }
+    config.output.filename = {
+      ...config.output.filename,
+      // Keep the folder a file came from, so image/star.webp and image/hsr/star.webp do not collide.
+      image: ({ filename }) => `assets/${path.relative('src/assets', filename ?? '')}`,
+    }
+    return config
+  },
+  ```
+
+- **Raw bundler rules** go through `tools.rspack`, which takes a webpack-shaped configuration.
+
+| Option               | Default | Description                                                                              |
+| -------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| `discordToken`       | —       | The bot token. Read it from the environment rather than writing it here.                 |
+| `appName`            | —       | Shown in log lines.                                                                      |
+| `rsbuild`            | —       | `(config) => config` — adjust the Rsbuild configuration.                                 |
+| `bundleDependencies` | `false` | Bundle production dependencies into `dist`, so the bot runs without `node_modules`.      |
+| `externals`          | `[]`    | Modules to keep out of the bundle even when bundling. Native addons must be listed here. |
+
+See [Self-contained builds](#self-contained-builds) for when to turn on `bundleDependencies`.
 
 ### ESLint
 
@@ -263,7 +295,7 @@ npx meocord --help
 | Command    | Alias | Description                            |
 | ---------- | ----- | -------------------------------------- |
 | `create`   | —     | Scaffold a new MeoCord application     |
-| `build`    | —     | Compile the application via Webpack    |
+| `build`    | —     | Compile the application via Rsbuild    |
 | `start`    | —     | Start the application                  |
 | `generate` | `g`   | Scaffold controllers, services, guards |
 | `show`     | —     | Display framework info                 |
@@ -946,6 +978,40 @@ Start in production:
 
 ```shell
 npx meocord start --prod
+```
+
+### Self-contained builds
+
+By default `dist/main.js` imports its dependencies at runtime, which is why the server needs `node_modules`. Set `bundleDependencies` to put them inside the bundle instead:
+
+```typescript
+export default {
+  discordToken: process.env.TOKEN!,
+  bundleDependencies: true,
+  // Native addons cannot be bundled — see below.
+  externals: ['sharp'],
+} satisfies MeoCordConfig
+```
+
+The server then needs only `dist/` and whatever you list in `externals`:
+
+```
+dist/
+node_modules/   (only the packages in `externals`)
+package.json    (declaring only those packages)
+.env            (if used)
+```
+
+**Native addons are the exception.** A package that ships a `.node` binary — `sharp`, canvas bindings, database drivers — cannot be bundled: the binary is not JavaScript, and it is compiled for one operating system and CPU. List every such package in `externals` and install it on the server, where it gets the binary for that platform.
+
+`meocord build` checks this for you. When `bundleDependencies` is on and a bundled package loads a native addon, the build fails, names the packages, and gives you the `externals` line to add. Without that check the build would succeed — and the bot would even run on the machine that built it, because the bundle reaches the binary through that machine's `node_modules` — then fail in production the first time the addon loads, which for an image library is usually a command rather than startup.
+
+discord.js's own optional accelerators — `zlib-sync`, `bufferutil`, `utf-8-validate` — are handled for you: they are never bundled, and discord.js carries on without them if they are not installed, exactly as it does today.
+
+**On bun, keep it from installing at runtime.** With no `node_modules` directory in reach, bun downloads any package the moment something imports it — so a bundled bot would fetch discord.js's optional accelerators from the registry in production instead of carrying on without them. `meocord start` passes `--no-install` for you. If you launch the bundle yourself, pass it too:
+
+```dockerfile
+CMD ["bun", "--no-install", "dist/main.js"]
 ```
 
 ### Which runtime the bot runs on

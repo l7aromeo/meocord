@@ -27,7 +27,12 @@ import { buildAppCommand, resolveRuntime } from '@src/util/runtime.util.js'
 import packageJson from '../../package.json' with { type: 'json' }
 import { fileURLToPath } from 'url'
 import { assertNoWebpackHook, createRsbuildConfig } from '@src/build/rsbuild-config.js'
-import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
+import {
+  assertNoBundledNativeAddons,
+  bundledModuleFiles,
+  findBundledNativeAddons,
+} from '@src/build/native-addons.js'
+import { loadMeoCordSourceConfig } from '@src/util/meocord-config-loader.util.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -319,9 +324,8 @@ copies or substantial portions of the Software.
    * was a `webpack.config.js` shipped at the package root and re-read at runtime.
    */
   private async createBundler(mode: 'production' | 'development') {
-    // Loaded here rather than at module scope: reading it eagerly broke caching in bun
-    // Docker builds, where the config file is not present when this module first loads.
-    const meocordConfig = loadMeoCordConfig()
+    // Read from source on every build: the compiled copy in dist is the previous build's.
+    const meocordConfig = loadMeoCordSourceConfig()
 
     assertNoWebpackHook(meocordConfig)
 
@@ -332,7 +336,8 @@ copies or substantial portions of the Software.
     })
     const config = meocordConfig?.rsbuild?.(base) ?? base
 
-    return createRsbuild({ cwd: this.projectRoot, config })
+    const rsbuild = await createRsbuild({ cwd: this.projectRoot, config })
+    return { rsbuild, meocordConfig }
   }
 
   /**
@@ -345,8 +350,19 @@ copies or substantial portions of the Software.
       this.clearConsole()
       this.logger.info(`Building ${mode} version...`)
 
-      const rsbuild = await this.createBundler(mode)
+      const { rsbuild, meocordConfig } = await this.createBundler(mode)
+
+      const bundledFiles: string[] = []
+      if (meocordConfig?.bundleDependencies) {
+        rsbuild.onAfterBuild(({ stats }) => {
+          bundledFiles.push(...bundledModuleFiles(stats))
+        })
+      }
       await rsbuild.build()
+
+      // A bundled native addon builds, starts, and works on this machine -- the bundle reaches
+      // it through this machine's node_modules -- then fails in production on first load.
+      assertNoBundledNativeAddons(findBundledNativeAddons(bundledFiles, this.projectRoot))
 
       this.logger.info(`${capitalize(mode)} build completed successfully.`)
     } catch (error: any) {
@@ -370,7 +386,7 @@ copies or substantial portions of the Software.
       // compilation. It does follow `bundleDependencies`, though: the config imports packages
       // too (dotenv, usually), and a bot bundled to run without node_modules would otherwise
       // fail on its own config file.
-      const meocordConfig = loadMeoCordConfig()
+      const meocordConfig = loadMeoCordSourceConfig()
       const bundleDependencies = meocordConfig?.bundleDependencies ?? false
       const base = createRsbuildConfig({
         mode: 'development',
@@ -458,7 +474,7 @@ copies or substantial portions of the Software.
       let watching: { close: () => Promise<void> } | undefined
 
       const watch = async () => {
-        const rsbuild = await this.createBundler('development')
+        const { rsbuild } = await this.createBundler('development')
 
         // Runs after every rebuild, which is where the application is restarted. A failed
         // rebuild reports its own errors and does not reach here, so the process already

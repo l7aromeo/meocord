@@ -53,6 +53,20 @@ function loadCompiledConfig(): MeoCordConfig | undefined {
  * Loads the source config from meocord.config.ts via jiti with tsconfig path alias resolution.
  * Used in development mode where source files and tsconfig.json are available.
  */
+/**
+ * Loads meocord.config.ts from source, every time, for configuring a build.
+ *
+ * {@link loadMeoCordConfig} prefers the compiled `dist/meocord.config.mjs` and caches the result,
+ * which is right at runtime -- production has no source -- and wrong while building. The compiled
+ * file is the previous build's output, so a build that read it ran on the config as it was last
+ * time: an edit to `meocord.config.ts` took effect only on the build after next. Whatever read the
+ * config first in the process also fixed it for the rest, so the watcher's reload on a config
+ * change reloaded nothing. Build time always has the source, so it reads the source.
+ */
+export function loadMeoCordSourceConfig(): MeoCordConfig | undefined {
+  return loadSourceConfig()
+}
+
 function loadSourceConfig(): MeoCordConfig | undefined {
   const configPath = path.resolve(process.cwd(), 'meocord.config.ts')
   if (!existsSync(configPath)) return undefined
