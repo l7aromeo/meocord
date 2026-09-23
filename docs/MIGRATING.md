@@ -181,7 +181,7 @@ npx meocord build --prod
 npx meocord start --prod
 ```
 
-Three things behave differently:
+Four things behave differently:
 
 - **Builds read `meocord.config.ts` every time.** MeoCord 3 read the compiled copy the previous build left
   in `dist`, so a config edit took effect one build late, and the watcher's reload on a config change
@@ -193,6 +193,17 @@ Three things behave differently:
   `../src/app.ts`, where webpack wrote `webpack://<your-app>/./src/app.ts`. Node and bun resolve either, so
   stack traces are unaffected. An error tracker that uploads source maps and rewrites or matches paths by the
   `webpack://` prefix needs that rule updated.
+- **A failed login fails the start.** `app.start()` rejects when Discord refuses the token or cannot be
+  reached, where it used to log the error and resolve — so `main.ts` went on to log "Application started"
+  and the process exited 0. Set a non-zero exit code where your entry point catches it, so Docker,
+  systemd or CI see the failure:
+
+  ```typescript
+  bootstrap().catch(error => {
+    logger.error('Error during startup:', error)
+    process.exitCode = 1
+  })
+  ```
 
 ## 5. Optional: deploy without `node_modules`
 

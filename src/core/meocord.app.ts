@@ -165,40 +165,43 @@ export class MeoCordApp {
     return this.controllerInstancesCache.get(controllerClass)
   }
 
+  /**
+   * Registers the Discord event handlers and logs in.
+   *
+   * Rejects when the login fails -- an invalid token, or Discord unreachable -- so the caller can
+   * stop with a non-zero exit code. A bot that never came online is a failed start, and a
+   * supervisor such as Docker's `restart: on-failure` or systemd can only tell if the process says so.
+   */
   async start() {
-    try {
-      this.logger.log('Starting bot...')
+    this.logger.log('Starting bot...')
 
-      this.bot.on('clientReady', () =>
-        this.runListener('clientReady', async () => {
-          this.activityInterval = setInterval(() => this.updateActivity(), 10000)
-          await this.registerCommands()
-        }),
-      )
+    this.bot.on('clientReady', () =>
+      this.runListener('clientReady', async () => {
+        this.activityInterval = setInterval(() => this.updateActivity(), 10000)
+        await this.registerCommands()
+      }),
+    )
 
-      this.bot.on('interactionCreate', interaction =>
-        this.runListener('interactionCreate', () => this.handleInteraction(interaction)),
-      )
+    this.bot.on('interactionCreate', interaction =>
+      this.runListener('interactionCreate', () => this.handleInteraction(interaction)),
+    )
 
-      this.bot.on('messageCreate', message => this.runListener('messageCreate', () => this.handleMessage(message)))
+    this.bot.on('messageCreate', message => this.runListener('messageCreate', () => this.handleMessage(message)))
 
-      this.bot.on('messageReactionAdd', (reaction, user) =>
-        this.runListener('messageReactionAdd', () =>
-          this.handleReaction(reaction, { user, action: ReactionHandlerAction.ADD }),
-        ),
-      )
+    this.bot.on('messageReactionAdd', (reaction, user) =>
+      this.runListener('messageReactionAdd', () =>
+        this.handleReaction(reaction, { user, action: ReactionHandlerAction.ADD }),
+      ),
+    )
 
-      this.bot.on('messageReactionRemove', (reaction, user) =>
-        this.runListener('messageReactionRemove', () =>
-          this.handleReaction(reaction, { user, action: ReactionHandlerAction.REMOVE }),
-        ),
-      )
+    this.bot.on('messageReactionRemove', (reaction, user) =>
+      this.runListener('messageReactionRemove', () =>
+        this.handleReaction(reaction, { user, action: ReactionHandlerAction.REMOVE }),
+      ),
+    )
 
-      await this.bot.login(this.discordToken)
-      this.logger.log('Bot is online!')
-    } catch (error) {
-      this.logger.error('Error during bot startup:', error)
-    }
+    await this.bot.login(this.discordToken)
+    this.logger.log('Bot is online!')
   }
 
   async registerCommands() {
