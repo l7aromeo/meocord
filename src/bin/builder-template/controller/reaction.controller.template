@@ -1,7 +1,7 @@
-import { MessageReaction, User } from 'discord.js'
+import { MessageReaction } from 'discord.js'
 import { Controller, ReactionHandler } from 'meocord/decorator'
 import { Logger } from 'meocord/common'
-import { CommandType, ReactionHandlerAction } from 'meocord/enum'
+import { ReactionHandlerAction } from 'meocord/enum'
 import { type ReactionHandlerOptions } from 'meocord/interface'
 
 @Controller()
@@ -10,12 +10,12 @@ export class {{className}}ReactionController {
 
   @ReactionHandler('😋')
   async handleReaction(reaction: MessageReaction, { user, action }: ReactionHandlerOptions) {
-    this.logger.log(`Reaction 😋 ${action === ReactionHandlerAction.ADD ? 'added' : 'removed'}.`);
+    this.logger.log(`Reaction 😋 ${action === ReactionHandlerAction.ADD ? 'added' : 'removed'}.`)
 
-    if (!reaction.message) return;
+    if (!reaction.message) return
 
     if (action === ReactionHandlerAction.ADD) {
-      await reaction.message.reply(`${user.username} reacted with 😋!`);
+      await reaction.message.reply(`${user.username} reacted with 😋!`)
     }
   }
 

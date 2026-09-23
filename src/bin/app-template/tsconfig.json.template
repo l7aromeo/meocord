@@ -25,6 +25,6 @@
     },
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["meocord.config.ts", "dist", "vitest.config.ts", "node_modules", "src/**/*.spec.ts"]
+  "include": ["src/**/*.ts", "meocord.config.ts"],
+  "exclude": ["dist", "vitest.config.ts", "node_modules", "src/**/*.spec.ts"]
 }

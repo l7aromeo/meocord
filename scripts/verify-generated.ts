@@ -13,7 +13,7 @@
  */
 
 import { execFileSync } from 'child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { ControllerType } from '../src/enum/controller.enum.js'
@@ -97,6 +97,18 @@ function verify(label: string, name: string, types: ControllerType[]): void {
 }
 
 /**
+ * Every file under a directory, skipping node_modules -- which here links back to the repository,
+ * so walking into it would never end.
+ */
+function filesIn(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+    if (entry.name === 'node_modules') return []
+    const full = path.join(dir, entry.name)
+    return entry.isDirectory() ? filesIn(full) : [full]
+  })
+}
+
+/**
  * Renders the packaged application template and typechecks the result.
  *
  * The template ships with the framework, so a change to either can break the other. The
@@ -124,8 +136,27 @@ function verifyApp(): void {
   symlinkSync(repoRoot, path.join(dir, 'node_modules', 'meocord'), 'dir')
   symlinkSync(path.join(repoRoot, 'node_modules', 'discord.js'), path.join(dir, 'node_modules', 'discord.js'), 'dir')
 
-  execFileSync(tsc, ['--noEmit', '-p', 'tsconfig.json'], { cwd: dir, stdio: 'inherit' })
-  console.log('  app: template typechecks clean')
+  // Every generator runs inside the application, and the result is checked with the application's
+  // own tsconfigs rather than the scaffold above: those are stricter (noUnusedParameters,
+  // verbatimModuleSyntax), and they are what a user's `lint` script runs. A guard whose template
+  // failed both passed here while only controllers were generated, into the scaffold.
+  const cliIn = (...args: string[]) => execFileSync(process.execPath, [cli, ...args], { cwd: dir, stdio: 'pipe' })
+  for (const name of ['Generated', 'admin/generated']) {
+    for (const type of Object.values(ControllerType)) cliIn('g', 'co', type, name)
+    cliIn('g', 's', name)
+    cliIn('g', 'gu', name)
+  }
+
+  // Without --noEmit: the application's tsconfig sets it, and a user running plain `tsc` must not
+  // find compiled files -- a meocord.config.js above all -- written beside their sources.
+  const before = new Set(filesIn(dir))
+  for (const project of ['tsconfig.json', 'tsconfig.test.json']) {
+    execFileSync(tsc, ['-p', project], { cwd: dir, stdio: 'inherit' })
+  }
+  const emitted = filesIn(dir).filter(file => !before.has(file))
+  if (emitted.length > 0) throw new Error(`tsc wrote files into the application: ${emitted.join(', ')}`)
+
+  console.log('  app: template, meocord.config.ts and every generated component typecheck clean; nothing emitted')
 }
 
 /**
