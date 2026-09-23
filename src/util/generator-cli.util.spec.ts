@@ -1,3 +1,4 @@
+import path from 'path'
 import { vi } from 'vitest'
 
 const { mockExistsSync, mockMkdirSync, mockWriteFileSync, mockReadFileSync, mockExecFile, mockLoggerLog, mockLoggerError } =
@@ -154,7 +155,7 @@ describe('assertFilesAbsent', () => {
     mockExistsSync.mockImplementation((file: string) => file.endsWith('b.ts') || file.endsWith('c.ts'))
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
 
-    assertFilesAbsent([`${process.cwd()}/src/a.ts`, `${process.cwd()}/src/b.ts`, `${process.cwd()}/src/c.ts`])
+    assertFilesAbsent(['a.ts', 'b.ts', 'c.ts'].map(file => path.join(process.cwd(), 'src', file)))
 
     expect(exitSpy).toHaveBeenCalledWith(1)
     const message = mockLoggerError.mock.calls.at(-1)?.[0] as string
@@ -207,10 +208,11 @@ describe('generateFile', () => {
     mockLoggerError.mockClear()
     const exitCode = process.exitCode
 
-    generateFile(`${process.cwd()}/src/file.ts`, 'content')
+    generateFile(path.join(process.cwd(), 'src', 'file.ts'), 'content')
 
     expect(process.exitCode).toBe(1)
-    expect(mockLoggerError).toHaveBeenCalledWith('src/file.ts already exists; left it untouched.')
+    // Named relative to the project, with the platform's own separator.
+    expect(mockLoggerError).toHaveBeenCalledWith(`${path.join('src', 'file.ts')} already exists; left it untouched.`)
     expect(mockLoggerLog).not.toHaveBeenCalledWith(expect.stringContaining('Created'))
     process.exitCode = exitCode
   })
