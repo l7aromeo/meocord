@@ -101,6 +101,13 @@ something you have to arrange.
 Publishing uses npm trusted publishing — the registry issues short-lived credentials to the
 workflow, so no npm token is stored anywhere — and every release carries a provenance attestation.
 
+The release pull request is opened by the workflow. With only the workflow's own token, GitHub holds
+its CI runs until a maintainer approves them from the pull request's Checks tab, and branch
+protection keeps it unmergeable until they pass. A `RELEASE_TOKEN` secret in the `Production`
+environment removes that step: a fine-grained personal access token for this repository alone, with
+read and write access to Contents and Pull requests. The release pull request is then opened as that
+identity and its checks start on their own.
+
 Prereleases use changesets' pre mode, on `main`:
 
 ```bash
