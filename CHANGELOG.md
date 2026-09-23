@@ -1,5 +1,16 @@
 # meocord
 
+## 4.0.0-beta.5
+
+### Minor Changes
+
+- [#47](https://github.com/l7aromeo/meocord/pull/47) [`9652436`](https://github.com/l7aromeo/meocord/commit/965243660323277827a64851f28da9cda2c2fe0c) Thanks [@l7aromeo](https://github.com/l7aromeo)! - Add `resolveRoute` and `findRouteConflicts` to `meocord/testing`, for testing which handler a
+  component's customId reaches. `resolveRoute(App, { type, customId })` gives the answer dispatch gives
+  — across every controller the app registers, for that component type, most specific pattern first —
+  as the controller, the handler method and its name, and the captured params, or `undefined`. `findRouteConflicts(App)` returns the
+  pattern pairs that can match the same customId, which MeoCord otherwise only warns about at startup.
+  Both read decorator metadata only, and dispatch runs on the same matcher.
+
 ## 4.0.0-beta.4
 
 ### Major Changes
