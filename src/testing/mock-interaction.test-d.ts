@@ -11,6 +11,7 @@ import {
   createChatInputOptions,
   createMock,
   createMockInteraction,
+  createMockMessage,
   createMockUser,
   type DeepMocked,
   type MockProps,
@@ -36,6 +37,8 @@ describe('DeepMocked', () => {
     expectTypeOf(createMockInteraction(StringSelectMenuInteraction)).toExtend<StringSelectMenuInteraction>()
     expectTypeOf(createMockInteraction(ModalSubmitInteraction)).toExtend<ModalSubmitInteraction>()
     expectTypeOf(createMockUser()).toExtend<User>()
+    // Documented and set by the mock; missing from the type, so `message.deleted` did not compile.
+    expectTypeOf(createMockMessage().deleted).toEqualTypeOf<boolean>()
   })
 
   it('keeps the mock API on methods', () => {
