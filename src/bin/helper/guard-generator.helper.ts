@@ -1,6 +1,7 @@
 import path from 'path'
 import { Logger } from '@src/common/index.js'
 import {
+  assertFilesAbsent,
   buildTemplate,
   createDirectoryIfNotExists,
   generateFile,
@@ -33,12 +34,15 @@ export class GuardGeneratorHelper {
 
     const guardDir = path.join(process.cwd(), 'src', 'guards', ...parts)
     const guardFile = path.join(guardDir, `${kebabCaseName}.guard.ts`)
+    const specFile = path.join(guardDir, `${kebabCaseName}.guard.spec.ts`)
+    // Both files checked before either is written, so an existing guard is never replaced.
+    assertFilesAbsent([guardFile, specFile])
 
     const guardTemplate = buildTemplate(className, 'guard.template')
     const specTemplate = buildTemplate(className, 'guard.spec.template', { kebabCaseName })
 
     createDirectoryIfNotExists(guardDir)
     generateFile(guardFile, guardTemplate)
-    generateFile(path.join(guardDir, `${kebabCaseName}.guard.spec.ts`), specTemplate)
+    generateFile(specFile, specTemplate)
   }
 }

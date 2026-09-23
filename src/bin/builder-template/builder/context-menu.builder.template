@@ -3,10 +3,10 @@ import { CommandBuilder } from 'meocord/decorator'
 import { CommandType } from 'meocord/enum'
 
 @CommandBuilder(CommandType.CONTEXT_MENU)
-export class SampleCommandBuilder {
+export class {{builderClassName}} {
   build() {
     return new ContextMenuCommandBuilder()
-      .setName('sample-context-menu')
+      .setName('{{commandName}}')
       .setType(ApplicationCommandType.User)
   }
 }

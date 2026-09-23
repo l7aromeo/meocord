@@ -4,9 +4,10 @@ import { Controller, Autocomplete } from 'meocord/decorator'
 @Controller()
 export class {{className}}AutocompleteController {
 
-  // The option this completes must be declared with `.setAutocomplete(true)` on the
-  // slash command builder, otherwise Discord never sends the interaction.
-  @Autocomplete('sample-slash', 'query')
+  // Completes the `query` option of /{{commandName}} -- the command `meocord g co slash` generates
+  // for the same name. That option must be declared with `.setAutocomplete(true)` on the slash
+  // command's builder, otherwise Discord never sends the interaction.
+  @Autocomplete('{{commandName}}', 'query')
   async completeQuery(interaction: AutocompleteInteraction) {
     const { value } = interaction.options.getFocused(true)
     const choices = ['alpha', 'beta', 'gamma'].filter(choice => choice.startsWith(value))

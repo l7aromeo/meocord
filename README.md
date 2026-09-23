@@ -344,10 +344,14 @@ Each one lands in its own directory, named after the type:
 src/controllers/<type>/
 ├── <name>.<type>.controller.ts
 ├── <name>.<type>.controller.spec.ts
-└── builders/sample.builder.ts     # slash, context-menu and primary-entry-point only
+└── builders/<name>.builder.ts     # slash, context-menu and primary-entry-point only
 ```
 
 A builder is generated only for the three types Discord registers by name. Everything else is addressed by `customId` or, for autocomplete, by the command path it completes — there is nothing to register.
+
+Each controller gets its own builder, `<Name>CommandBuilder`, and registers a command named after it: `npx meocord g co slash Greeting` registers `/greeting`. A nested name uses its whole path, so `admin/ban` registers `/admin-ban` — Discord command names are global to the application, while folders only keep files apart. An autocomplete controller completes the slash command of the same name.
+
+Generating never overwrites. If any file it would write already exists, it refuses, names the files, and writes nothing.
 
 `<name>` may contain `/` to nest: `npx meocord g co button "admin/ban"` writes into `src/controllers/button/admin/`.
 

@@ -1,3 +1,7 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync, appendFileSync, mkdirSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import path from 'path'
+import { vi } from 'vitest'
 import { ControllerType } from '@src/enum/controller.enum.js'
 import { ControllerGeneratorHelper } from '@src/bin/helper/controller-generator.helper.js'
 import { toClassName } from '@src/util/generator-cli.util.js'
@@ -25,28 +29,27 @@ describe('ControllerGeneratorHelper', () => {
     expect(helper.buildControllerTemplate('Sample', type)).toContain(`export class ${expected}`)
   })
 
-  // The builder is written beside the controller, so a nested controller name moves it
-  // too. A hard-coded `@src/controllers/<type>/builders/...` import only ever pointed
-  // at the top-level one, so a nested slash controller imported a file that did not
-  // exist and the generated app failed to build.
+  // Each controller imports its own builder, written beside it and named after it, wherever the
+  // controller is nested.
   describe('builder import path', () => {
     const builderTypes = [ControllerType.SLASH, ControllerType.CONTEXT_MENU, ControllerType.PRIMARY_ENTRY_POINT]
 
-    it.each(builderTypes)('points at the top-level builder for a flat %s name', type => {
-      expect(helper.buildControllerTemplate('Sample', type)).toContain(
-        `'@src/controllers/${type}/builders/sample.builder'`,
-      )
+    it.each(builderTypes)('imports the %s builder named after the controller', type => {
+      const rendered = helper.buildControllerTemplate('Greeting', type)
+
+      expect(rendered).toContain(`import { GreetingCommandBuilder } from '@src/controllers/${type}/builders/greeting.builder'`)
+      expect(rendered).toContain("@Command('greeting', GreetingCommandBuilder)")
     })
 
     it.each(builderTypes)('follows a nested %s name to where the builder is written', type => {
       expect(helper.buildControllerTemplate('Profile', type, ['admin'])).toContain(
-        `'@src/controllers/${type}/admin/builders/sample.builder'`,
+        `'@src/controllers/${type}/admin/builders/profile.builder'`,
       )
     })
 
     it('follows more than one level of nesting', () => {
       expect(helper.buildControllerTemplate('Profile', ControllerType.SLASH, ['admin', 'users'])).toContain(
-        "'@src/controllers/slash/admin/users/builders/sample.builder'",
+        "'@src/controllers/slash/admin/users/builders/profile.builder'",
       )
     })
   })
@@ -55,5 +58,87 @@ describe('ControllerGeneratorHelper', () => {
     expect(() => helper.buildControllerTemplate('Sample', 'nope' as ControllerType)).toThrow(
       'Unsupported controller type: nope',
     )
+  })
+
+  describe('generating on disk', () => {
+    let root: string
+
+    beforeEach(() => {
+      root = mkdtempSync(path.join(tmpdir(), 'meocord-generate-'))
+      writeFileSync(path.join(root, 'package.json'), '{"name":"bot","private":true}')
+      vi.spyOn(process, 'cwd').mockReturnValue(root)
+      // A refusal ends the process; thrown here so the test sees it and nothing continues.
+      vi.spyOn(process, 'exit').mockImplementation(code => {
+        throw new Error(`process.exit(${code})`)
+      })
+    })
+
+    afterEach(() => {
+      vi.restoreAllMocks()
+      rmSync(root, { recursive: true, force: true })
+    })
+
+    const read = (...segments: string[]) => readFileSync(path.join(root, 'src', 'controllers', ...segments), 'utf8')
+    const generate = (name: string, type: ControllerType) => helper.generateController({ controllerName: name }, type)
+
+    it.each([ControllerType.SLASH, ControllerType.CONTEXT_MENU, ControllerType.PRIMARY_ENTRY_POINT])(
+      'writes a %s builder of its own, named after the controller, registering its own command name',
+      type => {
+        generate('Greeting', type)
+
+        const builder = read(type, 'builders', 'greeting.builder.ts')
+        expect(builder).toContain('export class GreetingCommandBuilder')
+        expect(builder).toMatch(/['"]greeting['"]/)
+        expect(read(type, `greeting.${type}.controller.ts`)).toContain("@Command('greeting', GreetingCommandBuilder)")
+      },
+    )
+
+    // Controllers of one type each own their builder, so generating one never touches another's.
+    it('gives two slash controllers separate builders and distinct command names', () => {
+      generate('Greeting', ControllerType.SLASH)
+      appendFileSync(path.join(root, 'src/controllers/slash/builders/greeting.builder.ts'), '// my edit\n')
+      generate('Profile', ControllerType.SLASH)
+
+      expect(read('slash', 'builders', 'greeting.builder.ts')).toContain('// my edit')
+      expect(read('slash', 'builders', 'profile.builder.ts')).toContain("setName('profile')")
+      expect(read('slash', 'greeting.slash.controller.ts')).toContain("@Command('greeting'")
+      expect(read('slash', 'profile.slash.controller.ts')).toContain("@Command('profile'")
+    })
+
+    // Command names are global to the application; folders only keep files apart.
+    it('names a nested command after its whole path', () => {
+      generate('admin/ban', ControllerType.SLASH)
+      generate('ban', ControllerType.SLASH)
+
+      expect(read('slash', 'admin', 'ban.slash.controller.ts')).toContain("@Command('admin-ban', BanCommandBuilder)")
+      expect(read('slash', 'admin', 'builders', 'ban.builder.ts')).toContain("setName('admin-ban')")
+      expect(read('slash', 'ban.slash.controller.ts')).toContain("@Command('ban', BanCommandBuilder)")
+    })
+
+    it('completes the slash command generated under the same name', () => {
+      generate('Greeting', ControllerType.AUTOCOMPLETE)
+
+      expect(read('autocomplete', 'greeting.autocomplete.controller.ts')).toContain("@Autocomplete('greeting', 'query')")
+    })
+
+    it('refuses to overwrite a controller that already exists, and writes nothing', () => {
+      generate('Greeting', ControllerType.SLASH)
+      const controller = path.join(root, 'src/controllers/slash/greeting.slash.controller.ts')
+      appendFileSync(controller, '// my edit\n')
+
+      expect(() => generate('Greeting', ControllerType.SLASH)).toThrow('process.exit(1)')
+      expect(readFileSync(controller, 'utf8')).toContain('// my edit')
+    })
+
+    // Checked before anything is written, so a refusal never leaves half a controller behind.
+    it('refuses when only the builder exists, before writing the controller', () => {
+      mkdirSync(path.join(root, 'src/controllers/slash/builders'), { recursive: true })
+      writeFileSync(path.join(root, 'src/controllers/slash/builders/greeting.builder.ts'), '// hand-written\n')
+
+      expect(() => generate('Greeting', ControllerType.SLASH)).toThrow('process.exit(1)')
+      expect(read('slash', 'builders', 'greeting.builder.ts')).toBe('// hand-written\n')
+      expect(existsSync(path.join(root, 'src/controllers/slash/greeting.slash.controller.ts'))).toBe(false)
+      expect(existsSync(path.join(root, 'src/controllers/slash/greeting.slash.controller.spec.ts'))).toBe(false)
+    })
   })
 })

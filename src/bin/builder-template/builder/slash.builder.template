@@ -3,8 +3,8 @@ import { CommandBuilder } from 'meocord/decorator'
 import { CommandType } from 'meocord/enum'
 
 @CommandBuilder(CommandType.SLASH)
-export class SampleCommandBuilder {
+export class {{builderClassName}} {
   build() {
-    return new SlashCommandBuilder().setName('sample-slash').setDescription('This is a sample slash command')
+    return new SlashCommandBuilder().setName('{{commandName}}').setDescription('Describe what /{{commandName}} does')
   }
 }

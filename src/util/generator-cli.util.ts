@@ -40,23 +40,59 @@ export function validateAndFormatName(originalName?: string): {
   parts: string[]
   kebabCaseName: string
   className: string
+  commandName: string
 } {
+  // Shared by every generator -- controllers, services and guards -- so the messages name none.
   if (!originalName) {
-    logger.error('Guard name is required.')
+    logger.error('A name is required.')
     process.exit(1)
   }
 
   const parts = originalName.split('/')
   const fileName = parts.pop()
   if (!fileName) {
-    logger.error('Invalid guard name.')
+    logger.error(`Invalid name: "${originalName}".`)
     process.exit(1)
   }
 
   const kebabCaseName = kebabCase(fileName)
   const className = toClassName(fileName)
 
-  return { parts, kebabCaseName, className }
+  return { parts, kebabCaseName, className, commandName: commandNameFor(parts, kebabCaseName) }
+}
+
+/**
+ * The Discord command name a generated controller registers.
+ *
+ * The whole path, not only its last segment: `admin/ban` becomes `admin-ban`. Files are kept
+ * apart by their directories, but a Discord command name is global to the application, so two
+ * controllers named `ban` in different folders must not both register `ban`.
+ *
+ * @param parts - The folders the name is nested in.
+ * @param kebabCaseName - The name's last segment, already kebab-cased.
+ */
+export function commandNameFor(parts: string[], kebabCaseName: string): string {
+  return [...parts.map(part => kebabCase(part)), kebabCaseName].filter(Boolean).join('-')
+}
+
+/**
+ * Stops a generator before it writes anything, if any file it would write already exists.
+ *
+ * Checked for every file up front rather than one at a time, so a refusal never leaves half a
+ * component behind, and a file the user has edited is never replaced.
+ *
+ * @param filePaths - Absolute paths the generator is about to create.
+ */
+export function assertFilesAbsent(filePaths: string[]): void {
+  const existing = filePaths.filter(filePath => fs.existsSync(filePath))
+  if (existing.length === 0) return
+
+  const names = existing.map(filePath => path.relative(process.cwd(), filePath)).join(', ')
+  logger.error(
+    `Refusing to overwrite ${existing.length === 1 ? 'an existing file' : 'existing files'}: ${names}. ` +
+      'Nothing was generated. Choose another name, or move the existing file first.',
+  )
+  process.exit(1)
 }
 
 /**
@@ -70,18 +106,29 @@ export function createDirectoryIfNotExists(directory: string) {
 }
 
 /**
- * Writes the provided content to a file and runs ESLint on the file for formatting.
- * @param filePath - The absolute path of the file to create or overwrite.
+ * Writes the provided content to a new file and runs ESLint on the file for formatting.
+ *
+ * Never replaces a file: the write is exclusive, so an existing file is left exactly as it was.
+ * Generators check with {@link assertFilesAbsent} before writing anything; this is the last line
+ * behind that. A failed write sets a non-zero exit code rather than ending with the success status
+ * of a run that produced nothing.
+ *
+ * @param filePath - The absolute path of the file to create.
  * @param content - The content to write to the file.
- * @throws Logs an error if the file creation or ESLint command fails.
  */
 export function generateFile(filePath: string, content: string): void {
+  const relative = path.relative(process.cwd(), filePath)
   try {
-    fs.writeFileSync(filePath, content)
-    logger.log(`Created ${path.relative(process.cwd(), filePath)}`)
+    fs.writeFileSync(filePath, content, { flag: 'wx' })
+    logger.log(`Created ${relative}`)
     formatWithLocalESLint(filePath)
   } catch (error) {
-    logger.error(`Failed to create ${filePath}`, error)
+    process.exitCode = 1
+    if ((error as NodeJS.ErrnoException)?.code === 'EEXIST') {
+      logger.error(`${relative} already exists; left it untouched.`)
+      return
+    }
+    logger.error(`Failed to create ${relative}`, error)
   }
 }
 
