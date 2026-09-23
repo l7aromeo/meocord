@@ -6,8 +6,8 @@ pr: #22
 
 Build with [Rsbuild](https://rsbuild.rs) instead of webpack. Production builds are several times
 faster, and webpack and its four loader and plugin packages are no longer installed with MeoCord.
-The output is unchanged: `dist/main.js`, assets under `dist/assets/` with the same names, and the
-same source maps.
+The output layout is unchanged: `dist/main.js`, and assets under `dist/assets/` with the same names.
+Production source maps now list sources as `../src/...` paths instead of `webpack://` URLs.
 
 **Breaking:** the `webpack` hook in `meocord.config.ts` is replaced by `rsbuild`, which receives
 Rsbuild's configuration. A config that still declares `webpack` stops the build with a message

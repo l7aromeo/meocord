@@ -7,8 +7,8 @@ patch release. Older majors are not backported.
 
 | Version | Supported |
 | ------- | --------- |
-| 3.x     | Yes       |
-| < 3.0   | No        |
+| 4.x     | Yes       |
+| < 4.0   | No        |
 
 Prerelease channels (`alpha`, `beta`) are not covered — move to `latest` before reporting.
 
