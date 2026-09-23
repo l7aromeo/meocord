@@ -7,11 +7,13 @@ export default {
   // token pasted into it is a token pushed to the remote. Copy .env.example to .env.
   discordToken: process.env.DISCORD_TOKEN!,
   rsbuild: config => {
-    // Images, fonts, svg and media are handled by the bundler already -- only the file types
-    // it does not know about need declaring. `assetsInclude` treats these as assets rather
-    // than modules, which is what makes `import readme from './readme.md'` give you its text.
-    config.source ??= {}
-    config.source.assetsInclude = /\.(md|html)$/i
+    // Images, fonts, svg and media are handled by the bundler already. Markdown and HTML are
+    // not, and `asset/source` is what makes `import readme from './readme.md'` give you the
+    // file's text rather than a path to it.
+    config.tools ??= {}
+    config.tools.rspack = (_rspackConfig, { addRules }) => {
+      addRules([{ test: /\.(md|html)$/i, type: 'asset/source' }])
+    }
 
     return config
   },
