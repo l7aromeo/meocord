@@ -253,6 +253,16 @@ taking if you upgrade the same tools in yours:
 
 - **`unplugin-swc` 2** needs no configuration change; `swc.vite({ ... })` takes the same options.
 
+- **`meocord.config.ts` in `tsconfig.json`.** The template now lists it under `include` rather than
+  `exclude`, so `tsc` in your `lint` script typechecks the config, and your editor resolves `paths`
+  aliases in it — `import '@src/common/utils/load-env.util'` — the way the build already does. `noEmit`
+  stays on, so nothing is written beside it:
+
+  ```json
+  "include": ["src/**/*.ts", "meocord.config.ts"],
+  "exclude": ["dist", "vitest.config.ts", "node_modules", "src/**/*.spec.ts"]
+  ```
+
 ## Fixed along the way
 
 Two type errors that MeoCord 3 users hit are fixed. If you worked around them with a cast, you can remove it:
