@@ -1,5 +1,6 @@
 import { cpSync, existsSync, readdirSync, readFileSync } from 'fs'
 import path from 'path'
+import { type BuildPlatform, currentPlatform } from '@src/util/platform.util.js'
 
 /**
  * The package a resolved module file belongs to, and the directory it was installed in.
@@ -86,8 +87,9 @@ function containsNativeBinary(dir: string, depth = 0): boolean {
  * Where an optional dependency of the package in `from` was installed, if it was.
  *
  * Nested under the package, beside it (pnpm's layout, and npm's hoisting within a scope), or
- * hoisted to the project root. A platform package that did not match this machine is not
- * installed at all, which is how only the right binary is found.
+ * hoisted to the project root. Being installed does not make it this platform's: some package
+ * managers install platform packages for other C libraries too, so {@link copyPackagesInto} also
+ * checks what each one declares it is built for.
  */
 function resolveDependencyDir(name: string, from: string, root: string): string | undefined {
   const candidates = [
@@ -216,18 +218,65 @@ export function createNativeExternals(root: string): {
 }
 
 /**
+ * Whether a value passes a package.json `os`, `cpu` or `libc` list, the way npm reads one: a `!`
+ * entry excludes its value, and a list with plain entries admits only those.
+ */
+function allowedBy(list: unknown, value: string): boolean {
+  if (!Array.isArray(list) || list.length === 0) return true
+  const entries = list.filter((entry): entry is string => typeof entry === 'string')
+  if (entries.includes(`!${value}`)) return false
+  const admitted = entries.filter(entry => !entry.startsWith('!'))
+  return admitted.length === 0 || admitted.includes(value)
+}
+
+/**
+ * Whether an installed package is built for the platform, going by the `os`, `cpu` and `libc` its
+ * package.json declares. A package that declares none of them runs anywhere.
+ *
+ * `libc` is compared only when the build platform's C library is known, so a runtime that cannot
+ * report it keeps the package rather than dropping it on a guess.
+ */
+export function isBuiltFor(dir: string, platform: BuildPlatform): boolean {
+  let pkg: { os?: unknown; cpu?: unknown; libc?: unknown }
+  try {
+    pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'))
+  } catch {
+    return true
+  }
+  if (!allowedBy(pkg.os, platform.platform) || !allowedBy(pkg.cpu, platform.arch)) return false
+  return !platform.libc || allowedBy(pkg.libc, platform.libc)
+}
+
+/** Whether a path is a package inside a `node_modules` directory, declared for another platform. */
+function isOtherPlatformPackage(source: string, platform: BuildPlatform): boolean {
+  const parent = path.basename(path.dirname(source))
+  const scopeParent = path.basename(path.dirname(path.dirname(source)))
+  const isPackageDir = parent === 'node_modules' || (parent.startsWith('@') && scopeParent === 'node_modules')
+  return isPackageDir && existsSync(path.join(source, 'package.json')) && !isBuiltFor(source, platform)
+}
+
+/**
  * Copies packages, with everything they need at runtime, into `<outDir>/node_modules`.
  *
  * This is what lets a bundled application run with nothing installed beside it: the packages that
  * could not be bundled travel inside the output directory, where Node finds them by walking up
  * from the bundle. Each package's installed dependencies and optional dependencies are followed --
- * that is where a platform binary lives -- and one not installed for this platform is skipped.
- * Type-only `@types` packages are left behind; some packages list them as runtime dependencies,
- * and they only add weight.
+ * that is where a platform binary lives. A dependency is copied only when its `os`, `cpu` and `libc`
+ * admit the build platform: package managers differ in which of those they filter
+ * installs on -- bun installs both the glibc and the musl build on Linux -- and the output has to
+ * carry only binaries the platform check in `dist` would let load. Type-only `@types` packages are
+ * left behind; some packages list them as runtime dependencies, and they only add weight.
  *
+ * @param platform - What the binaries are for. The platform building, which is what `dist`
+ *   records in its platform manifest.
  * @returns The names copied.
  */
-export function copyPackagesInto(packages: Map<string, string>, root: string, outDir: string): string[] {
+export function copyPackagesInto(
+  packages: Map<string, string>,
+  root: string,
+  outDir: string,
+  platform: BuildPlatform = currentPlatform(),
+): string[] {
   const copied = new Set<string>()
 
   const copy = (name: string, dir: string) => {
@@ -235,14 +284,14 @@ export function copyPackagesInto(packages: Map<string, string>, root: string, ou
     copied.add(name)
     const target = path.join(outDir, 'node_modules', name)
     // A package's own nested node_modules comes along with it, so only hoisted dependencies
-    // need finding separately.
-    cpSync(dir, target, { recursive: true, dereference: true })
+    // need finding separately. The nested ones get the same platform check on the way.
+    cpSync(dir, target, { recursive: true, dereference: true, filter: source => source === dir || !isOtherPlatformPackage(source, platform) })
 
     const { dependencies, optional } = readDependencies(dir)
     for (const dependency of [...dependencies, ...optional]) {
       if (existsSync(path.join(dir, 'node_modules', dependency, 'package.json'))) continue
       const dependencyDir = resolveDependencyDir(dependency, dir, root)
-      if (dependencyDir) copy(dependency, dependencyDir)
+      if (dependencyDir && isBuiltFor(dependencyDir, platform)) copy(dependency, dependencyDir)
     }
   }
 
