@@ -60,8 +60,13 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
   const { mode, bundleDependencies = false, externals = [] } = options
   const cwd = process.cwd()
   const entry = options.entry ?? path.resolve(cwd, 'src', 'main.ts')
+  const assetPrefix = assetPrefixFor(path.resolve(cwd, 'dist'))
 
   return {
+    // Rsbuild takes the asset prefix from `dev.assetPrefix` in development and from
+    // `output.assetPrefix` in production, and the development default is `/`. Both are set, so an
+    // asset import is the same path on disk in either mode.
+    dev: { assetPrefix },
     source: {
       entry: { main: entry },
       // Equivalent to experimentalDecorators. The decorators themselves are only half of
@@ -108,7 +113,7 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
       // What `import image from './x.png'` evaluates to at runtime. A bot passes that string
       // to fs or to a Discord attachment, so it has to be a real path on disk, which Rsbuild's
       // web-oriented default is not.
-      assetPrefix: assetPrefixFor(path.resolve(cwd, 'dist')),
+      assetPrefix,
       // Rsbuild inlines assets under 4 KB as base64 data URIs, so the same import would give a
       // path for a large file and a `data:` string for a small one. A bot reads its assets
       // with fs, where a data URI is ENOENT, so every asset is emitted as a file.

@@ -107,8 +107,10 @@ describe('the Rsbuild pipeline, built and run', () => {
     expect(result.dependencyName).toBe('Dependency')
   })
 
-  it('resolves a small asset import to a file that exists', async () => {
-    const result = await buildAndRun('production')
+  // Rsbuild reads the asset prefix from a different option in each mode, so one passing says
+  // nothing about the other.
+  it.each(['production', 'development'] as const)('resolves a small asset import to a file that exists in a %s build', async mode => {
+    const result = await buildAndRun(mode)
 
     expect(result.icon).not.toMatch(/^data:/)
     expect(path.isAbsolute(result.icon), `resolved to ${result.icon}`).toBe(true)
