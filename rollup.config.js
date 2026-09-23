@@ -135,4 +135,18 @@ const dtsBuild = {
   },
 }
 
-export default [esmBuild, cjsBuild, dtsBuild]
+/**
+ * Declarations for `require()`: the same types, as `.d.cts`. A CommonJS consumer resolving through
+ * the `require` condition is otherwise handed the ESM `.d.ts`, and TypeScript types the CommonJS
+ * build as an ES module -- attw's "masquerading as ESM".
+ */
+const dtsCjsBuild = {
+  ...dtsBuild,
+  output: {
+    ...dtsBuild.output,
+    entryFileNames: '[name].d.cts',
+    chunkFileNames: '[name]-[hash].d.cts',
+  },
+}
+
+export default [esmBuild, cjsBuild, dtsBuild, dtsCjsBuild]
