@@ -273,7 +273,9 @@ See [Self-contained builds](#self-contained-builds) for when to turn on `bundleD
 
 ### ESLint
 
-MeoCord exports a base ESLint config from `meocord/eslint`. Extend it as needed:
+MeoCord exports a base ESLint config from `meocord/eslint`. It lints your TypeScript, `meocord.config.ts`
+included, with type information from `tsconfig.json`, `tsconfig.test.json` and `tsconfig.eslint.json`; a
+file ESLint reports as not included in any of them needs listing in one. Extend it as needed:
 
 ```javascript
 import meocordEslint, { typescriptConfig } from 'meocord/eslint'

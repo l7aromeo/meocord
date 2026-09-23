@@ -22,7 +22,7 @@ rewriting history.
 ```
 
 The bot runs on whichever runtime you launch it with — launch with bun and it is a bun
-process, launch with node and it is a node process.
+process, launch with node and it is a node process. Node needs to be 22.13 or newer.
 
 ## Building
 
@@ -59,3 +59,5 @@ connection.
 ```shell
 {{packageManager}} run lint
 ```
+
+ESLint, then `tsc` over `src/` and `meocord.config.ts`, and the test typecheck.
