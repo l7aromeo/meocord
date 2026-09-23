@@ -57,7 +57,7 @@ jobs:
       matrix:
         # The floor `engines.node` declares, and the newest LTS. Anything between the two
         # is covered by whichever of them breaks first.
-        node: [22, 'lts/*']
+        node: ['22.13', 'lts/*']
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

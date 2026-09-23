@@ -26,8 +26,8 @@ vi.mock('chalk', () => ({
   },
 }))
 
-vi.mock('@src/util/meocord-config-loader.util.js', () => ({
-  loadMeoCordConfig: mockLoadMeoCordConfig,
+vi.mock('@src/util/meocord-source-config.util.js', () => ({
+  loadMeoCordCliConfig: mockLoadMeoCordConfig,
 }))
 
 vi.mock('@src/util/wait.util.js', () => ({

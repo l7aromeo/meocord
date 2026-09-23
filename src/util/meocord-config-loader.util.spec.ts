@@ -1,70 +1,72 @@
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import path from 'path'
 import { vi } from 'vitest'
 
-const { mockExistsSync, mockReadFileSync } = vi.hoisted(() => ({
-  mockExistsSync: vi.fn(),
-  mockReadFileSync: vi.fn(),
-}))
+let project: string
 
-vi.mock('fs', () => ({
-  existsSync: mockExistsSync,
-  readFileSync: mockReadFileSync,
-}))
+/** A fresh copy of the module, so its cache starts empty. */
+async function freshLoader() {
+  vi.resetModules()
+  return import('@src/util/meocord-config-loader.util.js')
+}
 
-vi.mock('jiti', () => ({
-  createJiti: vi.fn().mockReturnValue(vi.fn()),
-}))
-
-vi.mock('@src/interface/index.js', () => ({}))
-
-vi.mock('@src/util/json.util.js', () => ({
-  fixJSON: vi.fn().mockImplementation((s: unknown) => s),
-}))
-
-const { loadMeoCordConfig, loadMeoCordSourceConfig } = await import('@src/util/meocord-config-loader.util.js')
-const { createJiti } = await import('jiti')
-
-describe('loadMeoCordConfig', () => {
-  it('returns undefined when neither compiled nor source config exists', () => {
-    mockExistsSync.mockReturnValue(false)
-
-    const result = loadMeoCordConfig()
-    expect(result).toBeUndefined()
-  })
-
-  it('returns the same cached result on the second call', () => {
-    // Both calls go to the already-loaded module; the cache was set on the first call above.
-    // Change what existsSync would return to prove the cache is NOT re-evaluated.
-    mockExistsSync.mockReturnValue(true)
-
-    const first = loadMeoCordConfig()
-    const second = loadMeoCordConfig()
-
-    expect(first).toBe(second)
-  })
+beforeEach(() => {
+  project = mkdtempSync(path.join(tmpdir(), 'meocord-config-'))
+  vi.spyOn(process, 'cwd').mockReturnValue(project)
 })
 
-describe('loadMeoCordSourceConfig', () => {
-  // The compiled copy in dist is the previous build's output. A build that read it ran on the
-  // config as it was last time, so an edit to meocord.config.ts took effect a build late.
-  it('reads meocord.config.ts even when a compiled config exists, and ignores the runtime cache', () => {
-    mockExistsSync.mockReturnValue(true)
-    mockReadFileSync.mockReturnValue('{}')
-    const load = vi.fn((file: string) =>
-      file.endsWith('meocord.config.mjs') ? { discordToken: 'compiled, stale' } : { discordToken: 'source, current' },
-    )
-    vi.mocked(createJiti).mockReturnValue(load as unknown as ReturnType<typeof createJiti>)
+afterEach(() => {
+  vi.restoreAllMocks()
+  rmSync(project, { recursive: true, force: true })
+})
 
-    expect(loadMeoCordSourceConfig()?.discordToken).toBe('source, current')
-    expect(load).not.toHaveBeenCalledWith(expect.stringContaining('meocord.config.mjs'))
+function writeCompiledConfig(source: string) {
+  mkdirSync(path.join(project, 'dist'), { recursive: true })
+  writeFileSync(path.join(project, 'dist', 'meocord.config.mjs'), source)
+}
+
+describe('loadMeoCordConfig', () => {
+  it('loads the default export of dist/meocord.config.mjs', async () => {
+    writeCompiledConfig(`export default { appName: 'Compiled', discordToken: 'token' }\n`)
+    const { loadMeoCordConfig } = await freshLoader()
+
+    expect(loadMeoCordConfig()).toEqual({ appName: 'Compiled', discordToken: 'token' })
   })
 
-  it('reads the file again on every call', () => {
-    mockExistsSync.mockReturnValue(true)
-    mockReadFileSync.mockReturnValue('{}')
-    const load = vi.fn().mockReturnValueOnce({ discordToken: 'before' }).mockReturnValueOnce({ discordToken: 'after' })
-    vi.mocked(createJiti).mockReturnValue(load as unknown as ReturnType<typeof createJiti>)
+  // The source is the CLI's to read. A bot has no transpiler for it, and in production no source.
+  it('does not read meocord.config.ts, even when there is no compiled config', async () => {
+    writeFileSync(path.join(project, 'meocord.config.ts'), `export default { appName: 'Source' }\n`)
+    const { loadMeoCordConfig } = await freshLoader()
 
-    expect(loadMeoCordSourceConfig()?.discordToken).toBe('before')
-    expect(loadMeoCordSourceConfig()?.discordToken).toBe('after')
+    expect(loadMeoCordConfig()).toBeUndefined()
+  })
+
+  it('reports a compiled config that fails to load, and returns undefined', async () => {
+    writeCompiledConfig(`throw new Error('broken config')\n`)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { loadMeoCordConfig } = await freshLoader()
+
+    expect(loadMeoCordConfig()).toBeUndefined()
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('broken config'))
+  })
+
+  it('loads once and returns the cached result after', async () => {
+    writeCompiledConfig(`export default { appName: 'First' }\n`)
+    const { loadMeoCordConfig } = await freshLoader()
+    const first = loadMeoCordConfig()
+    writeCompiledConfig(`export default { appName: 'Second' }\n`)
+
+    expect(loadMeoCordConfig()).toBe(first)
+  })
+
+  // The logger and the factory import this module, so a bot bundled with bundleDependencies
+  // carries whatever it imports. jiti was 89% of a minimal bot's bundle.
+  it('imports no transpiler', () => {
+    const source = readFileSync(path.join(import.meta.dirname, 'meocord-config-loader.util.ts'), 'utf8')
+    const imports = [...source.matchAll(/^import .* from '([^']+)'/gm)].map(match => match[1])
+
+    expect(imports).not.toContain('jiti')
+    expect(imports.filter(specifier => specifier.startsWith('@src/'))).toEqual(['@src/interface/index.js'])
   })
 })
