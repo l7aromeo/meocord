@@ -15,3 +15,6 @@ export type { DeepMocked, ChatInputOptions, MockProps } from './mock-interaction
 
 export { createMockFn, isMockFunction } from './mock-fn.js'
 export type { Mock, MockedFunction, MockInstance, MockResult, MockState } from './mock-fn.js'
+
+export { resolveRoute, findRouteConflicts } from './routing.js'
+export type { ComponentCommandType, ResolvedRoute, RouteConflict } from './routing.js'
