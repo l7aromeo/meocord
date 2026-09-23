@@ -1,5 +1,18 @@
 # meocord
 
+## 4.0.0-beta.3
+
+### Patch Changes
+
+- [#40](https://github.com/l7aromeo/meocord/pull/40) [`3629edd`](https://github.com/l7aromeo/meocord/commit/3629eddaf20bd0947d24e5582aa167b2c0ca0d47) Thanks [@l7aromeo](https://github.com/l7aromeo)! - Lint `meocord.config.ts`. The shared ESLint config from `meocord/eslint` ignored it, so the config
+  alone skipped the rules every other file follows — unused imports, formatting. It is linted like the
+  rest now; the typecheck it already gets is unchanged.
+
+- [#40](https://github.com/l7aromeo/meocord/pull/40) [`80b8302`](https://github.com/l7aromeo/meocord/commit/80b83021894ef8a964a12ac1610c2ec9b40f344e) Thanks [@l7aromeo](https://github.com/l7aromeo)! - Exit with code 1 when the login fails, whatever the entry point does. `app.start()` now sets
+  `process.exitCode = 1` before rejecting, so an existing `main.ts` whose `catch` only logs the error no
+  longer exits 0 — no `process.exitCode = 1` needs adding to it, and new applications' `main.ts` no
+  longer carries one.
+
 ## 4.0.0-beta.2
 
 ### Major Changes
