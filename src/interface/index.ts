@@ -1,5 +1,14 @@
 import { BaseInteraction, Message, MessageReaction, type PartialUser, User } from 'discord.js'
 import { type RsbuildConfig } from '@rsbuild/core'
+
+/**
+ * Rsbuild's configuration type, as the `rsbuild` hook receives it.
+ *
+ * Re-exported so an application can type a helper for that hook without importing
+ * `@rsbuild/core` itself -- which pnpm does not allow for a package the application does not
+ * depend on directly.
+ */
+export type { RsbuildConfig }
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 
 /**

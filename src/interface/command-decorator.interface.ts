@@ -13,6 +13,7 @@ import {
   StringSelectMenuInteraction,
   UserContextMenuCommandInteraction,
   UserSelectMenuInteraction,
+  type SlashCommandOptionsOnlyBuilder,
   type SlashCommandSubcommandsOnlyBuilder,
 } from 'discord.js'
 import { CommandType } from '@src/enum/index.js'
@@ -39,12 +40,17 @@ export type PrimaryEntryPointCommandData = RESTPostAPIPrimaryEntryPointApplicati
 /**
  * The payload `build()` returns for a given command type.
  *
+ * A slash command's builder changes type as it is chained: adding an option narrows
+ * `SlashCommandBuilder` to `SlashCommandOptionsOnlyBuilder`, adding a subcommand to
+ * `SlashCommandSubcommandsOnlyBuilder`. All three are accepted -- leaving out the options
+ * form rejected the most common builder there is, one command with an option.
+ *
  * `PRIMARY_ENTRY_POINT` yields a raw REST body rather than a builder because
  * `@discordjs/builders` ships none for it; `ApplicationCommandManager#set` accepts the
  * JSON body directly, so nothing is lost.
  */
 export type CommandBuildResult<T extends BuildableCommandType> = T extends CommandType.SLASH
-  ? SlashCommandBuilder | SlashCommandSubcommandsOnlyBuilder
+  ? SlashCommandBuilder | SlashCommandOptionsOnlyBuilder | SlashCommandSubcommandsOnlyBuilder
   : T extends CommandType.CONTEXT_MENU
     ? ContextMenuCommandBuilder
     : T extends CommandType.PRIMARY_ENTRY_POINT

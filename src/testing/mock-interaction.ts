@@ -617,7 +617,7 @@ function createMockGuildForMessage(): object {
   return stubDeep(guild)
 }
 
-export function createMockMessage(): DeepMocked<Message> {
+export function createMockMessage(): DeepMocked<Message> & { deleted: boolean } {
   const instance = Object.create(Message.prototype) as Record<string, unknown>
   const stubs = new Map<string, Mock>()
 
@@ -691,7 +691,7 @@ export function createMockMessage(): DeepMocked<Message> {
     }),
   )
 
-  return stubDeep(instance, stubs) as DeepMocked<Message>
+  return stubDeep(instance, stubs) as DeepMocked<Message> & { deleted: boolean }
 }
 
 // ---------------------------------------------------------------------------

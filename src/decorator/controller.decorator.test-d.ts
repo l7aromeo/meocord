@@ -38,6 +38,29 @@ class PingBuilder implements CommandBuilderBase<CommandType.SLASH> {
   }
 }
 
+// Adding an option narrows the chain to SlashCommandOptionsOnlyBuilder, and a subcommand to
+// SlashCommandSubcommandsOnlyBuilder. The README's first example is the options case, and it
+// was rejected until the options form was accepted.
+@CommandBuilder(CommandType.SLASH)
+export class GreetBuilder implements CommandBuilderBase<CommandType.SLASH> {
+  build(commandName: string) {
+    return new SlashCommandBuilder()
+      .setName(commandName)
+      .setDescription('greet')
+      .addStringOption(option => option.setName('name').setDescription('who').setRequired(true))
+  }
+}
+
+@CommandBuilder(CommandType.SLASH)
+export class SettingsBuilder implements CommandBuilderBase<CommandType.SLASH> {
+  build(commandName: string) {
+    return new SlashCommandBuilder()
+      .setName(commandName)
+      .setDescription('settings')
+      .addSubcommand(sub => sub.setName('show').setDescription('show settings'))
+  }
+}
+
 @CommandBuilder(CommandType.CONTEXT_MENU)
 class ReportBuilder implements CommandBuilderBase<CommandType.CONTEXT_MENU> {
   build(commandName: string) {

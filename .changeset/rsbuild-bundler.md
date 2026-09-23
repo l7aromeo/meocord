@@ -40,7 +40,8 @@ rsbuild: config => {
   `font`, `media`).
 - `devtool` becomes `output.sourceMap.js`.
 - Anything else goes through `tools.rspack`, which takes a webpack-shaped config.
-- The `MeoCordWebpackConfig` type is removed; the hook is typed with Rsbuild's `RsbuildConfig`.
+- The `MeoCordWebpackConfig` type is removed; the hook is typed with Rsbuild's `RsbuildConfig`,
+  which `meocord/interface` re-exports.
 
 **New: `bundleDependencies`.** Set `bundleDependencies: true` and `dist` holds everything the bot
 needs, so deploying is copying `dist` — no `node_modules` beside it, no install step. Plain
