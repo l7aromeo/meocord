@@ -77,7 +77,7 @@ const specConfig = {
 }
 
 export default [
-  { ignores: ['docs/*', 'build/*', 'lib/*', 'dist/*', 'meocord.config.ts', 'vitest.config.ts'] },
+  { ignores: ['docs/*', 'build/*', 'lib/*', 'dist/*', 'vitest.config.ts'] },
   ...recommendedTypeScriptConfigs,
   specConfig,
   eslintConfigPrettier,
