@@ -85,8 +85,8 @@ export function createMockFn<T extends (...args: any[]) => any = (...args: any[]
   // mockRejectedValue and mockImplementation all write the same slot, so the last
   // call wins; the four `*Once` variants all push onto the same queue, so they are
   // consumed in the order they were declared regardless of which kind they are.
-  // Keeping a slot per kind instead gave a fixed precedence, where a stored
-  // resolved value beat a later mockRejectedValue and the override was silently
+  // A slot per kind would give a fixed precedence instead, where a stored
+  // resolved value beats a later mockRejectedValue and the override is silently
   // dropped.
   let currentImpl: ((...args: any[]) => any) | undefined = impl as ((...args: any[]) => any) | undefined
   let onceQueue: ((...args: any[]) => any)[] = []

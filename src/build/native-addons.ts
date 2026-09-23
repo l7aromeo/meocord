@@ -51,7 +51,7 @@ export function bundledModuleFiles(stats: StatsLike | undefined): string[] {
     nestedModules: true,
     // A production build concatenates most of node_modules into a few modules, and the members
     // of a concatenation are orphans -- hidden from stats unless asked for. Without this every
-    // concatenated package, sharp included, was invisible here.
+    // concatenated package, sharp included, is invisible here.
     orphanModules: true,
     modulesSpace: Infinity,
     nestedModulesSpace: Infinity,

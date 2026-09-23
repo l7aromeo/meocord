@@ -106,8 +106,8 @@ describe('MeoCordApp', () => {
       expect(mockClient.login).toHaveBeenCalledWith('my-secret-token')
     })
 
-    // A failed login used to be logged and swallowed, so the entry point reported the bot as
-    // started and the process exited 0 -- a clean exit to anything supervising it.
+    // A bot that never came online is a failed start. Swallowing the error would let the entry point
+    // report the bot as started and the process exit 0 -- a clean exit to anything supervising it.
     describe('when the login fails', () => {
       const originalExitCode = process.exitCode
 
@@ -125,7 +125,7 @@ describe('MeoCordApp', () => {
       })
 
       // An entry point that catches the rejection to log it has handled it, so without this the
-      // process still ends with 0 -- every entry point generated before this would need editing.
+      // process would still end with 0, and every entry point would need to set the code itself.
       it('sets the exit code to 1, so an entry point that catches the error still exits non-zero', async () => {
         mockClient.login.mockRejectedValueOnce(new Error('An invalid token was provided.'))
         const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 'bad-token')

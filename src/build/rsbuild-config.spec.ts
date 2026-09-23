@@ -91,7 +91,7 @@ describe('createRsbuildConfig', () => {
   })
 
   describe('assets', () => {
-    // An import has to give a path fs can read: small files became data URIs and failed with ENOENT.
+    // An import has to give a path fs can read; Rsbuild inlines small files as data URIs, which fail with ENOENT.
     it('never inlines an asset as a data URI', () => {
       const config = createRsbuildConfig({ mode: 'production' })
 
