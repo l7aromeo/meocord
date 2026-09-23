@@ -689,7 +689,7 @@ bun run test:typecheck    # tsc -p tsconfig.test.json
 bun run lint              # eslint --fix + tsc
 ```
 
-In your own bot project, add Vitest (or keep Jest) plus a `vitest.config.ts` with SWC if you use decorator metadata — see this repo's config for reference. Generated apps include `*.spec.ts` stubs but not a test runner config yet.
+Generated apps come with Vitest set up — `vitest.config.ts` with SWC for decorator metadata, and `test`, `test:watch` and `test:coverage` scripts — plus a spec beside every generated component. In an older project, add Vitest (or keep Jest) with the same SWC setup; `meocord/testing` works with either.
 
 ### `MeoCordTestingModule`
 
