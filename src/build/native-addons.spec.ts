@@ -17,7 +17,7 @@ let root: string
 function install(
   dir: string,
   name: string,
-  options: { optional?: string[]; dependencies?: string[]; binary?: string } = {},
+  options: { optional?: string[]; dependencies?: string[]; binary?: string; os?: string[]; cpu?: string[]; libc?: string[] } = {},
 ) {
   mkdirSync(dir, { recursive: true })
   const toVersions = (names: string[] = []) => Object.fromEntries(names.map(dependency => [dependency, '1.0.0']))
@@ -28,6 +28,9 @@ function install(
       version: '1.0.0',
       dependencies: toVersions(options.dependencies),
       optionalDependencies: toVersions(options.optional),
+      os: options.os,
+      cpu: options.cpu,
+      libc: options.libc,
     }),
   )
   writeFileSync(path.join(dir, 'index.js'), 'export {}')
@@ -284,6 +287,74 @@ describe('copyPackagesInto', () => {
     expect(existsSync(path.join(out, 'node_modules', '@img', 'sharp-darwin-arm64', 'lib', 'sharp.node'))).toBe(true)
     // The binary for another platform was never installed, so there is nothing to copy.
     expect(listed(path.join(out, 'node_modules', '@img'))).toEqual(['sharp-darwin-arm64'])
+  })
+
+  describe('platform packages', () => {
+    const glibc = { platform: 'linux', arch: 'x64', libc: 'glibc' } as const
+
+    /** sharp as bun installs it on Linux: the glibc and the musl build side by side. */
+    function installBothLibcBuilds() {
+      install(path.join(root, 'node_modules', 'sharp'), 'sharp', {
+        optional: ['@img/sharp-linux-x64', '@img/sharp-linuxmusl-x64'],
+      })
+      install(path.join(root, 'node_modules', '@img', 'sharp-linux-x64'), '@img/sharp-linux-x64', {
+        os: ['linux'],
+        cpu: ['x64'],
+        libc: ['glibc'],
+        binary: 'lib/sharp.node',
+      })
+      install(path.join(root, 'node_modules', '@img', 'sharp-linuxmusl-x64'), '@img/sharp-linuxmusl-x64', {
+        os: ['linux'],
+        cpu: ['x64'],
+        libc: ['musl'],
+        binary: 'lib/sharp.node',
+      })
+    }
+
+    it('leaves out an installed build for the other C library', () => {
+      installBothLibcBuilds()
+      const out = path.join(root, 'dist')
+
+      const copied = copyPackagesInto(new Map([['sharp', path.join(root, 'node_modules', 'sharp')]]), root, out, glibc)
+
+      expect(copied.sort()).toEqual(['@img/sharp-linux-x64', 'sharp'])
+      expect(listed(path.join(out, 'node_modules', '@img'))).toEqual(['sharp-linux-x64'])
+    })
+
+    // The same rule the platform manifest follows: an unknown C library is not a mismatch.
+    it('keeps both C library builds when the build platform cannot report its own', () => {
+      installBothLibcBuilds()
+
+      const copied = copyPackagesInto(new Map([['sharp', path.join(root, 'node_modules', 'sharp')]]), root, path.join(root, 'dist'), {
+        platform: 'linux',
+        arch: 'x64',
+      })
+
+      expect(copied.sort()).toEqual(['@img/sharp-linux-x64', '@img/sharp-linuxmusl-x64', 'sharp'])
+    })
+
+    it('leaves out an installed build for another operating system or CPU, including a negated one', () => {
+      install(path.join(root, 'node_modules', 'addon'), 'addon', { optional: ['addon-arm64', 'addon-not-linux', 'addon-any'] })
+      install(path.join(root, 'node_modules', 'addon-arm64'), 'addon-arm64', { os: ['linux'], cpu: ['arm64'] })
+      install(path.join(root, 'node_modules', 'addon-not-linux'), 'addon-not-linux', { os: ['!linux'] })
+      install(path.join(root, 'node_modules', 'addon-any'), 'addon-any')
+
+      const copied = copyPackagesInto(new Map([['addon', path.join(root, 'node_modules', 'addon')]]), root, path.join(root, 'dist'), glibc)
+
+      expect(copied.sort()).toEqual(['addon', 'addon-any'])
+    })
+
+    it('leaves out a build for another platform nested inside a package it copies', () => {
+      const dir = path.join(root, 'node_modules', 'sharp')
+      install(dir, 'sharp', { optional: ['@img/sharp-linux-x64', '@img/sharp-linuxmusl-x64'] })
+      install(path.join(dir, 'node_modules', '@img', 'sharp-linux-x64'), '@img/sharp-linux-x64', { libc: ['glibc'] })
+      install(path.join(dir, 'node_modules', '@img', 'sharp-linuxmusl-x64'), '@img/sharp-linuxmusl-x64', { libc: ['musl'] })
+      const out = path.join(root, 'dist')
+
+      copyPackagesInto(new Map([['sharp', dir]]), root, out, glibc)
+
+      expect(listed(path.join(out, 'node_modules', 'sharp', 'node_modules', '@img'))).toEqual(['sharp-linux-x64'])
+    })
   })
 
   it('brings nested dependencies along inside the package rather than hoisting them', () => {
