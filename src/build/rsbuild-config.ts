@@ -24,6 +24,18 @@ import { prepareModifiedTsConfig } from '@src/util/tsconfig.util.js'
  */
 export const DISCORD_OPTIONAL_NATIVES: readonly string[] = ['zlib-sync', 'bufferutil', 'utf-8-validate']
 
+/**
+ * The prefix an asset import is joined to at runtime: the output directory, with forward slashes.
+ *
+ * Rspack writes this into the bundle as a string literal without escaping it. A Windows path
+ * came through as `"D:\\a\\meocord\\dist/"` in the source, where `\\a` is a bell character and
+ * the other backslashes vanish -- every asset import evaluated to `D:ameocorddist/assets/...`.
+ * Windows accepts forward slashes everywhere a path is read, so they are used on every platform.
+ */
+export function assetPrefixFor(distDir: string): string {
+  return `${distDir.replace(/\\/g, '/').replace(/\/+$/, '')}/`
+}
+
 /** How the bundler is asked to build an application. */
 export interface RsbuildConfigOptions {
   /** Production enables minification; development keeps readable output. */
@@ -107,7 +119,7 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
       // What `import image from './x.png'` evaluates to at runtime. A bot passes that string
       // to fs or to a Discord attachment, so it has to be a real path on disk -- which is what
       // webpack's `publicPath` produced, and what Rsbuild's web-oriented default would not.
-      assetPrefix: `${path.resolve(cwd, 'dist')}/`,
+      assetPrefix: assetPrefixFor(path.resolve(cwd, 'dist')),
       // Rsbuild inlines assets under 4 KB as base64 data URIs, so the same import would give a
       // path for a large file and a `data:` string for a small one. A bot reads its assets
       // with fs, where a data URI is ENOENT -- icons broke at runtime while the build passed.
