@@ -47,6 +47,8 @@ vi.mock('@src/common/index.js', () => ({
 const {
   toClassName,
   validateAndFormatName,
+  commandNameFor,
+  assertFilesAbsent,
   createDirectoryIfNotExists,
   generateFile,
   buildTemplate,
@@ -99,6 +101,70 @@ describe('validateAndFormatName', () => {
     expect(exitSpy).toHaveBeenCalledWith(1)
     exitSpy.mockRestore()
   })
+
+  // Shared by controllers, services and guards, so the message names none of them.
+  it('names no particular kind of component when the name is missing', () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    mockLoggerError.mockClear()
+
+    try {
+      validateAndFormatName(undefined)
+    } catch {
+      // process.exit is mocked
+    }
+
+    expect(mockLoggerError).toHaveBeenCalledWith('A name is required.')
+    exitSpy.mockRestore()
+  })
+
+  it('derives the command name from the whole path', () => {
+    expect(validateAndFormatName('Greeting').commandName).toBe('greeting')
+    expect(validateAndFormatName('admin/banUser').commandName).toBe('admin-ban-user')
+  })
+})
+
+describe('commandNameFor', () => {
+  it('uses the name alone when it is not nested', () => {
+    expect(commandNameFor([], 'greeting')).toBe('greeting')
+  })
+
+  // Discord command names are global to the application; folders only keep files apart.
+  it('joins every folder into the name, kebab-cased', () => {
+    expect(commandNameFor(['admin', 'userTools'], 'ban')).toBe('admin-user-tools-ban')
+  })
+})
+
+describe('assertFilesAbsent', () => {
+  beforeEach(() => {
+    mockExistsSync.mockReset()
+    mockLoggerError.mockClear()
+  })
+
+  it('lets generation proceed when none of the files exist', () => {
+    mockExistsSync.mockReturnValue(false)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+
+    assertFilesAbsent(['/app/src/a.ts', '/app/src/b.ts'])
+
+    expect(exitSpy).not.toHaveBeenCalled()
+    exitSpy.mockRestore()
+  })
+
+  it('stops before anything is written, naming every file that exists', () => {
+    mockExistsSync.mockImplementation((file: string) => file.endsWith('b.ts') || file.endsWith('c.ts'))
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+
+    assertFilesAbsent([`${process.cwd()}/src/a.ts`, `${process.cwd()}/src/b.ts`, `${process.cwd()}/src/c.ts`])
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    const message = mockLoggerError.mock.calls.at(-1)?.[0] as string
+    expect(message).toContain('Refusing to overwrite existing files')
+    expect(message).toContain('b.ts')
+    expect(message).toContain('c.ts')
+    expect(message).not.toContain('a.ts')
+    expect(message).toContain('Nothing was generated')
+    exitSpy.mockRestore()
+  })
 })
 
 describe('createDirectoryIfNotExists', () => {
@@ -127,9 +193,39 @@ describe('generateFile', () => {
     mockExistsSync.mockReset()
   })
 
-  it('calls writeFileSync with the file path and content', () => {
+  // `wx` fails rather than replaces: an existing file is never overwritten, whatever called this.
+  it('writes the file exclusively, so it can never replace one', () => {
     generateFile('/some/file.ts', 'export const x = 1')
-    expect(mockWriteFileSync).toHaveBeenCalledWith('/some/file.ts', 'export const x = 1')
+    expect(mockWriteFileSync).toHaveBeenCalledWith('/some/file.ts', 'export const x = 1', { flag: 'wx' })
+  })
+
+  it('leaves an existing file alone and reports failure rather than success', () => {
+    mockWriteFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('exists'), { code: 'EEXIST' })
+    })
+    mockLoggerLog.mockClear()
+    mockLoggerError.mockClear()
+    const exitCode = process.exitCode
+
+    generateFile(`${process.cwd()}/src/file.ts`, 'content')
+
+    expect(process.exitCode).toBe(1)
+    expect(mockLoggerError).toHaveBeenCalledWith('src/file.ts already exists; left it untouched.')
+    expect(mockLoggerLog).not.toHaveBeenCalledWith(expect.stringContaining('Created'))
+    process.exitCode = exitCode
+  })
+
+  // A generation that wrote nothing must not end with a success status.
+  it('sets a failing exit code when the write fails for any other reason', () => {
+    mockWriteFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('denied'), { code: 'EACCES' })
+    })
+    const exitCode = process.exitCode
+
+    generateFile('/some/file.ts', 'content')
+
+    expect(process.exitCode).toBe(1)
+    process.exitCode = exitCode
   })
 
   // A project with its own rules still gets them applied to what was generated.

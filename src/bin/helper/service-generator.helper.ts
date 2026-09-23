@@ -1,6 +1,7 @@
 import path from 'path'
 import { Logger } from '@src/common/index.js'
 import {
+  assertFilesAbsent,
   buildTemplate,
   createDirectoryIfNotExists,
   generateFile,
@@ -33,12 +34,15 @@ export class ServiceGeneratorHelper {
 
     const serviceDir = path.join(process.cwd(), 'src', 'services', ...parts)
     const serviceFile = path.join(serviceDir, `${kebabCaseName}.service.ts`)
+    const specFile = path.join(serviceDir, `${kebabCaseName}.service.spec.ts`)
+    // Both files checked before either is written, so an existing service is never replaced.
+    assertFilesAbsent([serviceFile, specFile])
 
     const serviceTemplate = buildTemplate(className, 'service.template')
     const specTemplate = buildTemplate(className, 'service.spec.template', { kebabCaseName })
 
     createDirectoryIfNotExists(serviceDir)
     generateFile(serviceFile, serviceTemplate)
-    generateFile(path.join(serviceDir, `${kebabCaseName}.service.spec.ts`), specTemplate)
+    generateFile(specFile, specTemplate)
   }
 }
