@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import { Command, Controller, MeoCord } from '@src/decorator/index.js'
+import { Command, Controller, Guard, MeoCord, UseGuard } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { findRouteConflicts, resolveRoute } from '@src/testing/index.js'
 
@@ -30,6 +30,7 @@ describe('resolveRoute', () => {
     expect(resolveRoute(App, { type: CommandType.BUTTON, customId: 'gi-profile/summary/111/800000001' })).toEqual({
       controller: SpecificController,
       method: 'specific',
+      handler: SpecificController.prototype.specific,
       params: { ownerId: '111', uid: '800000001' },
     })
   })
@@ -38,6 +39,7 @@ describe('resolveRoute', () => {
     expect(resolveRoute(App, { type: CommandType.BUTTON, customId: 'gi-profile/abc-def/800000001' })).toEqual({
       controller: BroadController,
       method: 'broad',
+      handler: BroadController.prototype.broad,
       params: { uuid: 'abc-def', uid: '800000001' },
     })
   })
@@ -47,6 +49,30 @@ describe('resolveRoute', () => {
     const route = resolveRoute(App, { type: CommandType.SELECT_MENU, customId: 'gi-profile/summary/111/8' })
 
     expect(route?.method).toBe('specificMenu')
+  })
+
+  // @UseGuard replaces the method on the prototype; `handler` is that same function.
+  it('returns the handler as it sits on the prototype, guards included', () => {
+    @Guard()
+    class AllowGuard {
+      canActivate() {
+        return true
+      }
+    }
+
+    @Controller()
+    class GuardedController {
+      @Command('guarded/{id}', CommandType.BUTTON)
+      @UseGuard(AllowGuard)
+      async guarded(_i: unknown, _params: Record<string, string>) {}
+    }
+
+    @MeoCord({ controllers: [GuardedController], clientOptions: { intents: [] } })
+    class GuardedApp {}
+
+    const route = resolveRoute(GuardedApp, { type: CommandType.BUTTON, customId: 'guarded/1' })
+
+    expect(route?.handler).toBe(GuardedController.prototype.guarded)
   })
 
   it('returns undefined when no route handles the id', () => {

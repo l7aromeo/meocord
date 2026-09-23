@@ -256,7 +256,7 @@ from `meocord/testing` answer that directly, the way dispatch does:
 
 ```typescript
 const route = resolveRoute(App, { type: CommandType.BUTTON, customId: 'profile/111/8000' })
-expect(route?.method).toBe('showProfile')
+expect(route?.handler).toBe(ProfileController.prototype.showProfile)
 expect(findRouteConflicts(App)).toEqual([])
 ```
 
