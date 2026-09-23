@@ -483,8 +483,8 @@ describe('MeoCordApp', () => {
     })
   })
 
-  // Autocomplete has a three-second window and no reply. Before it was handled the
-  // client sat on a loading state until the window closed, with nothing in the log.
+  // Autocomplete has a three-second window and no reply: an interaction nothing answers
+  // leaves the client on a loading state until the window closes, with nothing in the log.
   describe('autocomplete dispatch', () => {
     const typing = (commandName: string, options: Parameters<typeof createChatInputOptions>[0]) => {
       const interaction = createMockInteraction(AutocompleteInteraction, { commandName })
