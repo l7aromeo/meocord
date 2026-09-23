@@ -22,12 +22,8 @@ const cliEntry = {
   'bin/meocord': 'src/bin/meocord.ts',
 }
 
-/** Internal utils consumed by webpack.config.js (not in exports map) */
-const internalEntries = {
-  'util/tsconfig.util': 'src/util/tsconfig.util.ts',
-}
 
-const allEntries = { ...libraryEntries, ...cliEntry, ...internalEntries }
+const allEntries = { ...libraryEntries, ...cliEntry }
 
 const aliasPlugin = alias({
   entries: [{ find: /^@src\/(.*)/, replacement: path.resolve(__dirname, 'src/$1') }],

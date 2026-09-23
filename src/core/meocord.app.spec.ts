@@ -146,8 +146,8 @@ describe('MeoCordApp', () => {
   })
 
   // A control that is emitted but never routed -- a customId whose value broke its
-  // pattern, or a handler nobody wrote -- used to be invisible. The user saw
-  // "Command not found!" and the log said nothing about which id failed to match.
+  // pattern, or a handler nobody wrote -- has to be visible: the user sees
+  // "Command not found!", and the log names the id that failed to match.
   describe('unmatched interactions', () => {
     const unmatchedButton = () => {
       const interaction = createMockInteraction(ButtonInteraction)
@@ -372,8 +372,8 @@ describe('MeoCordApp', () => {
   })
 
   // Discord sends `/settings notify email` as one interaction named `settings`, so a
-  // command whose subcommands live in separate methods used to run whichever method was
-  // declared first.
+  // command whose subcommands live in separate methods has to be dispatched by its
+  // subcommand path, not by whichever method was declared first.
   describe('slash command dispatch', () => {
     const invoke = (commandName: string, options: Parameters<typeof createChatInputOptions>[0] = {}) => {
       const interaction = createMockInteraction(ChatInputCommandInteraction, { commandName })

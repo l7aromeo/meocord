@@ -51,8 +51,8 @@ function scaffold(dir: string): void {
   writeFileSync(path.join(dir, 'package.json'), `${JSON.stringify({ name: 'generated-check', type: 'module', private: true }, null, 2)}\n`)
 
   // Mirrors what a generated application compiles as: ESM, bundler resolution (the
-  // app is built by webpack, whose `resolve.extensions` makes the extensionless
-  // `@src/...` imports in the templates valid), decorators on.
+  // app is built by Rsbuild, which resolves the extensionless `@src/...` imports in the
+  // templates), decorators on.
   const tsconfig = {
     compilerOptions: {
       module: 'ESNext',

@@ -82,10 +82,9 @@ export interface MeoCordConfig {
    * Function to customize the Rsbuild configuration.
    * Allows overriding and extending the default bundler setup for the application.
    *
-   * Replaces the former `webpack` hook. Rsbuild handles images, fonts, svg and media itself,
-   * so rules for those are no longer needed; `output.distPath` controls where they land. Raw
-   * bundler rules remain reachable through `tools.rspack`, which takes a webpack-shaped
-   * config.
+   * Rsbuild handles images, fonts, svg and media itself, so they need no rules;
+   * `output.distPath` controls where they land. Raw bundler rules go through `tools.rspack`,
+   * which takes a webpack-shaped config.
    *
    * @param config - The configuration to modify.
    * @returns A modified configuration, or `undefined` to keep the default.

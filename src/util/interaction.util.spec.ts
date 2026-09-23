@@ -180,8 +180,8 @@ describe('resolveOptionParams', () => {
 })
 
 // `getFocused` throws when nothing is focused rather than returning null, and it is
-// missing entirely on a hand-built double. Either one used to escape as an unhandled
-// rejection out of the interactionCreate listener.
+// missing entirely on a hand-built double. Neither may escape as an unhandled rejection
+// out of the interactionCreate listener.
 describe('focusedOptionName', () => {
   it('names the option being typed', () => {
     const interaction = createMockInteraction(AutocompleteInteraction, { commandName: 'search' })
