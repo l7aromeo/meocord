@@ -170,7 +170,7 @@ describe('assertNoWebpackHook', () => {
   })
 
   // How a config loaded from source actually arrives: jiti's interop proxy, where only property
-  // access reaches the default export. The first version of this check used `in` and never fired.
+  // access reaches the default export, so a check using `in` would never fire.
   it('refuses one arriving through an interop proxy that hides it from `in`', () => {
     const exported = { discordToken: 'token', webpack: (c: unknown) => c }
     const proxied = new Proxy(

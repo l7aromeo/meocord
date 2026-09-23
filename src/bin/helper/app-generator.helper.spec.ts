@@ -52,8 +52,8 @@ describe('AppGeneratorHelper', () => {
     expect(JSON.parse(read('package.json')).name).toBe('my-cool-bot')
   })
 
-  // A scaffolded application has to depend on the framework that scaffolded it; resolving
-  // the template separately is what let a v3 CLI hand out a v1 project.
+  // A scaffolded application has to depend on the framework that scaffolded it, so the
+  // pinned version comes from the running CLI rather than from the template.
   it('pins the framework to the version doing the generating', () => {
     expect(JSON.parse(read('package.json')).dependencies.meocord).toBe('^3.1.0')
   })

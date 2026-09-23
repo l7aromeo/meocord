@@ -320,8 +320,7 @@ copies or substantial portions of the Software.
    * Builds the bundler configuration for this project and creates an Rsbuild instance.
    *
    * The base configuration comes from {@link createRsbuildConfig}; the application's
-   * `rsbuild` hook, if it declares one, is given the chance to modify it. Previously this
-   * was a `webpack.config.js` shipped at the package root and re-read at runtime.
+   * `rsbuild` hook, if it declares one, is given the chance to modify it.
    */
   private async createBundler(mode: 'production' | 'development') {
     // Read from source on every build: the compiled copy in dist is the previous build's.

@@ -39,8 +39,8 @@ export interface RsbuildConfigOptions {
   /**
    * Bundle production dependencies into the output so it runs without `node_modules`.
    *
-   * Off by default, which is what webpack-node-externals did: dependencies stay runtime
-   * imports and have to be installed beside the output.
+   * Off by default: dependencies stay runtime imports and have to be installed beside the
+   * output.
    */
   bundleDependencies?: boolean
   /**
@@ -53,10 +53,8 @@ export interface RsbuildConfigOptions {
 /**
  * The bundler configuration MeoCord builds an application with.
  *
- * Returned rather than written to disk: it used to live in a `webpack.config.js` at the
- * package root that was shipped and then re-read at runtime by walking three directories up
- * from `dist/esm/bin`. Building it here makes it typed, testable, and not something a
- * consumer can edit by accident.
+ * Built in code rather than read from a config file, so it is typed, testable, and not
+ * something a consumer can edit by accident.
  */
 export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfig {
   const { mode, bundleDependencies = false, externals = [] } = options
@@ -102,27 +100,25 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
       // Rsbuild would put the bundle in dist/static/js and assets in dist/static/*. The
       // application's entry is dist/main.js, which is what `meocord start` runs.
       distPath: { root: path.resolve(cwd, 'dist'), js: '', image: 'assets', svg: 'assets', font: 'assets', media: 'assets' },
-      // No content hash: the webpack build wrote `assets/[name][ext]`, and a bot reads these
-      // from disk rather than serving them from a CDN, so there is no cache to bust. Each
+      // No content hash: a bot reads its assets from disk rather than serving them from a CDN,
+      // so there is no cache to bust, and stable names keep `dist/assets/` predictable. Each
       // accepts a function too, for applications whose same-named files in different folders
       // would otherwise collide.
       filename: { js: '[name].js', image: '[name][ext]', svg: '[name][ext]', font: '[name][ext]', media: '[name][ext]' },
       // What `import image from './x.png'` evaluates to at runtime. A bot passes that string
-      // to fs or to a Discord attachment, so it has to be a real path on disk -- which is what
-      // webpack's `publicPath` produced, and what Rsbuild's web-oriented default would not.
+      // to fs or to a Discord attachment, so it has to be a real path on disk, which Rsbuild's
+      // web-oriented default is not.
       assetPrefix: assetPrefixFor(path.resolve(cwd, 'dist')),
       // Rsbuild inlines assets under 4 KB as base64 data URIs, so the same import would give a
       // path for a large file and a `data:` string for a small one. A bot reads its assets
-      // with fs, where a data URI is ENOENT -- icons broke at runtime while the build passed.
-      // webpack's `asset/resource` always emitted a file.
+      // with fs, where a data URI is ENOENT, so every asset is emitted as a file.
       dataUriLimit: 0,
-      // What the webpack build defaulted to. Rsbuild emits none in production, which would
-      // leave a crashed bot's stack trace pointing into the bundle instead of the source.
+      // Rsbuild emits no source maps in production by default, which would leave a crashed
+      // bot's stack trace pointing into the bundle instead of the source.
       sourceMap: { js: mode === 'production' ? 'source-map' : 'eval-source-map' },
       // Rsbuild empties dist before building by default. MeoCord runs two builds into the same
       // directory -- the application, and meocord.config.ts into dist/meocord.config.mjs -- so
-      // whichever runs second would erase the other: `meocord build` reported success with
-      // nothing in dist but the config. The webpack build never cleaned dist either.
+      // cleaning would let whichever runs second erase the other.
       cleanDistPath: false,
       minify: {
         // Off by default for Node targets in Rsbuild 2, so production builds would ship
@@ -131,8 +127,7 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
         jsOptions: {
           minimizerOptions: {
             // Inversify resolves dependencies by class identity, so a mangled class name
-            // breaks injection in production while development stays fine. The webpack build
-            // carried the same setting through terser's `keep_classnames`.
+            // breaks injection in production while development stays fine.
             mangle: { keep_classnames: true, keep_fnames: true },
             compress: { keep_classnames: true, keep_fnames: true },
           },
@@ -148,7 +143,7 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
 }
 
 /**
- * Refuses a MeoCord config that still carries the pre-4.0 `webpack` hook.
+ * Refuses a MeoCord config that declares a `webpack` hook, which MeoCord does not run.
  *
  * Without this, such a config builds "successfully" with the customisation silently dropped --
  * assets landing in the wrong place, markdown imported as a path instead of its text. Refusing

@@ -7,7 +7,7 @@ import { fixJSON } from '@src/util/json.util.js'
 const logger = new Logger()
 
 /**
- * Prepares and modifies the project's `tsconfig.json` file for usage with tools like Webpack.
+ * Prepares and modifies the project's `tsconfig.json` file for the bundler.
  * - Verifies the existence of `tsconfig.json`.
  * - Fixes invalid JSON if necessary by correcting formatting issues like comments or trailing commas.
  * - Updates paths in `compilerOptions` and other sections to absolute paths.
