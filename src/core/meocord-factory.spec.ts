@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import { vi } from 'vitest'
 
 // Logger is constructed with `new`, so the implementation has to be a class or

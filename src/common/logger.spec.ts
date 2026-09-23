@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import { vi, type MockInstance } from 'vitest'
 
 vi.mock('@src/util/meocord-config-loader.util.js', () => ({

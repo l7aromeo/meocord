@@ -1,8 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
 import { Argument, Command, Help, Option } from 'commander'
 import CliTable3 from 'cli-table3'
 import { findModulePackageDir } from '@src/util/common.util.js'

@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import 'reflect-metadata'
 import { Container, injectable, type ServiceIdentifier } from 'inversify'
 import { MetadataKey } from '@src/enum/index.js'

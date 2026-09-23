@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import 'reflect-metadata'
 import { createMockFn, type MockedFunction, type Mock } from './mock-fn.js'
 import {

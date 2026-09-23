@@ -1,10 +1,4 @@
 /**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
-/**
  * Centralised metadata keys used across the framework's `Reflect` calls.
  *
  * Keeping them here prevents typos, documents the Inversify 8 key rename,

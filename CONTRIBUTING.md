@@ -31,6 +31,7 @@ bun run test
 | `bun run build`            | Clears `dist/` and builds ESM, CJS, and type declarations through rollup   |
 | `bun run verify:generated` | Generates an app from the built CLI and typechecks it — see below          |
 | `bun run changeset`        | Records a release note for your change — see below                         |
+| `bun run notices`          | Regenerates THIRD_PARTY_NOTICES.md after a dependency is added or removed  |
 
 ## Making a change
 
@@ -40,10 +41,13 @@ bun run test
 4. If the change reaches the published package, run `bun run changeset` and commit the file it writes.
 5. Run `bun run lint` and `bun run test` before pushing.
 6. If you touched anything under `src/bin/`, also run `bun run build && bun run verify:generated`.
-7. Push and open a pull request against `main`.
+7. If you added or removed a dependency, run `bun run notices` and commit the result. CI fails when it is out of date.
+8. Push and open a pull request against `main`.
 
 Include a description of what changed and why, and add tests for any new behaviour. CI runs everything
 above, so nothing is lost if you forget a step — running it locally is just faster than waiting.
+
+Files carry no license header: the [LICENSE](./LICENSE) at the root covers the whole repository.
 
 ## What the checks do
 

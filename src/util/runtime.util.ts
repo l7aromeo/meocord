@@ -1,10 +1,4 @@
 /**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
-/**
  * Environment variable that pins the binary the application is spawned with.
  *
  * An escape hatch for pinning a specific install, or for running the application under a

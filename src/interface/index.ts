@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import { BaseInteraction, Message, MessageReaction, type PartialUser, User } from 'discord.js'
 import { type RsbuildConfig } from '@rsbuild/core'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'

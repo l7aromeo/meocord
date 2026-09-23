@@ -1,10 +1,4 @@
 /**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
-/**
  * Generates one controller of every type through the built CLI and typechecks the
  * result against the published package.
  *

@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import path from 'path'
 import { type RsbuildConfig } from '@rsbuild/core'
 import { prepareModifiedTsConfig } from '@src/util/tsconfig.util.js'

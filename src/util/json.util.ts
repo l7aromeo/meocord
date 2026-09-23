@@ -1,10 +1,4 @@
 /**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
-/**
  * Helper function to fix common JSON formatting issues in tsconfig.json, such as:
  * - Removing single-line comments.
  * - Removing trailing commas.

@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import swc from '@rollup/plugin-swc'
 import alias from '@rollup/plugin-alias'
 import resolve from '@rollup/plugin-node-resolve'

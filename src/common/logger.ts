@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import { inspect } from 'node:util'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc.js'

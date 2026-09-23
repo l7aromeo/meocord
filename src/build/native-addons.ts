@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import { cpSync, existsSync, readdirSync, readFileSync } from 'fs'
 import path from 'path'
 

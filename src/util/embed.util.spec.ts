@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import { EmbedBuilder } from 'discord.js'
 import { createErrorEmbed } from '@src/util/embed.util.js'
 import { Theme } from '@src/common/theme.js'

@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 import { defineConfig } from 'vitest/config'
 import swc from 'unplugin-swc'
 import { fileURLToPath } from 'node:url'

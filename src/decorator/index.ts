@@ -1,9 +1,3 @@
-/**
- * MeoCord Framework
- * Copyright (c) 2025-present Ukasyah Rahmatullah Zada
- * SPDX-License-Identifier: MIT
- */
-
 export * from './service.decorator.js'
 export * from './command-builder.decorator.js'
 export * from './controller.decorator.js'
