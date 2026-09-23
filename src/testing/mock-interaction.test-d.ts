@@ -37,7 +37,7 @@ describe('DeepMocked', () => {
     expectTypeOf(createMockInteraction(StringSelectMenuInteraction)).toExtend<StringSelectMenuInteraction>()
     expectTypeOf(createMockInteraction(ModalSubmitInteraction)).toExtend<ModalSubmitInteraction>()
     expectTypeOf(createMockUser()).toExtend<User>()
-    // Documented and set by the mock; missing from the type, so `message.deleted` did not compile.
+    // Tracked by the mock and documented, so it is part of the type a test reads.
     expectTypeOf(createMockMessage().deleted).toEqualTypeOf<boolean>()
   })
 

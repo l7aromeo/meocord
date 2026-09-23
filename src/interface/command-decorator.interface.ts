@@ -42,8 +42,8 @@ export type PrimaryEntryPointCommandData = RESTPostAPIPrimaryEntryPointApplicati
  *
  * A slash command's builder changes type as it is chained: adding an option narrows
  * `SlashCommandBuilder` to `SlashCommandOptionsOnlyBuilder`, adding a subcommand to
- * `SlashCommandSubcommandsOnlyBuilder`. All three are accepted -- leaving out the options
- * form rejected the most common builder there is, one command with an option.
+ * `SlashCommandSubcommandsOnlyBuilder`. All three are accepted; the options form is the most
+ * common builder there is, one command with an option.
  *
  * `PRIMARY_ENTRY_POINT` yields a raw REST body rather than a builder because
  * `@discordjs/builders` ships none for it; `ApplicationCommandManager#set` accepts the
