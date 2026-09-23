@@ -11,4 +11,8 @@ async function bootstrap() {
   logger.log('Application started')
 }
 
-bootstrap().catch(error => logger.error('Error during startup:', error))
+bootstrap().catch(error => {
+  logger.error('Error during startup:', error)
+  // A bot that never came online is a failed start: exit non-zero, so Docker, systemd or CI see it.
+  process.exitCode = 1
+})

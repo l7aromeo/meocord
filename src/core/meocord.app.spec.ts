@@ -106,6 +106,17 @@ describe('MeoCordApp', () => {
       expect(mockClient.login).toHaveBeenCalledWith('my-secret-token')
     })
 
+    // A failed login used to be logged and swallowed, so the entry point reported the bot as
+    // started and the process exited 0 -- a clean exit to anything supervising it.
+    it('rejects when the login fails, without reporting the bot online', async () => {
+      const error = Object.assign(new Error('An invalid token was provided.'), { code: 'TokenInvalid' })
+      mockClient.login.mockRejectedValueOnce(error)
+      const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 'bad-token')
+
+      await expect(app.start()).rejects.toBe(error)
+      expect((app as any).logger.log).not.toHaveBeenCalledWith('Bot is online!')
+    })
+
     it('starts an activity interval on clientReady', async () => {
       const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 'token', [{ name: 'Playing' }])
       await app.start()
