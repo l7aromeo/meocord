@@ -27,9 +27,13 @@ export default defineConfig({
       // istanbul rather than v8: v8 coverage needs Node's inspector API, which bun does
       // not implement, and this template is expected to run under either runtime.
       provider: 'istanbul',
-      all: false,
       include: ['src/**/*.ts'],
-      exclude: ['src/**/*.spec.ts'],
+      // Naming `include` reports files no test imported, which is the point -- a controller
+      // with no spec should show as zero rather than vanish from the percentage. Those files
+      // are parsed by istanbul rather than transformed by swc, and that parser does not know
+      // about decorators, so anything decorated but untested has to be excluded by hand.
+      // app.ts is wiring rather than logic, and main.ts only boots the app.
+      exclude: ['src/**/*.spec.ts', 'src/app.ts', 'src/main.ts'],
     },
   },
 })
