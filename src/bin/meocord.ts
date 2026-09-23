@@ -7,7 +7,7 @@
  */
 
 import path from 'path'
-import webpack from 'webpack'
+import { createRsbuild, type RsbuildConfig } from '@rsbuild/core'
 import { Logger } from '@src/common/index.js'
 import { spawn, ChildProcess } from 'node:child_process'
 import { capitalize } from 'lodash-es'
@@ -16,7 +16,6 @@ import { GeneratorCLI } from '@src/bin/generator.js'
 import { AppGeneratorHelper, runtimePrefixFor } from '@src/bin/helper/app-generator.helper.js'
 import * as fs from 'node:fs'
 import { compileAndValidateConfig, setEnvironment, validateDiscordToken } from '@src/util/common.util.js'
-import { prepareModifiedTsConfig } from '@src/util/tsconfig.util.js'
 import { Command } from 'commander'
 import { simpleGit } from 'simple-git'
 import { execSync } from 'child_process'
@@ -27,8 +26,8 @@ import { resolveOwnVersion } from '@src/util/package-version.util.js'
 import { buildAppCommand, resolveRuntime } from '@src/util/runtime.util.js'
 import packageJson from '../../package.json' with { type: 'json' }
 import { fileURLToPath } from 'url'
-import TsconfigPathsPlugin from 'tsconfig-paths-webpack-plugin'
-import nodeExternals from 'webpack-node-externals'
+import { createRsbuildConfig } from '@src/build/rsbuild-config.js'
+import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -80,7 +79,6 @@ export class MeoCordCLI {
   readonly logger = new Logger(this.appName)
   private readonly projectRoot = process.cwd()
   private readonly mainJSPath = path.join(this.projectRoot, 'dist', 'main.js')
-  private readonly webpackConfigPath = path.resolve(__dirname, '..', '..', '..', 'webpack.config.js')
   private readonly generatorCLI = new GeneratorCLI(this.appName)
   private readonly appGeneratorHelper = new AppGeneratorHelper()
   private readonly version = resolveOwnVersion(__dirname, packageJson.version)
@@ -314,6 +312,28 @@ copies or substantial portions of the Software.
   }
 
   /**
+   * Builds the bundler configuration for this project and creates an Rsbuild instance.
+   *
+   * The base configuration comes from {@link createRsbuildConfig}; the application's
+   * `rsbuild` hook, if it declares one, is given the chance to modify it. Previously this
+   * was a `webpack.config.js` shipped at the package root and re-read at runtime.
+   */
+  private async createBundler(mode: 'production' | 'development', overrides?: Partial<RsbuildConfig>) {
+    // Loaded here rather than at module scope: reading it eagerly broke caching in bun
+    // Docker builds, where the config file is not present when this module first loads.
+    const meocordConfig = loadMeoCordConfig()
+
+    const base = createRsbuildConfig({
+      mode,
+      bundleDependencies: meocordConfig?.bundleDependencies,
+      externals: meocordConfig?.externals,
+    })
+    const config = { ...(meocordConfig?.rsbuild?.(base) ?? base), ...overrides }
+
+    return createRsbuild({ cwd: this.projectRoot, config })
+  }
+
+  /**
    * Builds the MeoCord application in the specified mode.
    *
    * @param mode - The build mode ('production' or 'development').
@@ -323,53 +343,10 @@ copies or substantial portions of the Software.
       this.clearConsole()
       this.logger.info(`Building ${mode} version...`)
 
-      const webpackConfig = (await import(this.webpackConfigPath)).default
+      const rsbuild = await this.createBundler(mode)
+      await rsbuild.build()
 
-      const compiler = webpack({
-        ...webpackConfig,
-        mode,
-      })
-
-      if (!compiler) {
-        this.logger.error('Failed to create webpack compiler instance.')
-        throw new Error('Failed to create webpack compiler instance.')
-      }
-
-      // Workaround for Bun: Keep the event loop alive while webpack runs
-      // Bun sometimes exits before async callbacks fire
-      let keepAliveTimer: ReturnType<typeof setInterval> | null = null
-
-      await new Promise<void>((resolve, reject) => {
-        keepAliveTimer = setInterval(() => {
-          // Keeps event loop active
-        }, 100)
-
-        compiler.run((err, stats) => {
-          if (keepAliveTimer) {
-            clearInterval(keepAliveTimer)
-            keepAliveTimer = null
-          }
-
-          if (err) {
-            this.logger.error(`Build encountered an error: ${err.message}`)
-            return reject(`Build encountered an error: ${err.message}`)
-          }
-
-          if (stats?.hasErrors()) {
-            this.logger.error('Build failed due to errors in the compilation process:', stats.compilation.errors)
-          } else {
-            this.logger.info(`${capitalize(mode)} build completed successfully.`)
-          }
-
-          compiler.close(closeErr => {
-            if (closeErr) {
-              this.logger.error(`Error occurred while closing the compiler: ${closeErr.message}`)
-              return reject(`Error occurred while closing the compiler: ${closeErr.message}`)
-            }
-            resolve()
-          })
-        })
-      })
+      this.logger.info(`${capitalize(mode)} build completed successfully.`)
     } catch (error: any) {
       this.logger.error(`Build process failed: ${error.message}`)
       await wait(100)
@@ -386,60 +363,29 @@ copies or substantial portions of the Software.
     if (!fs.existsSync(configPath)) return
 
     try {
-      const tsConfigPath = prepareModifiedTsConfig()
-
-      const compiler = webpack({
-        entry: configPath,
-        target: 'node',
-        mode: 'none',
-        externals: [nodeExternals({ importType: 'module' }) as any],
-        module: {
-          rules: [
-            {
-              test: /\.ts$/,
-              use: {
-                loader: 'swc-loader',
-                options: {
-                  jsc: {
-                    parser: { syntax: 'typescript', tsx: false, decorators: true },
-                    transform: { decoratorMetadata: true, legacyDecorator: true },
-                  },
-                },
-              },
-              exclude: /node_modules/,
-            },
-          ],
+      // Deliberately built without the application's `rsbuild` hook: this compiles the very
+      // file that declares that hook, so applying it here would let a config shape its own
+      // compilation. Dependencies stay external -- the output is read by the config loader,
+      // not run as an application.
+      const base = createRsbuildConfig({ mode: 'development', entry: configPath })
+      const rsbuild = await createRsbuild({
+        cwd: this.projectRoot,
+        config: {
+          ...base,
+          source: { ...base.source, entry: { 'meocord.config': configPath } },
+          output: {
+            target: 'node',
+            module: true,
+            autoExternal: true,
+            distPath: { root: path.resolve(this.projectRoot, 'dist'), js: '' },
+            filename: { js: '[name].mjs' },
+            minify: { js: false },
+          },
         },
-        resolve: {
-          extensions: ['.ts', '.js'],
-          plugins: [new (TsconfigPathsPlugin as any)({ configFile: tsConfigPath })],
-        },
-        output: {
-          filename: 'meocord.config.mjs',
-          path: path.resolve(this.projectRoot, 'dist'),
-          library: { type: 'module' },
-        },
-        experiments: { outputModule: true },
-        optimization: { minimize: false },
       })
 
-      await new Promise<void>(resolve => {
-        compiler.run((err, stats) => {
-          if (err || stats?.hasErrors()) {
-            this.logger.warn('Failed to compile meocord.config.ts — runtime will fall back to source config.')
-            resolve()
-            return
-          }
-          compiler.close(closeErr => {
-            if (closeErr) {
-              resolve()
-              return
-            }
-            this.logger.info('Config compiled to dist/meocord.config.mjs')
-            resolve()
-          })
-        })
-      })
+      await rsbuild.build()
+      this.logger.info('Config compiled to dist/meocord.config.mjs')
     } catch {
       this.logger.warn('Failed to compile meocord.config.ts — runtime will fall back to source config.')
     }
@@ -497,32 +443,23 @@ copies or substantial portions of the Software.
       this.clearConsole()
       this.logger.log('Starting watch mode...')
       await this.compileConfig()
-      const webpackConfig = (await import(this.webpackConfigPath)).default
-      const compiler = webpack({ ...webpackConfig, mode: 'development' })
-
-      if (!compiler) {
-        this.logger.error('Failed to create webpack compiler instance.')
-        await wait(100)
-        process.exit(1)
-      }
-
       let isRunning = false
+      let watching: { close: () => Promise<void> } | undefined
 
-      const watch = () =>
-        compiler.watch({}, (err, stats) => {
-          if (err) {
-            this.logger.error(`Webpack Error: ${err.message}`)
-            return
-          }
+      const watch = async () => {
+        const rsbuild = await this.createBundler('development')
 
-          if (stats?.hasErrors()) {
-            this.logger.error('Build failed due to errors in the compilation process:', stats.compilation.errors)
-          } else {
-            this.restartApp()
-            isRunning = true
-          }
+        // Runs after every rebuild, which is where the application is restarted. A failed
+        // rebuild reports its own errors and does not reach here, so the process already
+        // running is left alone rather than being replaced by a broken build.
+        rsbuild.onAfterBuild(() => {
+          this.restartApp()
+          isRunning = true
         })
-      watch()
+
+        watching = await rsbuild.build({ watch: true })
+      }
+      await watch()
 
       let debounceWatcher: NodeJS.Timeout
 
@@ -536,8 +473,8 @@ copies or substantial portions of the Software.
               this.appProcess.kill()
               this.appProcess = null
             }
-            await new Promise(resolve => compiler.close(resolve))
-            watch()
+            await watching?.close()
+            await watch()
           }
         }, 300)
       })
@@ -555,11 +492,11 @@ copies or substantial portions of the Software.
         fsWatcher.close()
         if (this.appProcess && !this.appProcess.killed) {
           this.appProcess.on('exit', async () => {
-            await new Promise(resolve => compiler.close(resolve))
+            await watching?.close()
             process.exit(0)
           })
         } else {
-          await new Promise(resolve => compiler.close(resolve))
+          await watching?.close()
           process.exit(0)
         }
       })
