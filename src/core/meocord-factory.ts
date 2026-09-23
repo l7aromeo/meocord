@@ -10,6 +10,7 @@ import { Client } from 'discord.js'
 import { Logger } from '@src/common/index.js'
 import { MeoCordApp } from '@src/core/meocord.app.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
+import { assertBuiltForThisPlatform } from '@src/util/platform.util.js'
 import { MetadataKey } from '@src/enum/index.js'
 
 /**
@@ -50,6 +51,10 @@ export class MeoCordFactory {
     if (!meocordConfig) {
       throw new Error('MeoCord config not found. Ensure meocord.config.ts exists.')
     }
+
+    // Before anything is resolved: a controller or service is what first loads a native addon, and
+    // one built for another platform would otherwise fail there with a linker error.
+    assertBuiltForThisPlatform()
 
     const container = new Container()
 
