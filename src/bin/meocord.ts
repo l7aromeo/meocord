@@ -26,13 +26,19 @@ import { resolveOwnVersion } from '@src/util/package-version.util.js'
 import { buildAppCommand, resolveRuntime } from '@src/util/runtime.util.js'
 import packageJson from '../../package.json' with { type: 'json' }
 import { fileURLToPath } from 'url'
-import { assertNoWebpackHook, createRsbuildConfig } from '@src/build/rsbuild-config.js'
+import { assertNoWebpackHook, createRsbuildConfig, DISCORD_OPTIONAL_NATIVES } from '@src/build/rsbuild-config.js'
 import {
   assertNoBundledNativeAddons,
   bundledModuleFiles,
+  copyPackagesInto,
+  createNativeExternals,
   findBundledNativeAddons,
+  nativeCarrier,
+  type NativePackage,
 } from '@src/build/native-addons.js'
+import { PLATFORM_MANIFEST, writePlatformManifest } from '@src/util/platform.util.js'
 import { loadMeoCordSourceConfig } from '@src/util/meocord-config-loader.util.js'
+import { type MeoCordConfig } from '@src/interface/index.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -336,8 +342,54 @@ copies or substantial portions of the Software.
     })
     const config = meocordConfig?.rsbuild?.(base) ?? base
 
+    // A native addon cannot be inlined into JavaScript, so when bundling, each one is kept out of
+    // the bundle as the bundler meets it and recorded for build() to copy into dist. Added after
+    // the application's hook, so a hook that sets externals of its own does not drop it.
+    const natives = meocordConfig?.bundleDependencies ? createNativeExternals(this.projectRoot) : undefined
+    if (natives) {
+      config.output ??= {}
+      const existing = config.output.externals
+      config.output.externals = [
+        ...(Array.isArray(existing) ? existing : existing ? [existing] : []),
+        natives.externals,
+      ]
+    }
+
     const rsbuild = await createRsbuild({ cwd: this.projectRoot, config })
-    return { rsbuild, meocordConfig }
+    return { rsbuild, meocordConfig, natives }
+  }
+
+  /**
+   * Makes a bundled build's dist runnable on its own: copies every package the bundle still
+   * imports -- the native addons found while building, anything listed in `externals`, and
+   * discord.js's optional accelerators if they are installed -- into `dist/node_modules`, and
+   * marks dist as ESM. Deploying is then copying dist, with no install step.
+   */
+  private packDependencies(meocordConfig: MeoCordConfig, natives: Map<string, NativePackage>) {
+    const dist = path.join(this.projectRoot, 'dist')
+    const packages = new Map<string, string>([...natives].map(([name, { dir }]) => [name, dir]))
+    const nativeNames = new Set(natives.keys())
+
+    const listed = (meocordConfig.externals ?? []).filter((item): item is string => typeof item === 'string')
+    for (const name of [...listed, ...DISCORD_OPTIONAL_NATIVES]) {
+      const dir = path.join(this.projectRoot, 'node_modules', name)
+      if (packages.has(name) || !fs.existsSync(path.join(dir, 'package.json'))) continue
+      packages.set(name, dir)
+      if (nativeCarrier(dir, name, this.projectRoot)) nativeNames.add(name)
+    }
+
+    // Replaced rather than merged, so a package dropped from the application does not linger.
+    fs.rmSync(path.join(dist, 'node_modules'), { recursive: true, force: true })
+    const copied = copyPackagesInto(packages, this.projectRoot, dist)
+    fs.writeFileSync(path.join(dist, 'package.json'), `${JSON.stringify({ type: 'module' }, null, 2)}\n`)
+
+    if (nativeNames.size > 0) {
+      writePlatformManifest(dist)
+      this.logger.info(`Native addons packed into dist: ${[...nativeNames].join(', ')}`)
+    } else {
+      fs.rmSync(path.join(dist, PLATFORM_MANIFEST), { force: true })
+    }
+    if (copied.length > 0) this.logger.info(`dist/node_modules holds ${copied.length} packages; nothing else to install.`)
   }
 
   /**
@@ -350,7 +402,7 @@ copies or substantial portions of the Software.
       this.clearConsole()
       this.logger.info(`Building ${mode} version...`)
 
-      const { rsbuild, meocordConfig } = await this.createBundler(mode)
+      const { rsbuild, meocordConfig, natives } = await this.createBundler(mode)
 
       const bundledFiles: string[] = []
       if (meocordConfig?.bundleDependencies) {
@@ -360,9 +412,12 @@ copies or substantial portions of the Software.
       }
       await rsbuild.build()
 
-      // A bundled native addon builds, starts, and works on this machine -- the bundle reaches
-      // it through this machine's node_modules -- then fails in production on first load.
-      assertNoBundledNativeAddons(findBundledNativeAddons(bundledFiles, this.projectRoot))
+      if (meocordConfig?.bundleDependencies && natives) {
+        // A safety net behind the externals function: a native addon that still reached the
+        // bundle would run on this machine -- through its node_modules -- and fail in production.
+        assertNoBundledNativeAddons(findBundledNativeAddons(bundledFiles, this.projectRoot))
+        this.packDependencies(meocordConfig, natives.found)
+      }
 
       this.logger.info(`${capitalize(mode)} build completed successfully.`)
     } catch (error: any) {

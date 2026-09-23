@@ -50,11 +50,8 @@ export interface RsbuildConfigOptions {
    */
   bundleDependencies?: boolean
   /**
-   * Modules to leave as runtime imports even when bundling.
-   *
-   * Native addons cannot be bundled -- a `.node` binary is not JavaScript and is built for
-   * one platform -- so anything reaching one has to be listed here and installed in
-   * production. `sharp` and canvas bindings are the usual cases.
+   * Modules to leave as runtime imports even when bundling. Native addons are found without being
+   * listed -- see createNativeExternals -- so this is for anything kept out for another reason.
    */
   externals?: (string | RegExp)[]
 }

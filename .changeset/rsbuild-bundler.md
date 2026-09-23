@@ -42,13 +42,19 @@ rsbuild: config => {
 - Anything else goes through `tools.rspack`, which takes a webpack-shaped config.
 - The `MeoCordWebpackConfig` type is removed; the hook is typed with Rsbuild's `RsbuildConfig`.
 
-**New: `bundleDependencies` and `externals`.** Set `bundleDependencies: true` to put production
-dependencies inside `dist`, so the bot runs without `node_modules`. Native addons such as `sharp`
-cannot be bundled — list them in `externals` and install them on the server. `meocord build`
-detects a bundled native addon and fails, naming the packages to add, because such a build would
-otherwise run on the machine that built it and fail in production the first time the addon loads.
-discord.js's optional accelerators — `zlib-sync`, `bufferutil`, `utf-8-validate` — are left out of
-the bundle automatically.
+**New: `bundleDependencies`.** Set `bundleDependencies: true` and `dist` holds everything the bot
+needs, so deploying is copying `dist` — no `node_modules` beside it, no install step. Plain
+JavaScript is bundled into `main.js`. Native addons such as `sharp` cannot be inlined into
+JavaScript, so MeoCord finds them while building — including ones imported by another dependency
+— keeps them out of the bundle, and copies each with its platform binary into `dist/node_modules`.
+Nothing has to be listed.
+
+A build carrying native addons only runs on the platform it was built on, so build where you
+deploy — inside the image, for a container. The build records its platform in
+`dist/meocord.platform.json`, and a bot started on another platform stops before going online with
+a message naming both, rather than failing on the first command that loads the addon. discord.js's
+optional accelerators — `zlib-sync`, `bufferutil`, `utf-8-validate` — are never bundled, and are
+packed if installed.
 
 **Fixed: builds used the previous build's config.** `meocord build` read the compiled
 `dist/meocord.config.mjs` left by the last build rather than `meocord.config.ts`, so an edit took

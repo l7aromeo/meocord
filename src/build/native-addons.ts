@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import { existsSync, readdirSync, readFileSync } from 'fs'
+import { cpSync, existsSync, readdirSync, readFileSync } from 'fs'
 import path from 'path'
 
 /**
@@ -105,15 +105,34 @@ function resolveDependencyDir(name: string, from: string, root: string): string 
   return candidates.find(dir => existsSync(path.join(dir, 'package.json')))
 }
 
+/** A package's declared dependencies, runtime and optional, or none if it cannot be read. */
+function readDependencies(dir: string): { dependencies: string[]; optional: string[] } {
+  try {
+    const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'))
+    return { dependencies: Object.keys(pkg.dependencies ?? {}), optional: Object.keys(pkg.optionalDependencies ?? {}) }
+  } catch {
+    return { dependencies: [], optional: [] }
+  }
+}
+
 /**
- * Bundled packages that load a native addon, mapped to the package holding the binary.
+ * The package holding the compiled addon an installed package loads, or undefined for plain
+ * JavaScript.
  *
- * The binary is rarely in the package that gets bundled. sharp and most napi packages ship a
- * JavaScript wrapper and publish the compiled addon separately, one package per platform,
- * declared as optional dependencies so only the matching one installs. The wrapper's code is
- * bundled; the binary it loads at runtime is not -- so the wrapper and its installed optional
- * dependencies are both checked.
+ * The binary is rarely in the package that gets imported. node-gyp packages keep it in their own
+ * directory, under `build/Release`. napi-rs packages and sharp ship a JavaScript loader and publish
+ * each platform's binary as a separate package, declared as an optional dependency so only the
+ * matching one installs. Both layouts are checked.
  */
+export function nativeCarrier(dir: string, name: string, root: string): string | undefined {
+  if (containsNativeBinary(dir)) return name
+  return readDependencies(dir).optional.find(dependency => {
+    const dependencyDir = resolveDependencyDir(dependency, dir, root)
+    return dependencyDir !== undefined && containsNativeBinary(dependencyDir)
+  })
+}
+
+/** Bundled packages that load a native addon, mapped to the package holding the binary. */
 export function findBundledNativeAddons(bundledFiles: Iterable<string>, root: string): Map<string, string> {
   const packages = new Map<string, string>()
   for (const file of bundledFiles) {
@@ -124,25 +143,117 @@ export function findBundledNativeAddons(bundledFiles: Iterable<string>, root: st
   const natives = new Map<string, string>()
   for (const [dir, name] of packages) {
     if (natives.has(name)) continue
-    if (containsNativeBinary(dir)) {
-      natives.set(name, name)
-      continue
-    }
-
-    let optional: string[]
-    try {
-      optional = Object.keys(JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8')).optionalDependencies ?? {})
-    } catch {
-      continue
-    }
-    const carrier = optional.find(dependency => {
-      const dependencyDir = resolveDependencyDir(dependency, dir, root)
-      return dependencyDir !== undefined && containsNativeBinary(dependencyDir)
-    })
+    const carrier = nativeCarrier(dir, name, root)
     if (carrier) natives.set(name, carrier)
   }
-
   return natives
+}
+
+/**
+ * The package a bare import request names, or undefined for a relative path, an absolute path, or
+ * a Node builtin -- none of which live in node_modules.
+ */
+export function packageNameOfRequest(request: string): string | undefined {
+  if (!request || request.startsWith('.') || request.startsWith('/') || /^[a-z]+:/i.test(request)) return undefined
+  if (/^[A-Za-z]:[\\/]/.test(request)) return undefined
+  const [first, second] = request.split('/')
+  if (!first.startsWith('@')) return first
+  return second ? `${first}/${second}` : undefined
+}
+
+/** Where `name` resolves from `context` the way Node would: the nearest node_modules walking up. */
+function resolveInstalledPackage(name: string, context: string, root: string): string | undefined {
+  let dir = context
+  for (;;) {
+    const candidate = path.join(dir, 'node_modules', name)
+    if (existsSync(path.join(candidate, 'package.json'))) return candidate
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  const hoisted = path.join(root, 'node_modules', name)
+  return existsSync(path.join(hoisted, 'package.json')) ? hoisted : undefined
+}
+
+/** A native package kept out of the bundle, and where it was installed. */
+export interface NativePackage {
+  /** Directory the package resolved to. */
+  dir: string
+  /** The package holding the compiled binary: the package itself, or its platform package. */
+  carrier: string
+}
+
+interface ExternalRequest {
+  request?: string
+  context?: string
+}
+type ExternalCallback = (error?: Error, result?: string) => void
+
+/**
+ * An Rspack `externals` function that keeps every native addon out of the bundle.
+ *
+ * Decided while the bundler resolves imports, so it sees every request -- including one made by a
+ * plain JavaScript dependency deep in the graph -- and never has to be told what to look for. Each
+ * native package it keeps out is recorded in `found`, so the build can copy it into the output.
+ */
+export function createNativeExternals(root: string): {
+  externals: (data: ExternalRequest, callback: ExternalCallback) => void
+  found: Map<string, NativePackage>
+} {
+  const found = new Map<string, NativePackage>()
+  const plain = new Set<string>()
+
+  const externals = ({ request, context }: ExternalRequest, callback: ExternalCallback) => {
+    const name = request ? packageNameOfRequest(request) : undefined
+    if (!name || plain.has(name)) return callback()
+    if (found.has(name)) return callback(undefined, request)
+
+    const dir = resolveInstalledPackage(name, context ?? root, root)
+    const carrier = dir ? nativeCarrier(dir, name, root) : undefined
+    if (!dir || !carrier) {
+      plain.add(name)
+      return callback()
+    }
+    found.set(name, { dir, carrier })
+    callback(undefined, request)
+  }
+
+  return { externals, found }
+}
+
+/**
+ * Copies packages, with everything they need at runtime, into `<outDir>/node_modules`.
+ *
+ * This is what lets a bundled application run with nothing installed beside it: the packages that
+ * could not be bundled travel inside the output directory, where Node finds them by walking up
+ * from the bundle. Each package's installed dependencies and optional dependencies are followed --
+ * that is where a platform binary lives -- and one not installed for this platform is skipped.
+ * Type-only `@types` packages are left behind; some packages list them as runtime dependencies,
+ * and they only add weight.
+ *
+ * @returns The names copied.
+ */
+export function copyPackagesInto(packages: Map<string, string>, root: string, outDir: string): string[] {
+  const copied = new Set<string>()
+
+  const copy = (name: string, dir: string) => {
+    if (copied.has(name) || name.startsWith('@types/')) return
+    copied.add(name)
+    const target = path.join(outDir, 'node_modules', name)
+    // A package's own nested node_modules comes along with it, so only hoisted dependencies
+    // need finding separately.
+    cpSync(dir, target, { recursive: true, dereference: true })
+
+    const { dependencies, optional } = readDependencies(dir)
+    for (const dependency of [...dependencies, ...optional]) {
+      if (existsSync(path.join(dir, 'node_modules', dependency, 'package.json'))) continue
+      const dependencyDir = resolveDependencyDir(dependency, dir, root)
+      if (dependencyDir) copy(dependency, dependencyDir)
+    }
+  }
+
+  for (const [name, dir] of packages) copy(name, dir)
+  return [...copied]
 }
 
 /**

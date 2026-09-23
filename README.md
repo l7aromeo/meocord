@@ -250,13 +250,13 @@ MeoCord builds with [Rsbuild](https://rsbuild.rs). The hook receives its configu
 
 - **Raw bundler rules** go through `tools.rspack`, which takes a webpack-shaped configuration.
 
-| Option               | Default | Description                                                                              |
-| -------------------- | ------- | ---------------------------------------------------------------------------------------- |
-| `discordToken`       | —       | The bot token. Read it from the environment rather than writing it here.                 |
-| `appName`            | —       | Shown in log lines.                                                                      |
-| `rsbuild`            | —       | `(config) => config` — adjust the Rsbuild configuration.                                 |
-| `bundleDependencies` | `false` | Bundle production dependencies into `dist`, so the bot runs without `node_modules`.      |
-| `externals`          | `[]`    | Modules to keep out of the bundle even when bundling. Native addons must be listed here. |
+| Option               | Default | Description                                                                                            |
+| -------------------- | ------- | ------------------------------------------------------------------------------------------------------ |
+| `discordToken`       | —       | The bot token. Read it from the environment rather than writing it here.                               |
+| `appName`            | —       | Shown in log lines.                                                                                    |
+| `rsbuild`            | —       | `(config) => config` — adjust the Rsbuild configuration.                                               |
+| `bundleDependencies` | `false` | Put everything the bot needs inside `dist`, native addons included, so it runs without `node_modules`. |
+| `externals`          | `[]`    | Modules to keep out of the bundle. Native addons are found without being listed.                       |
 
 See [Self-contained builds](#self-contained-builds) for when to turn on `bundleDependencies`.
 
@@ -982,33 +982,38 @@ npx meocord start --prod
 
 ### Self-contained builds
 
-By default `dist/main.js` imports its dependencies at runtime, which is why the server needs `node_modules`. Set `bundleDependencies` to put them inside the bundle instead:
+By default `dist/main.js` imports its dependencies at runtime, which is why the server needs `node_modules`. Set `bundleDependencies` and the build puts everything the bot needs inside `dist` instead:
 
 ```typescript
 export default {
   discordToken: process.env.TOKEN!,
   bundleDependencies: true,
-  // Native addons cannot be bundled — see below.
-  externals: ['sharp'],
 } satisfies MeoCordConfig
 ```
 
-The server then needs only `dist/` and whatever you list in `externals`:
+Deploying is then copying `dist/` — no `node_modules` beside it, no install step:
 
 ```
 dist/
-node_modules/   (only the packages in `externals`)
-package.json    (declaring only those packages)
-.env            (if used)
+├── main.js
+├── assets/
+├── node_modules/          (native addons only, if you use any)
+├── package.json
+└── meocord.platform.json  (if there are native addons)
 ```
 
-**Native addons are the exception.** A package that ships a `.node` binary — `sharp`, canvas bindings, database drivers — cannot be bundled: the binary is not JavaScript, and it is compiled for one operating system and CPU. List every such package in `externals` and install it on the server, where it gets the binary for that platform.
+Plain JavaScript dependencies are bundled into `main.js`. **Native addons** — packages that ship a compiled `.node` binary, like `sharp`, canvas bindings or database drivers — cannot be inlined into JavaScript, so MeoCord finds them itself while building, keeps them out of the bundle, and copies each one, with its platform binary and what it needs at runtime, into `dist/node_modules`. There is nothing to list: the build tells you which it packed.
 
-`meocord build` checks this for you. When `bundleDependencies` is on and a bundled package loads a native addon, the build fails, names the packages, and gives you the `externals` line to add. Without that check the build would succeed — and the bot would even run on the machine that built it, because the bundle reaches the binary through that machine's `node_modules` — then fail in production the first time the addon loads, which for an image library is usually a command rather than startup.
+```
+Native addons packed into dist: meo-canvas, sharp
+dist/node_modules holds 7 packages; nothing else to install.
+```
 
-discord.js's own optional accelerators — `zlib-sync`, `bufferutil`, `utf-8-validate` — are handled for you: they are never bundled, and discord.js carries on without them if they are not installed, exactly as it does today.
+**Build on the platform you deploy to.** A compiled binary only loads on the operating system, CPU and C library it was built for — a build made on a Mac carries macOS binaries, and a Debian (glibc) binary does not load on Alpine (musl). For a container, run `meocord build` inside the image. The build records its platform in `meocord.platform.json`, and a bot started somewhere else stops before going online with a message naming both, instead of failing on the first command that renders an image.
 
-**On bun, keep it from installing at runtime.** With no `node_modules` directory in reach, bun downloads any package the moment something imports it — so a bundled bot would fetch discord.js's optional accelerators from the registry in production instead of carrying on without them. `meocord start` passes `--no-install` for you. If you launch the bundle yourself, pass it too:
+Use `externals` for anything you want kept out of the bundle for another reason; those are copied into `dist/node_modules` too. discord.js's optional accelerators — `zlib-sync`, `bufferutil`, `utf-8-validate` — are never bundled, are packed if you installed them, and are simply skipped by discord.js if you did not.
+
+**On bun, keep it from installing at runtime.** With no `node_modules` in reach, bun downloads any package the moment something imports it. `meocord start` passes `--no-install` for you. If you launch the bundle yourself, pass it too:
 
 ```dockerfile
 CMD ["bun", "--no-install", "dist/main.js"]

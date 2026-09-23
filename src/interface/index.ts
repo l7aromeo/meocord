@@ -51,24 +51,27 @@ export interface MeoCordConfig {
    */
   discordToken: string
   /**
-   * Bundle production dependencies into the build output.
+   * Put everything the bot needs inside `dist`, so it runs without `node_modules`.
    *
-   * Off by default, matching how the build has always behaved: dependencies stay runtime
-   * imports, so `dist` needs `node_modules` beside it to run. Turn it on to produce output
-   * that runs on its own, which is what a container image with no install step wants.
+   * Off by default, matching how the build has always behaved: dependencies stay runtime imports,
+   * so `dist` needs `node_modules` beside it. Turn it on to deploy `dist` alone.
    *
-   * Native addons are the exception and cannot be bundled -- a `.node` binary is not
-   * JavaScript and is built for a single platform -- so list anything reaching one in
-   * {@link externals} and install those in production.
+   * Plain JavaScript is bundled into `main.js`. Native addons -- packages shipping a compiled
+   * `.node` binary, like `sharp` -- are found while building, kept out of the bundle, and copied
+   * with their platform binary into `dist/node_modules`. Such a build only runs on the platform it
+   * was built on; it records that platform, and refuses to start anywhere else.
    */
   bundleDependencies?: boolean
   /**
-   * Modules to leave as runtime imports even when {@link bundleDependencies} is on.
+   * Modules to keep out of the bundle.
+   *
+   * Native addons need not be listed; they are found and packed on their own. Anything listed here
+   * as a package name is also copied into `dist/node_modules` when {@link bundleDependencies} is on.
    *
    * @example
    * ```ts
-   * // sharp ships a platform-specific .node binary and cannot be bundled.
-   * externals: ['sharp']
+   * // Loaded by the runtime rather than bundled, e.g. for instrumentation.
+   * externals: ['@opentelemetry/api']
    * ```
    */
   externals?: (string | RegExp)[]
