@@ -6,19 +6,12 @@ export default {
   // Read from the environment rather than written here: this file is committed, and a
   // token pasted into it is a token pushed to the remote. Copy .env.example to .env.
   discordToken: process.env.DISCORD_TOKEN!,
-  webpack: config => {
-    config.module.rules?.push({
-      test: /\.(md|html)$/i,
-      type: 'asset/source',
-    })
-    config.module.rules?.push({
-      test: /\.(gif|jpg|jpeg|png|svg|woff|woff2|eot|ttf|otf)$/i,
-      type: 'asset/resource',
-      exclude: /node_modules/,
-      generator: {
-        filename: 'assets/[name][ext]',
-      },
-    })
+  rsbuild: config => {
+    // Images, fonts, svg and media are handled by the bundler already -- only the file types
+    // it does not know about need declaring. `assetsInclude` treats these as assets rather
+    // than modules, which is what makes `import readme from './readme.md'` give you its text.
+    config.source ??= {}
+    config.source.assetsInclude = /\.(md|html)$/i
 
     return config
   },

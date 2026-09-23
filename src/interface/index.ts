@@ -5,7 +5,7 @@
  */
 
 import { BaseInteraction, Message, MessageReaction, type PartialUser, User } from 'discord.js'
-import { type Configuration } from 'webpack'
+import { type RsbuildConfig } from '@rsbuild/core'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 
 /**
@@ -36,52 +36,9 @@ export interface ReactionHandlerOptions {
 }
 
 /**
- * Interface representing the Webpack configuration for the MeoCord framework.
- * This interface extends the base Webpack Configuration and provides stricter type definitions
- * with additional required properties to ensure a complete and valid Webpack setup.
- */
-export interface MeoCordWebpackConfig extends Omit<Configuration, 'externals'> {
-  /** Defines the mode of the Webpack build process (e.g., 'development' or 'production'). */
-  mode: NonNullable<Configuration['mode']>
-
-  /** The entry point file path(s) for the application. Represents the starting point(s) of the build. */
-  entry: string
-
-  /** Configuration for build optimization settings, such as code splitting and minimization. */
-  optimization: NonNullable<Configuration['optimization']>
-
-  /**
-   * Specifies external dependencies to exclude from the output bundle.
-   * Can be used to exclude libraries from being bundled, like `node_modules`.
-   */
-  externals: Extract<NonNullable<Configuration['externals']>, any[]>
-
-  /**
-   * Rules and configurations for handling module files during the build process.
-   * Includes loaders for processing various file types.
-   */
-  module: NonNullable<Configuration['module']>
-
-  /**
-   * Configuration for module resolution, including resolving extensions and alias paths.
-   * Determines how imported files are resolved.
-   */
-  resolve: NonNullable<Configuration['resolve']>
-
-  /**
-   * Specifies output settings for the Webpack build, excluding path, publicPath, and filename.
-   * Defines properties like asset management and global settings.
-   */
-  output: Omit<NonNullable<Configuration['output']>, 'path' | 'publicPath' | 'filename'>
-
-  /** Configures the stats object to control the output of build process logs. */
-  stats: NonNullable<Configuration['stats']>
-}
-
-/**
  * Configuration interface for the MeoCord application.
  * This interface defines optional configurations for the application, including
- * metadata, authentication tokens, and Webpack configuration overrides.
+ * metadata, authentication tokens, and bundler configuration overrides.
  */
 export interface MeoCordConfig {
   /**
@@ -94,12 +51,40 @@ export interface MeoCordConfig {
    */
   discordToken: string
   /**
-   * Function to customize the Webpack configuration.
-   * Allows overriding and extending the default Webpack setup for the application.
-   * @param config - A callback function to modify the existing Webpack configuration.
-   * @returns A modified Webpack configuration or `undefined` if no customization is needed.
+   * Bundle production dependencies into the build output.
+   *
+   * Off by default, matching how the build has always behaved: dependencies stay runtime
+   * imports, so `dist` needs `node_modules` beside it to run. Turn it on to produce output
+   * that runs on its own, which is what a container image with no install step wants.
+   *
+   * Native addons are the exception and cannot be bundled -- a `.node` binary is not
+   * JavaScript and is built for a single platform -- so list anything reaching one in
+   * {@link externals} and install those in production.
    */
-  webpack?: (config: MeoCordWebpackConfig) => MeoCordWebpackConfig | undefined
+  bundleDependencies?: boolean
+  /**
+   * Modules to leave as runtime imports even when {@link bundleDependencies} is on.
+   *
+   * @example
+   * ```ts
+   * // sharp ships a platform-specific .node binary and cannot be bundled.
+   * externals: ['sharp']
+   * ```
+   */
+  externals?: (string | RegExp)[]
+  /**
+   * Function to customize the Rsbuild configuration.
+   * Allows overriding and extending the default bundler setup for the application.
+   *
+   * Replaces the former `webpack` hook. Rsbuild handles images, fonts, svg and media itself,
+   * so rules for those are no longer needed; `output.distPath` controls where they land. Raw
+   * bundler rules remain reachable through `tools.rspack`, which takes a webpack-shaped
+   * config.
+   *
+   * @param config - The configuration to modify.
+   * @returns A modified configuration, or `undefined` to keep the default.
+   */
+  rsbuild?: (config: RsbuildConfig) => RsbuildConfig | undefined
 }
 
 export type {
