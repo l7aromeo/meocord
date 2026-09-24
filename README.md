@@ -748,6 +748,34 @@ async profile(interaction: ChatInputCommandInteraction) {
 
 Each call takes only the flags Discord accepts for it, computed afresh: an ephemeral follow-up never makes later messages ephemeral. `send()` and `followUp()` payloads are typed so an impossible flag does not compile. Once a message uses Components V2 its edits keep the flag, and content and embeds are dropped from them. When an edit re-sends an embed or Components V2 media whose image is one of the message's own Discord attachments, the URL is pointed at `attachment://` so the image survives the edit.
 
+### `@Defer`
+
+`@Defer()` acknowledges for the handler, in two steps, so a slow guard or handler never misses Discord's three seconds, and a stranger's click never touches someone else's message:
+
+1. **Before guards**, a deferred reply for a command (`ephemeral: true` makes it private), or an invisible deferred update for a button, select menu or modal from a message.
+2. **Once guards, validation and pipes allow the call**, for a component: its message's controls are disabled, the clicked button shows the loading emoji, and the presenter's loading view is added.
+
+```typescript
+@Command('refresh/{uid}', CommandType.BUTTON)
+@UseGuard(OwnerGuard)
+@Defer()
+async refresh(interaction: ButtonInteraction, { uid }: { uid: string }) {
+  await respond(interaction).send({ embeds: [await this.cards.render(uid)] }) // components come back as they were
+}
+```
+
+`send()` without `components` puts the message's components back as they were before the lock — a button disabled on purpose stays disabled — and drops the loading view; `components: []` clears them. A handler that returns without answering has its message put back too, unless something else edited it meanwhile. When the handler throws, the error is shown privately and the message restored.
+
+| Option                  | Default   | Effect                                                                                                               |
+| ----------------------- | --------- | -------------------------------------------------------------------------------------------------------------------- |
+| `ephemeral`             | `false`   | A command's deferred reply is private.                                                                               |
+| `disable`               | `'all'`   | `'clicked'` disables only the control used; `'none'` skips step 2.                                                   |
+| `mode`                  | `'eager'` | `'auto'` acknowledges only if nothing answered after `after` ms, so a fast handler answers with one reply or update. |
+| `after`                 | `1500`    | For `'auto'`; never later than 2.5 s after the interaction was created.                                              |
+| `suppressNotifications` | `false`   | New messages (a first reply after `'auto'` waited, and follow-ups) do not notify.                                    |
+
+A guard that returns `false` under `@Defer` leaves nothing behind: a command's deferred reply is deleted, and a component's message was never touched. To tell the user why, throw `GuardDeniedError`; it is answered privately. Answer through `respond()`, not `interaction.reply()`, which fails after the acknowledgement. `@Defer` is for interaction handlers: on a message, reaction, event or autocomplete handler it throws. A handler that shows a modal cannot use it, since a modal must be the first response.
+
 ### Where the interaction happened
 
 A user-installed app can be used in servers the bot is not in and in direct messages between users, where the bot cannot use the channel API. `respond()` always answers through the interaction's own methods, which work everywhere, and turns to the channel only when the interaction's fifteen-minute token has expired and the bot is present. `getInstallContext(interaction)` reports the same thing to your code:
@@ -793,15 +821,17 @@ Without one, errors show "Oops!" as their title in `Theme.errorColor`, and the l
 
 Every handler — a command, a component, an autocomplete, a message, a reaction or an [event](#gateway-events) — runs through the same stages, in this order:
 
-1. **Guards** decide whether the handler runs at all.
-2. **Interceptors** wrap everything after them: they can act before and after, skip the handler, or replace its error.
-3. **Validation** checks the handler's input against a schema, and **pipes** transform the valid values.
-4. **Cooldowns** count the call, and block it once the handler has run too often.
-5. **The handler** runs with what the stages produced.
+1. **[`@Defer`](#defer), step 1** acknowledges the interaction, so slow stages never miss Discord's three seconds.
+2. **Guards** decide whether the handler runs at all.
+3. **Interceptors** wrap everything after them: they can act before and after, skip the handler, or replace its error.
+4. **Validation** checks the handler's input against a schema, and **pipes** transform the valid values.
+5. **Cooldowns** count the call, and block it once the handler has run too often.
+6. **`@Defer`, step 2** locks the component's message and shows the loading view, now that the call will run.
+7. **The handler** runs with what the stages produced.
 
 **Exception filters** surround all of it: an error from any stage or the handler reaches them, and one no filter handles goes to the built-in fallback. The handler, its interceptors and filters, and the fallback all answer through [`respond()`](#interaction-responses), so each sees where the others left the answer.
 
-Validation and pipes apply to command, component and modal handlers, whose options, customId params and fields they check. Cooldowns apply to those and to message handlers. An autocomplete handler, which must answer within three seconds, runs its guards and filters but no interceptors.
+Validation and pipes apply to command, component and modal handlers, whose options, customId params and fields they check. Cooldowns apply to those and to message handlers. An autocomplete handler, which must answer within three seconds, runs its guards and filters but no interceptors. `@Defer` applies to command, component and modal handlers only.
 
 Guards, interceptors and filters apply at three levels, which run in this order: globally, from `@MeoCord({ guards, interceptors, filters })`; on a controller, for every handler it declares or inherits; and on a method. Cooldowns apply on a controller or a method. A stage also sees what it is running for through `ExecutionContext`, whose `getType()` is `'interaction'`, `'autocomplete'`, `'message'`, `'reaction'` or `'event'`; a guard or interceptor declared with `types` runs only for those.
 
