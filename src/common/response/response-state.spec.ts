@@ -17,7 +17,7 @@ import { vi } from 'vitest'
 import { Logger } from '@src/common/logger.js'
 import { Theme } from '@src/common/theme.js'
 import { GuardDeniedError } from '@src/common/errors.js'
-import { respond } from '@src/common/response/response-state.js'
+import { respond, responseOf } from '@src/common/response/response-state.js'
 import { RENDERED_CONTAINER_ID, setPresenter } from '@src/common/response/presenter.js'
 import { UnroutedExecutionContext } from '@src/common/execution-context.js'
 import { createDiscordError, createMockInteraction, createMockMessage, getResponse } from '@src/testing/index.js'
@@ -134,7 +134,7 @@ describe('respond()', () => {
       vi.mocked(interaction.editReply).mockResolvedValue(messageWith({ flags: SuppressEmbeds }))
 
       await respond(interaction).lock()
-      await respond(interaction).release()
+      await responseOf(interaction).release()
       await respond(interaction).edit('done')
 
       const edits = vi.mocked(interaction.editReply).mock.calls.map(([payload]) => Number((payload as Payload).flags ?? 0))

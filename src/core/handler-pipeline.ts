@@ -3,7 +3,7 @@ import { type Container } from 'inversify'
 import { MetadataKey } from '@src/enum/index.js'
 import { type ResponsePresenter } from '@src/interface/index.js'
 import { setPresenter } from '@src/common/response/presenter.js'
-import { respond, type ResponseState } from '@src/common/response/response-state.js'
+import { type InteractionResponse, responseOf } from '@src/common/response/response-state.js'
 import { deferMisuseError, handlerDefer, nonInteractionHandler, startDefer } from '@src/core/defer.js'
 import { callGuardedHandler, type GuardEntry, handlerGuards, runGuards } from '@src/core/guard-runner.js'
 import {
@@ -278,8 +278,8 @@ export async function runHandler(
   const receivedAt = Date.now()
   const defer = type === 'interaction' ? handlerDefer(Object.getPrototypeOf(instance), methodName) : undefined
   const [first] = args as [{ isRepliable?: () => boolean } | undefined]
-  const response: ResponseState | undefined =
-    defer && first?.isRepliable?.() ? respond(first as Parameters<typeof respond>[0]) : undefined
+  const response: InteractionResponse | undefined =
+    defer && first?.isRepliable?.() ? responseOf(first as Parameters<typeof responseOf>[0]) : undefined
 
   let ran = false
   try {

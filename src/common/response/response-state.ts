@@ -136,8 +136,100 @@ function forMode(body: Body, v2: boolean): Body {
  * How one interaction is answered: the single place its replies, edits and follow-ups go through, so
  * each call picks the right Discord method for where the answer stands. Get it with `respond()`.
  */
-export class ResponseState {
+export interface ResponseState {
   /** Where the interaction happened, and whether the bot can reach the channel there. */
+  readonly location: InstallContext
+
+  /** Where the answer stands, re-read from the interaction so answers made around this state count. */
+  readonly state: ResponsePhase
+
+  /** The message this state last sent or edited, or the message a component is on. Read-only: edit through the state. */
+  readonly message: Message | undefined
+
+  /** The components and embeds of the message before `@Defer` locked it; `undefined` until then. */
+  readonly original: { readonly components: readonly unknown[]; readonly embeds: readonly APIEmbed[] } | undefined
+
+  /**
+   * Acknowledges the interaction without answering it yet: a deferred reply for a command, and an
+   * invisible deferred update for a component or a modal from a message. Does nothing once answered,
+   * and concurrent calls share one acknowledgement.
+   *
+   * @param options - `ephemeral` to make a command's deferred reply private.
+   */
+  acknowledge(options?: { ephemeral?: boolean }): Promise<void>
+
+  /**
+   * Locks the message a component is on, as `@Defer`'s second step does: snapshots its components
+   * and embeds, disables its controls, shows the loading emoji on the clicked button, and adds the
+   * presenter's loading view. Commands have no message to lock. Does nothing once locked.
+   *
+   * The loading view is left out when it would pass 10 embeds or the Components V2 component limit;
+   * the lock still applies. A loading view left behind by a crash or restart is dropped first.
+   *
+   * @param options - Which controls to disable.
+   */
+  lock(options?: ResponseLockOptions): Promise<void>
+
+  /**
+   * Sends the answer: a reply to an unanswered command, an update of an unanswered component's
+   * message, and an edit once the interaction is deferred or replied. A second `send()` edits again.
+   *
+   * After `@Defer` locked a message, omitting `components` puts back its components as they were
+   * before the lock, and omitting `embeds` drops the loading view; `components: []` clears them.
+   *
+   * @param payload - Text, or reply options.
+   * @returns The message sent or edited, when Discord returns it.
+   */
+  send(payload: ResponsePayload): Promise<Message | undefined>
+
+  /**
+   * Edits the answer, routed as `send()` is: an edit once the interaction is answered.
+   *
+   * @param payload - Text, or edit options.
+   * @returns The edited message, when Discord returns it.
+   */
+  edit(payload: ResponseEditPayload): Promise<Message | undefined>
+
+  /**
+   * Sends another message after the answer. Before any answer it is the first reply. While a command's
+   * reply is deferred and nothing is sent yet, Discord turns a follow-up into the deferred reply and
+   * ignores its flags, so it is sent as that edit; a private follow-up on a public deferral deletes the
+   * deferral first and is sent privately.
+   *
+   * @param payload - Text, or reply options; `Ephemeral` makes the follow-up private.
+   * @returns The message sent, when Discord returns it.
+   */
+  followUp(payload: ResponsePayload): Promise<Message | undefined>
+
+  /** Deletes the answer: the reply, or for a component deferred without a reply of its own, its message. */
+  delete(): Promise<void>
+
+  /**
+   * Shows a modal. A modal must be the interaction's first response, so this throws once the
+   * interaction is acknowledged, rather than failing at Discord.
+   *
+   * @param modal - The modal to show.
+   */
+  modal(modal: JSONEncodable<APIModalInteractionResponseCallbackData> | ModalComponentData): Promise<void>
+
+  /**
+   * Presents an error, styled by the application's presenter, and never throws; a delivery failure is
+   * logged at debug level.
+   *
+   * - Unanswered: a private reply.
+   * - A command whose reply is deferred: `'reply'` edits that reply into the error; `'private'`
+   *   deletes it, then follows up privately.
+   * - A component on a private (ephemeral) message: the error is added to that message, where it fits.
+   * - Otherwise: a private follow-up, never an edit of the message the user clicked.
+   *
+   * @param error - The error, handed to the presenter so it can style it by kind.
+   * @param options - What the user is told, and who sees it.
+   */
+  error(error: unknown, options?: ResponseErrorOptions): Promise<void>
+}
+
+/** The response state behind `respond()`, with what `@Defer` and the testing helpers use besides. */
+export class InteractionResponse implements ResponseState {
   readonly location: InstallContext
 
   private phase: ResponsePhase = 'unanswered'
@@ -163,18 +255,15 @@ export class ResponseState {
     this.v2 = Boolean(message?.flags?.has(MessageFlags.IsComponentsV2))
   }
 
-  /** Where the answer stands, re-read from the interaction so answers made around this state count. */
   get state(): ResponsePhase {
     this.sync()
     return this.phase
   }
 
-  /** The message this state last sent or edited, or the message a component is on. Read-only: edit through the state. */
   get message(): Message | undefined {
     return this.lastMessage ?? ('message' in this.interaction ? (this.interaction.message ?? undefined) : undefined)
   }
 
-  /** The components and embeds of the message before `@Defer` locked it; `undefined` until then. */
   get original(): { readonly components: readonly unknown[]; readonly embeds: readonly APIEmbed[] } | undefined {
     return this.snapshot
   }
@@ -201,13 +290,6 @@ export class ResponseState {
     return flags
   }
 
-  /**
-   * Acknowledges the interaction without answering it yet: a deferred reply for a command, and an
-   * invisible deferred update for a component or a modal from a message. Does nothing once answered,
-   * and concurrent calls share one acknowledgement.
-   *
-   * @param options - `ephemeral` to make a command's deferred reply private.
-   */
   acknowledge(options: { ephemeral?: boolean } = {}): Promise<void> {
     this.sync()
     if (this.phase !== 'unanswered') return this.acknowledging ?? Promise.resolve()
@@ -281,16 +363,6 @@ export class ResponseState {
     }
   }
 
-  /**
-   * Locks the message a component is on, as `@Defer`'s second step does: snapshots its components
-   * and embeds, disables its controls, shows the loading emoji on the clicked button, and adds the
-   * presenter's loading view. Commands have no message to lock. Does nothing once locked.
-   *
-   * The loading view is left out when it would pass 10 embeds or the Components V2 component limit;
-   * the lock still applies. A loading view left behind by a crash or restart is dropped first.
-   *
-   * @param options - Which controls to disable.
-   */
   async lock({ disable = 'all' }: ResponseLockOptions = {}): Promise<void> {
     if (this.snapshot || disable === 'none' || answersWithOwnMessage(this.interaction)) return
     const message = 'message' in this.interaction ? this.interaction.message : undefined
@@ -384,16 +456,6 @@ export class ResponseState {
     }
   }
 
-  /**
-   * Sends the answer: a reply to an unanswered command, an update of an unanswered component's
-   * message, and an edit once the interaction is deferred or replied. A second `send()` edits again.
-   *
-   * After `@Defer` locked a message, omitting `components` puts back its components as they were
-   * before the lock, and omitting `embeds` drops the loading view; `components: []` clears them.
-   *
-   * @param payload - Text, or reply options.
-   * @returns The message sent or edited, when Discord returns it.
-   */
   async send(payload: ResponsePayload): Promise<Message | undefined> {
     this.cancelScheduled()
     await this.acknowledging
@@ -403,25 +465,10 @@ export class ResponseState {
     return answersWithOwnMessage(this.interaction) ? this.reply(body) : this.update(body)
   }
 
-  /**
-   * Edits the answer, routed as `send()` is: an edit once the interaction is answered.
-   *
-   * @param payload - Text, or edit options.
-   * @returns The edited message, when Discord returns it.
-   */
   edit(payload: ResponseEditPayload): Promise<Message | undefined> {
     return this.send(payload as ResponsePayload)
   }
 
-  /**
-   * Sends another message after the answer. Before any answer it is the first reply. While a command's
-   * reply is deferred and nothing is sent yet, Discord turns a follow-up into the deferred reply and
-   * ignores its flags, so it is sent as that edit; a private follow-up on a public deferral deletes the
-   * deferral first and is sent privately.
-   *
-   * @param payload - Text, or reply options; `Ephemeral` makes the follow-up private.
-   * @returns The message sent, when Discord returns it.
-   */
   async followUp(payload: ResponsePayload): Promise<Message | undefined> {
     this.cancelScheduled()
     await this.acknowledging
@@ -445,7 +492,6 @@ export class ResponseState {
     return (await this.interaction.followUp({ ...sent, flags } as InteractionReplyOptions)) as Message
   }
 
-  /** Deletes the answer: the reply, or for a component deferred without a reply of its own, its message. */
   async delete(): Promise<void> {
     await this.acknowledging
     this.sync()
@@ -454,12 +500,6 @@ export class ResponseState {
     await this.interaction.deleteReply()
   }
 
-  /**
-   * Shows a modal. A modal must be the interaction's first response, so this throws once the
-   * interaction is acknowledged, rather than failing at Discord.
-   *
-   * @param modal - The modal to show.
-   */
   async modal(modal: JSONEncodable<APIModalInteractionResponseCallbackData> | ModalComponentData): Promise<void> {
     this.cancelScheduled()
     this.sync()
@@ -553,19 +593,6 @@ export class ResponseState {
       : { embeds: [renderEmbed(view)] }
   }
 
-  /**
-   * Presents an error, styled by the application's presenter, and never throws; a delivery failure is
-   * logged at debug level.
-   *
-   * - Unanswered: a private reply.
-   * - A command whose reply is deferred: `'reply'` edits that reply into the error; `'private'`
-   *   deletes it, then follows up privately.
-   * - A component on a private (ephemeral) message: the error is added to that message, where it fits.
-   * - Otherwise: a private follow-up, never an edit of the message the user clicked.
-   *
-   * @param error - The error, handed to the presenter so it can style it by kind.
-   * @param options - What the user is told, and who sees it.
-   */
   async error(error: unknown, { message = DEFAULT_ERROR, visibility = 'reply' }: ResponseErrorOptions = {}): Promise<void> {
     try {
       await this.acknowledging?.catch(() => undefined)
@@ -652,7 +679,14 @@ export class ResponseState {
   }
 }
 
-const states = new WeakMap<object, ResponseState>()
+const states = new WeakMap<object, InteractionResponse>()
+
+/** The response state of a repliable interaction, created on first use. */
+export function responseOf(interaction: RepliableInteraction): InteractionResponse {
+  let state = states.get(interaction)
+  if (!state) states.set(interaction, (state = new InteractionResponse(interaction)))
+  return state
+}
 
 /**
  * The response state of an interaction: one per interaction, created on first use, through which its
@@ -680,12 +714,10 @@ export function respond(interaction: Interaction): ResponseState {
   if (!interaction.isRepliable()) {
     throw new Error('respond() takes a command, component or modal submission; autocomplete answers with respond([]).')
   }
-  let state = states.get(interaction)
-  if (!state) states.set(interaction, (state = new ResponseState(interaction)))
-  return state
+  return responseOf(interaction)
 }
 
 /** The response state of an interaction, if `respond()` created one. */
-export function existingResponse(interaction: object): ResponseState | undefined {
+export function existingResponse(interaction: object): InteractionResponse | undefined {
   return states.get(interaction)
 }

@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import { type ResponseState } from '@src/common/response/response-state.js'
+import { type InteractionResponse } from '@src/common/response/response-state.js'
 import { sourcePrototype } from '@src/core/guard-runner.js'
 import { getAutocompleteHandlers, getMessageHandlers, getReactionHandlers } from '@src/decorator/controller.decorator.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
@@ -58,7 +58,7 @@ export function deferMisuseError(className: string, methodName: string, kind: st
  * `@Defer`'s first step: acknowledge now, or for `'auto'`, at the earlier of `receivedAt + after` and
  * `createdTimestamp + 2.5 s`, so a host clock running late can only acknowledge early.
  */
-export async function startDefer(state: ResponseState, options: DeferOptions, receivedAt: number): Promise<void> {
+export async function startDefer(state: InteractionResponse, options: DeferOptions, receivedAt: number): Promise<void> {
   state.configure(options)
   if (options.mode !== 'auto') {
     await state.acknowledge({ ephemeral: options.ephemeral })
