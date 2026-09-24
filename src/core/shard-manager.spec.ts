@@ -67,7 +67,9 @@ class FakeShard extends EventEmitter {
   }
 }
 
-function setup(overrides: { shards?: number | 'auto'; token?: string; shutdownTimeout?: number } = {}) {
+function setup(
+  overrides: { shards?: number | 'auto'; token?: string; shutdownTimeout?: number; recommendedShardCount?: () => Promise<number> } = {},
+) {
   const shards: FakeShard[] = []
   let managerArgs: [string, ShardingManagerOptions] | undefined
   const puts: unknown[] = []
@@ -100,7 +102,7 @@ function setup(overrides: { shards?: number | 'auto'; token?: string; shutdownTi
         return []
       },
     }),
-    recommendedShardCount: async () => 3,
+    recommendedShardCount: overrides.recommendedShardCount ?? (async () => 3),
     exit,
     sleep: async ms => {
       sleeps.push(ms)
@@ -228,6 +230,59 @@ describe('ShardManager', () => {
     expect(shards.every(shard => shard.process === null)).toBe(true)
     expect(shards.map(shard => shard.spawns)).toEqual([1, 1])
     expect(logged.error.join('\n')).toContain('Shard 0 cannot log in (TokenInvalid)')
+  })
+
+  it('exits 1 before spawning anything when Discord cannot say how many shards to run', async () => {
+    const { manager, shards, exit } = setup({
+      shards: 'auto',
+      recommendedShardCount: async () => {
+        throw new Error('401: Unauthorized')
+      },
+    })
+
+    await manager.start()
+
+    expect(shards).toHaveLength(0)
+    expect(exit).toHaveBeenCalledWith(1)
+    expect(logged.error.join('\n')).toContain('check discordToken')
+  })
+
+  it('stops once when two shards report that they cannot log in', async () => {
+    const { manager, shards, exit } = setup({ shards: 2 })
+    await manager.start()
+
+    const fatal = { meocord: 'fatal', code: 'TokenInvalid', message: 'An invalid token was provided.' }
+    shards[0].emit('message', fatal)
+    shards[1].emit('message', fatal)
+
+    expect(exit).toHaveBeenCalledTimes(1)
+    expect(logged.error.filter(line => line.includes('cannot log in'))).toHaveLength(1)
+  })
+
+  it('spawns no further shard once a signal arrives while it spawns them', async () => {
+    const { manager, shards, exit } = setup({ shards: 3 })
+    // The pause between spawns is where a signal lands while spawning
+    let paused!: () => void
+    Reflect.set(manager, 'sleep', () => new Promise<void>(resolve => (paused = resolve)))
+
+    const started = manager.start()
+    await vi.waitFor(() => expect(shards).toHaveLength(1))
+    const stopped = manager.stop()
+    shards[0].die(0)
+    paused()
+    await started
+    await stopped
+
+    expect(shards).toHaveLength(1)
+    expect(exit).toHaveBeenCalledWith(0)
+  })
+
+  it('exits 0 at once when stopped before any shard was spawned', async () => {
+    const { manager, exit } = setup({ shards: 2 })
+
+    await manager.stop()
+
+    expect(exit).toHaveBeenCalledWith(0)
   })
 
   it('ignores messages that are not its own', async () => {
