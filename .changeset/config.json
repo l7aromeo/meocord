@@ -3,7 +3,7 @@
   "changelog": [
     "@changesets/changelog-github",
     {
-      "repo": "l7aromeo/meocord"
+      "repo": "meocord/meocord"
     }
   ],
   "commit": false,

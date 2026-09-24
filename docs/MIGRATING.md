@@ -240,7 +240,7 @@ CMD ["bun", "--no-install", "dist/main.js"]
 The build records its platform in `dist/meocord.platform.json`. A bot started anywhere else stops before
 going online and says so, instead of failing on the first command that loads the addon.
 
-See [Self-contained builds](https://github.com/l7aromeo/meocord#self-contained-builds) in the README for the
+See [Self-contained builds](https://github.com/meocord/meocord#self-contained-builds) in the README for the
 details.
 
 ## Internal helpers are no longer exported
@@ -585,4 +585,4 @@ bootstrap().catch(error => {
 
 ---
 
-Something here did not match what you saw? [Open an issue](https://github.com/l7aromeo/meocord/issues/new/choose).
+Something here did not match what you saw? [Open an issue](https://github.com/meocord/meocord/issues/new/choose).

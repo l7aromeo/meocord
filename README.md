@@ -1,13 +1,13 @@
 # MeoCord Framework
 
 [![npm version](https://img.shields.io/npm/v/meocord.svg)](https://www.npmjs.com/package/meocord)
-[![CI](https://github.com/l7aromeo/meocord/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/l7aromeo/meocord/actions/workflows/release.yml)
+[![CI](https://github.com/meocord/meocord/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/meocord/meocord/actions/workflows/release.yml)
 [![node](https://img.shields.io/node/v/meocord)](https://www.npmjs.com/package/meocord)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 **MeoCord** is a decorator-based Discord bot framework built on top of discord.js. It brings a NestJS-style architecture — controllers, services, guards, interceptors, exception filters and dependency injection — to bot development, with a full CLI, TypeScript-first design, and testing utilities included out of the box.
 
-> **Upgrading from 3.x or 4.0?** Follow the [migration guide](https://github.com/l7aromeo/meocord/blob/main/docs/MIGRATING.md).
+> **Upgrading from 3.x or 4.0?** Follow the [migration guide](https://github.com/meocord/meocord/blob/main/docs/MIGRATING.md).
 
 ---
 
@@ -2099,7 +2099,7 @@ Participation is governed by the [Code of Conduct](./CODE_OF_CONDUCT.md). For vu
 
 ## Release Notes
 
-Every release is recorded in [CHANGELOG.md](./CHANGELOG.md) and on the [GitHub Releases](https://github.com/l7aromeo/meocord/releases) page. Upgrading: the [migration guide](https://github.com/l7aromeo/meocord/blob/main/docs/MIGRATING.md).
+Every release is recorded in [CHANGELOG.md](./CHANGELOG.md) and on the [GitHub Releases](https://github.com/meocord/meocord/releases) page. Upgrading: the [migration guide](https://github.com/meocord/meocord/blob/main/docs/MIGRATING.md).
 
 ---
 

@@ -21,7 +21,7 @@ runs on whichever runtime the application chooses, so it uses Node APIs and no B
 `Bun.serve`, `Bun.file` or `bun:*` modules. `bun run lint` rejects them in `src/`.
 
 ```bash
-git clone https://github.com/l7aromeo/meocord.git
+git clone https://github.com/meocord/meocord.git
 cd meocord
 bun install
 bun run test
@@ -276,7 +276,7 @@ and the next release pull request versions `4.0.0` from everything collected dur
 
 ## Reporting bugs
 
-Open an [issue](https://github.com/l7aromeo/meocord/issues/new/choose). The bug form asks for the
+Open an [issue](https://github.com/meocord/meocord/issues/new/choose). The bug form asks for the
 MeoCord, discord.js, Node, and runtime versions, because behaviour genuinely differs across them.
 
 A minimal controller that reproduces the problem is worth more than a description of it.
