@@ -4,7 +4,6 @@ import { CommandType } from 'meocord/enum'
 
 @Controller()
 export class {{className}}ModalSubmitController {
-
   @Command('submit-modal', CommandType.MODAL_SUBMIT)
   async handleModal(interaction: ModalSubmitInteraction) {
     await interaction.reply('Modal submitted!')
