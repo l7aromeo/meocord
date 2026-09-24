@@ -1,6 +1,12 @@
 import { type Interaction, ModalSubmitInteraction } from 'discord.js'
 import { getCommandMap } from '@src/decorator/controller.decorator.js'
-import { hasCustomId, matchesCommandType, resolveOptionParams } from '@src/util/interaction.util.js'
+import {
+  hasCustomId,
+  isCustomIdRouted,
+  matchesCommandType,
+  resolveCommandPaths,
+  resolveOptionParams,
+} from '@src/util/interaction.util.js'
 
 /** The second argument an interaction handler receives, and the names given twice while building it. */
 export interface HandlerInput {
@@ -60,3 +66,33 @@ export function routeParamsFor(prototype: object, methodName: string, interactio
   }
   return {}
 }
+
+/**
+ * Why an interaction could not reach a handler through its routes, for a test calling the handler
+ * directly: a customId its patterns do not match, or a command its name is not. `undefined` when it
+ * could, when the handler has no route, or when the interaction carries no customId or command name.
+ */
+export function routeMismatch(controller: { name: string; prototype: object }, methodName: string, interaction: Interaction): string | undefined {
+  const routes = Object.entries(getCommandMap(controller.prototype) ?? {}).flatMap(([route, metas]) =>
+    metas.filter(meta => meta.methodName === methodName).map(meta => ({ route, meta })),
+  )
+  const handler = `${controller.name}.${methodName}`
+  const describe = (kind: string, value: string, candidates: { route: string }[]) =>
+    `${kind} '${value}' does not match ${handler}'s route ${candidates.map(({ route }) => `'${route}'`).join(' or ')}.`
+
+  if (hasCustomId(interaction)) {
+    const patterned = routes.filter(({ meta }) => isCustomIdRouted(meta.type) && meta.regex)
+    if (typeof interaction.customId !== 'string' || patterned.length === 0) return undefined
+    if (patterned.some(({ meta }) => meta.regex!.test(interaction.customId))) return undefined
+    return describe('customId', interaction.customId, patterned)
+  }
+
+  if (!interaction.isCommand()) return undefined
+  const named = routes.filter(({ meta }) => !isCustomIdRouted(meta.type))
+  if (typeof interaction.commandName !== 'string' || named.length === 0) return undefined
+  // A chat command reaches the handler of its full path, or of its bare name, as dispatch tries them
+  const keys = interaction.isChatInputCommand() ? resolveCommandPaths(interaction) : [interaction.commandName]
+  if (named.some(({ route }) => keys.includes(route))) return undefined
+  return describe('command', keys[0], named)
+}
+

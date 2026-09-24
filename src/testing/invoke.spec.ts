@@ -3,7 +3,7 @@ import { Command, Controller, Guard, Service, UseGuard } from '@src/decorator/in
 import { CommandType } from '@src/enum/index.js'
 import { type GuardInterface } from '@src/interface/index.js'
 import { createMetadata, ExecutionContext } from '@src/common/index.js'
-import { createMockInteraction, MeoCordTestingModule } from '@src/testing/index.js'
+import { createChatInputOptions, createMockInteraction, MeoCordTestingModule } from '@src/testing/index.js'
 
 const log: string[] = []
 const Label = createMetadata<string>('label')
@@ -191,6 +191,61 @@ describe('TestingModule.invoke', () => {
 
   it('rejects a method the controller does not have, naming it', async () => {
     await expect(compile().invoke(GreetingController, 'missing' as never, slash())).rejects.toThrow('GreetingController.missing is not a method')
+  })
+
+  describe('checks the interaction against the handler route', () => {
+    it("rejects a customId the handler's pattern does not match", async () => {
+      const button = createMockInteraction(ButtonInteraction, { customId: 'something/else' })
+
+      await expect(compile().invoke(ProfileButtonController, 'profile', button)).rejects.toThrow(
+        "customId 'something/else' does not match ProfileButtonController.profile's route 'profile/{id}'.",
+      )
+      expect(log).not.toContain('profile:undefined')
+    })
+
+    it('rejects a command name the handler is not registered for', async () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction, { commandName: 'greeting' })
+
+      await expect(compile().invoke(GreetingController, 'denied', interaction)).rejects.toThrow(
+        "command 'greeting' does not match GreetingController.denied's route 'denied'.",
+      )
+    })
+
+    it('accepts a matching customId and command name, and an interaction that carries neither', async () => {
+      const module = compile()
+      await module.invoke(ProfileButtonController, 'profile', createMockInteraction(ButtonInteraction, { customId: 'profile/7' }))
+      await module.invoke(GreetingController, 'denied', createMockInteraction(ChatInputCommandInteraction, { commandName: 'denied' }))
+      await module.invoke(ProfileButtonController, 'profile', createMockInteraction(ButtonInteraction), { id: '8' })
+
+      expect(log).toContain('profile:7')
+      expect(log).toContain('profile:8')
+    })
+
+    it('accepts a subcommand handled by its command, as dispatch would route it', async () => {
+      @Controller()
+      class Settings {
+        @Command('settings', CommandType.SLASH)
+        async settings(_interaction: ChatInputCommandInteraction) {
+          log.push('settings')
+        }
+      }
+      const interaction = createMockInteraction(ChatInputCommandInteraction, {
+        commandName: 'settings',
+        options: createChatInputOptions({ subcommand: 'language' }) as never,
+      })
+
+      await MeoCordTestingModule.create({ controllers: [Settings] }).compile().invoke(Settings, 'settings', interaction)
+
+      expect(log.at(-1)).toBe('settings')
+    })
+
+    it('leaves a method without a route unchecked', async () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction, { commandName: 'anything' })
+
+      await compile().invoke(GreetingController, 'inner', interaction)
+
+      expect(log).toEqual(['deny'])
+    })
   })
 })
 

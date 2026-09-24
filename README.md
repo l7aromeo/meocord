@@ -1471,7 +1471,7 @@ const controller = module.get(GreetingSlashController)
 
 ### Running a handler with `invoke`
 
-`module.invoke(Controller, 'method', ...args)` runs a handler through the [pipeline](#how-a-handler-runs) dispatch runs: `@Defer`, its guards, class guards first and each once, then its interceptors around validation, pipes, cooldowns and the handler, all inside its exception filters. Guards resolve from the module, so `overrideGuard` stubs and injected `ExecutionContext` work as they do in the bot. Pass the arguments dispatch would: the interaction, message or reaction, then the handler's params.
+`module.invoke(Controller, 'method', ...args)` runs a handler through the [pipeline](#how-a-handler-runs) dispatch runs: `@Defer`, its guards, class guards first and each once, then its interceptors around validation, pipes, cooldowns and the handler, all inside its exception filters. Guards resolve from the module, so `overrideGuard` stubs and injected `ExecutionContext` work as they do in the bot. Pass the arguments dispatch would: the interaction, message or reaction, then the handler's params. An interaction must be one dispatch could route to the handler: a customId its pattern matches, or its command's name. One that could not, such as `'something/else'` for `'profile/{id}'`, rejects with a message naming both, so a typo in a test does not pass silently. A mock built without a customId or command name is not checked.
 
 ```typescript
 import { ButtonInteraction } from 'discord.js'

@@ -14,7 +14,7 @@ import {
   runHandler,
 } from '@src/core/handler-pipeline.js'
 import { setPresenter } from '@src/common/response/presenter.js'
-import { handlerInput, routeParamsFor } from '@src/core/handler-input.js'
+import { handlerInput, routeMismatch, routeParamsFor } from '@src/core/handler-input.js'
 import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
@@ -115,9 +115,12 @@ export class TestingModule {
    * @param args - The arguments dispatch would pass: the interaction, message or reaction, then the
    *   handler's params. With an interaction alone, the params are built as dispatch builds them: a
    *   command's or an autocomplete's options, or the handler's customId params and a modal's fields.
+   *   An interaction's customId or command name must be one dispatch could route to the handler; a mock
+   *   built without one is not checked.
    * @returns Whether the handler ran, and the error a filter handled, if any. Rejects with an error no
    *   filter handles, or with the error a filter throws: the built-in fallback, which answers such
-   *   errors in the bot, does not run here.
+   *   errors in the bot, does not run here. Rejects before running anything with an interaction the
+   *   handler's routes do not match, naming both.
    *
    * @example
    * ```ts
@@ -142,6 +145,8 @@ export class TestingModule {
     const instance = this.container.get(controller) as Record<string, (...args: unknown[]) => unknown>
     if (typeof instance[methodName] !== 'function') throw new Error(`${controller.name}.${methodName} is not a method.`)
     const [first] = args as unknown[]
+    const mismatch = first instanceof BaseInteraction ? routeMismatch(controller, methodName, first as Interaction) : undefined
+    if (mismatch) throw new Error(mismatch)
     const callArgs =
       args.length === 1 && first instanceof BaseInteraction
         ? [first, handlerInput(first as Interaction, routeParamsFor(controller.prototype as object, methodName, first as Interaction)).params]
