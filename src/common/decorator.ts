@@ -28,6 +28,9 @@ export function applyDecorators(...decorators: (ClassDecorator | MethodDecorator
 /**
  * Attaches arbitrary metadata to a class or method. Use alongside `Reflect.getMetadata` to read it back.
  *
+ * Avoid the key `'guards'`: `@UseGuard` stores a method's guards under it, and either would
+ * overwrite the other.
+ *
  * @example
  * ```typescript
  * export const Roles = (...roles: string[]) => SetMetadata('roles', roles)

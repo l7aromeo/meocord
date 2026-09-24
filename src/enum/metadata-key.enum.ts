@@ -29,7 +29,8 @@ export const enum MetadataKey {
   ParamTypes = 'design:paramtypes',
 
   /**
-   * Stores the guard list applied to a method or class via `@UseGuard`.
+   * The guards `@UseGuard` runs before a method, stored on the method: class-level guards first,
+   * then method-level ones, in the order they run.
    */
   Guards = 'guards',
 

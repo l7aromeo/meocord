@@ -21,6 +21,7 @@ import {
   UserSelectMenuInteraction,
 } from 'discord.js'
 import { createMockInteraction } from '@src/testing/index.js'
+import { buildComponentRoutes } from '@src/core/component-routes.js'
 
 describe('@MessageHandler', () => {
   it('registers a handler with a keyword', () => {
@@ -462,5 +463,82 @@ describe('@Autocomplete', () => {
     class NoHandlers {}
 
     expect(getAutocompleteHandlers(NoHandlers.prototype)).toEqual([])
+  })
+})
+
+describe('controller inheritance', () => {
+  class BaseController {
+    @Command('base', CommandType.SLASH)
+    base(..._args: any[]) {}
+
+    @Command('base/{id}', CommandType.BUTTON)
+    baseButton(..._args: any[]) {}
+
+    @MessageHandler('base')
+    baseMessage(..._args: any[]) {}
+
+    @ReactionHandler('👍')
+    baseReaction(..._args: any[]) {}
+
+    @Autocomplete('base', 'query')
+    baseComplete(..._args: any[]) {}
+  }
+
+  class ChildController extends BaseController {
+    @Command('child', CommandType.SLASH)
+    child(..._args: any[]) {}
+
+    @Command('child/{id}', CommandType.BUTTON)
+    childButton(..._args: any[]) {}
+
+    @MessageHandler('child')
+    childMessage(..._args: any[]) {}
+
+    @ReactionHandler('👎')
+    childReaction(..._args: any[]) {}
+
+    @Autocomplete('child', 'query')
+    childComplete(..._args: any[]) {}
+  }
+
+  it("keeps a subclass's handlers out of its base class", () => {
+    expect(Object.keys(getCommandMap(BaseController.prototype))).toEqual(['base', 'base/{id}'])
+    expect(getMessageHandlers(BaseController.prototype).map(handler => handler.method)).toEqual(['baseMessage'])
+    expect(getReactionHandlers(BaseController.prototype).map(handler => handler.method)).toEqual(['baseReaction'])
+    expect(getAutocompleteHandlers(BaseController.prototype).map(handler => handler.methodName)).toEqual([
+      'baseComplete',
+    ])
+    expect(buildComponentRoutes([BaseController]).map(route => route.pattern)).toEqual(['base/{id}'])
+  })
+
+  it('gives the subclass its own handlers and the inherited ones', () => {
+    expect(Object.keys(getCommandMap(ChildController.prototype))).toEqual(['base', 'base/{id}', 'child', 'child/{id}'])
+    expect(getMessageHandlers(ChildController.prototype).map(handler => handler.method)).toEqual([
+      'baseMessage',
+      'childMessage',
+    ])
+    expect(getReactionHandlers(ChildController.prototype).map(handler => handler.method)).toEqual([
+      'baseReaction',
+      'childReaction',
+    ])
+    expect(getAutocompleteHandlers(ChildController.prototype).map(handler => handler.methodName)).toEqual([
+      'baseComplete',
+      'childComplete',
+    ])
+    expect(buildComponentRoutes([ChildController]).map(route => route.pattern).sort()).toEqual([
+      'base/{id}',
+      'child/{id}',
+    ])
+  })
+
+  it('keeps sibling subclasses apart', () => {
+    class OtherController extends BaseController {
+      @Command('base', CommandType.SLASH)
+      other(..._args: any[]) {}
+    }
+
+    expect(getCommandMap(OtherController.prototype).base.map(meta => meta.methodName)).toEqual(['base', 'other'])
+    expect(getCommandMap(BaseController.prototype).base.map(meta => meta.methodName)).toEqual(['base'])
+    expect(Object.keys(getCommandMap(ChildController.prototype))).not.toContain('other')
   })
 })
