@@ -1,12 +1,26 @@
 /**
  * Runs the real CLI, installed from the packed build, through scenarios that must succeed and scenarios
- * that must fail clearly: each asserts the exit code and what the output says. Run after `bun run build`.
- * `--tier fast` (the default) needs no network after one install; `--tier slow` adds installs and builds.
- * `--windows` runs the subset whose paths and shims differ there; `--only <text>` filters by name.
+ * that must fail clearly: each asserts the exit code and what the output says, and that no process is
+ * left running. Run after `bun run build`.
+ * `--tier fast` (the default) needs no network after one install. `--tier slow` adds an npm install,
+ * the bun runtime, bundled builds, sharding and signals; it reaches Discord, where an invalid token
+ * is refused. `--windows` runs the subset whose paths and shims differ there; `--only <text>` filters by name.
  */
 
-import { spawnSync } from 'child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { spawn, spawnSync } from 'child_process'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
 import { cleanEnv, installedCliOf, mustRun, outputOf, pack, renderApp } from './lib/packed-app.js'
@@ -22,13 +36,22 @@ interface Scenario {
   windows?: boolean
   /** Runs only on these platforms. */
   platforms?: NodeJS.Platform[]
-  /** Where it runs: the installed app, an empty directory, or the directory holding the app. */
-  cwd?: 'app' | 'empty' | 'parent'
+  /** Where it runs: the app bun installed, the app npm installed, an empty directory, or the directory holding the apps. */
+  cwd?: 'app' | 'npm-app' | 'empty' | 'parent'
   /** Files written before it runs, relative to cwd; `null` deletes. Restored afterwards. */
   files?: Record<string, string | null>
-  argv: string[]
+  /** The CLI's arguments. */
+  argv?: string[]
+  /** A command run instead of the CLI, such as a package script or the built bundle. */
+  command?: string[]
   runtime?: Runtime
   env?: NodeJS.ProcessEnv
+  /** CLI runs that must succeed first, such as the build a bundle is run from. */
+  before?: string[][]
+  /** Paths, relative to cwd, moved away while it runs. */
+  hides?: string[]
+  /** A signal sent to its whole process group, as a terminal's Ctrl+C is, once the output shows `after`. */
+  signal?: { name: NodeJS.Signals; after: string }
   timeoutMs?: number
   expect: {
     code: number
@@ -47,10 +70,13 @@ interface Scenario {
   }
 }
 
-const workDir = mkdtempSync(path.join(tmpdir(), 'meocord-cli-'))
+// Resolved, because the application finds itself through its resolved working directory, and the
+// check for processes left running matches the paths they were started with
+const workDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'meocord-cli-')))
 const appDir = path.join(workDir, 'app')
+const npmAppDir = path.join(workDir, 'npm-app')
 const emptyDir = path.join(workDir, 'empty')
-const cli = installedCliOf(appDir)
+const hiddenDir = path.join(workDir, 'hidden')
 
 const validConfig = readFileSync(path.join(import.meta.dirname, '..', 'src', 'bin', 'app-template', 'meocord.config.ts.template'), 'utf8').replace(
   '{{displayName}}',
@@ -59,20 +85,60 @@ const validConfig = readFileSync(path.join(import.meta.dirname, '..', 'src', 'bi
 
 const config = (body: string) => `export default ${body}\n`
 
+/** The template's configuration with `options` set where it suggests sharding. */
+const configWith = (options: string) => validConfig.replace("// sharding: { shards: 'auto' },", options)
+
+/** A token Discord refuses, so a login or registration fails the way a wrong token does. */
+const INVALID_TOKEN_ENV = 'DISCORD_TOKEN=not-a-real-token\n'
+
+const templateMain = readFileSync(path.join(import.meta.dirname, '..', 'src', 'bin', 'app-template', 'src', 'main.ts.template'), 'utf8')
+
+/**
+ * The template's entry, holding before login where `HOLD_BEFORE_LOGIN` says: in every process, or in
+ * shards only. A held process is up and handles signals with no token that works.
+ */
+const holdingMain = templateMain.replace(
+  '  await app.start()',
+  `  const hold = process.env.HOLD_BEFORE_LOGIN
+  if (hold === 'all' || (hold === 'shards' && process.env.SHARDING_MANAGER)) {
+    logger.log('Holding before login')
+    await new Promise(resolve => setTimeout(resolve, 120_000))
+  }
+  await app.start()`,
+)
+
+/** The template's entry, first reporting whether a package another one loads when it can was found. */
+const probingMain = `import optionalProbe from 'optional-probe'\nconsole.log(\`optional probe: \${optionalProbe}\`)\n${templateMain}`
+
+/** Installed packages: one that loads another inside a try, as debug loads supports-color, and that other. */
+const optionalProbe = {
+  'node_modules/optional-probe/package.json': JSON.stringify({ name: 'optional-probe', version: '1.0.0', main: 'index.js' }),
+  'node_modules/optional-probe/index.js':
+    "let found = 'without color'\ntry {\n  found = require('optional-color')\n} catch {}\nmodule.exports = found\n",
+}
+const optionalColor = {
+  'node_modules/optional-color/package.json': JSON.stringify({ name: 'optional-color', version: '1.0.0', main: 'index.js' }),
+  'node_modules/optional-color/index.js': "module.exports = 'with color'\n",
+}
+
 /** The binary a runtime is launched with. */
 function runtimeBinary(runtime: Runtime): string {
   if (runtime === 'bun') return process.versions.bun ? process.execPath : 'bun'
   return 'node'
 }
 
-const dirOf = (scenario: Scenario) => ({ app: appDir, empty: emptyDir, parent: workDir })[scenario.cwd ?? 'app']
+const dirOf = (scenario: Scenario) => ({ app: appDir, 'npm-app': npmAppDir, empty: emptyDir, parent: workDir })[scenario.cwd ?? 'app']
+
+/** The installed CLI a scenario runs: its own app's, or the bun-installed one outside an app. */
+const cliOf = (scenario: Scenario) => installedCliOf(scenario.cwd === 'npm-app' ? npmAppDir : appDir)
 
 /** Writes a scenario's files, returning what restores the directory afterwards. */
 function applyFiles(dir: string, files: Record<string, string | null> = {}): () => void {
-  const saved = Object.keys(files).map(file => {
-    const full = path.join(dir, file)
-    return { full, before: existsSync(full) ? readFileSync(full, 'utf8') : null }
-  })
+  // A directory deleted, such as dist, is build output and stays deleted
+  const saved = Object.keys(files)
+    .map(file => path.join(dir, file))
+    .filter(full => !existsSync(full) || !statSync(full).isDirectory())
+    .map(full => ({ full, before: existsSync(full) ? readFileSync(full, 'utf8') : null }))
   for (const [file, content] of Object.entries(files)) {
     const full = path.join(dir, file)
     if (content === null) rmSync(full, { recursive: true, force: true })
@@ -99,27 +165,123 @@ function filesIn(dir: string, root = dir): string[] {
   })
 }
 
+/** The processes whose command line names a path inside `dir`; none on Windows, where it is not checked. */
+function processesIn(dir: string): { pid: number; command: string }[] {
+  if (process.platform === 'win32') return []
+  const ps = spawnSync('ps', ['-A', '-o', 'pid=,args='], { encoding: 'utf8' })
+  return ps.stdout
+    .split('\n')
+    .filter(line => line.includes(dir + path.sep))
+    .map(line => {
+      const [, pid, command] = /^\s*(\d+)\s+(.*)$/.exec(line) ?? []
+      return { pid: Number(pid), command }
+    })
+    .filter(({ pid }) => pid > 0 && pid !== process.pid)
+}
+
+/** The processes still running in `dir` once a run has had a moment to finish; they are killed. */
+async function leftRunning(dir: string): Promise<string[]> {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const left = processesIn(dir)
+    if (left.length === 0) return []
+    if (attempt < 29) await new Promise(resolve => setTimeout(resolve, 100))
+    else {
+      for (const { pid } of left) process.kill(pid, 'SIGKILL')
+      return left.map(({ command }) => command)
+    }
+  }
+  return []
+}
+
+interface Run {
+  status: number | null
+  output: string
+  error?: string
+}
+
+/**
+ * Runs a command in its own process group, sending the scenario's signal to the group once the output
+ * shows what it waits for. Resolves when the command itself exits, even if a child it started holds
+ * the output open.
+ */
+function run(command: string, args: string[], dir: string, scenario: Scenario): Promise<Run> {
+  const posix = process.platform !== 'win32'
+  const child = spawn(command, args, {
+    cwd: dir,
+    env: cleanEnv(scenario.env),
+    detached: posix,
+    shell: !posix && ['npm', 'npx'].includes(command),
+  })
+  const toGroup = (signal: NodeJS.Signals) => {
+    try {
+      if (posix) process.kill(-child.pid!, signal)
+      else child.kill(signal)
+    } catch {
+      // Already gone
+    }
+  }
+
+  let stdout = ''
+  let stderr = ''
+  child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk))
+  child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk))
+
+  return new Promise(resolve => {
+    let error: string | undefined
+    const timeoutMs = scenario.timeoutMs ?? 120_000
+    const timeout = setTimeout(() => {
+      error = `did not finish within ${timeoutMs / 1000}s`
+      toGroup('SIGKILL')
+    }, timeoutMs)
+
+    const { signal } = scenario
+    const watcher =
+      signal &&
+      setInterval(() => {
+        if (!outputOf({ stdout, stderr }).includes(signal.after)) return
+        clearInterval(watcher)
+        // A moment for the process to settle, as a person pressing Ctrl+C gives it
+        setTimeout(() => toGroup(signal.name), 1_000)
+      }, 100)
+
+    child.on('error', spawnError => (error = spawnError.message))
+    child.on('exit', status => {
+      clearTimeout(timeout)
+      if (watcher) clearInterval(watcher)
+      setTimeout(() => resolve({ status, output: outputOf({ stdout, stderr }), error }), 200)
+    })
+  })
+}
+
 /** Runs one scenario, returning what went wrong, or nothing when it behaved. */
-function check(scenario: Scenario): string[] {
+async function check(scenario: Scenario): Promise<string[]> {
   const dir = dirOf(scenario)
   const restore = applyFiles(dir, scenario.files)
   const createdBefore = new Set((scenario.expect.creates ?? []).filter(file => existsSync(path.join(dir, file))))
   const filesBefore = new Set(filesIn(dir))
   const kept = new Map((scenario.expect.keeps ?? []).map(file => [file, readFileSync(path.join(dir, file), 'utf8')]))
+  const runtime = runtimeBinary(scenario.runtime ?? 'node')
+  const hidden: { from: string; to: string }[] = []
 
   try {
-    const result = spawnSync(runtimeBinary(scenario.runtime ?? 'node'), [cli, ...scenario.argv], {
-      cwd: dir,
-      encoding: 'utf8',
-      env: cleanEnv(scenario.env),
-      timeout: scenario.timeoutMs ?? 120_000,
-      maxBuffer: 64 * 1024 * 1024,
-    })
-    const output = outputOf(result)
+    for (const argv of scenario.before ?? []) {
+      mustRun(`meocord ${argv.join(' ')}`, runtime, [cliOf(scenario), ...argv], dir, cleanEnv(scenario.env))
+    }
+    for (const file of scenario.hides ?? []) {
+      const moved = { from: path.join(dir, file), to: path.join(hiddenDir, file) }
+      mkdirSync(path.dirname(moved.to), { recursive: true })
+      renameSync(moved.from, moved.to)
+      hidden.push(moved)
+    }
+
+    const [command, ...args] = scenario.command ?? [runtime, cliOf(scenario), ...(scenario.argv ?? [])]
+    const result = await run(command, args, dir, scenario)
+    const { output } = result
     const problems: string[] = []
 
-    if (result.error) problems.push(`did not finish: ${result.error.message}`)
+    if (result.error) problems.push(result.error)
     if (result.status !== scenario.expect.code) problems.push(`exited ${result.status}, expected ${scenario.expect.code}`)
+    for (const left of await leftRunning(workDir)) problems.push(`left running: ${left}`)
     // Compared with forward slashes: the CLI prints paths with the platform's own separator.
     const said = output.replace(/\\/g, '/')
     for (const text of scenario.expect.says ?? []) if (!said.includes(text)) problems.push(`does not say "${text}"`)
@@ -139,6 +301,7 @@ function check(scenario: Scenario): string[] {
     if (problems.length > 0) problems.push(`output:\n${output.replace(/^/gm, '      ')}`)
     return problems
   } finally {
+    for (const { from, to } of hidden) renameSync(to, from)
     // Anything the run wrote goes, so the next scenario starts from the same app.
     for (const file of filesIn(dir)) if (!filesBefore.has(file)) rmSync(path.join(dir, file), { force: true })
     restore()
@@ -350,9 +513,164 @@ const scenarios: Scenario[] = [
     argv: ['create', '!!!', '--use-bun'],
     expect: { code: 1, says: ['needs a name', 'my-bot'], never: ['already exists'] },
   },
+
+  // Slow: an app npm installed, run through its own package scripts and the meocord bin
+  {
+    name: 'an app npm installed builds through its build:prod script',
+    tier: 'slow',
+    cwd: 'npm-app',
+    files: { dist: null },
+    command: ['npm', 'run', 'build:prod'],
+    expect: { code: 0, creates: ['dist/main.js', 'dist/meocord.config.mjs'] },
+  },
+  {
+    name: 'an app npm installed starts through its start:prod script, and stops at a refused token',
+    tier: 'slow',
+    cwd: 'npm-app',
+    files: { '.env': INVALID_TOKEN_ENV },
+    command: ['npm', 'run', 'start:prod', '--', '--build'],
+    expect: { code: 1, says: ['Starting bot', 'An invalid token was provided'] },
+  },
+
+  // Slow: the bun runtime, which the CLI runs the application on too
+  {
+    name: 'on bun, start --prod --build builds, starts, and stops at a refused token',
+    tier: 'slow',
+    runtime: 'bun',
+    files: { '.env': INVALID_TOKEN_ENV, dist: null },
+    argv: ['start', '--prod', '--build'],
+    expect: { code: 1, says: ['Production build completed', 'Starting bot', 'An invalid token was provided'], creates: ['dist/main.js'] },
+  },
+  {
+    name: 'on bun, register --build says to check the token Discord refused',
+    tier: 'slow',
+    runtime: 'bun',
+    files: { '.env': INVALID_TOKEN_ENV, dist: null },
+    argv: ['register', '--build'],
+    expect: { code: 1, says: ['check discordToken', '401'] },
+  },
+  {
+    name: 'register says to check the token Discord refused',
+    tier: 'slow',
+    files: { '.env': INVALID_TOKEN_ENV },
+    before: [['build', '--prod']],
+    argv: ['register'],
+    expect: { code: 1, says: ['check discordToken', '401'] },
+  },
+
+  // Slow: a bundled build runs where no node_modules is installed, as a deployed dist does
+  {
+    name: 'with bundleDependencies, the build runs with node_modules gone',
+    tier: 'slow',
+    files: { '.env': INVALID_TOKEN_ENV, 'meocord.config.ts': configWith('bundleDependencies: true,'), dist: null },
+    before: [['build', '--prod']],
+    hides: ['node_modules'],
+    command: ['node', 'dist/main.js'],
+    expect: { code: 1, says: ['Starting bot', 'An invalid token was provided'], never: ['ERR_MODULE_NOT_FOUND', 'Cannot find'] },
+  },
+  {
+    name: 'an optionalExternals package that is installed is copied into dist and found there',
+    tier: 'slow',
+    files: {
+      ...optionalProbe,
+      ...optionalColor,
+      '.env': INVALID_TOKEN_ENV,
+      'src/main.ts': probingMain,
+      'meocord.config.ts': configWith("bundleDependencies: true,\n  optionalExternals: ['optional-color'],"),
+      dist: null,
+    },
+    before: [['build', '--prod']],
+    hides: ['node_modules'],
+    command: ['node', 'dist/main.js'],
+    expect: {
+      code: 1,
+      says: ['optional probe: with color', 'An invalid token was provided'],
+      creates: ['dist/node_modules/optional-color/package.json'],
+    },
+  },
+  {
+    name: 'an optionalExternals package that is missing leaves the bundle running without it',
+    tier: 'slow',
+    files: {
+      ...optionalProbe,
+      'node_modules/optional-color': null,
+      '.env': INVALID_TOKEN_ENV,
+      'src/main.ts': probingMain,
+      'meocord.config.ts': configWith("bundleDependencies: true,\n  optionalExternals: ['optional-color'],"),
+      dist: null,
+    },
+    before: [['build', '--prod']],
+    hides: ['node_modules'],
+    command: ['node', 'dist/main.js'],
+    expect: {
+      code: 1,
+      says: ['optional probe: without color', 'An invalid token was provided'],
+      leaves: ['dist/node_modules/optional-color'],
+    },
+  },
+
+  // Slow: process sharding
+  {
+    name: 'process sharding stops every shard at a refused token, instead of restarting them',
+    tier: 'slow',
+    files: { '.env': INVALID_TOKEN_ENV, 'meocord.config.ts': configWith("sharding: { mode: 'process', shards: 2 },"), dist: null },
+    argv: ['start', '--prod', '--build'],
+    timeoutMs: 60_000,
+    expect: { code: 1, says: ['Shard 0 cannot log in (TokenInvalid)', 'Stopping every shard'], never: ['restarting it'] },
+  },
+
+  // Slow: Ctrl+C, sent to the whole process group as a terminal sends it
+  {
+    name: 'Ctrl+C stops start --prod and the application',
+    tier: 'slow',
+    platforms: ['linux', 'darwin'],
+    files: { '.env': INVALID_TOKEN_ENV, 'src/main.ts': holdingMain, dist: null },
+    env: { HOLD_BEFORE_LOGIN: 'all' },
+    argv: ['start', '--prod', '--build'],
+    signal: { name: 'SIGINT', after: 'Holding before login' },
+    timeoutMs: 60_000,
+    expect: { code: 0 },
+  },
+  {
+    name: 'Ctrl+C shuts every shard down in process sharding',
+    tier: 'slow',
+    platforms: ['linux', 'darwin'],
+    files: {
+      '.env': INVALID_TOKEN_ENV,
+      'src/main.ts': holdingMain,
+      'meocord.config.ts': configWith("sharding: { mode: 'process', shards: 2 },\n  shutdownTimeout: 1000,"),
+      dist: null,
+    },
+    env: { HOLD_BEFORE_LOGIN: 'shards' },
+    argv: ['start', '--prod', '--build'],
+    signal: { name: 'SIGINT', after: 'Holding before login' },
+    timeoutMs: 60_000,
+    expect: { code: 0, says: ['Shutting down the shards', 'Every shard has shut down'] },
+  },
+  {
+    name: 'Ctrl+C stops start --dev and the application it watches',
+    tier: 'slow',
+    platforms: ['linux', 'darwin'],
+    files: { '.env': INVALID_TOKEN_ENV, 'src/main.ts': holdingMain },
+    env: { HOLD_BEFORE_LOGIN: 'all' },
+    argv: ['start', '--dev'],
+    signal: { name: 'SIGINT', after: 'Holding before login' },
+    timeoutMs: 60_000,
+    expect: { code: 0, says: ['Starting watch mode'] },
+  },
+  {
+    name: 'Ctrl+C stops start --dev once the application has exited on its own',
+    tier: 'slow',
+    platforms: ['linux', 'darwin'],
+    files: { '.env': INVALID_TOKEN_ENV },
+    argv: ['start', '--dev'],
+    signal: { name: 'SIGINT', after: 'An invalid token was provided' },
+    timeoutMs: 60_000,
+    expect: { code: 0, says: ['Starting watch mode'] },
+  },
 ]
 
-function main(): void {
+async function main(): Promise<void> {
   const tierArg = process.argv[process.argv.indexOf('--tier') + 1]
   const tiers: Tier[] = process.argv.includes('--tier') ? (tierArg === 'all' ? ['fast', 'slow'] : [tierArg as Tier]) : ['fast']
   const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : undefined
@@ -376,14 +694,20 @@ function main(): void {
   try {
     console.log(`Running ${selected.length} CLI scenarios in ${workDir}\n`)
     mkdirSync(emptyDir)
-    renderApp(appDir, pack(workDir))
+    const tarball = pack(workDir)
+    renderApp(appDir, tarball)
     mustRun('install the application', process.execPath, ['install'], appDir)
     cpSync(path.join(appDir, '.env.example'), path.join(appDir, '.env'))
+    if (selected.some(scenario => scenario.cwd === 'npm-app')) {
+      renderApp(npmAppDir, tarball, 'npm')
+      mustRun('install the application with npm', 'npm', ['install', '--no-audit', '--no-fund'], npmAppDir)
+      cpSync(path.join(npmAppDir, '.env.example'), path.join(npmAppDir, '.env'))
+    }
 
     let failed = 0
     for (const scenario of selected) {
       const scenarioStarted = performance.now()
-      const problems = check(scenario)
+      const problems = await check(scenario)
       const seconds = ((performance.now() - scenarioStarted) / 1000).toFixed(1)
       if (problems.length === 0) {
         console.log(`  ok    ${scenario.name} (${seconds}s)`)
@@ -401,4 +725,4 @@ function main(): void {
   }
 }
 
-main()
+await main()

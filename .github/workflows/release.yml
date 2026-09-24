@@ -278,6 +278,11 @@ jobs:
       - name: Verify generated applications
         run: bun run verify:generated
 
+      # The CLI scenarios that install with npm, run on bun, bundle, shard and send signals: slower,
+      # and they reach Discord, so they gate a release rather than every pull request.
+      - name: Run the slow CLI scenarios
+        run: bun run cli:scenarios --tier slow
+
       # With pending changesets, this opens or updates the release pull request and
       # stops. With none — which is the state right after that pull request merges —
       # it publishes the version already committed. So the merge is the trigger, and
