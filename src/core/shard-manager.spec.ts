@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { vi } from 'vitest'
+import { REPEAT_SIGNAL_WINDOW_MS } from '@src/util/stop-request.util.js'
 import { type Shard, type ShardingManager, type ShardingManagerOptions } from 'discord.js'
 
 const { logged } = vi.hoisted(() => ({ logged: { log: [] as string[], warn: [] as string[], error: [] as string[] } }))
@@ -72,6 +73,7 @@ function setup(overrides: { shards?: number | 'auto'; token?: string; shutdownTi
   const puts: unknown[] = []
   const exit = vi.fn()
   const sleeps: number[] = []
+  const clock = { now: 0 }
 
   const manager = new ShardManager({
     controllerClasses: [],
@@ -103,8 +105,9 @@ function setup(overrides: { shards?: number | 'auto'; token?: string; shutdownTi
     sleep: async ms => {
       sleeps.push(ms)
     },
+    now: () => clock.now,
   })
-  return { manager, shards, exit, puts, sleeps, managerArgs: () => managerArgs }
+  return { manager, shards, exit, puts, sleeps, clock, managerArgs: () => managerArgs }
 }
 
 describe('ShardManager', () => {
@@ -261,15 +264,32 @@ describe('ShardManager', () => {
       expect(exit).toHaveBeenCalledWith(1)
     })
 
-    it('kills every shard at once on a second signal', async () => {
-      const { manager, shards, exit } = setup({ shards: 2 })
+    it('kills every shard at once on a signal repeated after the window', async () => {
+      const { manager, shards, exit, clock } = setup({ shards: 2 })
       await manager.start()
 
       void manager.stop()
+      clock.now += REPEAT_SIGNAL_WINDOW_MS
       await manager.stop()
 
       expect(shards.every(shard => shard.process === null)).toBe(true)
       expect(exit).toHaveBeenCalledWith(1)
+    })
+
+    // One Ctrl+C reaches the manager from the terminal and again from the CLI that runs it
+    it('takes a copy of the signal within the window as the same request', async () => {
+      const { manager, shards, exit, clock } = setup({ shards: 2 })
+      await manager.start()
+
+      const stopped = manager.stop()
+      clock.now += REPEAT_SIGNAL_WINDOW_MS - 1
+      await manager.stop()
+
+      expect(shards.map(shard => shard.sent)).toEqual([[{ meocord: 'shutdown' }], [{ meocord: 'shutdown' }]])
+      expect(exit).not.toHaveBeenCalled()
+      shards.forEach(shard => shard.die(0))
+      await stopped
+      expect(exit).toHaveBeenCalledWith(0)
     })
 
     it('does not restart a shard that exits while stopping', async () => {

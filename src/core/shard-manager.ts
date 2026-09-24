@@ -8,6 +8,7 @@ import { type MeoCordConfig } from '@src/interface/index.js'
 import { bundleEntry } from '@src/util/bundle-entry.util.js'
 import { FORCE_REGISTER_ENV } from '@src/util/registration-mode.util.js'
 import { isShardMessage, type ShardMessage } from '@src/core/shard-messages.js'
+import { stopRequests } from '@src/util/stop-request.util.js'
 
 
 /** How long the manager waits for a shard to become ready before spawning the next. */
@@ -33,6 +34,7 @@ export interface ShardManagerOptions {
   recommendedShardCount?: (token: string) => Promise<number>
   exit?: (code: number) => void
   sleep?: (ms: number) => Promise<void>
+  now?: () => number
 }
 
 interface ShardState {
@@ -54,10 +56,12 @@ export class ShardManager implements MeoCordApplication {
   private fatal = false
   private readonly exit: (code: number) => void
   private readonly sleep: (ms: number) => Promise<void>
+  private readonly stopRequest: ReturnType<typeof stopRequests>
 
   constructor(private readonly options: ShardManagerOptions) {
     this.exit = options.exit ?? (code => process.exit(code))
     this.sleep = options.sleep ?? sleep
+    this.stopRequest = stopRequests(options.now)
   }
 
   /**
@@ -177,11 +181,13 @@ export class ShardManager implements MeoCordApplication {
 
   /**
    * Asks every shard to shut down through its own hooks, waits for them up to the shutdown timeout plus
-   * a margin, kills any left, and exits: 0 when every shard stopped, 1 when one had to be killed. A second
-   * call kills them all at once.
+   * a margin, kills any left, and exits: 0 when every shard stopped, 1 when one had to be killed. A call
+   * within `REPEAT_SIGNAL_WINDOW_MS` of the first is the same request; one after it kills them all at once.
    */
   async stop(): Promise<void> {
-    if (this.stopping) {
+    const request = this.stopRequest()
+    if (request === 'duplicate') return
+    if (request === 'repeat') {
       this.logger.warn('Stopping every shard now.')
       this.killAll()
       return this.exit(1)

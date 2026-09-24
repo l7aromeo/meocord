@@ -1,4 +1,5 @@
 import { vi } from 'vitest'
+import { REPEAT_SIGNAL_WINDOW_MS } from '@src/util/stop-request.util.js'
 import { type Client } from 'discord.js'
 import type * as AppModule from '@src/core/meocord.app.js'
 import type * as FactoryModule from '@src/core/meocord-factory.js'
@@ -586,23 +587,44 @@ describe('lifecycle hooks', () => {
       expect(exit).toHaveBeenCalledWith(1)
     })
 
-    it('forces exit 1 on a second signal while shutdown is running', async () => {
-      const loaded = await load()
+    describe('while shutdown is running', () => {
+      async function hangingApp() {
+        const loaded = await load()
 
-      @loaded.Service()
-      class Hanging implements OnShutdown {
-        onShutdown() {
-          return new Promise<void>(() => {})
+        @loaded.Service()
+        class Hanging implements OnShutdown {
+          onShutdown() {
+            return new Promise<void>(() => {})
+          }
         }
+
+        const { client } = await startApp(loaded, { controllers: [], services: [Hanging] })
+        await becomeReady(client)
+        return loaded
       }
 
-      const { client } = await startApp(loaded, { controllers: [], services: [Hanging] })
-      await becomeReady(client)
+      it('forces exit 1 on a signal repeated after the window', async () => {
+        const loaded = await hangingApp()
+        const now = vi.spyOn(Date, 'now').mockReturnValue(0)
 
-      void loaded.shutdownAndExit()
-      await loaded.shutdownAndExit()
+        void loaded.shutdownAndExit()
+        now.mockReturnValue(REPEAT_SIGNAL_WINDOW_MS)
+        await loaded.shutdownAndExit()
 
-      expect(exit).toHaveBeenCalledWith(1)
+        expect(exit).toHaveBeenCalledWith(1)
+      })
+
+      // One Ctrl+C reaches the bot from the terminal and again from the CLI that runs it
+      it('takes a copy of the signal within the window as the same request', async () => {
+        const loaded = await hangingApp()
+        const now = vi.spyOn(Date, 'now').mockReturnValue(0)
+
+        void loaded.shutdownAndExit()
+        now.mockReturnValue(REPEAT_SIGNAL_WINDOW_MS - 1)
+        await loaded.shutdownAndExit()
+
+        expect(exit).not.toHaveBeenCalled()
+      })
     })
   })
 
