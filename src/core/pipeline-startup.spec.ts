@@ -269,6 +269,38 @@ describe('a filter that throws under dispatch', () => {
   })
 })
 
+describe('a filter class that throws under dispatch', () => {
+  it('is logged by its name', async () => {
+    @Catch()
+    class Fragile implements ExceptionFilter {
+      catch(): void {
+        throw new Error('filter bug')
+      }
+    }
+
+    @Controller()
+    class Failing {
+      @Command('fail', CommandType.SLASH)
+      @UseFilter(Fragile)
+      async fail(_interaction: ChatInputCommandInteraction) {
+        throw new Error('handler bug')
+      }
+    }
+
+    const module = MeoCordTestingModule.create({ controllers: [Failing] }).compile()
+    const logged = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {})
+    try {
+      await runHandler(Reflect.get(module, 'container'), module.get(Failing) as never, 'fail', [createMockInteraction(ChatInputCommandInteraction), {}], {
+        fallback: async () => {},
+      })
+
+      expect(logged).toHaveBeenCalledWith('Filter Fragile threw while handling an error:', expect.objectContaining({ message: 'filter bug' }))
+    } finally {
+      logged.mockRestore()
+    }
+  })
+})
+
 describe('appStages', () => {
   it('names an anonymous app class as "The app" when it lacks @MeoCord', () => {
     expect(() => appStages(Object.defineProperty(class {}, 'name', { value: '' }))).toThrow('The app is not decorated with @MeoCord().')

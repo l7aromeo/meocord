@@ -165,6 +165,35 @@ describe('a guard', () => {
   })
 })
 
+describe('a guard that injects only a service', () => {
+  it('receives the app\'s instance of it', async () => {
+    @Service()
+    class Owners {}
+
+    @Guard()
+    class OwnersGuard implements GuardInterface {
+      constructor(private readonly owners: Owners) {}
+      canActivate() {
+        log.push(`same instance: ${this.owners === shared}`)
+        return true
+      }
+    }
+
+    @Controller()
+    class Guarded {
+      @Command('guarded', CommandType.SLASH)
+      @UseGuard(OwnersGuard)
+      async guarded(_interaction: ChatInputCommandInteraction) {}
+    }
+
+    const module = MeoCordTestingModule.create({ controllers: [Guarded], providers: [{ provide: Owners, useClass: Owners }] }).compile()
+    const shared = module.get(Owners)
+    await module.invoke(Guarded, 'guarded', createMockInteraction(ChatInputCommandInteraction))
+
+    expect(log).toEqual(['same instance: true'])
+  })
+})
+
 describe('a shared stage', () => {
   it('without a name is called "A class" when refused for asking for ExecutionContext', () => {
     class Anonymous {
