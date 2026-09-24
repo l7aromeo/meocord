@@ -67,7 +67,8 @@ export function prepareFilter(container: Container, entry: FilterEntry): void {
 export function matchFilter(levels: readonly (readonly FilterEntry[])[], error: unknown): FilterEntry | undefined {
   for (const level of levels) {
     for (const entry of level) {
-      const types = (Reflect.getOwnMetadata(CATCH_TYPES, filterClass(entry)) as (abstract new (...args: any[]) => unknown)[]) ?? []
+      // Every filter reaching here was checked for @Catch at startup, so its types are always recorded
+      const types = Reflect.getOwnMetadata(CATCH_TYPES, filterClass(entry)) as (abstract new (...args: any[]) => unknown)[]
       if (types.length === 0 || types.some(type => error instanceof type)) return entry
     }
   }
