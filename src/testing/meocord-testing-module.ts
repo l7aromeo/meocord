@@ -4,7 +4,7 @@ import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import { appStages, bindGlobalStages, prepareHandlerStages, runHandler } from '@src/core/handler-pipeline.js'
-import { type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
+import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 
 export interface ValueProvider<T = any> {
@@ -24,8 +24,8 @@ export interface TestingModuleOptions {
   providers?: Provider[]
 
   /**
-   * The `@MeoCord` application class, whose global `guards` and `interceptors` `invoke` runs before
-   * each handler's own. Its controllers and services are not registered; list them here.
+   * The `@MeoCord` application class, whose global `guards`, `interceptors` and `filters` `invoke`
+   * applies with each handler's own. Its controllers and services are not registered; list them here.
    */
   app?: new (...args: any[]) => unknown
 }
@@ -47,6 +47,9 @@ type HandlerArgs<C extends new (...args: any[]) => unknown, M extends HandlerNam
 export interface InvocationResult {
   /** Whether the handler ran; `false` when a guard denied the call or an interceptor skipped it. */
   ran: boolean
+
+  /** The error a filter handled, when the call failed and a `@UseFilter` or global filter caught it. */
+  error?: unknown
 }
 
 /**
@@ -65,8 +68,9 @@ export class TestingModule {
   /**
    * Runs a handler through the same pipeline dispatch runs: the global guards of the module's `app`,
    * then the handler's own, in order and once each; then the interceptors, the app's first, around
-   * the handler. Guards resolve from this module, so `overrideGuard` stubs apply and guards
-   * that inject `ExecutionContext` receive it. `overrideInterceptor` stubs apply the same way.
+   * the handler; all inside the handler's exception filters. Guards resolve from this module, so `overrideGuard` stubs apply and guards
+   * that inject `ExecutionContext` receive it. `overrideInterceptor` and `overrideFilter` stubs apply
+   * the same way.
    *
    * Calling the controller method directly runs its guards but no interceptors; `invoke` is the way
    * to test everything dispatch runs around a handler.
@@ -75,7 +79,9 @@ export class TestingModule {
    * @param methodName - The handler method's name.
    * @param args - The arguments dispatch would pass: the interaction, message or reaction, then the
    *   handler's params.
-   * @returns Whether the handler ran. Rejects with any error the handler or a guard throws.
+   * @returns Whether the handler ran, and the error a filter handled, if any. Rejects with an error no
+   *   filter handles, or with the error a filter throws: the built-in fallback, which answers such
+   *   errors in the bot, does not run here.
    *
    * @example
    * ```ts
@@ -98,8 +104,8 @@ export class TestingModule {
     }
 
     const instance = this.container.get(controller) as Record<string, (...args: unknown[]) => unknown>
-    const { ran } = await runHandler(this.container, instance, methodName, args)
-    return { ran }
+    const { ran, error } = await runHandler(this.container, instance, methodName, args)
+    return error === undefined ? { ran } : { ran, error }
   }
 }
 
@@ -110,6 +116,7 @@ export class TestingModule {
 export class TestingModuleBuilder {
   private readonly overrides = new Map<ServiceIdentifier, Provider>()
   private readonly guardOverrides = new Map<new (...args: any[]) => GuardInterface, Partial<GuardInterface>>()
+  private readonly filterOverrides = new Map<new (...args: any[]) => ExceptionFilter<any>, Partial<ExceptionFilter<any>>>()
   private readonly interceptorOverrides = new Map<
     new (...args: any[]) => InterceptorInterface,
     Partial<InterceptorInterface>
@@ -169,6 +176,27 @@ export class TestingModuleBuilder {
     }
   }
 
+  /**
+   * Replaces an exception filter with a stub wherever it applies. The filter's `@Catch` still decides
+   * which errors reach the stub.
+   *
+   * @param filter - The filter class to replace.
+   * @example
+   * ```ts
+   * builder.overrideFilter(RateLimitedFilter).useValue({ catch: vi.fn() })
+   * ```
+   */
+  overrideFilter(filter: new (...args: any[]) => ExceptionFilter<any>): {
+    useValue: (stub: Partial<ExceptionFilter<any>>) => TestingModuleBuilder
+  } {
+    return {
+      useValue: (stub: Partial<ExceptionFilter<any>>) => {
+        this.filterOverrides.set(filter, stub)
+        return this
+      },
+    }
+  }
+
   compile(): TestingModule {
     const container = new Container()
     if (this.options.app) bindGlobalStages(container, appStages(this.options.app))
@@ -197,6 +225,10 @@ export class TestingModuleBuilder {
     // Bind guard overrides — prevents inversify from auto-wiring guard dependencies
     for (const [guardClass, stub] of this.guardOverrides) {
       container.bind(guardClass).toConstantValue(stub as GuardInterface)
+    }
+
+    for (const [filterClass, stub] of this.filterOverrides) {
+      container.bind(filterClass).toConstantValue(stub as ExceptionFilter)
     }
 
     for (const [interceptorClass, stub] of this.interceptorOverrides) {

@@ -10,6 +10,7 @@ const PUBLIC_API: Record<string, string[]> = {
   'meocord/core': ['MeoCordFactory'],
   'meocord/decorator': [
     'Autocomplete',
+    'Catch',
     'Command',
     'CommandBuilder',
     'Controller',
@@ -19,10 +20,14 @@ const PUBLIC_API: Record<string, string[]> = {
     'MessageHandler',
     'ReactionHandler',
     'Service',
+    'UseFilter',
     'UseGuard',
     'UseInterceptor',
   ],
-  'meocord/common': ['ExecutionContext', 'Logger', 'SetMetadata', 'Theme', 'applyDecorators', 'createMetadata'],
+  'meocord/common': [
+    'CommandNotFoundError',
+    'ExecutionContext',
+    'GuardDeniedError', 'Logger', 'SetMetadata', 'Theme', 'applyDecorators', 'createMetadata'],
   'meocord/enum': ['CommandType', 'MetadataKey', 'ReactionHandlerAction'],
   'meocord/testing': [
     'MeoCordTestingModule',

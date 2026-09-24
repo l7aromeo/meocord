@@ -149,6 +149,39 @@ export interface InterceptorInterface {
   intercept(context: ExecutionContext, next: CallHandler): Promise<unknown> | unknown
 }
 
+/**
+ * An exception filter, applied with `@UseFilter` or `@MeoCord({ filters })`, that handles the errors its
+ * `@Catch` names: from the handler, its interceptors and guards, or dispatch itself.
+ *
+ * The filter closest to the handler wins: method filters, then the controller's, then global ones;
+ * within one level, the first whose `@Catch` matches. When none matches, the built-in fallback logs
+ * the error and tells the user something went wrong. One instance is shared across calls.
+ *
+ * @example
+ * ```ts
+ * @Catch(RateLimitedError)
+ * export class RateLimitedFilter implements ExceptionFilter<RateLimitedError> {
+ *   async catch(error: RateLimitedError, context: ExecutionContext) {
+ *     const interaction = context.getInteraction()
+ *     if (interaction?.isRepliable() && !interaction.replied && !interaction.deferred) {
+ *       await interaction.reply({ content: `Slow down: try again in ${error.retryAfter}s.`, flags: MessageFlags.Ephemeral })
+ *     }
+ *   }
+ * }
+ * ```
+ */
+export interface ExceptionFilter<E = unknown> {
+  /**
+   * Handles an error. Returning ends the call; throwing is logged, and the built-in fallback then
+   * answers the original error.
+   *
+   * @param error - The error thrown, of a type the filter's `@Catch` names.
+   * @param context - The call that failed. For an interaction no handler was reached for, it has
+   *   no controller or handler.
+   */
+  catch(error: E, context: ExecutionContext): Promise<void> | void
+}
+
 /** The second argument a `@ReactionHandler` method receives. */
 export interface ReactionHandlerOptions {
   /** The user who added or removed the reaction. */

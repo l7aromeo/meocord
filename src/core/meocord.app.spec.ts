@@ -30,6 +30,7 @@ import {
   ChannelSelectMenuInteraction,
   ChatInputCommandInteraction,
   MentionableSelectMenuInteraction,
+  MessageFlags,
   MessageReaction,
   PrimaryEntryPointCommandInteraction,
   RoleSelectMenuInteraction,
@@ -830,7 +831,7 @@ describe('MeoCordApp', () => {
       expect(interaction.reply).toHaveBeenCalled()
     })
 
-    it('does not reply again when the handler already replied and then threw', async () => {
+    it('follows up privately, rather than replying again, when the handler replied and then threw', async () => {
       const FailingController = failing(async interaction => {
         await interaction.reply('partial')
         throw new Error('handler blew up after replying')
@@ -843,8 +844,31 @@ describe('MeoCordApp', () => {
       await vi.advanceTimersByTimeAsync(0)
 
       expect(interaction.reply).toHaveBeenCalledTimes(1)
+      expect(interaction.followUp).toHaveBeenCalledWith(expect.objectContaining({ flags: MessageFlags.Ephemeral }))
       const error = vi.mocked(Logger).mock.results[0]?.value.error
       expect(error).toHaveBeenCalledWith(expect.stringContaining('boom/1'), expect.any(Error))
+    })
+
+    it('answers a deferred command that threw by editing its deferred reply', async () => {
+      @Controller()
+      class DeferringController {
+        @Command('slow', CommandType.SLASH)
+        async slow(interaction: ChatInputCommandInteraction) {
+          await interaction.deferReply()
+          throw new Error('failed after deferring')
+        }
+      }
+      const app = new MeoCordApp([DeferringController] as any, createMockContainer() as any, mockClient as any, 't')
+      await app.start()
+
+      const interaction = createMockInteraction(ChatInputCommandInteraction, { commandName: 'slow' })
+      interaction.options = createChatInputOptions({})
+      mockClient.emit('interactionCreate', interaction)
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(EmbedUtil.createErrorEmbed).toHaveBeenCalledWith('An error occurred while executing the command.')
+      expect(interaction.editReply).toHaveBeenCalledTimes(1)
+      expect(interaction.reply).not.toHaveBeenCalled()
     })
 
     it('survives an interaction that rejects the error reply', async () => {

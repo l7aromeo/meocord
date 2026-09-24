@@ -43,7 +43,7 @@ export function handlerInterceptors(prototype: object, methodName: string): Inte
 }
 
 /** Binds `cls` and its unbound dependencies as singletons, refusing any that injects `ExecutionContext`. */
-function bindShared(container: Container, cls: new (...args: any[]) => unknown): void {
+export function bindShared(container: Container, cls: new (...args: any[]) => unknown): void {
   if (container.isBound(cls)) return
   if (injectedTokens(cls).includes(ExecutionContext)) throw singletonContextError(cls)
 
