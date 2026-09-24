@@ -86,6 +86,49 @@ describe('ShardContext', () => {
     })
   })
 
+  describe('in one process, at the edges', () => {
+    const shards = (runHere: ConstructorParameters<typeof ShardContext>[1]) => new ShardContext(undefined, runHere)
+
+    it('reports a service the process does not have as an error result', async () => {
+      const context = MeoCordTestingModule.create({ controllers: [] }).compile().get(ShardContext)
+
+      const [result] = await context.call(StatsService, 'guildCount')
+
+      expect(result).toMatchObject({ ok: false, shardIds: [0] })
+    })
+
+    it('reports a method that does not answer in time as an error result', async () => {
+      vi.useFakeTimers()
+      const pending = shards(() => new Promise(() => {})).call(StatsService, 'guildCount')
+
+      await vi.advanceTimersByTimeAsync(SHARD_CALL_TIMEOUT_MS)
+
+      expect(await pending).toEqual([{ shardIds: [0], ok: false, error: `StatsService did not answer within ${SHARD_CALL_TIMEOUT_MS} ms.` }])
+      vi.useRealTimers()
+    })
+
+    it('describes a thrown value that is not an Error', async () => {
+      const [result] = await shards(async () => {
+        throw 'offline'
+      }).call(StatsService, 'guildCount')
+
+      expect(result).toEqual({ shardIds: [0], ok: false, error: 'offline' })
+    })
+
+    it('runs one shard, primary, without a client', () => {
+      const context = shards(async () => undefined)
+
+      expect([context.ids, context.count, context.isPrimary]).toEqual([[0], 1, true])
+    })
+
+    it('runs one shard before the client connected any, and counts the shards configured', () => {
+      const client = { ws: { shards: new Map() }, options: { shardCount: 3 } } as unknown as Client
+      const context = new ShardContext(client, async () => undefined)
+
+      expect([context.ids, context.count]).toEqual([[0], 3])
+    })
+  })
+
   describe('with process sharding', () => {
     it('is primary only in the process running shard 0', () => {
       expect(new ShardContext(shardedClient(0, 3, async () => 0), async () => 0).isPrimary).toBe(true)
