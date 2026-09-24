@@ -852,7 +852,7 @@ The stages run when MeoCord dispatches a handler, and when a test runs one with 
 
 Guards run first, before anything else touches the handler. Each guard implements `canActivate` — return `true` to allow, `false` to block.
 
-A new guard instance is created for every call, so keep state that must outlast one call — such as rate-limit counts — outside the guard: at module level, or in a service registered in `@MeoCord({ services })`, which makes it a singleton.
+A new guard instance is created for every call, so keep state that must outlast one call — such as rate-limit counts — outside the guard: at module level, or in a service registered in `@MeoCord({ services })`, which makes it a singleton. Do not list the guard class itself there: one shared instance would take every call's `params`, and the bot warns at startup.
 
 A guard runs for every kind of handler it applies to — global guards from `@MeoCord({ guards })` included, which also run before [`@On` event handlers](#gateway-events). To limit one, declare the context types it runs for: `@Guard({ types: ['interaction'] })` skips messages, reactions and events.
 
@@ -1123,7 +1123,7 @@ The input is one object: a chat command's options, or a component's customId par
 
 Invalid input stops the call with a `ValidationError` (from `meocord/common`) whose `issues` list each problem and where it is. The user gets a private reply with them. Schema libraries write their messages in English; an exception filter that maps issues to your own words is the place to localise them.
 
-Validation runs after guards and inside interceptors, so a timing or logging interceptor sees a failure as the handler's error. It applies to command, component and modal handlers only; the bot refuses to start with `@Validate` or `@UsePipe` on a message, reaction, autocomplete or event handler.
+Validation runs after guards and inside interceptors, so a timing or logging interceptor sees a failure as the handler's error. It applies to command, component and modal handlers only; the bot refuses to start with `@Validate` or `@UsePipe` on a message, reaction, autocomplete or event handler. A handler takes one `@Validate`; a second throws, so combine the schemas into one.
 
 ### Pipes
 
