@@ -1,6 +1,6 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import { type ButtonInteraction, type Message, MessageFlags } from 'discord.js'
-import { respond } from '@src/common/index.js'
+import { respond, type ResponseState } from '@src/common/index.js'
 
 /**
  * Runs under `vitest --typecheck`. The negative cases use `@ts-expect-error`,
@@ -36,5 +36,14 @@ describe('respond()', () => {
     void respond(interaction).error(new Error('x'), { visibility: 'public' })
     // @ts-expect-error acknowledge takes only ephemeral
     void respond(interaction).acknowledge({ ephemeral: true, fetchReply: true })
+  })
+})
+
+describe('ResponseState', () => {
+  it('offers the calls a handler answers with, and nothing the framework keeps to itself', () => {
+    expectTypeOf(respond(interaction)).toEqualTypeOf<ResponseState>()
+    expectTypeOf<keyof ResponseState>().toEqualTypeOf<
+      'location' | 'state' | 'message' | 'original' | 'acknowledge' | 'lock' | 'send' | 'edit' | 'followUp' | 'delete' | 'modal' | 'error'
+    >()
   })
 })
