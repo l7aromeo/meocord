@@ -21,7 +21,7 @@ export function attachmentFileName(url: unknown): string | undefined {
   try {
     const { hostname, pathname } = new URL(url)
     if (!CDN_HOSTS.has(hostname) || !CDN_PATHS.some(prefix => pathname.startsWith(prefix))) return undefined
-    return decodeURIComponent(pathname.split('/').pop() ?? '') || undefined
+    return decodeURIComponent(pathname.slice(pathname.lastIndexOf('/') + 1)) || undefined
   } catch {
     return undefined
   }
