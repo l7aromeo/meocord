@@ -32,6 +32,7 @@
 - [Guards](#guards)
 - [Interceptors](#interceptors)
 - [Exception filters](#exception-filters)
+- [Validation and Pipes](#validation-and-pipes)
 - [Custom Decorators](#custom-decorators)
 - [Gateway Events](#gateway-events)
 - [Handler Discovery](#handler-discovery)
@@ -441,6 +442,7 @@ npx meocord start --build --prod  # production build + start
 | `guard`       | `gu`  | a guard and its spec                |
 | `interceptor` | `i`   | an interceptor and its spec         |
 | `filter`      | `f`   | an exception filter and its spec    |
+| `pipe`        | `pi`  | a pipe and its spec                 |
 
 #### Controllers
 
@@ -537,7 +539,7 @@ export class LaunchCommandBuilder {
 
 ## Command Parameters
 
-Buttons, select menus and modals route on their `customId`, and a pattern can capture parts of it. Captured values arrive as the handler's second argument.
+Buttons, select menus and modals route on their `customId`, and a pattern can capture parts of it. Captured values arrive as the handler's second argument. A modal handler's second argument also carries the submitted fields, keyed by their customId: a text input's text, a select's chosen values. When a field and a captured value share a name, the captured value wins, and development logs a warning.
 
 ```typescript
 @Command('profile/{ownerId}/{uid}', CommandType.BUTTON)
@@ -850,13 +852,64 @@ An error no filter handles goes to the built-in fallback. It logs the error, the
 | Autocomplete                                                             | closes the menu with an empty list                      |
 | Expired (Discord error 10062)                                            | logs only                                               |
 
-It says "An error occurred while executing the command.", "Command not found!" for `CommandNotFoundError`, and a `GuardDeniedError`'s own message — which it keeps private even on a deferred public command, by deleting the deferred reply and following up. Errors from message, reaction and event handlers are only logged, and the next handler still runs. The fallback never throws.
+It says "An error occurred while executing the command.", "Command not found!" for `CommandNotFoundError`, a `GuardDeniedError`'s own message, and a `ValidationError`'s list of issues — the last two kept private even on a deferred public command, by deleting the deferred reply and following up. Errors from message, reaction and event handlers are only logged, and the next handler still runs. The fallback never throws.
 
 Filters apply when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke); a controller method called directly throws as it would without them. Under `invoke` the fallback does not run: an error no filter handles rejects, so tests see it.
 
 Generate a filter with `npx meocord g f <name>`.
 
 ---
+
+## Validation and Pipes
+
+`@Validate` checks a handler's input before it runs, so the handler receives typed, valid values or does not run at all. It takes a schema from any library that implements [Standard Schema](https://standardschema.dev) — zod, valibot, arktype and others — so MeoCord bundles no validator and you keep the one you know.
+
+```typescript
+import { z } from 'zod'
+import { Command, Validate } from 'meocord/decorator'
+
+@Command('remind', CommandType.SLASH)
+@Validate(z.object({ minutes: z.number().int().min(1).max(1440), note: z.string().max(200).default('') }))
+async remind(interaction: ChatInputCommandInteraction, { minutes, note }: { minutes: number; note: string }) {}
+```
+
+The input is one object: a chat command's options, or a component's customId params together with a modal's fields — what the handler's second argument holds anyway. The handler receives the schema's output, so defaults and coercions apply, and its second parameter is type-checked against it: `{ minutes: string }` above fails to compile.
+
+Invalid input stops the call with a `ValidationError` (from `meocord/common`) whose `issues` list each problem and where it is. The user gets a private reply with them. Schema libraries write their messages in English; an exception filter that maps issues to your own words is the place to localise them.
+
+Validation runs after guards and inside interceptors, so a timing or logging interceptor sees a failure as the handler's error. It applies to interaction handlers only; the bot refuses to start with `@Validate` on a message, reaction or autocomplete handler.
+
+### Pipes
+
+A pipe turns one validated value into what the handler works with — an id into an account, say. Give pipes to `@Validate`, and the handler's parameter is typed with what they produce:
+
+```typescript
+@Pipe()
+export class AccountPipe implements PipeInterface<string, Account> {
+  constructor(private readonly accounts: AccountService) {}
+
+  async transform(uid: string): Promise<Account> {
+    return this.accounts.find(uid)
+  }
+}
+
+@Command('profile/{uid}', CommandType.BUTTON)
+@Validate(z.object({ uid: z.string().regex(/^\d{9,10}$/) }), { pipes: { uid: AccountPipe } })
+async profile(interaction: ButtonInteraction, { uid }: { uid: Account }) {}
+```
+
+`pipes` maps a key to one pipe or to several, applied in order. `@UsePipe(key, ...pipes)` does the same as a decorator of its own, with or without `@Validate`, after `@Validate`'s pipes. `@Validate` cannot see a separate `@UsePipe`, so mark the value that pipe produces `Piped<T>` (from `meocord/interface`) — inside the handler it is exactly `T`:
+
+```typescript
+@Command('profile/{uid}', CommandType.BUTTON)
+@Validate(z.object({ uid: z.string() }))
+@UsePipe('uid', AccountPipe)
+async profile(interaction: ButtonInteraction, { uid }: { uid: Piped<Account> }) {}
+```
+
+Both forms are checked: a pipe whose output does not fit the parameter fails to compile, and an unmarked key a separate pipe changes is reported as a mismatch with `@Validate`.
+
+A pipe is resolved from the container like a service, so it can inject one, and one instance serves every call. Per-use values go through `{ provide, params }` and `context.getParams()`, the second argument of `transform`. A pipe that throws stops the call, and the error reaches the filters. Generate one with `npx meocord g pi <name>`.
 
 ## Custom Decorators
 
@@ -1135,6 +1188,9 @@ await module.invoke(ProfileController, 'showProfile', interaction, { ownerId: '1
 ```
 
 `invoke` resolves to `{ ran }`, which is `false` when a guard denied the call or an interceptor skipped the handler, with `error` set when a filter handled one, and rejects with an error no filter handles, since the built-in fallback does not run in tests. The method name and arguments are type-checked against the handler. Calling the controller method directly still runs its guards, as in earlier versions, but no interceptors or filters; `invoke` is the way to test everything dispatch runs around a handler.
+Pass the interaction alone and `invoke` builds the params as dispatch does: a command's options, or the handler's customId params and a modal's fields. `createModalFields({ body: 'It crashed' })` gives a mock `ModalSubmitInteraction` its submitted fields, which discord.js does not let a test construct.
+
+`invoke` resolves to `{ ran }`, which is `false` when a guard denied the call or an interceptor skipped the handler, and rejects with any error the handler or a guard throws. The method name and arguments are type-checked against the handler. Calling the controller method directly still runs its guards, as in earlier versions, but no interceptors; `invoke` is the way to test everything dispatch runs around a handler.
 
 To check what a handler is set up with, without running it, use `inspectHandler`. It lists the guards, interceptors and filters dispatch applies, in order, and reads the handler's metadata as `ExecutionContext` does:
 

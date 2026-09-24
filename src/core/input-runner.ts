@@ -1,0 +1,97 @@
+import 'reflect-metadata'
+import { type Container } from 'inversify'
+import { type PipeInterface } from '@src/interface/index.js'
+import { type StandardSchemaV1 } from '@src/interface/standard-schema.interface.js'
+import { ValidationError } from '@src/common/errors.js'
+import { type HandlerExecutionContext } from '@src/common/execution-context.js'
+import { prepareInterceptor } from '@src/core/interceptor-runner.js'
+import { sourcePrototype } from '@src/core/guard-runner.js'
+
+export type PipeClass = new (...args: any[]) => PipeInterface
+
+/** A pipe class, and the params its `ExecutionContext.getParams()` returns. */
+export interface PipeWithParams {
+  provide: PipeClass
+  params: Record<string, any>
+}
+
+export type PipeEntry = PipeClass | PipeWithParams
+
+/** What `@Validate` stores on a method. */
+export interface ValidationMetadata {
+  schema: StandardSchemaV1
+  pipes: Record<string, PipeEntry | readonly PipeEntry[]>
+}
+
+/** Private metadata: the `@Validate` schema and inline pipes of a method. */
+export const METHOD_VALIDATION = Symbol('method_validation')
+
+/** Private metadata: the `@UsePipe` pipes of a method, in declaration order. */
+export const METHOD_PIPES = Symbol('method_pipes')
+
+function isPipeWithParams(entry: PipeEntry): entry is PipeWithParams {
+  return typeof entry === 'object' && entry !== null && 'provide' in entry
+}
+
+const asList = (entries: PipeEntry | readonly PipeEntry[]): readonly PipeEntry[] =>
+  Array.isArray(entries) ? entries : [entries as PipeEntry]
+
+/** The validation and pipes that run on a handler's input: `@Validate`'s first, then `@UsePipe`'s. */
+export function handlerInputStages(prototype: object, methodName: string): {
+  schema?: StandardSchemaV1
+  pipes: { key: string; entry: PipeEntry }[]
+} {
+  const source = sourcePrototype(prototype, methodName)
+  if (!source) return { pipes: [] }
+
+  const validation = Reflect.getOwnMetadata(METHOD_VALIDATION, source, methodName) as ValidationMetadata | undefined
+  const inline = Object.entries(validation?.pipes ?? {}).flatMap(([key, entries]) => asList(entries).map(entry => ({ key, entry })))
+  const used = (Reflect.getOwnMetadata(METHOD_PIPES, source, methodName) as { key: string; entry: PipeEntry }[]) ?? []
+  return { schema: validation?.schema, pipes: [...inline, ...used] }
+}
+
+/** Binds a pipe as a singleton, as interceptors are: one that injects `ExecutionContext` is refused. */
+export function preparePipe(container: Container, entry: PipeEntry): void {
+  prepareInterceptor(container, (isPipeWithParams(entry) ? entry.provide : entry) as never)
+}
+
+/**
+ * The handler's arguments with its input validated and piped: the second argument is replaced by the
+ * schema's output, then each pipe's result for its key. Unchanged when the handler has neither, and
+ * the call's context is built only if a pipe needs it.
+ *
+ * @throws ValidationError when the schema reports issues; anything a pipe throws.
+ */
+export async function prepareHandlerArgs(
+  container: Container,
+  prototype: object,
+  methodName: string,
+  contextOf: () => HandlerExecutionContext,
+  args: readonly unknown[],
+): Promise<unknown[]> {
+  const { schema, pipes } = handlerInputStages(prototype, methodName)
+  if (!schema && pipes.length === 0) return [...args]
+
+  let input = (args[1] ?? {}) as Record<string, unknown>
+
+  if (schema) {
+    const result = await schema['~standard'].validate(input)
+    if (result.issues) throw ValidationError.fromSchemaIssues(result.issues)
+    input = result.value as Record<string, unknown>
+  }
+
+  if (pipes.length > 0) {
+    input = { ...input }
+    for (const { key, entry } of pipes) {
+      const [cls, params] = isPipeWithParams(entry) ? [entry.provide, entry.params] : [entry, undefined]
+      preparePipe(container, cls)
+      const pipe = container.get<PipeInterface>(cls)
+      if (typeof pipe.transform !== 'function') {
+        throw new Error(`Pipe ${cls.name} applied to ${methodName} does not have a valid transform method.`)
+      }
+      input[key] = await pipe.transform(input[key], contextOf().withParams(params))
+    }
+  }
+
+  return [args[0], input, ...args.slice(2)]
+}

@@ -1,0 +1,12 @@
+import { Pipe } from 'meocord/decorator'
+import { type PipeInterface } from 'meocord/interface'
+import { type ExecutionContext } from 'meocord/common'
+
+@Pipe()
+export class {{className}}Pipe implements PipeInterface<string, string> {
+  // One instance serves every call: keep per-call state in local variables
+  transform(value: string, _context: ExecutionContext): string {
+    // TODO: Turn the value into what the handler works with, or throw to stop the call
+    return value.trim()
+  }
+}

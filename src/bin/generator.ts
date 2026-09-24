@@ -6,6 +6,7 @@ import { ServiceGeneratorHelper } from '@src/bin/helper/service-generator.helper
 import { GuardGeneratorHelper } from '@src/bin/helper/guard-generator.helper.js'
 import { InterceptorGeneratorHelper } from '@src/bin/helper/interceptor-generator.helper.js'
 import { FilterGeneratorHelper } from '@src/bin/helper/filter-generator.helper.js'
+import { PipeGeneratorHelper } from '@src/bin/helper/pipe-generator.helper.js'
 import wait from '@src/util/wait.util.js'
 
 export class GeneratorCLI {
@@ -15,6 +16,7 @@ export class GeneratorCLI {
   private guardGeneratorHelper: GuardGeneratorHelper
   private interceptorGeneratorHelper: InterceptorGeneratorHelper
   private filterGeneratorHelper: FilterGeneratorHelper
+  private pipeGeneratorHelper: PipeGeneratorHelper
 
   constructor(private appName: string) {
     this.logger = new Logger(this.appName)
@@ -23,6 +25,7 @@ export class GeneratorCLI {
     this.guardGeneratorHelper = new GuardGeneratorHelper(this.appName)
     this.interceptorGeneratorHelper = new InterceptorGeneratorHelper(this.appName)
     this.filterGeneratorHelper = new FilterGeneratorHelper(this.appName)
+    this.pipeGeneratorHelper = new PipeGeneratorHelper(this.appName)
   }
 
   register(program: Command): Command {
@@ -96,6 +99,18 @@ export class GeneratorCLI {
         })
       })
 
+    generatorCommand
+      .command('pipe')
+      .alias('pi')
+      .addArgument(new Argument('<name>', 'Name of the pipe.'))
+      .description('Generate a pipe component')
+      .action(async name => {
+        await this.handleGenerateComponent({
+          component: 'pipe',
+          name,
+        })
+      })
+
     return program
   }
 
@@ -136,6 +151,10 @@ export class GeneratorCLI {
 
       case 'filter':
         this.filterGeneratorHelper.generateFilter(name)
+        break
+
+      case 'pipe':
+        this.pipeGeneratorHelper.generatePipe(name)
         break
 
       default:
