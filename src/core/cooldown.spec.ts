@@ -1,6 +1,6 @@
 import { ButtonInteraction, ChatInputCommandInteraction, Message, type MessageReaction } from 'discord.js'
 import { vi } from 'vitest'
-import { Command, Controller, Cooldown, MessageHandler, Pipe, ReactionHandler, UsePipe, Validate } from '@src/decorator/index.js'
+import { Command, Controller, Cooldown, MessageHandler, Once, Pipe, ReactionHandler, UsePipe, Validate } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { type PipeInterface, type StandardSchemaV1 } from '@src/interface/index.js'
 import { CooldownError, cooldownMessage, CooldownStore, type CooldownLimit, MemoryCooldownStore } from '@src/common/index.js'
@@ -300,3 +300,46 @@ describe('cooldownMessage', () => {
   })
 })
 
+
+describe('classes that share a name', () => {
+  // Cooldown counts and @Once tracking are keyed by class name, so two same-named classes would share them.
+  const shopWithCooldown = () => {
+    @Controller()
+    class Shop {
+      @Command('buy', CommandType.SLASH)
+      @Cooldown({ seconds: 5 })
+      async buy(_interaction: ChatInputCommandInteraction) {}
+    }
+    return Shop
+  }
+  const plainShop = () => {
+    @Controller()
+    class Shop {
+      @Command('sell', CommandType.SLASH)
+      async sell(_interaction: ChatInputCommandInteraction) {}
+    }
+    return Shop
+  }
+  const shopWithOnce = () => {
+    @Controller()
+    class Shop {
+      @Once('clientReady')
+      async ready() {}
+    }
+    return Shop
+  }
+
+  it('refuse to start when either counts a cooldown', () => {
+    expect(() => MeoCordTestingModule.create({ controllers: [shopWithCooldown(), plainShop()] }).compile()).toThrow(
+      'Two classes are named Shop, and @Cooldown and @Once tell classes apart by name, so they would share counts. Rename one of them.',
+    )
+  })
+
+  it('refuse to start when either has a @Once handler', () => {
+    expect(() => MeoCordTestingModule.create({ controllers: [plainShop(), shopWithOnce()] }).compile()).toThrow('Two classes are named Shop')
+  })
+
+  it('start when neither has a cooldown or a @Once handler', () => {
+    expect(() => MeoCordTestingModule.create({ controllers: [plainShop(), plainShop()] }).compile()).not.toThrow()
+  })
+})

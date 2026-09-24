@@ -29,7 +29,7 @@ import {
 } from '@src/core/filter-runner.js'
 import { type Fallback } from '@src/core/fallback.js'
 import { handlerInputStages, prepareHandlerArgs, preparePipe } from '@src/core/input-runner.js'
-import { methodCooldowns } from '@src/core/cooldown-runner.js'
+import { handlerCooldowns, methodCooldowns } from '@src/core/cooldown-runner.js'
 import { Logger } from '@src/common/logger.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
 import {
@@ -133,6 +133,7 @@ export function handlerStages(
  * singletons, so one that cannot be shared, or a filter without `@Catch`, fails at startup.
  */
 export function prepareHandlerStages(container: Container, controllers: readonly (new (...args: any[]) => unknown)[]): void {
+  assertDistinctNamesWhereKeyed(controllers)
   const globals = globalStagesOf(container)
   for (const entry of globals.interceptors) prepareInterceptor(container, entry)
   for (const entry of globals.filters) prepareFilter(container, entry)
@@ -156,6 +157,36 @@ export function prepareHandlerStages(container: Container, controllers: readonly
       for (const { entry } of handlerInputStages(prototype, method).pipes) preparePipe(container, entry)
     }
     assertInputStagesOnInteractions(controller, prototype)
+  }
+}
+
+/** Whether a class has state keyed by its name: a cooldown on a handler, or a `@Once` handler. */
+function keyedByName(cls: new (...args: any[]) => unknown): boolean {
+  const prototype = cls.prototype as object
+  const handlers = [
+    ...Object.values(getCommandMap(prototype) ?? {})
+      .flat()
+      .map(command => command.methodName),
+    ...getMessageHandlers(prototype).map(handler => handler.method),
+  ]
+  return handlers.some(method => handlerCooldowns(prototype, method).length > 0) || getEventHandlers(prototype).some(handler => handler.once)
+}
+
+/**
+ * Refuses two same-named classes when either keeps state under its name, since cooldown counts and
+ * `@Once` tracking would be shared between them.
+ */
+function assertDistinctNamesWhereKeyed(classes: readonly (new (...args: any[]) => unknown)[]): void {
+  const byName = new Map<string, new (...args: any[]) => unknown>()
+  for (const cls of classes) {
+    const other = byName.get(cls.name)
+    if (other && other !== cls && (keyedByName(cls) || keyedByName(other))) {
+      throw new Error(
+        `Two classes are named ${cls.name}, and @Cooldown and @Once tell classes apart by name, so they would share counts. ` +
+          `Rename one of them.`,
+      )
+    }
+    byName.set(cls.name, cls)
   }
 }
 
