@@ -1,6 +1,8 @@
 import { describe, expectTypeOf, it } from 'vitest'
-import { type ButtonInteraction } from 'discord.js'
+import { type ButtonInteraction, type Message } from 'discord.js'
 import { type InvocationResult, MeoCordTestingModule } from './meocord-testing-module.js'
+import { createExecutionContext } from './execution-context.js'
+import { getResponse } from './response.js'
 
 /**
  * Runs under `vitest --typecheck`. The negative case uses `@ts-expect-error`,
@@ -61,5 +63,25 @@ describe('invoke', () => {
     void module.invoke(ProfileController, 'hide', interaction, { id: '1' })
     // @ts-expect-error `id` must be a string.
     void module.invoke(ProfileController, 'show', interaction, { id: 1 })
+  })
+})
+
+describe('the testing helpers, misused', () => {
+  it('rejects a method createExecutionContext cannot find', () => {
+    // @ts-expect-error `hide` is not a method on ProfileController.
+    void createExecutionContext(ProfileController, 'hide')
+  })
+
+  it('rejects arguments an event does not pass to emit', () => {
+    const module = MeoCordTestingModule.create({}).compile()
+    // @ts-expect-error guildMemberAdd passes a GuildMember
+    void module.emit('guildMemberAdd', 'member')
+    // @ts-expect-error not a client event
+    void module.emit('memberJoined')
+  })
+
+  it('takes only an interaction in getResponse', () => {
+    // @ts-expect-error a message has no response state
+    void getResponse({} as Message)
   })
 })
