@@ -199,6 +199,7 @@ const TYPE_GUARD_METHODS = [
   'isModalSubmit',
   'isAutocomplete',
   'isRepliable',
+  'isFromMessage',
 ] as const
 
 interface InteractionClass<T> {
