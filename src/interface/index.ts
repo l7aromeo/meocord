@@ -519,6 +519,7 @@ export interface CommandBuilderOptions {
 export type { CooldownOptions } from '@src/core/cooldown-runner.js'
 export type {
   InferSchemaOutput,
+  PIPED_BRAND,
   Piped,
   StandardSchemaV1,
   StandardSchemaV1Issue,
