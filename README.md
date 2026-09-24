@@ -30,6 +30,7 @@
 - [Autocomplete](#autocomplete)
 - [Guards](#guards)
 - [Custom Decorators](#custom-decorators)
+- [Lifecycle Hooks](#lifecycle-hooks)
 - [Testing](#testing)
 - [Deployment](#deployment)
 - [Contributing](#contributing)
@@ -43,6 +44,7 @@
 - **Decorator-based controllers** — Handle every Discord interaction type — slash commands and their subcommands, autocomplete, buttons, modals, all five select menus, context menus, activity entry points, messages, and reactions — with `@Command`, `@Autocomplete`, `@Controller`, and `@UseGuard` decorators. No routing boilerplate.
 - **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators.
 - **Guard system** — Pre-execution hooks for auth, rate limiting, metrics, and anything else. Apply per-method or per-class with `@UseGuard`. Guards receive the full interaction context.
+- **Lifecycle hooks** — `onReady` and `onShutdown` on any controller or service, for schedulers, cache warm-up and clean shutdown.
 - **Full CLI** — `meocord create`, `build`, `start`, `generate`. Scaffolds controllers, services, and guards; builds with Rsbuild for both development and production.
 - **Testing utilities** — `MeoCordTestingModule` with `invoke` to run a handler through its guards, `inspectHandler`, `createMockInteraction`, `createMockMessage`, `createMockUser`, `createMockClient`, `createMockGuild`, `createMockChannel`, `createChatInputOptions`, and `overrideGuard` let you test controllers against real guard logic without a Discord connection. Type guards and reply state machines work out of the box.
 - **TypeScript-first** — Strict types throughout. Decorator metadata, `DeepMocked<T>` for test mocks, and typed config interfaces included.
@@ -776,6 +778,44 @@ expect(guard.canActivate(interaction)).toBe(false)
 ```
 
 To test the guard together with the handler it protects, run the handler with [`invoke`](#running-a-handler-with-invoke).
+
+---
+
+## Lifecycle Hooks
+
+A controller or service can do work once the bot is online, and clean up before it stops, by implementing `OnReady` and `OnShutdown` from `meocord/interface`:
+
+```typescript
+import { Service } from 'meocord/decorator'
+import { type OnReady, type OnShutdown, type ReadyInfo } from 'meocord/interface'
+import { type Client } from 'discord.js'
+
+@Service()
+export class ReminderScheduler implements OnReady, OnShutdown {
+  private timer?: ReturnType<typeof setInterval>
+
+  onReady(client: Client<true>, { primary }: ReadyInfo) {
+    if (primary) this.timer = setInterval(() => void this.sendDueReminders(client), 60_000)
+  }
+
+  onShutdown() {
+    clearInterval(this.timer)
+  }
+
+  private async sendDueReminders(client: Client<true>) {
+    for (const { userId, text } of this.takeDue()) await client.users.send(userId, text)
+  }
+
+  private takeDue(): { userId: string; text: string }[] {
+    return [] // read the reminders that are due from your store
+  }
+}
+```
+
+- **Which classes**: every controller and every service the app binds — the ones listed in `@MeoCord({ controllers, services })` and everything they depend on — including a service no handler has used yet. Guards are created per call and get no hooks.
+- **`onReady`** runs once the client is ready. It receives the client and `{ primary }`, which says whether this process should do one-off work; it is `true` for a bot running in one process. Hooks run in parallel and never wait for command registration.
+- **`onShutdown`** runs on SIGINT or SIGTERM, before the client is destroyed. All hooks run in parallel and the bot waits up to 10 seconds for them, then shuts down whether or not they finished. A second signal exits at once. If the bot never became ready, for example because the login failed, no `onShutdown` hook runs.
+- A hook that throws is logged and does not stop the others.
 
 ---
 

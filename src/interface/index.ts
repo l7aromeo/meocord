@@ -1,4 +1,4 @@
-import { BaseInteraction, Message, MessageReaction, type PartialUser, User } from 'discord.js'
+import { BaseInteraction, type Client, Message, MessageReaction, type PartialUser, User } from 'discord.js'
 import { type RsbuildConfig } from '@rsbuild/core'
 
 /**
@@ -34,6 +34,66 @@ export interface GuardInterface {
    * @returns `true` to run the handler, `false` to skip it.
    */
   canActivate(context: BaseInteraction | Message | MessageReaction, ...args: any[]): Promise<boolean> | boolean
+}
+
+/** The second argument `onReady` receives. */
+export interface ReadyInfo {
+  /**
+   * Whether this process should do one-off work, such as starting a scheduler that must run once.
+   * `true` for a bot running in one process.
+   */
+  primary: boolean
+}
+
+/**
+ * A controller or service that does work once the bot is online, such as starting timers or
+ * warming a cache.
+ *
+ * Called on every controller and service the app binds, including services no handler has used
+ * yet, after the client is ready. Hooks run in parallel and never wait for command registration; a
+ * hook that throws is logged and does not affect the others.
+ *
+ * @example
+ * ```ts
+ * @Service()
+ * export class ReminderScheduler implements OnReady {
+ *   async onReady(client: Client<true>, { primary }: ReadyInfo) {
+ *     if (primary) this.start()
+ *   }
+ * }
+ * ```
+ */
+export interface OnReady {
+  /**
+   * Runs once the client is ready.
+   *
+   * @param client - The ready Discord client.
+   * @param info - Facts about this process, such as whether it should do one-off work.
+   */
+  onReady(client: Client<true>, info: ReadyInfo): Promise<void> | void
+}
+
+/**
+ * A controller or service that cleans up before the bot stops, such as stopping timers or flushing
+ * writes.
+ *
+ * Called on SIGINT or SIGTERM, before the client is destroyed, and only if `onReady` hooks ran. All
+ * hooks run in parallel under one timeout; the process then exits whether or not they finished. A
+ * hook that throws is logged and does not affect the others.
+ *
+ * @example
+ * ```ts
+ * @Service()
+ * export class ReminderScheduler implements OnShutdown {
+ *   async onShutdown() {
+ *     this.stop()
+ *   }
+ * }
+ * ```
+ */
+export interface OnShutdown {
+  /** Runs before the client is destroyed. */
+  onShutdown(): Promise<void> | void
 }
 
 /** The second argument a `@ReactionHandler` method receives. */

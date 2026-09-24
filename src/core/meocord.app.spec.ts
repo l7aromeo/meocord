@@ -41,7 +41,7 @@ import { EmbedUtil } from '@src/util/index.js'
 import { createChatInputOptions, createMockInteraction, resolveRoute } from '@src/testing/index.js'
 import { Autocomplete, Command, CommandBuilder, Controller, MeoCord, ReactionHandler } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
-import { MeoCordApp } from '@src/core/meocord.app.js'
+import { MeoCordApp, shutdownAndExit } from '@src/core/meocord.app.js'
 
 function createMockClient() {
   const listeners = new Map<string, ((...args: any[]) => any)[]>()
@@ -1118,7 +1118,7 @@ describe('MeoCordApp', () => {
     })
   })
 
-  describe('gracefulShutdown()', () => {
+  describe('shutdownAndExit()', () => {
     it('destroys the client and clears the activity interval', async () => {
       const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 'token', [{ name: 'Playing' }])
       await app.start()
@@ -1126,10 +1126,9 @@ describe('MeoCordApp', () => {
       mockClient.emit('clientReady')
       vi.advanceTimersByTime(10000)
 
-      const sigintHandler = process.listeners('SIGINT').at(-1) as () => Promise<void>
       const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
 
-      await sigintHandler()
+      await shutdownAndExit()
 
       expect(mockClient.destroy).toHaveBeenCalled()
       expect(mockClient.removeAllListeners).toHaveBeenCalled()
