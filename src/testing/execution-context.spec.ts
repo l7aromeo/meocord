@@ -1,6 +1,6 @@
 import { ButtonInteraction } from 'discord.js'
 import { createMetadata } from '@src/common/metadata.js'
-import { createExecutionContext, createMockInteraction } from '@src/testing/index.js'
+import { createExecutionContext, createMockInteraction, createMockMessage } from '@src/testing/index.js'
 
 const Owner = createMetadata<string>('owner')
 
@@ -27,4 +27,15 @@ describe('createExecutionContext', () => {
     expect(createExecutionContext(ProfileController, 'show', { type: 'event' }).getType()).toBe('event')
     expect(createExecutionContext(ProfileController, 'show').getArgs()).toEqual([])
   })
+
+  it('reads a message as the call it describes, and reports no params when none were given', () => {
+    const message = createMockMessage()
+    const context = createExecutionContext(ProfileController, 'show', { args: [message] })
+
+    expect(context.getType()).toBe('message')
+    expect(context.getMessage()).toBe(message)
+    expect(context.getInteraction()).toBeUndefined()
+    expect(context.getParams()).toBeUndefined()
+  })
 })
+
