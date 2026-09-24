@@ -4,6 +4,9 @@ Operating guide for AI agents working on MeoCord. Read it before your first chan
 this repository is built, verified, reviewed and released. Human contributors should read
 [CONTRIBUTING.md](CONTRIBUTING.md), which this file assumes.
 
+This file changes only with the maintainer's approval: do not edit it; propose changes instead. Keep
+it short — link to CONTRIBUTING.md or the code rather than copying into it.
+
 ## 0. Agent setup
 
 `AGENTS.md` is the only agent instruction file in this repository. A tool that reads a different

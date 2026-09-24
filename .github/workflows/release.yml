@@ -6,6 +6,8 @@ on:
       - main
       - beta
   pull_request:
+    # `labeled` and `unlabeled` re-run the AGENTS.md guard when its approval label changes.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     branches:
       - main
       - beta
@@ -43,6 +45,26 @@ jobs:
 
       - name: Run lint
         run: bun run lint
+
+      # AGENTS.md changes only with the maintainer's `agents-md-approved` label, and stays short.
+      - name: Guard AGENTS.md
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          APPROVED: ${{ contains(github.event.pull_request.labels.*.name, 'agents-md-approved') }}
+          MAX_LINES: 230
+        run: |
+          git fetch --quiet --depth=1 origin "$BASE_SHA"
+          if git diff --quiet "$BASE_SHA" HEAD -- AGENTS.md; then exit 0; fi
+          if [ "$APPROVED" != "true" ]; then
+            echo "::error file=AGENTS.md::AGENTS.md changed without the maintainer's 'agents-md-approved' label."
+            exit 1
+          fi
+          lines=$(wc -l < AGENTS.md)
+          if [ "$lines" -gt "$MAX_LINES" ]; then
+            echo "::error file=AGENTS.md::AGENTS.md has $lines lines; keep it at $MAX_LINES or fewer."
+            exit 1
+          fi
 
       # Generated from the installed packages, so a dependency added without regenerating it
       # fails here rather than shipping a notice that leaves it out.
