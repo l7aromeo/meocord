@@ -90,6 +90,43 @@ describe('prepareModifiedTsConfig', () => {
     expect(path.isAbsolute(written.compilerOptions.paths['@src/*'][0])).toBe(true)
   })
 
+  // The copy lives in the temp directory, where a relative extends would name a file that is not there
+  it('makes a relative extends absolute, from the project', () => {
+    mockTsConfig({ extends: './tsconfig.base.json', compilerOptions: {} })
+
+    prepareModifiedTsConfig()
+
+    const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string)
+    expect(written.extends).toBe(path.resolve(process.cwd(), 'tsconfig.base.json'))
+  })
+
+  it('makes each relative extends in a list absolute', () => {
+    mockTsConfig({ extends: ['./a.json', '../b.json'] })
+
+    prepareModifiedTsConfig()
+
+    const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string)
+    expect(written.extends).toEqual([path.resolve(process.cwd(), 'a.json'), path.resolve(process.cwd(), '../b.json')])
+  })
+
+  it("resolves an extends naming a package from the project's node_modules", () => {
+    mockTsConfig({ extends: 'typescript/package.json' })
+
+    prepareModifiedTsConfig()
+
+    const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string)
+    expect(written.extends).toBe(path.resolve(process.cwd(), 'node_modules', 'typescript', 'package.json'))
+  })
+
+  it('resolves relative files, without compilerOptions', () => {
+    mockTsConfig({ files: ['./src/main.ts'] })
+
+    prepareModifiedTsConfig()
+
+    const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string)
+    expect(written.files).toEqual([path.resolve(process.cwd(), 'src/main.ts')])
+  })
+
   it('writes to the temp directory and returns that path', () => {
     mockTsConfig({ compilerOptions: {} })
 
