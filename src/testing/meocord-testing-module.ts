@@ -140,6 +140,7 @@ export class TestingModule {
     }
 
     const instance = this.container.get(controller) as Record<string, (...args: unknown[]) => unknown>
+    if (typeof instance[methodName] !== 'function') throw new Error(`${controller.name}.${methodName} is not a method.`)
     const [first] = args as unknown[]
     const callArgs =
       args.length === 1 && first instanceof BaseInteraction

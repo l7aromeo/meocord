@@ -188,4 +188,9 @@ describe('TestingModule.invoke', () => {
       'GreetingController is not a controller of this testing module',
     )
   })
+
+  it('rejects a method the controller does not have, naming it', async () => {
+    await expect(compile().invoke(GreetingController, 'missing' as never, slash())).rejects.toThrow('GreetingController.missing is not a method')
+  })
 })
+
