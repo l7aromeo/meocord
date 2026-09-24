@@ -481,6 +481,10 @@ copies or substantial portions of the Software.
     const configPath = path.resolve(this.projectRoot, 'meocord.config.ts')
     if (!fs.existsSync(configPath)) return
 
+    // Compiled beside dist and moved in only once it built, so a failed compile leaves the last good one.
+    // Each compile stages in a folder of its own, so two at once, such as the watcher's and a build's, never collide.
+    const dist = path.resolve(this.projectRoot, 'dist')
+    let staging: string | undefined
     try {
       // Built without the application's `rsbuild` hook, since this file declares that hook. It follows
       // `bundleDependencies`, because the config imports packages (dotenv) a bundled bot has no copy of.
@@ -492,9 +496,8 @@ copies or substantial portions of the Software.
         bundleDependencies,
         externals: meocordConfig?.externals,
       })
-      // Compiled beside dist and moved in only once it built, so a failed compile leaves the last good one.
-      const staging = path.resolve(this.projectRoot, 'dist', '.meocord-config')
-      fs.rmSync(staging, { recursive: true, force: true })
+      fs.mkdirSync(dist, { recursive: true })
+      staging = fs.mkdtempSync(path.join(dist, '.meocord-config-'))
       const rsbuild = await createRsbuild({
         cwd: this.projectRoot,
         config: {
@@ -513,11 +516,11 @@ copies or substantial portions of the Software.
       })
 
       await rsbuild.build()
-      fs.renameSync(path.join(staging, 'meocord.config.mjs'), path.resolve(this.projectRoot, 'dist', 'meocord.config.mjs'))
+      fs.renameSync(path.join(staging, 'meocord.config.mjs'), path.join(dist, 'meocord.config.mjs'))
       fs.rmSync(staging, { recursive: true, force: true })
       this.logger.info('Config compiled to dist/meocord.config.mjs')
     } catch (error) {
-      fs.rmSync(path.resolve(this.projectRoot, 'dist', '.meocord-config'), { recursive: true, force: true })
+      if (staging) fs.rmSync(staging, { recursive: true, force: true })
       // The built application reads only the compiled config, so without it the bot cannot start.
       this.logger.error(`Failed to compile meocord.config.ts: ${error instanceof Error ? error.message : error}`)
       await wait(100)
