@@ -304,8 +304,16 @@ Three type errors that MeoCord 3 users hit are fixed. If you worked around them 
 
 ## Upgrading from 4.0 to 4.1
 
-4.1 is a minor release: a 4.0 bot and its tests keep working without edits, except for the two fixes
-below, which change which guards run.
+4.1 is a minor release: a 4.0 bot and its tests build and run without edits. The fixes below change
+what a bot does at runtime; each says what to check. Everything else in 4.1 is new and optional, and
+[Adopting 4.1 patterns](#adopting-41-patterns) shows where it can replace code you wrote yourself.
+
+- [ ] Check class guards on controllers that extend another controller
+- [ ] Check class guards on controllers with `@Autocomplete` handlers
+- [ ] Check what users see when a command throws after it replied or deferred
+- [ ] Fix any command builder that throws, since it now stops registration
+- [ ] Replace the generated `src/guards/rate-limit.guard.ts`, if your app still has it
+- [ ] Rebuild
 
 ### Class guards now cover inherited handlers
 
@@ -342,6 +350,138 @@ canActivate(interaction: BaseInteraction): boolean {
 ```
 
 With `ExecutionContext` injected, `this.context.getType() === 'autocomplete'` tells the same.
+
+### Errors after a reply or deferral are answered
+
+A command that throws after `deferReply()` now has its deferred reply edited into the error message,
+instead of showing "thinking…" until Discord times it out. A command or component that throws after it
+already replied now gets a private follow-up with the error, where 4.0 sent nothing. A button, select
+menu or modal submitted from a message is answered with a private follow-up, never by editing the
+message the user clicked.
+
+If a handler relied on the old silence, for instance because it edits its own reply into an error
+before rethrowing, register an [exception filter](../README.md#exception-filters) that handles the
+error: filters run before the built-in answer and replace it.
+
+```typescript
+@Catch()
+export class LogOnlyFilter implements ExceptionFilter {
+  private readonly logger = new Logger('Errors')
+
+  catch(error: unknown): void {
+    this.logger.error(error)
+  }
+}
+```
+
+### A command builder that throws stops registration
+
+Registration now builds every command before sending any. A builder whose `toJSON()` throws, such as a
+slash command without a description, stops that start's registration with an error naming it, and no
+commands are sent. 4.0 dropped the broken command and registered the rest, and the bulk update deleted
+it from Discord. Fix the builder; the next start registers everything.
+
+### The generated rate-limit guard limits
+
+The `RateLimitGuard` that `meocord create` copied into 4.0 applications never limited anything: a new
+guard instance is created for every call, so the counts it kept on the instance started empty each time.
+Upgrading `meocord` does not change your copy. Replace `src/guards/rate-limit.guard.ts` with the one a
+new application gets, or move its `rateLimits` map out of the class to module level.
+
+### Smaller changes
+
+- `process.env` values that `meocord.config.ts` loads are set before any application module runs,
+  after a rebuild. An option such as `@MeoCord({ activities: [{ name: process.env.STATUS! }] })` read
+  `undefined` in 4.0.
+- A modal handler's second argument also carries the submitted fields, keyed by customId, beside the
+  customId params. A param wins over a field of the same name.
+- `createMockInteraction(ModalSubmitInteraction).isFromMessage()` returns `true` only when the mock has a
+  `message`, as a real modal does, rather than `undefined`.
+- `MeoCordFactory.create()` returns the `MeoCordApplication` type from `meocord/interface`, with the same
+  `start()` and `registerCommands()`.
+
+## Adopting 4.1 patterns
+
+Nothing here is required. Each item replaces something a 4.0 bot had to write by hand; see the
+[README](../README.md) for the full feature.
+
+**Handler metadata: `createMetadata` and `ExecutionContext`.** A 4.0 guard read `SetMetadata` values
+with `Reflect.getMetadata`, and reading them from the interaction found nothing. Declare the decorator
+with `createMetadata` and inject `ExecutionContext` into the guard; its value is typed, and the
+handler's wins over the controller's.
+
+```typescript
+// 4.0
+export const Roles = (...roles: string[]) => SetMetadata('roles', roles)
+const required: string[] = Reflect.getMetadata('roles', interaction.constructor) ?? []
+
+// 4.1
+export const Roles = createMetadata<string[]>('roles')
+
+@Guard()
+export class RolesGuard implements GuardInterface {
+  constructor(private readonly context: ExecutionContext) {}
+
+  canActivate(interaction: ChatInputCommandInteraction): boolean {
+    const required = this.context.get(Roles) ?? []
+    // ...
+  }
+}
+```
+
+**Denying with a message: `GuardDeniedError`.** Instead of replying from the guard and returning
+`false`, throw `new GuardDeniedError('Only the owner can use this.')`. The user who made the call sees
+the message privately, and an exception filter can phrase it otherwise.
+
+**Guards for the whole bot: `@MeoCord({ guards })`.** A guard repeated on every controller, such as a
+blocklist, can be listed once in `@MeoCord`, where it runs before every handler's own guards. Give it
+`types: ['interaction']` in `@Guard` if it should skip messages, reactions and events.
+
+**Error handling: exception filters.** A `try`/`catch` repeated in handlers to answer the user can move
+into a `@Catch` filter, on the controller with `@UseFilter` or for the whole bot in
+`@MeoCord({ filters })`.
+
+**Cross-cutting work: interceptors.** Timing, logging and caching written into each handler can move into
+an `@Interceptor`, which runs around the handler and sees what it returns or throws.
+
+**Parsing options: `@Validate` and pipes.** Reading, checking and converting options inside the handler
+can become a schema: the handler receives typed, valid values, and invalid input gets a private reply
+listing each issue. A pipe turns a valid value into what the handler works with, such as a record loaded
+by its id.
+
+**Client events: `@On` and `@Once`.** A service that injected `Client` and called `client.on(...)` in its
+constructor can declare `@On('guildMemberAdd')` on a method instead. The arguments are typed, the
+handler runs through guards, interceptors and filters, and an error is logged rather than crashing the
+bot. Tests send the event with `module.emit`.
+
+**Startup and shutdown: lifecycle hooks.** Work started from a `ready` listener, or cleanup registered
+with `process.on('SIGTERM')`, belongs in `onReady` and `onShutdown` from `OnReady` and `OnShutdown`.
+They run in dependency order, and shutdown waits for them up to `shutdownTimeout`.
+
+**Testing a handler: `invoke`.** Calling a controller method directly runs its guards only.
+`module.invoke(Controller, 'method', interaction)` runs everything dispatch runs, global stages included
+when the module is created with `app: App`, and resolves to `{ ran }`. `inspectHandler` lists the stages
+a handler runs without building a module.
+
+**Registration: the `commands` setting and `meocord register`.** A development bot can register every
+command to one guild with `commands.developmentGuild`, where changes show at once, and a deployment can
+register from CI with `meocord register` and `commands.register: false`. `@CommandBuilder(type, { guilds })`
+keeps a staff command in its own guilds.
+
+**Loading `.env`: the config only.** An `import 'dotenv/config'` at the top of `main.ts`, added so the
+environment was set before `App` loaded, is no longer needed: the build loads `meocord.config.ts`, and
+with it `.env`, ahead of `main.ts`. Keep the import in `meocord.config.ts` and remove the one in `main.ts`.
+
+**Sharding: the `sharding` setting.** A hand-written discord.js `ShardingManager` script can become
+`sharding: { shards: 'auto', mode: 'process' }` in `meocord.config.ts`, started as usual with
+`meocord start` or `node dist/main.js`. Call a service in every shard with `ShardContext.call`.
+
+**Localisation: `createTranslator`.** Command names, descriptions and replies kept in hand-rolled maps can
+move into one typed catalog per locale, checked at compile time, with `expectCompleteCatalog` in tests.
+
+**Optional packages: `optionalExternals`.** With `bundleDependencies`, a package a dependency only tries to
+load, such as `supports-color`, belongs in `optionalExternals` rather than `externals`, where a missing
+copy stopped the bot at startup.
 
 ---
 
