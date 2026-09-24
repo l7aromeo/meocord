@@ -106,6 +106,8 @@ The pre-commit hook runs `bun run lint`. Do not bypass it for code changes.
 ### Code
 
 - TypeScript, ESM, strict. Match the surrounding code's naming, idiom and comment density.
+- Bun is repository tooling only. Shipped code (`src/`, templates) uses only APIs Node also has — no
+  `Bun.*`, `bun:*` or Bun-only `import.meta` properties; ESLint rejects them in `src/`.
 - Keep public types free of internal shapes (no `regex`, `specificity` or metadata maps).
 - New behaviour needs tests; a bug fix needs a test that fails without the fix. Prefer building
   real decorated controllers over mocking the framework.
