@@ -1,5 +1,6 @@
 import { ChatInputCommandInteraction, type Guild, Locale } from 'discord.js'
 import { createTranslator, defineCatalog } from '@src/common/index.js'
+import { missingTranslatorError } from '@src/common/translator.js'
 import { createMockInteraction } from '@src/testing/index.js'
 
 const enUS = defineCatalog({
@@ -148,6 +149,36 @@ describe('at the edges', () => {
     const translate = t.locale('en-US') as unknown as (key: string, params: Record<string, unknown>) => string
 
     expect(translate('items', { count: 'many' })).toBe('many items')
+  })
+})
+
+describe('lookups, and what never resolves', () => {
+  const t = createTranslator({
+    default: 'en-US',
+    locales: {
+      'en-US': { menu: { title: 'Menu', empty: null }, items: { one: '{count} item', other: '{count} items' }, hi: 'Hi' },
+      'en-GB': { hi: 'Hello there' },
+      id: { hi: 'Halo', items: { other: '{count} barang' } },
+    } as never,
+  })
+  const translate = t.locale('en-US') as unknown as (key: string) => string
+
+  it('returns the key for a group of messages, and for a path through an empty entry', () => {
+    expect(translate('menu')).toBe('menu')
+    expect(translate('menu.empty.more')).toBe('menu.empty.more')
+  })
+
+  it('lists only plain messages among the localizations, never a plural', () => {
+    expect(t.localizations('items' as never)).toEqual({})
+    expect(t.localizations('hi' as never)).toEqual({ 'en-GB': 'Hello there', id: 'Halo' })
+  })
+})
+
+describe('missingTranslatorError', () => {
+  it('names the class and says what to pass', () => {
+    expect(missingTranslatorError({ name: 'BanService' }).message).toBe(
+      'BanService injects Translator, but @MeoCord has no i18n. Pass @MeoCord({ i18n: t }), where t comes from createTranslator.',
+    )
   })
 })
 
