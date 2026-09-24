@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { loadMeoCordCliConfig, readMeoCordSourceConfig } from '@src/util/meocord-source-config.util.js'
+import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
 import { configProblems } from '@src/util/meocord-config-validation.util.js'
 import wait from '@src/util/wait.util.js'
 import chalk from 'chalk'
@@ -56,6 +57,16 @@ export async function compileAndValidateConfig() {
   }
 
   await assertConfigShape(loaded.config)
+}
+
+/**
+ * Checks the configuration a start that skips the build runs with: the compiled config when a build
+ * made one, else `meocord.config.ts`, reported as {@link compileAndValidateConfig} reports it.
+ */
+export async function validateRunConfig() {
+  const compiled = loadMeoCordConfig()
+  if (compiled) return assertConfigShape(compiled)
+  return compileAndValidateConfig()
 }
 
 /** Exits with every problem when a configuration has options of the wrong type, and warns about unknown ones. */
