@@ -6,6 +6,11 @@ export default {
   // Read from the environment rather than written here: this file is committed, and a
   // token pasted into it is a token pushed to the remote. Copy .env.example to .env.
   discordToken: process.env.DISCORD_TOKEN!,
+  commands: {
+    // Registers globally in production. In development every command goes to this guild instead,
+    // where changes show at once; leave DEV_GUILD_ID empty to register globally there too.
+    developmentGuild: process.env.DEV_GUILD_ID || undefined,
+  },
   rsbuild: config => {
     // Images, fonts, svg and media are handled by the bundler already. Markdown and HTML are
     // not, and `asset/source` is what makes `import readme from './readme.md'` give you the

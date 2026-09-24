@@ -33,6 +33,7 @@ import {
 import { PLATFORM_MANIFEST, writePlatformManifest } from '@src/util/platform.util.js'
 import { loadMeoCordSourceConfig } from '@src/util/meocord-source-config.util.js'
 import { type MeoCordConfig } from '@src/interface/index.js'
+import { FORCE_REGISTER_ENV, REGISTER_GUILD_ENV, REGISTER_ONLY_ENV } from '@src/util/registration-mode.util.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -177,8 +178,11 @@ copies or substantial portions of the Software.
       .option('-b, --build', 'Pre-build before starting')
       .option('-d, --dev', 'Start in development mode')
       .option('-p, --prod', 'Start in production mode')
+      .option('--force-register', 'Register commands even when unchanged since the last development start')
       .action(async options => {
         await ensureReady()
+
+        if (options.forceRegister) this.appEnv[FORCE_REGISTER_ENV] = '1'
 
         const mode = options.prod ? 'production' : 'development'
         setEnvironment(mode)
@@ -197,6 +201,29 @@ copies or substantial portions of the Software.
         }
 
         options.prod ? await this.startProd() : await this.startDev()
+      })
+
+    program
+      .command('register')
+      .description('Register the application commands with Discord, without starting the bot')
+      .option('-b, --build', 'Build before registering')
+      .option('-d, --dev', 'Register as development does, to commands.developmentGuild')
+      .option('-g, --guild <id>', 'Register every command to this guild only')
+      .action(async options => {
+        await ensureReady()
+
+        const mode = options.dev ? 'development' : 'production'
+        setEnvironment(mode)
+
+        await compileAndValidateConfig()
+        await validateDiscordToken()
+
+        if (options.build) {
+          await this.build(mode)
+          await this.compileConfig()
+        }
+
+        await this.register(options.guild)
       })
 
     program = this.generatorCLI.register(program)
@@ -462,6 +489,28 @@ copies or substantial portions of the Software.
     }
   }
 
+  /** Environment added to the application's own when it is spawned. */
+  private readonly appEnv: NodeJS.ProcessEnv = {}
+
+  /**
+   * Runs the built application in register-only mode: it collects the commands from the bundle, sends
+   * them over REST and exits, without logging in. Exits with the application's code.
+   */
+  async register(guild?: string) {
+    if (!fs.existsSync(this.mainJSPath)) {
+      this.logger.error('Main entry file (main.js) not found! Build first, or run `meocord register --build`.')
+      await wait(100)
+      process.exit(1)
+      return
+    }
+
+    this.appEnv[REGISTER_ONLY_ENV] = '1'
+    this.appEnv[FORCE_REGISTER_ENV] = '1'
+    if (guild) this.appEnv[REGISTER_GUILD_ENV] = guild
+
+    this.spawnApp().on('exit', code => process.exit(code ?? 1))
+  }
+
   /** The running application, while a watch session owns one. */
   private appProcess: ChildProcess | null = null
 
@@ -494,6 +543,7 @@ copies or substantial portions of the Software.
 
     return spawn(command, args, {
       cwd: this.projectRoot,
+      env: { ...process.env, ...this.appEnv },
       stdio: 'inherit',
     })
   }

@@ -1,6 +1,5 @@
 import {
   type ActivityOptions,
-  ApplicationCommandType,
   type AutocompleteInteraction,
   type CacheType,
   Client,
@@ -9,7 +8,8 @@ import {
   MessageFlagsBitField,
   MessageReaction,
   type PartialMessageReaction,
-  SlashCommandBuilder,
+  REST,
+  Routes,
 } from 'discord.js'
 import { type Container } from 'inversify'
 import { Logger } from '@src/common/index.js'
@@ -30,11 +30,9 @@ import {
   resolveCommandPaths,
   resolveOptionParams,
 } from '@src/util/interaction.util.js'
-import { CommandType } from '@src/enum/index.js'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 import { type OnReady, type OnShutdown, type ReactionHandlerOptions } from '@src/interface/index.js'
 import { type AutocompleteMetadata, type CommandMetadata } from '@src/interface/command-decorator.interface.js'
-import Table from 'cli-table3'
 import {
   buildComponentRoutes,
   type ComponentRoute,
@@ -43,62 +41,13 @@ import {
 } from '@src/core/component-routes.js'
 import { runHandler } from '@src/core/handler-pipeline.js'
 import { lifecycleDependencies } from '@src/core/lifecycle-order.js'
+import { registerCommands } from '@src/core/command-registration.js'
+import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
+import { FORCE_REGISTER_ENV, isRegisterOnly, REGISTER_GUILD_ENV } from '@src/util/registration-mode.util.js'
 
 interface AutocompleteRoute {
   controllerClass: new (...args: any[]) => any
   meta: AutocompleteMetadata
-}
-
-/** What Discord assumes a command body is when it carries no type of its own. */
-const DEFAULT_APPLICATION_COMMAND_TYPE = ApplicationCommandType.ChatInput
-
-/**
- * The body a builder registers, which is what Discord sees.
- *
- * Read from the built payload rather than from the `@Command` arguments: a builder is
- * free to describe the command differently from the strings it was handed.
- */
-function payloadOf(builder: NonNullable<CommandMetadata['builder']>): { name?: unknown; type?: unknown } {
-  try {
-    return typeof (builder as { toJSON?: () => unknown }).toJSON === 'function'
-      ? ((builder as { toJSON: () => unknown }).toJSON() as { name?: unknown; type?: unknown })
-      : (builder as { name?: unknown; type?: unknown })
-  } catch {
-    // A builder missing a required field throws from toJSON. Surfacing that is the
-    // registration call's job, where it is reported against the command Discord
-    // rejected -- deduplication should not be what turns it into a startup crash.
-    return {}
-  }
-}
-
-/** The name a builder registers under. */
-function commandNameOf(builder: NonNullable<CommandMetadata['builder']>): string | undefined {
-  const { name } = payloadOf(builder)
-
-  return typeof name === 'string' ? name : undefined
-}
-
-/**
- * The application command type a builder registers as.
- *
- * A slash builder may leave the field out, so an absent type is read as the chat input
- * one Discord would infer — which keeps untyped slash builders colliding with each
- * other rather than each claiming a key of its own.
- */
-function commandTypeOf(builder: NonNullable<CommandMetadata['builder']>): ApplicationCommandType {
-  const { type } = payloadOf(builder)
-
-  return typeof type === 'number' ? type : DEFAULT_APPLICATION_COMMAND_TYPE
-}
-
-/**
- * The identity Discord gives a command.
- *
- * The numeric type leads, so the two halves can never be read apart wrongly: everything
- * before the first separator is the type, everything after it is the name.
- */
-function registrationKey(builder: NonNullable<CommandMetadata['builder']>, fallbackName: string): string {
-  return `${commandTypeOf(builder)}:${commandNameOf(builder) ?? fallbackName}`
 }
 
 /** How long shutdown waits for the `onShutdown` hooks when `shutdownTimeout` is not configured. */
@@ -226,6 +175,8 @@ export class MeoCordApp {
    * ```
    */
   async start() {
+    if (isRegisterOnly()) return this.registerOnly()
+
     this.logger.log('Starting bot...')
 
     installSignalHandlers()
@@ -276,79 +227,58 @@ export class MeoCordApp {
     this.logger.log('Bot is online!')
   }
 
-  async registerCommands() {
-    // Keyed by type and name: Discord treats that pair as one command, so a user and a message context
-    // menu may share a name, and a command split across methods sends its builder once.
-    const buildersByCommand = new Map<string, NonNullable<CommandMetadata['builder']>>()
+  /**
+   * Registers the application's commands with Discord, where `meocord.config.ts`'s `commands` says.
+   *
+   * Runs once the bot is ready. It never throws: a failure is logged and the bot stays online.
+   */
+  async registerCommands(): Promise<void> {
+    const applicationId = this.bot.application?.id
+    if (!applicationId) return
 
-    for (const controllerClass of this.controllerClasses) {
-      const instance = this.getInstance(controllerClass)
-      const commandMap = getCommandMap(instance)
-
-      for (const commandName in commandMap) {
-        const commandMetadataArray = commandMap[commandName]
-
-        if (!Array.isArray(commandMetadataArray)) continue
-
-        for (const { builder, type } of commandMetadataArray) {
-          if (!(type in CommandType) || !builder) continue
-
-          const key = registrationKey(builder, commandName)
-          const existing = buildersByCommand.get(key)
-
-          if (existing === undefined) {
-            buildersByCommand.set(key, builder)
-          } else if (existing !== builder) {
-            this.logger.warn(
-              `Command "${commandNameOf(builder) ?? commandName}" is built more than once for the same ` +
-                `application command type; only the first builder is registered. Two builders of one type ` +
-                `cannot both own a name, so declare the builder on a single @Command and give the others ` +
-                `the plain CommandType.`,
-            )
-          }
-        }
-      }
+    const config = loadMeoCordConfig()?.commands
+    if (config?.register === false) {
+      this.logger.log('Command registration is off (commands.register: false); run `meocord register` to register.')
+      return
     }
 
-    const builders = [...buildersByCommand.values()]
+    await registerCommands({
+      rest: this.bot.rest,
+      applicationId,
+      controllerClasses: this.controllerClasses,
+      logger: this.logger,
+      config,
+      development: process.env.NODE_ENV === 'development',
+      force: process.env[FORCE_REGISTER_ENV] === '1',
+    })
+  }
+
+  /**
+   * Registers the commands over REST without logging in, as `meocord register` asks, and exits: `0`
+   * when every scope registered, `1` otherwise.
+   */
+  private async registerOnly(): Promise<never> {
+    const rest = new REST().setToken(this.discordToken)
+    let applicationId: string
 
     try {
-      if (this.bot.application) {
-        await this.bot.application.commands.set(builders)
-        const table = new Table({
-          head: ['Name', 'Type', 'Sub-commands'],
-          colWidths: [null, null, 30],
-          wordWrap: true,
-        })
-
-        for (const builder of builders) {
-          const json = typeof (builder as any).toJSON === 'function' ? (builder as any).toJSON() : (builder as any)
-          const typeName =
-            json?.type === 1
-              ? 'SlashCommand'
-              : json?.type === 2
-                ? 'UserContextMenu'
-                : json?.type === 3
-                  ? 'MessageContextMenu'
-                  : json?.type === 4
-                    ? 'PrimaryEntryPoint'
-                    : builder instanceof SlashCommandBuilder
-                      ? 'SlashCommand'
-                      : 'Command'
-          const name = json?.name || (builder as any).name
-          const subCommands =
-            Array.isArray(json?.options) && json.options.length
-              ? json.options.map((opt: any) => opt.name).join(', ')
-              : ''
-
-          table.push([name, typeName, subCommands])
-        }
-
-        this.logger.log(`Registered ${builders.length} bot commands:\n${table.toString()}`)
-      }
+      applicationId = ((await rest.get(Routes.currentApplication())) as { id: string }).id
     } catch (error) {
-      this.logger.error('Error during command registration:', error)
+      this.logger.error('Could not read the application the token belongs to; check discordToken:', error)
+      process.exit(1)
     }
+
+    const registered = await registerCommands({
+      rest,
+      applicationId,
+      controllerClasses: this.controllerClasses,
+      logger: this.logger,
+      config: loadMeoCordConfig()?.commands,
+      development: process.env.NODE_ENV === 'development',
+      onlyGuild: process.env[REGISTER_GUILD_ENV],
+      force: true,
+    })
+    process.exit(registered ? 0 : 1)
   }
 
   /**

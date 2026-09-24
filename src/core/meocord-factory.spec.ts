@@ -128,4 +128,37 @@ describe('MeoCordFactory.create()', () => {
       'ContextService is resolved once and shared, so it cannot inject ExecutionContext',
     )
   })
+
+  // `meocord register` runs the bundle only to read the commands; a service that connects somewhere
+  // in its constructor must not run.
+  describe('in register-only mode', () => {
+    beforeEach(() => {
+      process.env.MEOCORD_REGISTER_ONLY = '1'
+    })
+
+    afterEach(() => {
+      delete process.env.MEOCORD_REGISTER_ONLY
+    })
+
+    it('constructs no service and resolves no controller', () => {
+      mockLoadConfig.mockReturnValue({ discordToken: 'test-token' })
+      const constructed = vi.fn()
+
+      class DatabaseService {
+        constructor() {
+          constructed()
+        }
+      }
+
+      class MyApp {}
+      Reflect.defineMetadata(
+        MetadataKey.AppOptions,
+        { controllers: [], services: [DatabaseService], clientOptions: { intents: [] } },
+        MyApp,
+      )
+
+      expect(MeoCordFactory.create(MyApp)).toBeInstanceOf(MeoCordApp)
+      expect(constructed).not.toHaveBeenCalled()
+    })
+  })
 })

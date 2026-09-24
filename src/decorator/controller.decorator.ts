@@ -18,6 +18,7 @@ import {
 } from '@src/interface/command-decorator.interface.js'
 import { isCustomIdRouted, matchesCommandType } from '@src/util/interaction.util.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
+import { BUILDER_GUILDS } from '@src/decorator/command-builder.decorator.js'
 
 const COMMAND_METADATA_KEY = Symbol('commands')
 const MESSAGE_HANDLER_METADATA_KEY = Symbol('message_handlers')
@@ -249,11 +250,13 @@ export function Command<CBC extends BuildableCommandType, T extends CommandBuild
     let regex: RegExp | undefined
     let dynamicParams: string[] = []
     let specificity: number | undefined
+    let guilds: (string | undefined)[] | undefined
 
     // Determine command type and builder
     if (typeof builderOrType === 'function') {
       const builderObj = new builderOrType() as CommandBuilderBase
       builderInstance = builderObj.build(commandName)
+      guilds = Reflect.getMetadata(BUILDER_GUILDS, builderOrType)
       commandType = Reflect.getMetadata(MetadataKey.CommandType, builderOrType) as CommandType
       if (!(commandType in CommandType)) {
         throw new Error(`Metadata for 'commandType' is missing on builder ${builderOrType.name}`)
@@ -281,6 +284,7 @@ export function Command<CBC extends BuildableCommandType, T extends CommandBuild
       regex,
       dynamicParams,
       specificity,
+      ...(guilds && { guilds }),
     })
 
     Reflect.defineMetadata(COMMAND_METADATA_KEY, commands, target)

@@ -15,6 +15,9 @@ vi.mock('@src/common/index.js', () => ({
   ),
 }))
 
+const { mockLoadConfig } = vi.hoisted(() => ({ mockLoadConfig: vi.fn() }))
+vi.mock('@src/util/meocord-config-loader.util.js', () => ({ loadMeoCordConfig: mockLoadConfig }))
+
 vi.mock('@src/util/index.js', () => ({
   EmbedUtil: {
     createErrorEmbed: vi.fn().mockReturnValue({ setColor: vi.fn() }),
@@ -22,12 +25,10 @@ vi.mock('@src/util/index.js', () => ({
 }))
 
 import {
-  ApplicationCommandType,
   AutocompleteInteraction,
   ButtonInteraction,
   ChannelSelectMenuInteraction,
   ChatInputCommandInteraction,
-  EntryPointCommandHandlerType,
   MentionableSelectMenuInteraction,
   MessageReaction,
   PrimaryEntryPointCommandInteraction,
@@ -39,7 +40,7 @@ import {
 import { Logger } from '@src/common/index.js'
 import { EmbedUtil } from '@src/util/index.js'
 import { createChatInputOptions, createMockInteraction, resolveRoute } from '@src/testing/index.js'
-import { Autocomplete, Command, CommandBuilder, Controller, MeoCord, ReactionHandler } from '@src/decorator/index.js'
+import { Autocomplete, Command, Controller, MeoCord, ReactionHandler } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { MeoCordApp, shutdownAndExit } from '@src/core/meocord.app.js'
 
@@ -718,222 +719,85 @@ describe('MeoCordApp', () => {
     })
   })
 
-  // A command whose subcommands live in separate methods declares the same name more
-  // than once. Sending its builder twice makes Discord reject the whole payload.
+  // What the module does with the payload is pinned in command-registration.spec.ts; these pin the call site.
   describe('registerCommands()', () => {
-    const builderFor = (name: string) => ({ toJSON: () => ({ name, type: 1, options: [] }) })
+    class PingBuilder {
+      build = () => ({ toJSON: () => ({ name: 'ping', type: 1, description: 'Pong' }) }) as any
+    }
+    Reflect.defineMetadata('commandType', CommandType.SLASH, PingBuilder)
 
-    it('registers one command per name when a builder is declared twice', async () => {
-      const set = vi.fn<(commands: unknown[]) => Promise<unknown[]>>().mockResolvedValue([])
-      mockClient.application = { commands: { set } } as any
+    @Controller()
+    class PingController {
+      @Command('ping', PingBuilder as any)
+      async ping(..._args: any[]) {}
+    }
 
-      const builder = builderFor('settings')
-      class SettingsBuilder {
-        build = () => builder as any
-      }
-      Reflect.defineMetadata('commandType', CommandType.SLASH, SettingsBuilder)
+    const withRest = (put = vi.fn().mockResolvedValue([])) => {
+      Object.assign(mockClient, { application: { id: 'app-id' }, rest: { put, get: vi.fn().mockResolvedValue([]) } })
+      return put
+    }
 
-      @Controller()
-      class SettingsController {
-        @Command('settings', SettingsBuilder as any)
-        async one(..._args: any[]) {}
+    it('sends the commands globally over the client\'s REST once ready', async () => {
+      const put = withRest()
+      const app = new MeoCordApp([PingController] as any, createMockContainer() as any, mockClient as any, 't')
 
-        @Command('settings', SettingsBuilder as any)
-        async two(..._args: any[]) {}
-      }
-
-      const app = new MeoCordApp([SettingsController] as any, createMockContainer() as any, mockClient as any, 't')
       await app.registerCommands()
 
-      expect(set).toHaveBeenCalledTimes(1)
-      expect(set.mock.calls[0][0]).toHaveLength(1)
-
-      // The same builder arriving twice is how subcommands split across methods are
-      // declared, which is intended rather than a mistake to report.
-      const warn = vi.mocked(Logger).mock.results[0]?.value.warn
-      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('built more than once'))
+      expect(put).toHaveBeenCalledWith('/applications/app-id/commands', {
+        body: [{ name: 'ping', type: 1, description: 'Pong' }],
+      })
     })
 
-    // A builder missing a required field throws from toJSON. Deduplication reads the
-    // built payload for the name, so it must not be what turns that into a crash.
-    it('does not crash when a builder cannot be serialised', async () => {
-      const set = vi.fn<(commands: unknown[]) => Promise<unknown[]>>().mockResolvedValue([])
-      mockClient.application = { commands: { set } } as any
+    it('constructs no controller to read the commands', async () => {
+      withRest()
+      const container = createMockContainer()
+      const app = new MeoCordApp([PingController] as any, container as any, mockClient as any, 't')
 
-      class BrokenBuilder {
-        build = () =>
-          ({
-            toJSON: () => {
-              throw new Error('description is required')
-            },
-          }) as any
-      }
-      Reflect.defineMetadata('commandType', CommandType.SLASH, BrokenBuilder)
+      await app.registerCommands()
 
-      @Controller()
-      class BrokenController {
-        @Command('broken', BrokenBuilder as any)
-        async handle(..._args: any[]) {}
-      }
+      expect(container.get).not.toHaveBeenCalled()
+    })
 
-      const app = new MeoCordApp([BrokenController] as any, createMockContainer() as any, mockClient as any, 't')
+    it('logs a rejected registration and resolves, so the bot stays online', async () => {
+      withRest(vi.fn().mockRejectedValue(new Error('Invalid Form Body')))
+      const app = new MeoCordApp([PingController] as any, createMockContainer() as any, mockClient as any, 't')
 
       await expect(app.registerCommands()).resolves.toBeUndefined()
-      expect(set).toHaveBeenCalledTimes(1)
 
-      // Falling back to the @Command name keeps the command in the payload; a builder
-      // that cannot describe itself is the registration call's problem to report.
-      expect(set.mock.calls[0][0]).toHaveLength(1)
+      const error = vi.mocked(Logger).mock.results[0]?.value.error
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('Error registering commands globally'), expect.any(Error))
     })
 
-    // Entry point commands have no builder class in @discordjs/builders, so their
-    // builder returns the REST body itself -- no toJSON to read the name from.
-    it('registers an entry point command from a raw REST body', async () => {
-      const set = vi.fn<(commands: unknown[]) => Promise<unknown[]>>().mockResolvedValue([])
-      mockClient.application = { commands: { set } } as any
+    it('keeps the ready listener\'s other work going when registration fails', async () => {
+      withRest(vi.fn().mockRejectedValue(new Error('Invalid Form Body')))
+      const app = new MeoCordApp([PingController] as any, createMockContainer() as any, mockClient as any, 't')
+      await app.start()
 
-      // `as const` for the same reason the generated builder template uses it: without
-      // it `type` widens to ApplicationCommandType and the body stops being an entry
-      // point one.
-      const body = {
-        type: ApplicationCommandType.PrimaryEntryPoint as const,
-        name: 'launch',
-        description: 'Launch the activity',
-        handler: EntryPointCommandHandlerType.AppHandler,
-      }
+      await Promise.all(mockClient.listenersFor('clientReady').map(listener => listener()))
 
-      @CommandBuilder(CommandType.PRIMARY_ENTRY_POINT)
-      class LaunchBuilder {
-        build = () => body
-      }
+      expect(mockClient.login).toHaveBeenCalled()
+      const error = vi.mocked(Logger).mock.results[0]?.value.error
+      expect(error).not.toHaveBeenCalledWith(expect.stringContaining('Unhandled error while handling "clientReady"'), expect.anything())
+    })
 
-      @Controller()
-      class LaunchController {
-        @Command('launch', LaunchBuilder as any)
-        async launch(_interaction: PrimaryEntryPointCommandInteraction) {}
-      }
+    it('sends nothing when the configuration turns startup registration off', async () => {
+      const put = withRest()
+      mockLoadConfig.mockReturnValueOnce({ discordToken: 't', commands: { register: false } })
+      const app = new MeoCordApp([PingController] as any, createMockContainer() as any, mockClient as any, 't')
 
-      const app = new MeoCordApp([LaunchController] as any, createMockContainer() as any, mockClient as any, 't')
       await app.registerCommands()
 
-      expect(set).toHaveBeenCalledWith([body])
+      expect(put).not.toHaveBeenCalled()
     })
 
-    // Discord identifies a command by its type together with its name, so a user context
-    // menu and a message context menu are free to share one. Keying on the name alone
-    // dropped half of every such pair from the payload without the user asking for it.
-    describe('a name shared across application command types', () => {
-      const contextMenuBuilder = (name: string, type: ApplicationCommandType) => ({
-        toJSON: () => ({ name, type }),
-      })
+    it('sends nothing before the application is known', async () => {
+      const put = withRest()
+      mockClient.application = null
+      const app = new MeoCordApp([PingController] as any, createMockContainer() as any, mockClient as any, 't')
 
-      const registerPair = async (first: ApplicationCommandType, second: ApplicationCommandType) => {
-        const set = vi.fn<(commands: unknown[]) => Promise<unknown[]>>().mockResolvedValue([])
-        mockClient.application = { commands: { set } } as any
-
-        class FirstBuilder {
-          build = () => contextMenuBuilder('Genshin Profile', first) as any
-        }
-        class SecondBuilder {
-          build = () => contextMenuBuilder('Genshin Profile', second) as any
-        }
-        Reflect.defineMetadata('commandType', CommandType.CONTEXT_MENU, FirstBuilder)
-        Reflect.defineMetadata('commandType', CommandType.CONTEXT_MENU, SecondBuilder)
-
-        @Controller()
-        class ProfileController {
-          @Command('Genshin Profile', FirstBuilder as any)
-          @Command('Genshin Profile', SecondBuilder as any)
-          async profile(..._args: any[]) {}
-        }
-
-        const app = new MeoCordApp([ProfileController] as any, createMockContainer() as any, mockClient as any, 't')
-        await app.registerCommands()
-
-        return set
-      }
-
-      it('registers both when the types differ', async () => {
-        const set = await registerPair(ApplicationCommandType.User, ApplicationCommandType.Message)
-
-        expect(set.mock.calls[0][0]).toHaveLength(2)
-      })
-
-      it('does not warn when the types differ', async () => {
-        await registerPair(ApplicationCommandType.User, ApplicationCommandType.Message)
-
-        const warn = vi.mocked(Logger).mock.results[0]?.value.warn
-        expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('built more than once'))
-      })
-
-      // Two builders of one type genuinely cannot both own the name.
-      it('still registers one and warns when the types match', async () => {
-        const set = await registerPair(ApplicationCommandType.User, ApplicationCommandType.User)
-
-        expect(set.mock.calls[0][0]).toHaveLength(1)
-        const warn = vi.mocked(Logger).mock.results[0]?.value.warn
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining('built more than once'))
-      })
-    })
-
-    // A slash builder may leave the type out of its body; two that do must still be read
-    // as the same command rather than each claiming a key of its own.
-    it('treats slash builders with no declared type as one command', async () => {
-      const set = vi.fn<(commands: unknown[]) => Promise<unknown[]>>().mockResolvedValue([])
-      mockClient.application = { commands: { set } } as any
-
-      class FirstBuilder {
-        build = () => ({ toJSON: () => ({ name: 'settings', options: [] }) }) as any
-      }
-      class SecondBuilder {
-        build = () => ({ toJSON: () => ({ name: 'settings', options: [] }) }) as any
-      }
-      Reflect.defineMetadata('commandType', CommandType.SLASH, FirstBuilder)
-      Reflect.defineMetadata('commandType', CommandType.SLASH, SecondBuilder)
-
-      @Controller()
-      class SettingsController {
-        @Command('settings', FirstBuilder as any)
-        async one(..._args: any[]) {}
-
-        @Command('settings', SecondBuilder as any)
-        async two(..._args: any[]) {}
-      }
-
-      const app = new MeoCordApp([SettingsController] as any, createMockContainer() as any, mockClient as any, 't')
       await app.registerCommands()
 
-      expect(set.mock.calls[0][0]).toHaveLength(1)
-    })
-
-    it('warns when two different builders claim the same command name', async () => {
-      const set = vi.fn<(commands: unknown[]) => Promise<unknown[]>>().mockResolvedValue([])
-      mockClient.application = { commands: { set } } as any
-
-      class FirstBuilder {
-        build = () => builderFor('settings') as any
-      }
-      class SecondBuilder {
-        build = () => builderFor('settings') as any
-      }
-      Reflect.defineMetadata('commandType', CommandType.SLASH, FirstBuilder)
-      Reflect.defineMetadata('commandType', CommandType.SLASH, SecondBuilder)
-
-      @Controller()
-      class SettingsController {
-        @Command('settings', FirstBuilder as any)
-        async one(..._args: any[]) {}
-
-        @Command('settings', SecondBuilder as any)
-        async two(..._args: any[]) {}
-      }
-
-      const app = new MeoCordApp([SettingsController] as any, createMockContainer() as any, mockClient as any, 't')
-      await app.registerCommands()
-
-      const warn = vi.mocked(Logger).mock.results[0]?.value.warn
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('is built more than once'))
-      expect(set.mock.calls[0][0]).toHaveLength(1)
+      expect(put).not.toHaveBeenCalled()
     })
   })
 
