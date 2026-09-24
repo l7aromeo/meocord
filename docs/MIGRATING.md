@@ -386,7 +386,8 @@ it from Discord. Fix the builder; the next start registers everything.
 The `RateLimitGuard` that `meocord create` copied into 4.0 applications never limited anything: a new
 guard instance is created for every call, so the counts it kept on the instance started empty each time.
 Upgrading `meocord` does not change your copy. Replace `src/guards/rate-limit.guard.ts` with the one a
-new application gets, or move its `rateLimits` map out of the class to module level.
+new application gets, or move its `rateLimits` map out of the class to module level. Or drop the guard
+for [`@Cooldown`](#adopting-41-patterns), which does the same job without code of your own.
 
 ### Smaller changes
 
@@ -432,6 +433,20 @@ export class RolesGuard implements GuardInterface {
 **Denying with a message: `GuardDeniedError`.** Instead of replying from the guard and returning
 `false`, throw `new GuardDeniedError('Only the owner can use this.')`. The user who made the call sees
 the message privately, and an exception filter can phrase it otherwise.
+
+**Rate limits: `@Cooldown`.** The generated `RateLimitGuard`, or a guard of your own that counts calls,
+can become `@Cooldown({ uses: 5, seconds: 60 })` on the handler or the controller. It counts per user,
+server, channel or for everyone, only once guards and validation have let the call through, and answers
+a blocked call privately with how long to wait. With process sharding, pass a shared `CooldownStore`,
+such as one on Redis, to `@MeoCord({ cooldownStore })`.
+
+```typescript
+// 4.0
+@UseGuard({ provide: RateLimitGuard, params: { limit: 5, windowInSeconds: 60 } })
+
+// 4.1
+@Cooldown({ uses: 5, seconds: 60 })
+```
 
 **Guards for the whole bot: `@MeoCord({ guards })`.** A guard repeated on every controller, such as a
 blocklist, can be listed once in `@MeoCord`, where it runs before every handler's own guards. Give it
