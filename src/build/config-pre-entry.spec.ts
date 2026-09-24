@@ -1,0 +1,111 @@
+import { execFileSync } from 'child_process'
+import { mkdirSync, rmSync, writeFileSync } from 'fs'
+import path from 'path'
+import { createRsbuild, type RsbuildConfig } from '@rsbuild/core'
+import { vi } from 'vitest'
+import { createRsbuildConfig } from '@src/build/rsbuild-config.js'
+
+/**
+ * Builds an application whose decorator options read `.env`, and runs it with plain node. The fixture
+ * sits in a git-ignored directory in the repository, so the config's `dotenv` import resolves from this
+ * package's node_modules as it would from an application's.
+ */
+const repoRoot = path.resolve(import.meta.dirname, '..', '..')
+const fixture = path.join(repoRoot, '.rsbuild-pre-entry-spec')
+
+// What `meocord build` compiles meocord.config.ts to, with a counter to see how often it is evaluated.
+const COMPILED_CONFIG = `
+import 'dotenv/config'
+globalThis.configEvaluations = (globalThis.configEvaluations ?? 0) + 1
+export default { discordToken: 'token' }
+`
+
+// Read at decoration time, as @MeoCord({...}) options are.
+const APP = `
+function Options(options: { greeting?: string }): ClassDecorator {
+  return target => {
+    Reflect.set(target, 'options', options)
+  }
+}
+
+@Options({ greeting: process.env.GREETING })
+export class App {}
+
+export const greeting: string | null = Reflect.get(App, 'options').greeting ?? null
+`
+
+// Imports the application first, then loads the config the way MeoCordFactory.create does.
+const MAIN = `
+import { greeting } from './app'
+import { createRequire } from 'node:module'
+import path from 'node:path'
+
+const load = createRequire(import.meta.url)
+load(path.resolve(process.cwd(), 'dist', 'meocord.config.mjs'))
+
+console.log(JSON.stringify({ greeting, evaluations: Reflect.get(globalThis, 'configEvaluations') }))
+`
+
+interface RunResult {
+  greeting: string | null
+  evaluations: number
+}
+
+async function buildAndRun(mode: 'production' | 'development', adjust = (config: RsbuildConfig) => config): Promise<RunResult> {
+  const cwd = vi.spyOn(process, 'cwd').mockReturnValue(fixture)
+  try {
+    const rsbuild = await createRsbuild({
+      cwd: fixture,
+      config: adjust({ ...createRsbuildConfig({ mode }), performance: { printFileSize: false } }),
+    })
+    await rsbuild.build()
+  } finally {
+    cwd.mockRestore()
+  }
+
+  const env = { ...process.env }
+  delete env.GREETING
+  const output = execFileSync('node', [path.join(fixture, 'dist', 'main.js')], { cwd: fixture, env, encoding: 'utf8' })
+  return JSON.parse(output.trim().split('\n').at(-1)!) as RunResult
+}
+
+beforeAll(() => {
+  rmSync(fixture, { recursive: true, force: true })
+  mkdirSync(path.join(fixture, 'src'), { recursive: true })
+  mkdirSync(path.join(fixture, 'dist'), { recursive: true })
+  writeFileSync(path.join(fixture, 'package.json'), JSON.stringify({ name: 'pre-entry-spec', private: true, type: 'module' }))
+  writeFileSync(
+    path.join(fixture, 'tsconfig.json'),
+    JSON.stringify({ compilerOptions: { experimentalDecorators: true, target: 'es2022' } }),
+  )
+  writeFileSync(path.join(fixture, '.env'), 'GREETING=from-dotenv\n')
+  writeFileSync(path.join(fixture, 'dist', 'meocord.config.mjs'), COMPILED_CONFIG)
+  writeFileSync(path.join(fixture, 'src', 'app.ts'), APP)
+  writeFileSync(path.join(fixture, 'src', 'main.ts'), MAIN)
+})
+
+afterAll(() => {
+  rmSync(fixture, { recursive: true, force: true })
+})
+
+describe('the config pre-entry, built and run with node', () => {
+  it.each(['production', 'development'] as const)('lets decorator options read .env in a %s build', async mode => {
+    const result = await buildAndRun(mode)
+
+    expect(result.greeting).toBe('from-dotenv')
+  })
+
+  // The runtime loads the config again after the pre-entry; require's cache keeps that one evaluation.
+  it('evaluates the config once', async () => {
+    const result = await buildAndRun('production')
+
+    expect(result.evaluations).toBe(1)
+  })
+
+  it('is what makes the value available: without it, the options read undefined', async () => {
+    const result = await buildAndRun('production', config => ({ ...config, source: { ...config.source, preEntry: [] } }))
+
+    expect(result.greeting).toBeNull()
+    expect(result.evaluations).toBe(1)
+  })
+}, 60_000)

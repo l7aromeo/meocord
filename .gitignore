@@ -18,6 +18,9 @@ dist/
 # Scratch application built by src/build/rsbuild-pipeline.spec.ts
 .rsbuild-spec/
 
+# Scratch application built by src/build/config-pre-entry.spec.ts
+.rsbuild-pre-entry-spec/
+
 # Cache and temporary files
 .prettier_cache/
 .eslintcache

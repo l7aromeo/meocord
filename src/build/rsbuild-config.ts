@@ -1,6 +1,13 @@
 import path from 'path'
+import { fileURLToPath } from 'url'
 import { type RsbuildConfig } from '@rsbuild/core'
 import { prepareModifiedTsConfig } from '@src/util/tsconfig.util.js'
+
+/**
+ * The module bundled ahead of the application's entry to load `dist/meocord.config.mjs` first. Shipped
+ * beside this file, in `src` and in `dist` alike.
+ */
+export const CONFIG_PRE_ENTRY = path.join(path.dirname(fileURLToPath(import.meta.url)), 'load-config.pre-entry.js')
 
 /**
  * Native accelerators discord.js loads when present and works without. A bundler cannot tell
@@ -22,7 +29,10 @@ export function assetPrefixFor(distDir: string): string {
 export interface RsbuildConfigOptions {
   /** Production enables minification; development keeps readable output. */
   mode: 'production' | 'development'
-  /** Entry module. Defaults to `src/main.ts` under the current working directory. */
+  /**
+   * Entry module. Defaults to `src/main.ts` under the current working directory, which is the
+   * application build and gets {@link CONFIG_PRE_ENTRY}; any other entry builds without it.
+   */
   entry?: string
   /**
    * Bundle production dependencies into the output so it runs without `node_modules`.
@@ -57,6 +67,10 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
     dev: { assetPrefix },
     source: {
       entry: { main: entry },
+      // main.ts imports the application before anything else, so decorator options read process.env
+      // before the config's own env loading would otherwise run. Loading it first fixes that for every
+      // way of starting the bundle.
+      preEntry: options.entry === undefined ? [CONFIG_PRE_ENTRY] : [],
       // Equivalent to experimentalDecorators. The decorators themselves are only half of
       // what MeoCord needs -- see tools.swc below for the half that carries the metadata.
       decorators: { version: 'legacy' },

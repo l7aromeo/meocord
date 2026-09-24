@@ -1,3 +1,4 @@
+import { existsSync } from 'fs'
 import path from 'path'
 import { vi } from 'vitest'
 
@@ -5,9 +6,8 @@ vi.mock('@src/util/tsconfig.util.js', () => ({
   prepareModifiedTsConfig: vi.fn().mockReturnValue('/tmp/modified-tsconfig.json'),
 }))
 
-const { assertNoWebpackHook, assetPrefixFor, createRsbuildConfig, DISCORD_OPTIONAL_NATIVES } = await import(
-  '@src/build/rsbuild-config.js'
-)
+const { assertNoWebpackHook, assetPrefixFor, CONFIG_PRE_ENTRY, createRsbuildConfig, DISCORD_OPTIONAL_NATIVES } =
+  await import('@src/build/rsbuild-config.js')
 
 const dist = path.resolve(process.cwd(), 'dist')
 
@@ -75,6 +75,20 @@ describe('createRsbuildConfig', () => {
       const config = createRsbuildConfig({ mode: 'production', entry: '/app/src/other.ts' })
 
       expect(config.source?.entry).toEqual({ main: '/app/src/other.ts' })
+    })
+
+    it('loads the compiled config ahead of the application entry', () => {
+      const config = createRsbuildConfig({ mode: 'production' })
+
+      expect(config.source?.preEntry).toEqual([CONFIG_PRE_ENTRY])
+      expect(existsSync(CONFIG_PRE_ENTRY)).toBe(true)
+    })
+
+    // The config build's entry is meocord.config.ts itself, which must not load its own output.
+    it('adds no pre-entry to a build with an entry of its own', () => {
+      const config = createRsbuildConfig({ mode: 'development', entry: '/app/meocord.config.ts' })
+
+      expect(config.source?.preEntry).toEqual([])
     })
 
     // The application build and the config build share dist; cleaning let the second erase the first.
