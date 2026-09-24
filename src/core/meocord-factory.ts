@@ -168,11 +168,13 @@ export class MeoCordFactory {
       }
       byName.set(cls.name, cls)
     }
-    const runHere = async (service: string, method: string, args: unknown[]) => {
-      const cls = byName.get(service)
-      if (!cls) throw new Error(`${service} is not a controller or service of this app.`)
+    const runHere: ShardCallHandler = async (service, method, args) => {
+      // A call made here names its class; only one from another shard needs finding by name
+      const cls = typeof service === 'function' ? appClasses.find(appClass => appClass === service) : byName.get(service)
+      const name = typeof service === 'function' ? service.name : service
+      if (!cls) throw new Error(`${name} is not a controller or service of this app.`)
       const instance = container.get(cls) as Record<string, (...args: unknown[]) => unknown>
-      if (typeof instance[method] !== 'function') throw new Error(`${service}.${method} is not a method.`)
+      if (typeof instance[method] !== 'function') throw new Error(`${name}.${method} is not a method.`)
       return instance[method](...args)
     }
     Reflect.set(discordClient, SHARD_CALL_KEY, runHere)

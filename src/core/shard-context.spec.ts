@@ -53,6 +53,28 @@ describe('ShardContext', () => {
       ])
     })
 
+    it('calls the class it is given in a testing module, even when another shares its name', async () => {
+      const other = (() => {
+        @Service()
+        class StatsService {
+          guildCount() {
+            return -1
+          }
+        }
+        return StatsService
+      })()
+      const shards = MeoCordTestingModule.create({
+        providers: [
+          { provide: other, useClass: other },
+          { provide: StatsService, useClass: StatsService },
+        ],
+      })
+        .compile()
+        .get(ShardContext)
+
+      expect(await shards.call(StatsService, 'guildCount')).toEqual([{ shardIds: [0], ok: true, value: 7 }])
+    })
+
     it('runs broadcastEval here, warning once that it stringifies its function', async () => {
       const client = { options: {}, ws: { shards: new Map([[0, {}]]) } } as unknown as Client
       const shards = new ShardContext(client, async () => undefined)

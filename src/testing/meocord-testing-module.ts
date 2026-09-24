@@ -307,8 +307,9 @@ export class TestingModuleBuilder {
     // A testing module runs as one process, so a cross-shard call runs once, here
     container.bind(ShardContext).toConstantValue(
       new ShardContext(undefined, async (service, method, args) => {
-        const cls = appClasses.find(candidate => candidate.name === service)
-        if (!cls) throw new Error(`${service} is not a controller or class provider of this testing module.`)
+        const cls = appClasses.find(candidate => (typeof service === 'function' ? candidate === service : candidate.name === service))
+        const name = typeof service === 'function' ? service.name : service
+        if (!cls) throw new Error(`${name} is not a controller or class provider of this testing module.`)
         return (container.get(cls) as Record<string, (...args: unknown[]) => unknown>)[method](...args)
       }),
     )

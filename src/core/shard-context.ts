@@ -4,8 +4,15 @@ import { Logger } from '@src/common/index.js'
 /** Where each shard's client keeps the function that runs a `ShardContext.call` in that shard. */
 export const SHARD_CALL_KEY = Symbol.for('meocord.shardCall')
 
-/** Runs a named service method in the current process. */
-export type ShardCallHandler = (service: string, method: string, args: unknown[]) => Promise<unknown>
+/**
+ * Runs a service method in the current process: the class itself when the call starts here, or its
+ * name when it comes from another shard, where only JSON arrives.
+ */
+export type ShardCallHandler = (
+  service: string | (abstract new (...args: any[]) => unknown),
+  method: string,
+  args: unknown[],
+) => Promise<unknown>
 
 /** How long `ShardContext.call` waits for a shard to answer. */
 export const SHARD_CALL_TIMEOUT_MS = 10_000
@@ -128,7 +135,7 @@ export class ShardContext {
     const shard = this.client?.shard
     if (!shard) {
       try {
-        const value = await withTimeout(this.runHere(service.name, method, args), SHARD_CALL_TIMEOUT_MS, service.name)
+        const value = await withTimeout(this.runHere(service, method, args), SHARD_CALL_TIMEOUT_MS, service.name)
         return [{ shardIds: this.ids, ok: true, value: value as MethodResult<T, M> }]
       } catch (error) {
         return [{ shardIds: this.ids, ok: false, error: describe(error) }]
