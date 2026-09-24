@@ -35,6 +35,7 @@ interface HandlerEntryBase {
 /** A slash command, subcommand, context menu command or entry point command. */
 export interface CommandHandlerEntry extends HandlerEntryBase {
   kind: 'command'
+  /** The `CommandType` the handler is declared with. */
   commandType: CommandType
   /** The command's name, or a subcommand's full path such as `settings notify email`. */
   name: string
@@ -47,6 +48,7 @@ export interface CommandHandlerEntry extends HandlerEntryBase {
 /** A button or select menu handler. */
 export interface ComponentHandlerEntry extends HandlerEntryBase {
   kind: 'component'
+  /** The `CommandType` the handler is declared with. */
   commandType: CommandType
   /** The customId pattern, such as `profile/{uid}`. */
   name: string

@@ -53,22 +53,29 @@ npx meocord g s "profile"            # a service
 npx meocord g gu "rate-limit"        # a guard
 npx meocord g i "timing"             # an interceptor
 npx meocord g f "not-found"          # an exception filter
+npx meocord g pi "account"           # a pipe
 npx meocord g --help                 # every generator
 ```
 
-Register whatever you generate in the `controllers` array in `src/app.ts` — controllers
-are wired up by that list, not by where they sit on disk.
+Each comes with a spec. Add a generated controller to the `controllers` array in
+`src/app.ts`: controllers are wired up by that list, not by where they sit on disk. A
+service is injected where it is needed. Guards, interceptors, filters and pipes apply
+where you declare them, with `@UseGuard`, `@UseInterceptor`, `@UseFilter` and
+`@UsePipe` or `@Validate`, or to every handler through `@MeoCord({ guards,
+interceptors, filters })`.
 
 ## Testing
 
 ```shell
 {{packageManager}} run test
+{{packageManager}} run test:watch
 {{packageManager}} run test:coverage
 ```
 
 `meocord/testing` provides `MeoCordTestingModule` for building a controller with its
-dependencies, plus `createMockInteraction` and friends for driving it without a Discord
-connection.
+dependencies, `invoke` for running a handler through its guards, interceptors and
+filters as the bot does, and `createMockInteraction` and friends for driving it without
+a Discord connection.
 
 ## Linting
 

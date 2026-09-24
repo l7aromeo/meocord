@@ -89,6 +89,12 @@ export class TestingModule {
   /** The `@Once` handlers that have already handled their event, as a client forgets its once listeners. */
   private readonly firedOnce = new Set<string>()
 
+  /**
+   * Resolves an instance from the module, as the bot would inject it.
+   *
+   * @param token - A controller, provider or other bound class or token.
+   * @returns The instance, with its dependencies and overrides applied.
+   */
   get<T>(token: ServiceIdentifier<T>): T {
     return this.container.get<T>(token)
   }
@@ -96,12 +102,12 @@ export class TestingModule {
   /**
    * Runs a handler through the same pipeline dispatch runs: the global guards of the module's `app`,
    * then the handler's own, in order and once each; then the interceptors, the app's first, around
-   * the handler; all inside the handler's exception filters. Guards resolve from this module, so `overrideGuard` stubs apply and guards
-   * that inject `ExecutionContext` receive it. `overrideInterceptor` and `overrideFilter` stubs apply
-   * the same way.
+   * validation, pipes and the handler; all inside the handler's exception filters. Guards resolve
+   * from this module, so `overrideGuard` stubs apply and guards that inject `ExecutionContext` receive
+   * it. `overrideInterceptor` and `overrideFilter` stubs apply the same way.
    *
-   * Calling the controller method directly runs its guards but no interceptors; `invoke` is the way
-   * to test everything dispatch runs around a handler.
+   * Calling the controller method directly runs its guards but no interceptors, validation or
+   * filters; `invoke` is the way to test everything dispatch runs around a handler.
    *
    * @param controller - A controller passed to `MeoCordTestingModule.create`.
    * @param methodName - The handler method's name.
@@ -224,6 +230,15 @@ export class TestingModuleBuilder {
     }
   }
 
+  /**
+   * Replaces a guard with a stub wherever it applies, globally or on a controller or handler.
+   *
+   * @param guard - The guard class to replace.
+   * @example
+   * ```ts
+   * builder.overrideGuard(RateLimitGuard).useValue({ canActivate: () => true })
+   * ```
+   */
   overrideGuard(guard: new (...args: any[]) => GuardInterface): {
     useValue: (stub: Partial<GuardInterface>) => TestingModuleBuilder
   } {
@@ -277,6 +292,11 @@ export class TestingModuleBuilder {
     }
   }
 
+  /**
+   * Binds the controllers, providers and overrides into a module ready to resolve and run handlers.
+   *
+   * @returns The compiled module.
+   */
   compile(): TestingModule {
     const container = new Container()
     if (this.options.app) bindGlobalStages(container, appStages(this.options.app))
