@@ -571,6 +571,18 @@ move into one typed catalog per locale, checked at compile time, with `expectCom
 load, such as `supports-color`, belongs in `optionalExternals` rather than `externals`, where a missing
 copy stopped the bot at startup.
 
+**Startup errors: `isExplainedError`.** When Discord refuses a privileged intent, MeoCord logs which
+intents the bot requests and where to enable them, then `app.start()` rejects as before. A 4.0 `main.ts`
+logs that error again, with its stack trace. Skip the errors MeoCord already explained:
+
+```typescript
+import { isExplainedError, Logger } from 'meocord/common'
+
+bootstrap().catch(error => {
+  if (!isExplainedError(error)) logger.error('Error during startup:', error)
+})
+```
+
 ---
 
 Something here did not match what you saw? [Open an issue](https://github.com/l7aromeo/meocord/issues/new/choose).
