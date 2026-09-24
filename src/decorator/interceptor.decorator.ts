@@ -13,7 +13,7 @@ import { type ExecutionContextType } from '@src/common/execution-context.js'
  * interceptor from `@MeoCord({ interceptors })` also runs around `@On` and `@Once` event handlers.
  *
  * @param options.types - The context types the interceptor runs for, as `ExecutionContext.getType()`
- *   reports them; for any other call it is skipped. Every type when omitted.
+ *   reports them; for any other call it is skipped. Every type when omitted; an empty list throws.
  *
  * @example
  * ```typescript
@@ -33,7 +33,7 @@ import { type ExecutionContextType } from '@src/common/execution-context.js'
 export function Interceptor(options: { types?: readonly ExecutionContextType[] } = {}) {
   return function (target: new (...args: any[]) => InterceptorInterface) {
     makeInjectable(target)
-    defineStageTypes(target, options.types)
+    defineStageTypes(target, options.types, 'Interceptor')
   }
 }
 

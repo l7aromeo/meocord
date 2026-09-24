@@ -91,7 +91,7 @@ function ownHandlerDescriptor(prototype: object, methodName: string): PropertyDe
  * an interaction should declare `types: ['interaction']`.
  *
  * @param options.types - The context types the guard runs for, as `ExecutionContext.getType()`
- *   reports them; for any other call it is skipped. Every type when omitted.
+ *   reports them; for any other call it is skipped. Every type when omitted; an empty list throws.
  *
  * @example
  * ```typescript
@@ -106,7 +106,7 @@ function ownHandlerDescriptor(prototype: object, methodName: string): PropertyDe
 export function Guard(options: { types?: readonly ExecutionContextType[] } = {}) {
   return function (target: any) {
     makeInjectable(target)
-    defineStageTypes(target, options.types)
+    defineStageTypes(target, options.types, 'Guard')
   }
 }
 
