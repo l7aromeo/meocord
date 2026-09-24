@@ -49,6 +49,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'createTranslator',
     'defineCatalog',
     'getInstallContext',
+    'isExplainedError',
     'respond',
   ],
   'meocord/enum': ['CommandType', 'MetadataKey', 'ReactionHandlerAction'],
