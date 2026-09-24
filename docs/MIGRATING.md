@@ -312,6 +312,7 @@ what a bot does at runtime; each says what to check. Everything else in 4.1 is n
 - [ ] Check class guards on controllers with `@Autocomplete` handlers
 - [ ] Check what users see when a command throws after it replied or deferred
 - [ ] Fix any command builder that throws, since it now stops registration
+- [ ] Fix any `meocord.config.ts` option of the wrong type, since it now stops `build`, `start` and `register`
 - [ ] Fix or replace the generated `src/guards/rate-limit.guard.ts`, if your app still has it
 - [ ] Rename any `SetMetadata` key that MeoCord reserves, such as `'guards'`
 - [ ] Rebuild
@@ -382,6 +383,14 @@ slash command without a description, stops that start's registration with an err
 commands are sent. 4.0 dropped the broken command and registered the rest, and the bulk update deleted
 it from Discord. Fix the builder; the next start registers everything.
 
+### A config option of the wrong type stops the CLI
+
+`build`, `start` and `register` now check `meocord.config.ts` before anything else. An option of the
+wrong type, such as `externals: 'sharp'` where an array is expected, stops them with a list of every
+problem and exit code 1, where 4.0 built some silently and failed on others with an internal error. A
+config that fails to load stops them with the file and line. An option MeoCord does not know, often a
+typo, is only reported as a warning. Fix what the list names, then run the command again.
+
 ### The generated rate-limit guard limits
 
 The `RateLimitGuard` that `meocord create` copied into 4.0 applications never limited anything: a new
@@ -418,6 +427,15 @@ export const Guards = createMetadata<string[]>('guards')
   `message`, as a real modal does, rather than `undefined`.
 - `MeoCordFactory.create()` returns the `MeoCordApplication` type from `meocord/interface`, with the same
   `start()` and `registerCommands()`.
+- `meocord start` and `meocord register` pass SIGINT and SIGTERM on to the bot, so a signal from Docker,
+  pm2 or systemd, sent to the CLI alone, shuts the bot down through its own shutdown path; in 4.0 it
+  stopped the CLI and could leave the bot running.
+- `meocord build` no longer rewrites `tsconfig.json`: it reads comments and trailing commas as
+  TypeScript does, where 4.0 "repaired" the file and wrote it back without your comments. A relative or
+  package `extends` in it now works.
+- A controller, service or guard that extends another decorated class gets its own constructor's
+  dependencies injected, and a base controller no longer lists, or routes to, the handlers a subclass
+  declares.
 
 ## Adopting 4.1 patterns
 
