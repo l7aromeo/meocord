@@ -150,4 +150,43 @@ describe('TestingModule.emit', () => {
     expect(error).toBeInstanceOf(AggregateError)
     expect((error as AggregateError).errors.map(e => (e as Error).message)).toEqual(['one', 'two'])
   })
+
+  it('runs no handler for an event nothing handles', async () => {
+    @Controller()
+    class Members {
+      @On('guildMemberAdd')
+      greet() {}
+    }
+
+    const module = MeoCordTestingModule.create({ controllers: [Members] }).compile()
+
+    expect(await module.emit('guildMemberRemove', createMock<GuildMember>())).toEqual({ ran: 0 })
+  })
+
+  // As in an app, where one class failing to resolve leaves the other listeners running
+  it('runs the other handlers when a class cannot be resolved, then rejects with its error', async () => {
+    const ran = vi.fn()
+
+    @Controller()
+    class Broken {
+      constructor() {
+        throw new Error('no database')
+      }
+      @Once('guildMemberAdd')
+      greet() {}
+    }
+
+    @Controller()
+    class Members {
+      @On('guildMemberAdd')
+      greet() {
+        ran()
+      }
+    }
+
+    const module = MeoCordTestingModule.create({ controllers: [Broken, Members] }).compile()
+
+    await expect(module.emit('guildMemberAdd', createMock<GuildMember>())).rejects.toThrow('no database')
+    expect(ran).toHaveBeenCalled()
+  })
 })
