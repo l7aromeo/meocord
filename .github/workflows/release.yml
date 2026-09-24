@@ -268,6 +268,67 @@ jobs:
       - name: Run the slow CLI scenarios
         run: bun run cli:scenarios --tier slow
 
+  # The smoke app against real Discord, as the test application's bot: see "Checking against real
+  # Discord" in CONTRIBUTING.md. Its secrets live in the `e2e` environment and reach only the step that
+  # runs it. Not a required check, so an outage at Discord blocks nothing; test:e2e skips and passes
+  # when the environment has no secrets.
+  e2e:
+    name: Real Discord
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: e2e
+    permissions:
+      contents: read
+    # One run at a time across workflows, since every run logs in as the same bot; none is cancelled
+    concurrency:
+      group: discord-e2e
+      cancel-in-progress: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The CLI and the bot run on node, the one the engines field names.
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build package
+        run: bun run build
+
+      - name: Check against real Discord
+        env:
+          MEOCORD_E2E_BOT_TOKEN: ${{ secrets.MEOCORD_E2E_BOT_TOKEN }}
+          MEOCORD_E2E_GUILD_ID: ${{ secrets.MEOCORD_E2E_GUILD_ID }}
+          MEOCORD_E2E_CHANNEL_ID: ${{ secrets.MEOCORD_E2E_CHANNEL_ID }}
+          MEOCORD_E2E_HELPER_BOT_TOKEN: ${{ secrets.MEOCORD_E2E_HELPER_BOT_TOKEN }}
+        run: |
+          for token in "$MEOCORD_E2E_BOT_TOKEN" "$MEOCORD_E2E_HELPER_BOT_TOKEN"; do
+            if [ -n "$token" ]; then echo "::add-mask::$token"; fi
+          done
+          bun run test:e2e
+
+  # A pull request from a fork gets no secrets, so the real-Discord checks do not run for it. This says
+  # so on the run instead of leaving a silently skipped job.
+  e2e-fork:
+    name: Real Discord (not run for forks)
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Explain the skip
+        run: echo "::notice title=Real Discord not run::Pull requests from forks get no Discord secrets, so the real-Discord checks run only for branches of this repository, nightly and on main."
+
   # Publishes, and only that: it installs nothing beyond the repository's frozen lockfile and runs
   # no generated application, since any step here can request the token npm publishes with.
   release:
