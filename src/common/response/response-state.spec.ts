@@ -1097,3 +1097,90 @@ describe('respond() when Discord refuses what @Defer does on its own', () => {
     expect(debug).toHaveBeenCalledWith(expect.stringMatching(/^Could not delete the deferred reply: DiscordAPIError.*10008/))
   })
 })
+
+describe('respond(), the last details', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('names every flag it drops, separated', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    const interaction = command()
+    await respond(interaction).acknowledge()
+
+    await respond(interaction).edit({ content: 'x', flags: SuppressNotifications | Ephemeral } as never)
+
+    expect(warn).toHaveBeenCalledWith('Dropped flags Ephemeral, SuppressNotifications, which a edit cannot take.')
+  })
+
+  it('sends exactly the flags a payload sets, even on a message with suppressed embeds', async () => {
+    const interaction = button(messageWith({ flags: SuppressEmbeds }))
+    await respond(interaction).acknowledge()
+
+    await respond(interaction).edit({ content: 'x', flags: [] })
+
+    expect(sent(interaction.editReply).flags).toBe(0)
+  })
+
+  it("acknowledges nothing when the timer fires while error()'s own reply is in flight", async () => {
+    vi.useFakeTimers()
+    const interaction = command()
+    interaction.reply.mockImplementation(() => new Promise<never>(() => {}))
+    responseOf(interaction).scheduleAcknowledge(1000)
+
+    void respond(interaction).error(new Error('x'))
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(interaction.deferReply).not.toHaveBeenCalled()
+  })
+
+  it('keeps the flags an update asks for, and a Components V2 update in later edits', async () => {
+    const suppressed = button()
+    await respond(suppressed).send({ content: 'x', flags: SuppressEmbeds })
+    const v2 = button()
+    await respond(v2).send({ components: [], flags: IsComponentsV2 })
+    await respond(v2).edit('text is dropped')
+
+    expect(sent(suppressed.update).flags).toBe(SuppressEmbeds)
+    expect(sent(v2.editReply)).toEqual({ flags: IsComponentsV2 })
+  })
+
+  // Discord gives every component an id, so what it returns differs from what was sent
+  it('restores a locked message Discord returned with component ids', async () => {
+    const row = { type: ComponentType.ActionRow, components: [{ type: ComponentType.Button, style: 1, custom_id: 'refresh', label: 'r' }] }
+    const interaction = button(messageWith({ components: [row] }))
+    let current: unknown[] = []
+    interaction.editReply.mockImplementation(async payload => {
+      const withIds = ((payload as Payload).components ?? []).map((component, index) => ({ ...component, id: index + 1 }))
+      current = withIds
+      return messageWith({ components: withIds }) as never
+    })
+    interaction.fetchReply.mockImplementation(async () => messageWith({ components: current }) as never)
+    await respond(interaction).lock()
+
+    await responseOf(interaction).release()
+
+    expect(interaction.editReply).toHaveBeenCalledTimes(2)
+  })
+
+  it('logs, and never throws, when its follow-up after a 40060 fails too', async () => {
+    const debug = vi.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined)
+    const interaction = command()
+    interaction.reply.mockRejectedValueOnce(createDiscordError(40060))
+    interaction.followUp.mockRejectedValueOnce(createDiscordError(10015))
+
+    await expect(respond(interaction).error(new Error('x'))).resolves.toBeUndefined()
+
+    expect(debug).toHaveBeenCalledWith(expect.stringMatching(/^Could not deliver the error reply: DiscordAPIError.*10015/))
+  })
+
+  it('answers an unanswered component on a private message with a private reply, never an edit', async () => {
+    const interaction = button(messageWith({ flags: Ephemeral, embeds: [{ description: 'card' }] }))
+
+    await respond(interaction).error(new Error('x'))
+
+    expect(sent(interaction.reply).flags).toBe(Ephemeral)
+    expect(interaction.editReply).not.toHaveBeenCalled()
+  })
+})
