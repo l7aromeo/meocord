@@ -334,6 +334,25 @@ const scenarios: Scenario[] = [
   { name: 'shows the license', tier: 'fast', argv: ['show', '--license'], expect: { code: 0, says: ['MIT License'] } },
   { name: 'shows help for show without a flag', tier: 'fast', argv: ['show'], expect: { code: 1, says: ['--warranty', '--license'] } },
 
+  // Help: every command and argument described, and no empty sections
+  ...[
+    [],
+    ['create'],
+    ['build'],
+    ['start'],
+    ['register'],
+    ['show'],
+    ['generate'],
+    ...['controller', 'service', 'guard', 'interceptor', 'filter', 'pipe'].map(kind => ['generate', kind]),
+  ].map(
+    (command): Scenario => ({
+      name: `${['meocord', ...command].join(' ')} --help describes every command and argument`,
+      tier: 'fast',
+      argv: [...command, '--help'],
+      expect: { code: 0, says: ['MeoCord Copyright'], never: ['No description provided', 'No available choices'] },
+    }),
+  ),
+
   // Starting and registering without a build
   {
     name: 'start --prod without a build says to build',
