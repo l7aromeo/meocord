@@ -31,6 +31,7 @@
 - [Autocomplete](#autocomplete)
 - [Guards](#guards)
 - [Interceptors](#interceptors)
+- [Exception filters](#exception-filters)
 - [Custom Decorators](#custom-decorators)
 - [Lifecycle Hooks](#lifecycle-hooks)
 - [Testing](#testing)
@@ -47,8 +48,8 @@
 - **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators.
 - **Guard system** — Pre-execution hooks for auth, rate limiting, metrics, and anything else. Apply per-method or per-class with `@UseGuard`. Guards receive the full interaction context.
 - **Lifecycle hooks** — `onReady` and `onShutdown` on any controller or service, for schedulers, cache warm-up and clean shutdown.
-- **Full CLI** — `meocord create`, `build`, `start`, `generate`. Scaffolds controllers, services, guards and interceptors; builds with Rsbuild for both development and production.
-- **Testing utilities** — `MeoCordTestingModule` with `invoke` to run a handler through its guards, `inspectHandler`, `createMockInteraction`, `createMockMessage`, `createMockUser`, `createMockClient`, `createMockGuild`, `createMockChannel`, `createChatInputOptions`, `overrideGuard` and `overrideInterceptor` let you test controllers against real guard logic without a Discord connection. Type guards and reply state machines work out of the box.
+- **Full CLI** — `meocord create`, `build`, `start`, `generate`. Scaffolds controllers, services, guards, interceptors and filters; builds with Rsbuild for both development and production.
+- **Testing utilities** — `MeoCordTestingModule` with `invoke` to run a handler through its guards, `inspectHandler`, `createMockInteraction`, `createMockMessage`, `createMockUser`, `createMockClient`, `createMockGuild`, `createMockChannel`, `createChatInputOptions`, `overrideGuard`, `overrideInterceptor` and `overrideFilter` let you test controllers against real guard logic without a Discord connection. Type guards and reply state machines work out of the box.
 - **TypeScript-first** — Strict types throughout. Decorator metadata, `DeepMocked<T>` for test mocks, and typed config interfaces included.
 - **Extensible build** — An Rsbuild config hook in `meocord.config.ts` to adjust the build without ejecting, and an option to bundle dependencies so production runs without `node_modules`.
 
@@ -398,14 +399,14 @@ export default [
 npx meocord --help
 ```
 
-| Command    | Alias | Description                                          |
-| ---------- | ----- | ---------------------------------------------------- |
-| `create`   | —     | Scaffold a new MeoCord application                   |
-| `build`    | —     | Compile the application via Rsbuild                  |
-| `start`    | —     | Start the application                                |
-| `register` | —     | Register the commands, without starting the bot      |
-| `generate` | `g`   | Scaffold controllers, services, guards, interceptors |
-| `show`     | —     | Display framework info                               |
+| Command    | Alias | Description                                                   |
+| ---------- | ----- | ------------------------------------------------------------- |
+| `create`   | —     | Scaffold a new MeoCord application                            |
+| `build`    | —     | Compile the application via Rsbuild                           |
+| `start`    | —     | Start the application                                         |
+| `register` | —     | Register the commands, without starting the bot               |
+| `generate` | `g`   | Scaffold controllers, services, guards, interceptors, filters |
+| `show`     | —     | Display framework info                                        |
 
 Every command's own flags:
 
@@ -436,6 +437,7 @@ npx meocord start --build --prod  # production build + start
 | `service`     | `s`   | a service and its spec              |
 | `guard`       | `gu`  | a guard and its spec                |
 | `interceptor` | `i`   | an interceptor and its spec         |
+| `filter`      | `f`   | an exception filter and its spec    |
 
 #### Controllers
 
@@ -742,6 +744,15 @@ Global guards run when a handler is dispatched, or run with [`invoke`](#running-
 
 Class-level and global guards also run before `@Autocomplete` handlers. There the guard receives an `AutocompleteInteraction`, which has no `reply()`, and `ExecutionContext.getType()` is `'autocomplete'`. A guard must not try to answer it: return `false` to deny, and MeoCord closes the menu with an empty list.
 
+Returning `false` denies silently. To tell the user why, throw `GuardDeniedError` from `meocord/common` with the message to show: it is answered only to the user who made the call, and an [exception filter](#exception-filters) can catch it to answer differently.
+
+```typescript
+canActivate(interaction: ButtonInteraction, { ownerId }: { ownerId: string }): boolean {
+  if (interaction.user.id !== ownerId) throw new GuardDeniedError('Only the owner can use this.')
+  return true
+}
+```
+
 ---
 
 ## Interceptors
@@ -779,6 +790,64 @@ One instance of an interceptor serves every call, so it can hold a cache or coun
 Interceptors run when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke) in a test. A controller method called directly runs its guards but no interceptors. Autocomplete handlers run none.
 
 Generate one with `npx meocord g i <name>`.
+
+---
+
+## Exception filters
+
+An exception filter handles errors a handler, its interceptors or its guards throw, and decides what the user is told. `@Catch` names the error types it handles, matched with `instanceof`; with no types it handles everything.
+
+```typescript
+import { Catch, UseFilter } from 'meocord/decorator'
+import { type ExceptionFilter } from 'meocord/interface'
+import { type ExecutionContext } from 'meocord/common'
+import { MessageFlags } from 'discord.js'
+
+export class RateLimitedError extends Error {
+  constructor(readonly retryAfter: number) {
+    super(`Rate limited for ${retryAfter}s`)
+  }
+}
+
+@Catch(RateLimitedError)
+export class RateLimitedFilter implements ExceptionFilter<RateLimitedError> {
+  async catch(error: RateLimitedError, context: ExecutionContext) {
+    const interaction = context.getInteraction()
+    if (!interaction?.isRepliable()) return
+    const answer = { content: `Slow down: try again in ${error.retryAfter}s.`, flags: MessageFlags.Ephemeral } as const
+    if (interaction.replied || interaction.deferred) await interaction.followUp(answer)
+    else await interaction.reply(answer)
+  }
+}
+
+@Controller()
+@UseFilter(RateLimitedFilter) // every handler in the controller; or on one method
+export class ProfileController { ... }
+```
+
+Apply filters with `@UseFilter` on a method or a controller, or to every handler with `@MeoCord({ filters })`. The filter closest to the handler wins: the method's filters are tried first, then the controller's, then global ones; within one level, the first whose `@Catch` matches, in the order listed. For an inherited handler, the class that declares it comes before the subclass. A filter that throws is logged, and the built-in fallback answers the original error.
+
+Errors outside any handler reach global filters too. An interaction no handler matches raises `CommandNotFoundError` from `meocord/common`; there, `context.getController()` and `getHandler()` are `undefined`.
+
+One instance of a filter serves every call, as with interceptors, so it cannot inject `ExecutionContext`, and `{ provide, params }` is read with `context.getParams()`.
+
+### The built-in fallback
+
+An error no filter handles goes to the built-in fallback. It logs the error, then answers the user if the interaction can still take an answer, privately and in the error style:
+
+| The interaction                                                          | The fallback                                            |
+| ------------------------------------------------------------------------ | ------------------------------------------------------- |
+| Not answered yet                                                         | replies                                                 |
+| A command whose reply was deferred                                       | edits the deferred reply into the error                 |
+| Already replied to, or a deferred button, select or modal from a message | follows up; it never edits the message the user clicked |
+| Autocomplete                                                             | closes the menu with an empty list                      |
+| Expired (Discord error 10062)                                            | logs only                                               |
+
+It says "An error occurred while executing the command.", "Command not found!" for `CommandNotFoundError`, and a `GuardDeniedError`'s own message — which it keeps private even on a deferred public command, by deleting the deferred reply and following up. Errors from message, reaction and event handlers are only logged, and the next handler still runs. The fallback never throws.
+
+Filters apply when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke); a controller method called directly throws as it would without them. Under `invoke` the fallback does not run: an error no filter handles rejects, so tests see it.
+
+Generate a filter with `npx meocord g f <name>`.
 
 ---
 
@@ -970,7 +1039,7 @@ expect(ran).toBe(false)
 expect(interaction.reply).not.toHaveBeenCalled()
 ```
 
-To include the global guards and interceptors of `@MeoCord`, pass the application class as `app`. Only those are read; controllers and providers are still listed as usual:
+To include the global guards, interceptors and filters of `@MeoCord`, pass the application class as `app`. Only those are read; controllers and providers are still listed as usual:
 
 ```typescript
 import App from '@src/app'
@@ -979,9 +1048,9 @@ const module = MeoCordTestingModule.create({ app: App, controllers: [ProfileCont
 await module.invoke(ProfileController, 'showProfile', interaction, { ownerId: '111', uid: '8000' }) // global guards run first
 ```
 
-`invoke` resolves to `{ ran }`, which is `false` when a guard denied the call or an interceptor skipped the handler, and rejects with any error the handler or a guard throws. The method name and arguments are type-checked against the handler. Calling the controller method directly still runs its guards, as in earlier versions, but no interceptors; `invoke` is the way to test everything dispatch runs around a handler.
+`invoke` resolves to `{ ran }`, which is `false` when a guard denied the call or an interceptor skipped the handler, with `error` set when a filter handled one, and rejects with an error no filter handles, since the built-in fallback does not run in tests. The method name and arguments are type-checked against the handler. Calling the controller method directly still runs its guards, as in earlier versions, but no interceptors or filters; `invoke` is the way to test everything dispatch runs around a handler.
 
-To check what a handler is set up with, without running it, use `inspectHandler`. It lists the guards and interceptors dispatch runs, in order, and reads the handler's metadata as `ExecutionContext` does:
+To check what a handler is set up with, without running it, use `inspectHandler`. It lists the guards, interceptors and filters dispatch applies, in order, and reads the handler's metadata as `ExecutionContext` does:
 
 ```typescript
 import { inspectHandler } from 'meocord/testing'
@@ -1260,6 +1329,21 @@ Replaces an interceptor with a stub wherever it applies — globally, on a contr
 const module = MeoCordTestingModule.create({ app: App, controllers: [ProfileController] })
   .overrideInterceptor(CacheInterceptor)
   .useValue({ intercept: (_context, next) => next.handle() })
+  .compile()
+```
+
+</details>
+
+<details>
+<summary><b><code>overrideFilter</code></b></summary>
+
+Replaces an exception filter with a stub wherever it applies. The filter's `@Catch` still decides which errors reach the stub.
+
+```typescript
+const catchRateLimit = createMockFn()
+const module = MeoCordTestingModule.create({ controllers: [ProfileController] })
+  .overrideFilter(RateLimitedFilter)
+  .useValue({ catch: catchRateLimit })
   .compile()
 ```
 

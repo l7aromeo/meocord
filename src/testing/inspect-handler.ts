@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import { type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
+import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
 import { HandlerExecutionContext } from '@src/common/execution-context.js'
 import { type MetadataDecorator } from '@src/common/metadata.js'
 import { appStages, handlerStages } from '@src/core/handler-pipeline.js'
@@ -14,6 +14,11 @@ export type InspectedInterceptor =
   | (new (...args: any[]) => InterceptorInterface)
   | { provide: new (...args: any[]) => InterceptorInterface; params: Record<string, any> }
 
+/** A filter as `@UseFilter` declares it: the class, or the class with its params. */
+export type InspectedFilter =
+  | (new (...args: any[]) => ExceptionFilter<any>)
+  | { provide: new (...args: any[]) => ExceptionFilter<any>; params: Record<string, any> }
+
 /** What runs for one handler, and the metadata declared on it, as {@link inspectHandler} reports it. */
 export interface HandlerInspection {
   /** The controller class declaring the handler. */
@@ -27,6 +32,12 @@ export interface HandlerInspection {
 
   /** The interceptors around the handler, outermost first: global, class, then method interceptors. */
   readonly interceptors: readonly InspectedInterceptor[]
+
+  /**
+   * The exception filters for the handler, in the order they are tried: the method's, then the
+   * controller's, then global ones.
+   */
+  readonly filters: readonly InspectedFilter[]
 
   /**
    * Reads a metadata value as `ExecutionContext.get` does: the method's value, else the controller's.
@@ -49,7 +60,7 @@ export interface HandlerInspection {
 
 /** What {@link inspectHandler} includes besides the handler's own metadata. */
 export interface InspectHandlerOptions {
-  /** The `@MeoCord` application class, whose global guards and interceptors come before the handler's own. */
+  /** The `@MeoCord` application class, whose global guards, interceptors and filters are included. */
   app?: new (...args: any[]) => unknown
 }
 
@@ -60,8 +71,9 @@ export interface InspectHandlerOptions {
  *
  * @param controller - The controller class declaring the handler.
  * @param methodName - The handler method's name.
- * @param options - `app` to include the global guards and interceptors `@MeoCord` declares.
- * @returns The handler's guards and interceptors, in the order they run, and a reader for its metadata.
+ * @param options - `app` to include the global guards, interceptors and filters `@MeoCord` declares.
+ * @returns The handler's guards, interceptors and filters, in the order they apply, and a reader for
+ *   its metadata.
  *
  * @example
  * ```ts
@@ -80,13 +92,14 @@ export function inspectHandler<C extends new (...args: any[]) => unknown>(
 ): HandlerInspection {
   const context = new HandlerExecutionContext({ controller, methodName, args: [] })
   const globals = options.app ? appStages(options.app) : undefined
-  const { guards, interceptors } = handlerStages(controller.prototype as object, methodName, globals)
+  const { guards, interceptors, filters } = handlerStages(controller.prototype as object, methodName, globals)
 
   return {
     controller,
     methodName,
     guards: Object.freeze([...guards]),
     interceptors: Object.freeze([...interceptors]),
+    filters: Object.freeze(filters.flat()),
     get: (metadata: MetadataDecorator<unknown> | string | symbol) => context.get(metadata as string),
     getAll: (metadata: MetadataDecorator<unknown> | string | symbol) => context.getAll(metadata as string),
   } as HandlerInspection

@@ -5,6 +5,7 @@ import { Logger } from '@src/common/index.js'
 import { ServiceGeneratorHelper } from '@src/bin/helper/service-generator.helper.js'
 import { GuardGeneratorHelper } from '@src/bin/helper/guard-generator.helper.js'
 import { InterceptorGeneratorHelper } from '@src/bin/helper/interceptor-generator.helper.js'
+import { FilterGeneratorHelper } from '@src/bin/helper/filter-generator.helper.js'
 import wait from '@src/util/wait.util.js'
 
 export class GeneratorCLI {
@@ -13,6 +14,7 @@ export class GeneratorCLI {
   private serviceGeneratorHelper: ServiceGeneratorHelper
   private guardGeneratorHelper: GuardGeneratorHelper
   private interceptorGeneratorHelper: InterceptorGeneratorHelper
+  private filterGeneratorHelper: FilterGeneratorHelper
 
   constructor(private appName: string) {
     this.logger = new Logger(this.appName)
@@ -20,6 +22,7 @@ export class GeneratorCLI {
     this.serviceGeneratorHelper = new ServiceGeneratorHelper(this.appName)
     this.guardGeneratorHelper = new GuardGeneratorHelper(this.appName)
     this.interceptorGeneratorHelper = new InterceptorGeneratorHelper(this.appName)
+    this.filterGeneratorHelper = new FilterGeneratorHelper(this.appName)
   }
 
   register(program: Command): Command {
@@ -81,6 +84,18 @@ export class GeneratorCLI {
         })
       })
 
+    generatorCommand
+      .command('filter')
+      .alias('f')
+      .addArgument(new Argument('<name>', 'Name of the exception filter.'))
+      .description('Generate an exception filter component')
+      .action(async name => {
+        await this.handleGenerateComponent({
+          component: 'filter',
+          name,
+        })
+      })
+
     return program
   }
 
@@ -117,6 +132,10 @@ export class GeneratorCLI {
 
       case 'interceptor':
         this.interceptorGeneratorHelper.generateInterceptor(name)
+        break
+
+      case 'filter':
+        this.filterGeneratorHelper.generateFilter(name)
         break
 
       default:

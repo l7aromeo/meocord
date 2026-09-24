@@ -16,9 +16,10 @@ export type ExecutionContextType = 'interaction' | 'autocomplete' | 'message' | 
  * Describes one handler call: which controller and method run, with which arguments, and the metadata
  * declared on them.
  *
- * A guard receives it by constructor injection, and an interceptor as the first argument of
- * `intercept`. Each call gets its own context, so a guard that injects it is resolved per call; a
- * shared controller, service or interceptor cannot inject it.
+ * A guard receives it by constructor injection, an interceptor as the first argument of `intercept`,
+ * and an exception filter as the second argument of `catch`. Each call gets its own context, so a
+ * guard that injects it is resolved per call; a shared controller, service, interceptor or filter
+ * cannot inject it.
  *
  * @example
  * ```typescript
@@ -69,20 +70,24 @@ export abstract class ExecutionContext {
   /** What is being handled: an interaction, an autocomplete request, a message, a reaction or an event. */
   abstract getType(): ExecutionContextType
 
-  /** The controller class declaring the handler. */
+  /**
+   * The controller class declaring the handler, or `undefined` in a filter handling an error no
+   * handler was reached for, such as `CommandNotFoundError`.
+   */
   abstract getController(): (new (...args: any[]) => unknown) | undefined
 
   /**
    * The handler method as the controller declares it, with its decorators applied, so the function
-   * returned is the decorated one rather than the source method.
+   * returned is the decorated one rather than the source method. `undefined` when no handler was
+   * reached.
    */
   abstract getHandler(): ((...args: any[]) => unknown) | undefined
 
-  /** The name of the handler method. */
+  /** The name of the handler method, or `undefined` when no handler was reached. */
   abstract getHandlerName(): string | undefined
 
   /**
-   * The `params` of the running guard's or interceptor's `{ provide, params }` entry.
+   * The `params` of the running guard's, interceptor's or filter's `{ provide, params }` entry.
    *
    * @returns The params, or `undefined` for one applied by class alone.
    */
@@ -176,5 +181,73 @@ export class HandlerExecutionContext extends ExecutionContext {
 
   getParams<P extends Record<string, unknown> = Record<string, unknown>>(): Readonly<P> | undefined {
     return this.call.params as Readonly<P> | undefined
+  }
+}
+
+/**
+ * The context of an interaction that reached no handler: one no route matched, or one that failed
+ * before routing. It has arguments and a type, but no controller, handler or metadata.
+ */
+export class UnroutedExecutionContext extends ExecutionContext {
+  private readonly type: ExecutionContextType
+
+  constructor(
+    private readonly args: readonly unknown[],
+    private readonly params?: Record<string, unknown>,
+  ) {
+    super()
+    this.type = inferContextType(args[0])
+  }
+
+  /** The same call, with the params of a filter's `{ provide, params }` entry. */
+  withParams(params: Record<string, unknown> | undefined): UnroutedExecutionContext {
+    return new UnroutedExecutionContext(this.args, params)
+  }
+
+  get(): undefined {
+    return undefined
+  }
+
+  getAll(): [] {
+    return []
+  }
+
+  getArgs(): readonly unknown[] {
+    return this.args
+  }
+
+  getInteraction(): Interaction | undefined {
+    const [first] = this.args
+    return first instanceof BaseInteraction ? (first as Interaction) : undefined
+  }
+
+  getMessage(): Message | undefined {
+    const [first] = this.args
+    return first instanceof Message ? first : undefined
+  }
+
+  getReaction(): MessageReaction | PartialMessageReaction | undefined {
+    const [first] = this.args
+    return first instanceof MessageReaction ? first : undefined
+  }
+
+  getType(): ExecutionContextType {
+    return this.type
+  }
+
+  getController(): undefined {
+    return undefined
+  }
+
+  getHandler(): undefined {
+    return undefined
+  }
+
+  getHandlerName(): undefined {
+    return undefined
+  }
+
+  getParams<P extends Record<string, unknown> = Record<string, unknown>>(): Readonly<P> | undefined {
+    return this.params as Readonly<P> | undefined
   }
 }

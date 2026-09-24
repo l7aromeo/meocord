@@ -2,7 +2,7 @@ import 'reflect-metadata'
 import { type ServiceIdentifier } from 'inversify'
 import { type ActivityOptions, type ClientOptions } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
-import { type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
+import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 
 /**
@@ -19,6 +19,8 @@ import { makeInjectable } from '@src/util/injectable.util.js'
  *   directly runs only its own guards.
  * @param options.interceptors - Interceptors run around every dispatched handler except autocomplete,
  *   outside the controller's and the method's own. A controller method called directly runs none.
+ * @param options.filters - Exception filters tried after the method's and the controller's, and for
+ *   errors outside any handler, such as `CommandNotFoundError`.
  *
  * @example
  * ```typescript
@@ -30,6 +32,7 @@ import { makeInjectable } from '@src/util/injectable.util.js'
  *   activities: [{ name: 'with slash commands', type: ActivityType.Playing }],
  *   guards: [BlocklistGuard],
  *   interceptors: [TimingInterceptor],
+ *   filters: [ReportingFilter],
  * })
  * class App {}
  * ```
@@ -46,6 +49,10 @@ export function MeoCord(options: {
   interceptors?: (
     | (new (...args: any[]) => InterceptorInterface)
     | { provide: new (...args: any[]) => InterceptorInterface; params: Record<string, any> }
+  )[]
+  filters?: (
+    | (new (...args: any[]) => ExceptionFilter<any>)
+    | { provide: new (...args: any[]) => ExceptionFilter<any>; params: Record<string, any> }
   )[]
 }): (target: any) => void {
   return (target: any): void => {

@@ -5,7 +5,6 @@ import {
   Client,
   type Interaction,
   Message,
-  MessageFlagsBitField,
   MessageReaction,
   type PartialMessageReaction,
   REST,
@@ -21,7 +20,6 @@ import {
   PARAM_SEPARATOR,
 } from '@src/decorator/controller.decorator.js'
 import { sample } from 'lodash-es'
-import { EmbedUtil } from '@src/util/index.js'
 import {
   describeInteraction,
   focusedOptionName,
@@ -39,7 +37,9 @@ import {
   findComponentRouteConflicts,
   matchComponentRoute,
 } from '@src/core/component-routes.js'
-import { runHandler } from '@src/core/handler-pipeline.js'
+import { handleUnroutedError, runHandler } from '@src/core/handler-pipeline.js'
+import { closeAutocomplete, createFallback, type Fallback } from '@src/core/fallback.js'
+import { CommandNotFoundError } from '@src/common/errors.js'
 import { lifecycleDependencies } from '@src/core/lifecycle-order.js'
 import { registerCommands } from '@src/core/command-registration.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
@@ -95,6 +95,7 @@ function installSignalHandlers(): void {
 
 export class MeoCordApp {
   private readonly logger = new Logger(MeoCordApp.name)
+  private readonly fallback: Fallback = createFallback(this.logger)
   private readonly bot: Client
   private activityInterval: ReturnType<typeof setInterval> | null = null
   private controllerInstancesCache = new Map<any, any>()
@@ -334,23 +335,14 @@ export class MeoCordApp {
   }
 
   /**
-   * Dispatches an interaction, reporting a failure before the handler, such as resolving the
-   * controller, to the user and the log as well.
+   * Dispatches an interaction. A failure outside any handler, such as no route matching or resolving
+   * the controller, goes to the global filters, then the fallback.
    */
   private async handleInteraction(interaction: Interaction<CacheType>): Promise<void> {
     try {
       await this.dispatchInteraction(interaction)
     } catch (error) {
-      this.logger.error(`Error dispatching ${describeInteraction(interaction)}:`, error)
-
-      // Autocomplete has no reply to fall back on; closing its window is the only
-      // thing that stops the client showing a loading state until it times out.
-      if (interaction.isAutocomplete()) {
-        await this.respondEmpty(interaction)
-        return
-      }
-
-      await this.replyWithError(interaction, 'An error occurred while executing the command.')
+      await handleUnroutedError(this.container, [interaction], error, { fallback: this.fallback })
     }
   }
 
@@ -372,7 +364,7 @@ export class MeoCordApp {
       if (matched) {
         const { route, params } = matched
         ;(interaction as Interaction & { dynamicParams: Record<string, string> }).dynamicParams = params
-        await this.executeCommand(this.getInstance(route.controllerClass), route.meta, interaction, customId)
+        await this.executeCommand(this.getInstance(route.controllerClass), route.meta, interaction)
         return
       }
     }
@@ -386,7 +378,7 @@ export class MeoCordApp {
         const commandMetadata = commandMap?.[path]?.find(meta => matchesCommandType(meta.type, interaction))
         if (!commandMetadata) continue
 
-        await this.executeCommand(controllerInstance, commandMetadata, interaction, path)
+        await this.executeCommand(controllerInstance, commandMetadata, interaction)
         return
       }
     }
@@ -395,12 +387,10 @@ export class MeoCordApp {
     // about which id was unroutable, so a control that is emitted but never routed --
     // a customId whose value broke its pattern, or a handler nobody wrote -- stays
     // invisible until somebody reports the dead button.
-    this.logger.warn(
+    throw new CommandNotFoundError(
       `No handler matched ${describeInteraction(interaction)}. Check that a @Command pattern is ` +
         `declared for it and that its controller is registered.`,
     )
-
-    await this.replyWithError(interaction, 'Command not found!')
   }
 
   /**
@@ -430,16 +420,11 @@ export class MeoCordApp {
         if (meta.commandPath !== path) continue
         if (meta.optionName !== undefined && meta.optionName !== focusedName) continue
 
-        try {
-          const controllerInstance = this.getInstance(controllerClass)
-          this.logger.log('[AUTOCOMPLETE]', `[${path}]`, `[${meta.methodName}]`)
-          const params = resolveOptionParams(interaction)
-          const ran = await this.invokeHandler(controllerInstance, meta.methodName, [interaction, params])
-          if (!ran) await this.respondEmpty(interaction)
-        } catch (error) {
-          this.logger.error(`Error handling ${describeInteraction(interaction)}:`, error)
-          await this.respondEmpty(interaction)
-        }
+        const controllerInstance = this.getInstance(controllerClass)
+        this.logger.log('[AUTOCOMPLETE]', `[${path}]`, `[${meta.methodName}]`)
+        const params = resolveOptionParams(interaction)
+        const ran = await this.invokeHandler(controllerInstance, meta.methodName, [interaction, params])
+        if (!ran) await closeAutocomplete(interaction, this.logger)
         return
       }
     }
@@ -448,18 +433,7 @@ export class MeoCordApp {
       `No handler matched ${describeInteraction(interaction)}. Declare an @Autocomplete handler for it, ` +
         `or drop setAutocomplete(true) from the option.`,
     )
-    await this.respondEmpty(interaction)
-  }
-
-  /** Closes an autocomplete window that nothing else answered. */
-  private async respondEmpty(interaction: AutocompleteInteraction<CacheType>): Promise<void> {
-    if (interaction.responded) return
-    try {
-      await interaction.respond([])
-    } catch (error) {
-      // The three-second window may already have closed, which is not actionable.
-      this.logger.debug(`Could not close autocomplete window: ${String(error)}`)
-    }
+    await closeAutocomplete(interaction, this.logger)
   }
 
   /**
@@ -470,58 +444,36 @@ export class MeoCordApp {
     controllerInstance: Record<string, (...args: unknown[]) => Promise<void>>,
     commandMetadata: CommandMetadata<string>,
     interaction: Interaction<CacheType>,
-    commandIdentifier: string | undefined,
   ): Promise<void> {
     const { methodName, type } = commandMetadata
 
     // No interaction-type check here: both callers pick the route with
     // `matchesCommandType` before getting this far, and `@Command` re-checks the
     // interaction on the way into the handler.
-    try {
-      this.logger.log('[INTERACTION]', `[${type}]`, `[${methodName}]`)
+    this.logger.log('[INTERACTION]', `[${type}]`, `[${methodName}]`)
 
-      let dynamicParams: Record<string, unknown> = {}
+    let dynamicParams: Record<string, unknown> = {}
 
-      if (interaction.isChatInputCommand()) {
-        dynamicParams = resolveOptionParams(interaction)
-      } else if (hasCustomId(interaction)) {
-        dynamicParams = (interaction as Interaction & { dynamicParams?: Record<string, string> }).dynamicParams ?? {}
-      }
-
-      await this.invokeHandler(controllerInstance, methodName, [interaction, dynamicParams])
-    } catch (error) {
-      this.logger.error(`Error executing command "${commandIdentifier}":`, error)
-      await this.replyWithError(interaction, 'An error occurred while executing the command.')
+    if (interaction.isChatInputCommand()) {
+      dynamicParams = resolveOptionParams(interaction)
+    } else if (hasCustomId(interaction)) {
+      dynamicParams = (interaction as Interaction & { dynamicParams?: Record<string, string> }).dynamicParams ?? {}
     }
+
+    await this.invokeHandler(controllerInstance, methodName, [interaction, dynamicParams])
   }
 
   /**
-   * Runs the global guards and the handler's own, then the handler, and says whether the handler ran.
-   * Its guard wrappers let this call through, so each guard runs once.
+   * Runs a handler through its pipeline, with the fallback answering any error no filter handles, and
+   * says whether the handler ran. Its guard wrappers let this call through, so each guard runs once.
    */
   private async invokeHandler(
     instance: Record<string, (...args: unknown[]) => unknown>,
     methodName: string,
     args: unknown[],
   ): Promise<boolean> {
-    const { ran } = await runHandler(this.container, instance, methodName, args)
+    const { ran } = await runHandler(this.container, instance, methodName, args, { fallback: this.fallback })
     return ran
-  }
-
-  /**
-   * Tells the user something went wrong, if the interaction can still take a reply. Never throws, since
-   * a handler that already replied would otherwise turn one error into two.
-   */
-  private async replyWithError(interaction: Interaction<CacheType>, message: string): Promise<void> {
-    if (!interaction.isRepliable() || interaction.replied || interaction.deferred) return
-
-    try {
-      const embed = EmbedUtil.createErrorEmbed(message)
-      await interaction.reply({ embeds: [embed], flags: MessageFlagsBitField.Flags.Ephemeral })
-    } catch (error) {
-      // Unknown or already-acknowledged interaction; the user cannot be told anything.
-      this.logger.debug(`Could not deliver the error reply: ${String(error)}`)
-    }
   }
 
   private async handleMessage(message: Message) {
@@ -550,11 +502,7 @@ export class MeoCordApp {
         const { keyword, method } = handler
 
         if (!keyword || keyword === messageContent) {
-          try {
-            await this.invokeHandler(controllerInstance, method, [message])
-          } catch (error) {
-            this.logger.error(`Error handling message "${messageContent}" for method "${method}":`, error)
-          }
+          await this.invokeHandler(controllerInstance, method, [message])
         }
       }
     }
@@ -595,11 +543,7 @@ export class MeoCordApp {
         const { emoji, method } = handler
 
         if (!emoji || emoji === reaction.emoji.name) {
-          try {
-            await this.invokeHandler(controllerInstance, method, [reaction, { user, action }])
-          } catch (error) {
-            this.logger.error(`Error handling reaction "${reaction.emoji.name}" for method "${method}":`, error)
-          }
+          await this.invokeHandler(controllerInstance, method, [reaction, { user, action }])
         }
       }
     }

@@ -52,6 +52,7 @@ npx meocord g co slash "profile"     # a slash controller, its spec and its buil
 npx meocord g s "profile"            # a service
 npx meocord g gu "rate-limit"        # a guard
 npx meocord g i "timing"             # an interceptor
+npx meocord g f "not-found"          # an exception filter
 npx meocord g --help                 # every generator
 ```
 

@@ -32,6 +32,7 @@ export type { ExecutionContextOptions } from './execution-context.js'
 export { inspectHandler } from './inspect-handler.js'
 export type {
   HandlerInspection,
+  InspectedFilter,
   InspectedGuard,
   InspectedInterceptor,
   InspectHandlerOptions,
