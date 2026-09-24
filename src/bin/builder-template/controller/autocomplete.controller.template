@@ -3,7 +3,6 @@ import { Controller, Autocomplete } from 'meocord/decorator'
 
 @Controller()
 export class {{className}}AutocompleteController {
-
   // Completes the `query` option of /{{commandName}} -- the command `meocord g co slash` generates
   // for the same name. That option must be declared with `.setAutocomplete(true)` on the slash
   // command's builder, otherwise Discord never sends the interaction.

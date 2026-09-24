@@ -4,7 +4,6 @@ import { {{builderClassName}} } from '{{builderImportPath}}'
 
 @Controller()
 export class {{className}}PrimaryEntryPointController {
-
   @Command('{{commandName}}', {{builderClassName}})
   async handleEntryPoint(interaction: PrimaryEntryPointCommandInteraction) {
     await interaction.reply('Launching the activity.')
