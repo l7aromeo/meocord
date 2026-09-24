@@ -170,4 +170,26 @@ describe('stage types', () => {
     expect(intercepted).not.toHaveBeenCalled()
     expect(built).toEqual([])
   })
+
+  it('refuses an empty list of types, which would leave the guard or interceptor never running', () => {
+    expect(() => {
+      @Guard({ types: [] })
+      class NeverGuard implements GuardInterface {
+        canActivate() {
+          return false
+        }
+      }
+      return NeverGuard
+    }).toThrow('@Guard({ types: [] }) on NeverGuard lists no types, so it would never run')
+
+    expect(() => {
+      @Interceptor({ types: [] })
+      class NeverInterceptor implements InterceptorInterface {
+        intercept(_context: unknown, next: CallHandler) {
+          return next.handle()
+        }
+      }
+      return NeverInterceptor
+    }).toThrow('@Interceptor({ types: [] }) on NeverInterceptor lists no types')
+  })
 })
