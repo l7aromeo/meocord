@@ -356,8 +356,8 @@ With `ExecutionContext` injected, `this.context.getType() === 'autocomplete'` te
 A command that throws after `deferReply()` now has its deferred reply edited into the error message,
 instead of showing "thinking…" until Discord times it out. A command or component that throws after it
 already replied now gets a private follow-up with the error, where 4.0 sent nothing. A button, select
-menu or modal submitted from a message is answered with a private follow-up, never by editing the
-message the user clicked.
+menu or modal submitted from a public message is answered with a private follow-up, never by editing the
+message the user clicked; on a private (ephemeral) message, the error is added to that message.
 
 If a handler relied on the old silence, for instance because it edits its own reply into an error
 before rethrowing, register an [exception filter](../README.md#exception-filters) that handles the
@@ -428,6 +428,22 @@ export class RolesGuard implements GuardInterface {
     // ...
   }
 }
+```
+
+**Answering: `respond()`.** Checks such as `interaction.deferred || interaction.replied` before choosing
+between `reply`, `editReply`, `update` and `followUp` can go: `respond(interaction).send(...)` picks the
+call from where the answer stands, and `acknowledge()` defers once however often it is called. It
+answers through the interaction's own methods, so it also works where a user-installed app is used
+without the bot. A custom error embed built in each handler or filter can become a presenter,
+registered with `@MeoCord({ presenter })`, which styles every error MeoCord shows.
+
+```typescript
+// 4.0
+if (interaction.deferred || interaction.replied) await interaction.editReply(payload)
+else await interaction.reply(payload)
+
+// 4.1
+await respond(interaction).send(payload)
 ```
 
 **Denying with a message: `GuardDeniedError`.** Instead of replying from the guard and returning
