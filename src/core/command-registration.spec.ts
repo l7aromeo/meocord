@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
-import { ApplicationCommandType, EntryPointCommandHandlerType, type PrimaryEntryPointCommandInteraction, SlashCommandBuilder } from 'discord.js'
+import { inspect } from 'util'
+import { ApplicationCommandType, EntryPointCommandHandlerType, type PrimaryEntryPointCommandInteraction, REST, SlashCommandBuilder } from 'discord.js'
 import { createTranslator } from '@src/common/index.js'
 import { vi } from 'vitest'
 import { Command, CommandBuilder, Controller } from '@src/decorator/index.js'
@@ -489,5 +490,34 @@ describe('registerCommands', () => {
 
       expect(rest.get).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('the token', () => {
+  const token = 'MTIzNDU2Nzg5MDEyMzQ1Njc4.secret-part.do-not-log'
+
+  /** A real REST client whose requests Discord answers with a status, as a revoked token would get. */
+  const restAnswering = (status: number) =>
+    new REST({ retries: 0, makeRequest: (async () => new Response(JSON.stringify({ message: '401: Unauthorized', code: 0 }), { status, headers: { 'content-type': 'application/json' } })) as never }).setToken(token)
+
+  const everythingLogged = (logger: ReturnType<typeof createLogger>) =>
+    Object.values(logger)
+      .flatMap(fn => fn.mock.calls.flat())
+      .map(arg => (typeof arg === 'string' ? arg : inspect(arg, { depth: 10, showHidden: true })))
+      .join('\n')
+
+  it.each([401, 403])('never appears in what is logged when Discord answers %i', async status => {
+    const logger = createLogger()
+    const registered = await registerCommands({
+      rest: restAnswering(status),
+      applicationId: 'app',
+      controllerClasses: [controllerWith([{ name: 'ping' }])],
+      logger,
+      development: false,
+    })
+
+    expect(registered).toBe(false)
+    expect(logger.error).toHaveBeenCalled()
+    expect(everythingLogged(logger)).not.toContain('secret-part')
   })
 })
