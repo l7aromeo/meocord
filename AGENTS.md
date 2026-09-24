@@ -38,16 +38,16 @@ testing toolkit.
 
 ## 2. Commands
 
-| Command                                     | Use it to                                                                  |
-| ------------------------------------------- | -------------------------------------------------------------------------- |
-| `bun install`                               | Install dependencies (CI uses `--frozen-lockfile`)                         |
-| `bun run lint`                              | Format Markdown/templates, ESLint `--fix`, typecheck src, tests, eslint    |
-| `bun run test`                              | Run the suite, including `*.test-d.ts` type assertions                     |
-| `bun run test:coverage`                     | Run with coverage; thresholds are enforced in CI                           |
-| `bun run build`                             | Clean `dist/` and build ESM, CJS and `.d.ts`/`.d.cts` declarations         |
-| `bun run build && bun run verify:generated` | Generate a real app from `dist` and typecheck it with its own tsconfigs    |
-| `bun run notices:check`                     | Fail if THIRD_PARTY_NOTICES.md is out of date (`bun run notices` rewrites) |
-| `bun run changeset`                         | Write a release note for a change that reaches the published package       |
+| Command                                     | Use it to                                                                                            |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `bun install`                               | Install dependencies (CI uses `--frozen-lockfile`)                                                   |
+| `bun run lint`                              | Format Markdown/templates, ESLint `--fix`, typecheck src, tests, eslint                              |
+| `bun run test`                              | Run the suite, including `*.test-d.ts` type assertions                                               |
+| `bun run test:coverage`                     | Run with coverage; thresholds are enforced in CI                                                     |
+| `bun run build`                             | Clean `dist/` and build ESM, CJS and `.d.ts`/`.d.cts` declarations                                   |
+| `bun run build && bun run verify:generated` | Generate a real app from `dist`, install it, and run its typecheck, tests, coverage, builds and lint |
+| `bun run notices:check`                     | Fail if THIRD_PARTY_NOTICES.md is out of date (`bun run notices` rewrites)                           |
+| `bun run changeset`                         | Write a release note for a change that reaches the published package                                 |
 
 The pre-commit hook runs `bun run lint`. Do not bypass it for code changes.
 
