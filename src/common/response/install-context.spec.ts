@@ -27,6 +27,8 @@ describe('getInstallContext', () => {
       { where: 'guild', botInstalled: true },
     ],
     ['a server the bot is not in', InteractionContextType.Guild, { [UserInstall]: 'user' }, { where: 'guild', botInstalled: false }],
+    // Interactions came only through the bot before user installs, and report no owners
+    ['a server with no owners reported', InteractionContextType.Guild, {}, { where: 'guild', botInstalled: true }],
     ['a direct message with the bot', InteractionContextType.BotDM, { [UserInstall]: 'user' }, { where: 'bot-dm', botInstalled: true }],
     [
       'a direct or group message between users',
