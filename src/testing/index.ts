@@ -30,4 +30,9 @@ export { createExecutionContext } from './execution-context.js'
 export type { ExecutionContextOptions } from './execution-context.js'
 
 export { inspectHandler } from './inspect-handler.js'
-export type { HandlerInspection, InspectedGuard, InspectHandlerOptions } from './inspect-handler.js'
+export type {
+  HandlerInspection,
+  InspectedGuard,
+  InspectedInterceptor,
+  InspectHandlerOptions,
+} from './inspect-handler.js'

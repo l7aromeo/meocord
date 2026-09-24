@@ -13,6 +13,7 @@ import {
   consumeDispatchMark,
   declaringPrototype,
   GUARD_WRAPPERS,
+  INHERITED_FROM,
   type GuardEntry,
   type GuardWithParams,
   runGuards,
@@ -88,6 +89,7 @@ function ownHandlerDescriptor(prototype: object, methodName: string): PropertyDe
     const value: unknown = Reflect.getOwnMetadata(key, owner, methodName)
     if (value !== undefined) Reflect.defineMetadata(key, Array.isArray(value) ? [...value] : value, prototype, methodName)
   }
+  Reflect.defineMetadata(INHERITED_FROM, owner, prototype, methodName)
   return { ...inherited }
 }
 

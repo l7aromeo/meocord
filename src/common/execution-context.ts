@@ -13,11 +13,12 @@ import { type MetadataDecorator } from '@src/common/metadata.js'
 export type ExecutionContextType = 'interaction' | 'autocomplete' | 'message' | 'reaction' | 'event'
 
 /**
- * Describes the handler call a guard is deciding on: which controller and method run, with which
- * arguments, and the metadata declared on them.
+ * Describes one handler call: which controller and method run, with which arguments, and the metadata
+ * declared on them.
  *
- * A guard receives it by constructor injection. Each call gets its own context, so a guard that
- * injects it is resolved per call; a singleton controller or service cannot inject it.
+ * A guard receives it by constructor injection, and an interceptor as the first argument of
+ * `intercept`. Each call gets its own context, so a guard that injects it is resolved per call; a
+ * shared controller, service or interceptor cannot inject it.
  *
  * @example
  * ```typescript
@@ -81,9 +82,9 @@ export abstract class ExecutionContext {
   abstract getHandlerName(): string | undefined
 
   /**
-   * The `params` of the running guard's `{ provide, params }` entry.
+   * The `params` of the running guard's or interceptor's `{ provide, params }` entry.
    *
-   * @returns The params, or `undefined` for a guard applied by class alone.
+   * @returns The params, or `undefined` for one applied by class alone.
    */
   abstract getParams<P extends Record<string, unknown> = Record<string, unknown>>(): Readonly<P> | undefined
 }

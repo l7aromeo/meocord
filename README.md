@@ -5,7 +5,7 @@
 [![node](https://img.shields.io/node/v/meocord)](https://www.npmjs.com/package/meocord)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-**MeoCord** is a decorator-based Discord bot framework built on top of discord.js. It brings a NestJS-style architecture — controllers, services, guards, and dependency injection — to bot development, with a full CLI, TypeScript-first design, and testing utilities included out of the box.
+**MeoCord** is a decorator-based Discord bot framework built on top of discord.js. It brings a NestJS-style architecture — controllers, services, guards, interceptors, and dependency injection — to bot development, with a full CLI, TypeScript-first design, and testing utilities included out of the box.
 
 > **Upgrading from 3.x?** Follow the [migration guide](https://github.com/l7aromeo/meocord/blob/main/docs/MIGRATING.md).
 
@@ -29,6 +29,7 @@
 - [Subcommands](#subcommands)
 - [Autocomplete](#autocomplete)
 - [Guards](#guards)
+- [Interceptors](#interceptors)
 - [Custom Decorators](#custom-decorators)
 - [Lifecycle Hooks](#lifecycle-hooks)
 - [Testing](#testing)
@@ -45,8 +46,8 @@
 - **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators.
 - **Guard system** — Pre-execution hooks for auth, rate limiting, metrics, and anything else. Apply per-method or per-class with `@UseGuard`. Guards receive the full interaction context.
 - **Lifecycle hooks** — `onReady` and `onShutdown` on any controller or service, for schedulers, cache warm-up and clean shutdown.
-- **Full CLI** — `meocord create`, `build`, `start`, `generate`. Scaffolds controllers, services, and guards; builds with Rsbuild for both development and production.
-- **Testing utilities** — `MeoCordTestingModule` with `invoke` to run a handler through its guards, `inspectHandler`, `createMockInteraction`, `createMockMessage`, `createMockUser`, `createMockClient`, `createMockGuild`, `createMockChannel`, `createChatInputOptions`, and `overrideGuard` let you test controllers against real guard logic without a Discord connection. Type guards and reply state machines work out of the box.
+- **Full CLI** — `meocord create`, `build`, `start`, `generate`. Scaffolds controllers, services, guards and interceptors; builds with Rsbuild for both development and production.
+- **Testing utilities** — `MeoCordTestingModule` with `invoke` to run a handler through its guards, `inspectHandler`, `createMockInteraction`, `createMockMessage`, `createMockUser`, `createMockClient`, `createMockGuild`, `createMockChannel`, `createChatInputOptions`, `overrideGuard` and `overrideInterceptor` let you test controllers against real guard logic without a Discord connection. Type guards and reply state machines work out of the box.
 - **TypeScript-first** — Strict types throughout. Decorator metadata, `DeepMocked<T>` for test mocks, and typed config interfaces included.
 - **Extensible build** — An Rsbuild config hook in `meocord.config.ts` to adjust the build without ejecting, and an option to bundle dependencies so production runs without `node_modules`.
 
@@ -343,13 +344,13 @@ export default [
 npx meocord --help
 ```
 
-| Command    | Alias | Description                            |
-| ---------- | ----- | -------------------------------------- |
-| `create`   | —     | Scaffold a new MeoCord application     |
-| `build`    | —     | Compile the application via Rsbuild    |
-| `start`    | —     | Start the application                  |
-| `generate` | `g`   | Scaffold controllers, services, guards |
-| `show`     | —     | Display framework info                 |
+| Command    | Alias | Description                                          |
+| ---------- | ----- | ---------------------------------------------------- |
+| `create`   | —     | Scaffold a new MeoCord application                   |
+| `build`    | —     | Compile the application via Rsbuild                  |
+| `start`    | —     | Start the application                                |
+| `generate` | `g`   | Scaffold controllers, services, guards, interceptors |
+| `show`     | —     | Display framework info                               |
 
 Every command's own flags:
 
@@ -373,11 +374,12 @@ npx meocord start --build --prod  # production build + start
 
 ### Generators
 
-| Sub-command  | Alias | Generates                           |
-| ------------ | ----- | ----------------------------------- |
-| `controller` | `co`  | a controller, its spec, its builder |
-| `service`    | `s`   | a service and its spec              |
-| `guard`      | `gu`  | a guard and its spec                |
+| Sub-command   | Alias | Generates                           |
+| ------------- | ----- | ----------------------------------- |
+| `controller`  | `co`  | a controller, its spec, its builder |
+| `service`     | `s`   | a service and its spec              |
+| `guard`       | `gu`  | a guard and its spec                |
+| `interceptor` | `i`   | an interceptor and its spec         |
 
 #### Controllers
 
@@ -686,6 +688,44 @@ Class-level and global guards also run before `@Autocomplete` handlers. There th
 
 ---
 
+## Interceptors
+
+Interceptors run around a handler once its guards allow the call: timing, logging, caching, mapping errors. An interceptor receives the call's `ExecutionContext` and continues with `next.handle()`, which resolves to what the handler returns. It can act before and after the handler, skip it by returning without calling `next.handle()`, or catch the error the handler throws and throw another. Call `next.handle()` at most once: each call runs the handler again.
+
+```typescript
+import { Interceptor, UseInterceptor } from 'meocord/decorator'
+import { type CallHandler, type InterceptorInterface } from 'meocord/interface'
+import { type ExecutionContext, Logger } from 'meocord/common'
+
+@Interceptor()
+export class TimingInterceptor implements InterceptorInterface {
+  private readonly logger = new Logger(TimingInterceptor.name)
+
+  async intercept(context: ExecutionContext, next: CallHandler): Promise<unknown> {
+    const started = performance.now()
+    try {
+      return await next.handle()
+    } finally {
+      this.logger.log(`${context.getHandlerName()} took ${Math.round(performance.now() - started)} ms`)
+    }
+  }
+}
+
+@Controller()
+@UseInterceptor(TimingInterceptor) // every handler in the controller; or on one method
+export class ProfileController { ... }
+```
+
+Apply them like guards: on a method, on a controller, or to every handler with `@MeoCord({ interceptors })`. Global interceptors are outermost, then the controller's, then the method's; within one decorator, the first listed is outermost. A class-level `@UseInterceptor` also covers the handlers a controller inherits.
+
+One instance of an interceptor serves every call, so it can hold a cache or counters; keep per-call state in local variables. For per-use options, pass `{ provide, params }` and read them with `context.getParams()` — they are never assigned onto the shared instance. For the same reason an interceptor cannot inject `ExecutionContext`; the bot refuses to start if one does.
+
+Interceptors run when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke) in a test. A controller method called directly runs its guards but no interceptors. Autocomplete handlers run none.
+
+Generate one with `npx meocord g i <name>`.
+
+---
+
 ## Custom Decorators
 
 MeoCord exports `applyDecorators`, `createMetadata` and `SetMetadata` from `meocord/common` for composing reusable decorators.
@@ -858,7 +898,7 @@ const controller = module.get(GreetingSlashController)
 
 ### Running a handler with `invoke`
 
-`module.invoke(Controller, 'method', ...args)` runs a handler the way dispatch does: its guards, class guards first and each once, then the handler. Guards resolve from the module, so `overrideGuard` stubs and injected `ExecutionContext` work as they do in the bot. Pass the arguments dispatch would: the interaction, message or reaction, then the handler's params.
+`module.invoke(Controller, 'method', ...args)` runs a handler the way dispatch does: its guards, class guards first and each once, then its interceptors around the handler. Guards resolve from the module, so `overrideGuard` stubs and injected `ExecutionContext` work as they do in the bot. Pass the arguments dispatch would: the interaction, message or reaction, then the handler's params.
 
 ```typescript
 import { ButtonInteraction } from 'discord.js'
@@ -874,7 +914,7 @@ expect(ran).toBe(false)
 expect(interaction.reply).not.toHaveBeenCalled()
 ```
 
-To include the global guards of `@MeoCord({ guards })`, pass the application class as `app`. Only its guards are read; controllers and providers are still listed as usual:
+To include the global guards and interceptors of `@MeoCord`, pass the application class as `app`. Only those are read; controllers and providers are still listed as usual:
 
 ```typescript
 import App from '@src/app'
@@ -883,9 +923,9 @@ const module = MeoCordTestingModule.create({ app: App, controllers: [ProfileCont
 await module.invoke(ProfileController, 'showProfile', interaction, { ownerId: '111', uid: '8000' }) // global guards run first
 ```
 
-`invoke` resolves to `{ ran }`, which is `false` when a guard denied the call, and rejects with any error the handler or a guard throws. The method name and arguments are type-checked against the handler. Calling the controller method directly still runs its guards, as in earlier versions; `invoke` is the way to test everything dispatch runs around a handler.
+`invoke` resolves to `{ ran }`, which is `false` when a guard denied the call or an interceptor skipped the handler, and rejects with any error the handler or a guard throws. The method name and arguments are type-checked against the handler. Calling the controller method directly still runs its guards, as in earlier versions, but no interceptors; `invoke` is the way to test everything dispatch runs around a handler.
 
-To check what a handler is set up with, without running it, use `inspectHandler`. It lists the guards dispatch runs, in order, and reads the handler's metadata as `ExecutionContext` does:
+To check what a handler is set up with, without running it, use `inspectHandler`. It lists the guards and interceptors dispatch runs, in order, and reads the handler's metadata as `ExecutionContext` does:
 
 ```typescript
 import { inspectHandler } from 'meocord/testing'
@@ -1152,6 +1192,20 @@ const module = MeoCordTestingModule.create({
 ```
 
 `canActivate: () => true` allows the method to run. `() => false` blocks it. Multiple guards chain fluently.
+
+</details>
+
+<details>
+<summary><b><code>overrideInterceptor</code></b></summary>
+
+Replaces an interceptor with a stub wherever it applies — globally, on a controller or on a method. Call `next.handle()` in the stub to run the handler, or return without it to skip the handler.
+
+```typescript
+const module = MeoCordTestingModule.create({ app: App, controllers: [ProfileController] })
+  .overrideInterceptor(CacheInterceptor)
+  .useValue({ intercept: (_context, next) => next.handle() })
+  .compile()
+```
 
 </details>
 

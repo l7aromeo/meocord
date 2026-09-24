@@ -114,13 +114,14 @@ function createApp(tarball: string): void {
 
 /**
  * Runs every generator inside the application, so its lint, tsconfigs and tests cover the
- * generated guards, services and controllers too.
+ * generated guards, interceptors, services and controllers too.
  */
 function generateComponents(): void {
   const commands = ['Generated', 'admin/generated'].flatMap(name => [
     ...Object.values(ControllerType).map(type => ['g', 'co', type, name]),
     ['g', 's', name],
     ['g', 'gu', name],
+    ['g', 'i', name],
   ])
   generate('components in the application', appDir, commands)
   run('install the application', process.execPath, ['install'], appDir)

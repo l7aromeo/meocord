@@ -1,0 +1,38 @@
+import { ChatInputCommandInteraction } from 'discord.js'
+import { Command, Controller, UseInterceptor } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+import { createMockInteraction, MeoCordTestingModule } from 'meocord/testing'
+import { {{className}}Interceptor } from './{{kebabCaseName}}.interceptor.js'
+
+@Controller()
+@UseInterceptor({{className}}Interceptor)
+class SampleController {
+  @Command('sample', CommandType.SLASH)
+  async sample(interaction: ChatInputCommandInteraction) {
+    await interaction.reply('done')
+  }
+
+  @Command('failing', CommandType.SLASH)
+  async failing(_interaction: ChatInputCommandInteraction) {
+    await Promise.reject(new Error('handler failed'))
+  }
+}
+
+describe('{{className}}Interceptor', () => {
+  const module = MeoCordTestingModule.create({ controllers: [SampleController] }).compile()
+
+  it('runs the handler it wraps', async () => {
+    const interaction = createMockInteraction(ChatInputCommandInteraction)
+
+    const { ran } = await module.invoke(SampleController, 'sample', interaction)
+
+    expect(ran).toBe(true)
+    expect(interaction.reply).toHaveBeenCalledWith('done')
+  })
+
+  it('passes on the error the handler throws', async () => {
+    await expect(
+      module.invoke(SampleController, 'failing', createMockInteraction(ChatInputCommandInteraction)),
+    ).rejects.toThrow('handler failed')
+  })
+})

@@ -1,0 +1,19 @@
+import { Interceptor } from 'meocord/decorator'
+import { type CallHandler, type InterceptorInterface } from 'meocord/interface'
+import { type ExecutionContext, Logger } from 'meocord/common'
+
+@Interceptor()
+export class {{className}}Interceptor implements InterceptorInterface {
+  private readonly logger = new Logger({{className}}Interceptor.name)
+
+  // One instance serves every call: keep per-call state in local variables
+  async intercept(context: ExecutionContext, next: CallHandler): Promise<unknown> {
+    // TODO: Act before the handler, or return without calling next.handle() to skip it
+    const started = Date.now()
+    try {
+      return await next.handle()
+    } finally {
+      this.logger.debug(`${context.getHandlerName()} took ${Date.now() - started} ms`)
+    }
+  }
+}

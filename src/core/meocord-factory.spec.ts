@@ -85,6 +85,24 @@ describe('MeoCordFactory.create()', () => {
     expect(log).toEqual(['global', 'run'])
   })
 
+  it('refuses a global interceptor that injects ExecutionContext, since it is shared across calls', () => {
+    mockLoadConfig.mockReturnValue({ discordToken: 'test-token' })
+
+    class ContextInterceptor {
+      constructor(readonly context: InstanceType<typeof ExecutionContext>) {}
+      intercept() {}
+    }
+    Reflect.defineMetadata(MetadataKey.ParamTypes, [ExecutionContext], ContextInterceptor)
+    class MyApp {}
+    Reflect.defineMetadata(
+      MetadataKey.AppOptions,
+      { controllers: [], clientOptions: { intents: [] }, interceptors: [ContextInterceptor] },
+      MyApp,
+    )
+
+    expect(() => MeoCordFactory.create(MyApp)).toThrow('ContextInterceptor is resolved once and shared')
+  })
+
   it('refuses a controller dependency that injects ExecutionContext, since it is shared across calls', () => {
     mockLoadConfig.mockReturnValue({ discordToken: 'test-token' })
 

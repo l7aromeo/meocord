@@ -4,6 +4,7 @@ import { ControllerGeneratorHelper } from '@src/bin/helper/controller-generator.
 import { Logger } from '@src/common/index.js'
 import { ServiceGeneratorHelper } from '@src/bin/helper/service-generator.helper.js'
 import { GuardGeneratorHelper } from '@src/bin/helper/guard-generator.helper.js'
+import { InterceptorGeneratorHelper } from '@src/bin/helper/interceptor-generator.helper.js'
 import wait from '@src/util/wait.util.js'
 
 export class GeneratorCLI {
@@ -11,12 +12,14 @@ export class GeneratorCLI {
   private controllerGeneratorHelper: ControllerGeneratorHelper
   private serviceGeneratorHelper: ServiceGeneratorHelper
   private guardGeneratorHelper: GuardGeneratorHelper
+  private interceptorGeneratorHelper: InterceptorGeneratorHelper
 
   constructor(private appName: string) {
     this.logger = new Logger(this.appName)
     this.controllerGeneratorHelper = new ControllerGeneratorHelper()
     this.serviceGeneratorHelper = new ServiceGeneratorHelper(this.appName)
     this.guardGeneratorHelper = new GuardGeneratorHelper(this.appName)
+    this.interceptorGeneratorHelper = new InterceptorGeneratorHelper(this.appName)
   }
 
   register(program: Command): Command {
@@ -66,6 +69,18 @@ export class GeneratorCLI {
         })
       })
 
+    generatorCommand
+      .command('interceptor')
+      .alias('i')
+      .addArgument(new Argument('<name>', 'Name of the interceptor.'))
+      .description('Generate an interceptor component')
+      .action(async name => {
+        await this.handleGenerateComponent({
+          component: 'interceptor',
+          name,
+        })
+      })
+
     return program
   }
 
@@ -98,6 +113,10 @@ export class GeneratorCLI {
 
       case 'guard':
         this.guardGeneratorHelper.generateGuard(name)
+        break
+
+      case 'interceptor':
+        this.interceptorGeneratorHelper.generateInterceptor(name)
         break
 
       default:
