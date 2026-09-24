@@ -23,7 +23,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    setupFiles: ['reflect-metadata'],
+    setupFiles: ['reflect-metadata', './vitest.setup.ts'],
     clearMocks: true,
     restoreMocks: false,
     maxWorkers: 3,

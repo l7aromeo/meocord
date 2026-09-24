@@ -22,7 +22,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    setupFiles: ['reflect-metadata'],
+    setupFiles: ['reflect-metadata', './vitest.setup.ts'],
     clearMocks: true,
     // restoreMocks stays false: vitest's restoreAllMocks resets vi.fn() factory
     // implementations (jest's only restored spies), which would wipe the Logger
