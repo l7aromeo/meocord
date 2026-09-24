@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
-import { inspect } from 'util'
+import { inspect, stripVTControlCharacters } from 'util'
 import { ApplicationCommandType, EntryPointCommandHandlerType, type PrimaryEntryPointCommandInteraction, REST, SlashCommandBuilder } from 'discord.js'
 import { createTranslator } from '@src/common/index.js'
 import { vi } from 'vitest'
@@ -420,7 +420,8 @@ describe('registerCommands', () => {
       const { logger, run } = register({ controllerClasses: [typed] })
       await run
 
-      const [message] = logger.log.mock.calls.map(([line]) => String(line)).filter(line => line.startsWith('Registered'))
+      // cli-table3 colours its borders on Windows even without a terminal, so compare the plain text
+      const [message] = logger.log.mock.calls.map(([line]) => stripVTControlCharacters(String(line))).filter(line => line.startsWith('Registered'))
       expect(message).toMatch(/^Registered 5 bot commands globally:\n/)
       for (const text of ['Name', 'Type', 'Sub-commands', 'SlashCommand', 'MessageContextMenu', 'UserContextMenu', 'PrimaryEntryPoint', 'Command', 'language, theme']) {
         expect(message).toContain(text)
@@ -436,7 +437,7 @@ describe('registerCommands', () => {
       const { logger, run } = register({ controllerClasses: [typed] })
       await run
 
-      const message = String(logger.log.mock.calls.find(([line]) => String(line).startsWith('Registered'))?.[0])
+      const message = stripVTControlCharacters(String(logger.log.mock.calls.find(([line]) => String(line).startsWith('Registered'))?.[0]))
       expect(message.split('\n').filter(line => line.includes('option-')).length).toBeGreaterThan(1)
       expect(message.split('\n').find(line => line.includes(' odd '))).toMatch(/│ odd\s+│ Command\s+│/)
     })
