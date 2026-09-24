@@ -1,7 +1,7 @@
 import { Container } from 'inversify'
-import { ButtonInteraction, ChatInputCommandInteraction, Message } from 'discord.js'
+import { AutocompleteInteraction, ButtonInteraction, ChatInputCommandInteraction, Message } from 'discord.js'
 import { vi } from 'vitest'
-import { Command, Controller, Guard, MeoCord, MessageHandler, UseGuard } from '@src/decorator/index.js'
+import { Autocomplete, Command, Controller, Guard, MeoCord, MessageHandler, UseGuard } from '@src/decorator/index.js'
 import { CommandType, MetadataKey } from '@src/enum/index.js'
 import { type GuardInterface } from '@src/interface/index.js'
 import { MeoCordApp } from '@src/core/meocord.app.js'
@@ -266,5 +266,79 @@ describe('global guards from @MeoCord({ guards })', () => {
       'PlainApp is not decorated with @MeoCord().',
     )
     expect(() => inspectHandler(BaseController, 'ping', { app: PlainApp })).toThrow('PlainApp is not decorated')
+  })
+})
+
+@Guard()
+class TypeGuard implements GuardInterface {
+  constructor(private readonly context: ExecutionContext) {}
+
+  canActivate() {
+    log.push(`type:${this.context.getType()}`)
+    return true
+  }
+}
+
+@Controller()
+@UseGuard(TypeGuard)
+class SearchController {
+  @Autocomplete('search', 'query')
+  async complete(interaction: AutocompleteInteraction) {
+    log.push('complete')
+    await interaction.respond([{ name: 'a', value: 'a' }])
+  }
+}
+
+@Controller()
+@UseGuard(ChildGuard)
+class ChildSearchController extends SearchController {}
+
+@Controller()
+@UseGuard(DenyGuard)
+class DeniedSearchController extends SearchController {}
+
+const autocomplete = () => {
+  const interaction = createMockInteraction(AutocompleteInteraction, { commandName: 'search' })
+  interaction.options = createChatInputOptions({ focused: 'query', query: 'a' })
+  return interaction
+}
+
+describe('class-level @UseGuard on autocomplete handlers', () => {
+  beforeEach(() => {
+    log.length = 0
+  })
+
+  it('runs class guards, which see the autocomplete type', async () => {
+    const { client } = await startApp(SearchController)
+
+    await client.emit('interactionCreate', autocomplete())
+    expect(log).toEqual(['type:autocomplete', 'complete'])
+  })
+
+  it('covers inherited autocomplete handlers, subclass guards first', async () => {
+    const { client } = await startApp(ChildSearchController)
+
+    await client.emit('interactionCreate', autocomplete())
+    expect(log).toEqual(['child', 'type:autocomplete', 'complete'])
+    expect(inspectHandler(ChildSearchController, 'complete').guards).toEqual([ChildGuard, TypeGuard])
+  })
+
+  it('closes the menu with an empty list when a guard denies', async () => {
+    const { client } = await startApp(DeniedSearchController)
+    const interaction = autocomplete()
+
+    await client.emit('interactionCreate', interaction)
+
+    expect(log).toEqual(['deny'])
+    expect(interaction.respond).toHaveBeenCalledWith([])
+  })
+
+  it('runs them on a direct call and under invoke', async () => {
+    const module = MeoCordTestingModule.create({ controllers: [SearchController] }).compile()
+
+    await module.get(SearchController).complete(autocomplete())
+    await module.invoke(SearchController, 'complete', autocomplete())
+
+    expect(log).toEqual(['type:autocomplete', 'complete', 'type:autocomplete', 'complete'])
   })
 })

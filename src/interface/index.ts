@@ -11,6 +11,10 @@ import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 /**
  * A guard, run by `@UseGuard` before a handler to decide whether it may run.
  *
+ * Class-level and global guards also run before `@Autocomplete` handlers, where they receive an
+ * `AutocompleteInteraction` and `ExecutionContext.getType()` is `'autocomplete'`. A guard must not
+ * reply there: returning `false` denies, and the menu is closed with an empty list.
+ *
  * @example
  * ```ts
  * @Guard()

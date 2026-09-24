@@ -658,7 +658,7 @@ async search(interaction: ChatInputCommandInteraction) { ... }
 export class ProfileController { ... }
 ```
 
-A class-level `@UseGuard` also guards the handlers a controller inherits. For a subclass, its own class guards run first, then the base class's guards, then the method's:
+A class-level `@UseGuard` also guards the handlers a controller inherits. For a subclass, its own class guards run first, then the base class's guards, then the method's. A base class's class guards do not wrap the handlers a subclass declares itself:
 
 ```typescript
 @Controller()
@@ -678,6 +678,8 @@ class App {}
 ```
 
 Global guards run when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke). A controller method called directly runs only its own class and method guards.
+
+Class-level and global guards also run before `@Autocomplete` handlers. There the guard receives an `AutocompleteInteraction`, which has no `reply()`, and `ExecutionContext.getType()` is `'autocomplete'`. A guard must not try to answer it: return `false` to deny, and MeoCord closes the menu with an empty list.
 
 ---
 

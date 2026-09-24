@@ -443,7 +443,9 @@ export class MeoCordApp {
         try {
           const controllerInstance = this.getInstance(controllerClass)
           this.logger.log('[AUTOCOMPLETE]', `[${path}]`, `[${meta.methodName}]`)
-          await this.invokeHandler(controllerInstance, meta.methodName, [interaction, resolveOptionParams(interaction)])
+          const params = resolveOptionParams(interaction)
+          const ran = await this.invokeHandler(controllerInstance, meta.methodName, [interaction, params])
+          if (!ran) await this.respondEmpty(interaction)
         } catch (error) {
           this.logger.error(`Error handling ${describeInteraction(interaction)}:`, error)
           await this.respondEmpty(interaction)
@@ -504,15 +506,16 @@ export class MeoCordApp {
   }
 
   /**
-   * Runs the global guards and the handler's own, then the handler. The handler's guard wrappers let
-   * this call through, so each guard runs once, and a direct call from inside the handler runs its guards.
+   * Runs the global guards and the handler's own, then the handler, and says whether the handler ran.
+   * Its guard wrappers let this call through, so each guard runs once.
    */
   private async invokeHandler(
     instance: Record<string, (...args: unknown[]) => unknown>,
     methodName: string,
     args: unknown[],
-  ): Promise<void> {
-    await runHandler(this.container, instance, methodName, args)
+  ): Promise<boolean> {
+    const { ran } = await runHandler(this.container, instance, methodName, args)
+    return ran
   }
 
   /**

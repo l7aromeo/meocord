@@ -2,7 +2,12 @@ import 'reflect-metadata'
 import { type Container } from 'inversify'
 import { BaseInteraction, Message, MessageReaction, type Interaction } from 'discord.js'
 import { type GuardInterface } from '@src/interface/index.js'
-import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator/controller.decorator.js'
+import {
+  getAutocompleteHandlers,
+  getCommandMap,
+  getMessageHandlers,
+  getReactionHandlers,
+} from '@src/decorator/controller.decorator.js'
 import { MetadataKey } from '@src/enum/index.js'
 import {
   consumeDispatchMark,
@@ -143,6 +148,8 @@ export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | 
 
       const reactionHandlers = getReactionHandlers(prototype) || []
       reactionHandlers.forEach(handler => methods.add(handler.method))
+
+      getAutocompleteHandlers(prototype).forEach(handler => methods.add(handler.methodName))
 
       for (const methodName of methods) {
         const methodDescriptor = ownHandlerDescriptor(prototype, methodName)
