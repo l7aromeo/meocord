@@ -5,6 +5,7 @@ import {
   ButtonInteraction,
   ChatInputCommandInteraction,
   ComponentType,
+  EmbedType,
   InteractionContextType,
   type Message,
   MessageFlags,
@@ -357,6 +358,18 @@ describe('@Defer', () => {
 
     expect(payloads(interaction)[1].embeds).toEqual([{ description: 'card' }, renderEmbed(loadingView)])
     expect(getResponse(interaction).calls.length).toBe(3)
+    expect(payloads(interaction)[2].embeds).toEqual([{ description: 'card' }])
+  })
+
+  // Discord returns every embed a bot sent with its type, which the rendered view does not carry
+  it('drops a leftover loading view as Discord returns it, with its type', async () => {
+    const emit = await startApp()
+    const leftover = messageWith({ embeds: [{ description: 'card' }, { ...renderEmbed(loadingView), type: EmbedType.Rich }] })
+    const interaction = click('card/refresh', leftover)
+
+    await emit(interaction)
+
+    expect(payloads(interaction)[1].embeds).toEqual([{ description: 'card' }, renderEmbed(loadingView)])
     expect(payloads(interaction)[2].embeds).toEqual([{ description: 'card' }])
   })
 
