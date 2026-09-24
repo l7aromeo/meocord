@@ -79,10 +79,7 @@ export function collectCommands(
     const commandMap = getCommandMap(controllerClass.prototype) ?? {}
 
     for (const commandName in commandMap) {
-      const metadataList = commandMap[commandName]
-      if (!Array.isArray(metadataList)) continue
-
-      for (const { builder, type, guilds } of metadataList) {
+      for (const { builder, type, guilds } of commandMap[commandName]) {
         if (!(type in CommandType) || !builder) continue
 
         let body: CollectedCommand['body']
