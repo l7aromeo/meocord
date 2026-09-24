@@ -6,6 +6,7 @@ node_modules/
 dist/
 
 # Environment files
+.env
 .env.*
 !.env.example
 
