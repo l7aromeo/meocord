@@ -148,6 +148,9 @@ export class MeoCordApp implements MeoCordApplication {
       typeof shutdownTimeout === 'number' && shutdownTimeout >= 0 ? shutdownTimeout : DEFAULT_SHUTDOWN_TIMEOUT_MS
   }
 
+  /** Whether shutdown has begun, so the ready hooks start no more. */
+  private closing = false
+
   /** How long shutdown waits for the `onShutdown` hooks, from `shutdownTimeout` in the config. */
   private readonly shutdownTimeout: number
 
@@ -684,7 +687,7 @@ export class MeoCordApp implements MeoCordApplication {
   /**
    * Resolves every bound controller and service and runs their `onReady` hooks one at a time, in
    * dependency order. A hook that throws is logged and the next one still runs, with a warning for
-   * each hook whose dependencies' hooks failed.
+   * each hook whose dependencies' hooks failed. Once shutdown begins, no further hook starts.
    */
   private async runReadyHooks(client: Client<true>): Promise<void> {
     const entries: LifecycleEntry[] = []
@@ -694,6 +697,8 @@ export class MeoCordApp implements MeoCordApplication {
     this.lifecycleEntries = entries
 
     for (const lifecycleClass of this.lifecycleClasses) {
+      // Shutdown has begun: the client is going away, so no further hook starts
+      if (this.closing) break
       const upstream = new Set<LifecycleClass>()
       for (const dependency of lifecycleDependencies(this.container, lifecycleClass)) {
         if (failed.has(dependency)) upstream.add(dependency)
@@ -709,8 +714,12 @@ export class MeoCordApp implements MeoCordApplication {
         this.logger.error(`Could not resolve ${lifecycleClass.name} to run its lifecycle hooks:`, error)
         continue
       }
-      entries.push({ lifecycleClass, instance })
-      if (typeof instance.onReady !== 'function') continue
+      // Only a class whose onReady has settled, or that has none, is shut down: a signal mid-ready
+      // skips the one still starting, and those not reached yet
+      if (typeof instance.onReady !== 'function') {
+        entries.push({ lifecycleClass, instance })
+        continue
+      }
 
       if (upstream.size > 0) {
         const names = [...upstream].map(cls => cls.name).join(', ')
@@ -732,6 +741,7 @@ export class MeoCordApp implements MeoCordApplication {
       } finally {
         clearTimeout(slow)
       }
+      entries.push({ lifecycleClass, instance })
     }
   }
 
@@ -770,6 +780,7 @@ export class MeoCordApp implements MeoCordApplication {
    * @returns Whether the client was destroyed cleanly.
    */
   private async closeClient(): Promise<boolean> {
+    this.closing = true
     runningApps.delete(this.close)
     this.logger.log('Shutting down bot...')
     if (this.activityInterval) clearInterval(this.activityInterval)
