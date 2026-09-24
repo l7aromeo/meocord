@@ -37,3 +37,13 @@ coverage/
 # System files
 .DS_Store
 Thumbs.db
+
+# Agent tooling. AGENTS.md is the only agent instruction file in the repository; tools that read
+# another name link it locally (see AGENTS.md).
+.claude/
+CLAUDE.md
+!AGENTS.md
+
+# Plans and specs written by agent workflows; they stay outside the repository (see AGENTS.md).
+docs/superpowers/
+docs/plans/
