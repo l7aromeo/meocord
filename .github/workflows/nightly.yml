@@ -1,0 +1,50 @@
+name: Nightly
+
+# Every CLI scenario, fast and slow, and the generated applications' own checks, against the newest
+# releases of what an application installs. A dependency release that breaks either shows up here
+# before a release does. A failure fails the run and nothing else: this workflow reads the repository
+# and has no other permission.
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  scenarios:
+    name: CLI scenarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The generated application's tools run through their node shebangs, and the CLI
+      # needs the Node its engines field names, not whichever one the image carries.
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build package
+        run: bun run build
+
+      - name: Verify generated applications
+        run: bun run verify:generated
+
+      - name: Run every CLI scenario
+        run: bun run cli:scenarios --tier all
