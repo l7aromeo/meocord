@@ -199,6 +199,11 @@ describe('spawning the application', () => {
   // be executing would hand them node, because the bin's shebang defers to it.
   // `meocord register` runs the same bundle, told by its environment to register and exit.
   describe('register()', () => {
+    // Only the keys register sets: a failed assertion prints what it received, and the rest is the
+    // environment, which can hold tokens Bun loaded from a .env file
+    const registerEnv = (env: unknown) =>
+      Object.fromEntries(Object.entries((env ?? {}) as NodeJS.ProcessEnv).filter(([key]) => key.startsWith('MEOCORD_') && key.includes('REGISTER')))
+
     afterEach(() => {
       vi.mocked(existsSync).mockReturnValue(true)
     })
@@ -208,14 +213,13 @@ describe('spawning the application', () => {
 
       const { args, options } = lastSpawn()
       expect(args).toEqual([expect.stringContaining('main.js')])
-      expect(options.env).toMatchObject({ MEOCORD_REGISTER_ONLY: '1', MEOCORD_FORCE_REGISTER: '1' })
-      expect(options.env).not.toHaveProperty('MEOCORD_REGISTER_GUILD')
+      expect(registerEnv(options.env)).toEqual({ MEOCORD_REGISTER_ONLY: '1', MEOCORD_FORCE_REGISTER: '1' })
     })
 
     it('passes the guild it is given', async () => {
       await new MeoCordCLI().register('guild-id')
 
-      expect(lastSpawn().options.env).toMatchObject({ MEOCORD_REGISTER_GUILD: 'guild-id' })
+      expect(registerEnv(lastSpawn().options.env)).toMatchObject({ MEOCORD_REGISTER_GUILD: 'guild-id' })
     })
 
     it("exits with the application's code", async () => {
