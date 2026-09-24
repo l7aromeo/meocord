@@ -50,8 +50,9 @@ export interface ReadyInfo {
  * warming a cache.
  *
  * Called on every controller and service the app binds, including services no handler has used
- * yet, after the client is ready. Hooks run in parallel and never wait for command registration; a
- * hook that throws is logged and does not affect the others.
+ * yet, after the client is ready. Hooks run one at a time in dependency order, so a service's hook
+ * runs after the hooks of the services it injects. Command registration runs alongside and never
+ * delays them. A hook that throws is logged and the next one still runs.
  *
  * @example
  * ```ts
@@ -77,9 +78,10 @@ export interface OnReady {
  * A controller or service that cleans up before the bot stops, such as stopping timers or flushing
  * writes.
  *
- * Called on SIGINT or SIGTERM, before the client is destroyed, and only if `onReady` hooks ran. All
- * hooks run in parallel under one timeout; the process then exits whether or not they finished. A
- * hook that throws is logged and does not affect the others.
+ * Called on SIGINT or SIGTERM, before the client is destroyed, and only if `onReady` hooks ran. Hooks
+ * run one at a time in reverse dependency order, so a service stops before the services it injects.
+ * The whole sequence is limited by `shutdownTimeout` in `meocord.config.ts`; the process then exits
+ * whether or not it finished. A hook that throws is logged and the next one still runs.
  *
  * @example
  * ```ts
@@ -151,6 +153,13 @@ export interface MeoCordConfig {
    * @returns The modified configuration, or `undefined` to keep it as is.
    */
   rsbuild?: (config: RsbuildConfig) => RsbuildConfig | undefined
+  /**
+   * How long, in milliseconds, shutdown waits for the `onShutdown` hooks before destroying the client
+   * anyway. The limit covers every hook together, not each one.
+   *
+   * @defaultValue `10_000`
+   */
+  shutdownTimeout?: number
 }
 
 export type {

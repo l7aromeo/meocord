@@ -271,6 +271,7 @@ MeoCord builds with [Rsbuild](https://rsbuild.rs). The hook receives its configu
 | `rsbuild`            | —       | `(config) => config` — adjust the Rsbuild configuration.                                               |
 | `bundleDependencies` | `false` | Put everything the bot needs inside `dist`, native addons included, so it runs without `node_modules`. |
 | `externals`          | `[]`    | Modules to keep out of the bundle. Native addons are found without being listed.                       |
+| `shutdownTimeout`    | `10000` | Milliseconds shutdown waits for the [`onShutdown` hooks](#lifecycle-hooks), all of them together.      |
 
 See [Self-contained builds](#self-contained-builds) for when to turn on `bundleDependencies`.
 
@@ -813,9 +814,10 @@ export class ReminderScheduler implements OnReady, OnShutdown {
 ```
 
 - **Which classes**: every controller and every service the app binds — the ones listed in `@MeoCord({ controllers, services })` and everything they depend on — including a service no handler has used yet. Guards are created per call and get no hooks.
-- **`onReady`** runs once the client is ready. It receives the client and `{ primary }`, which says whether this process should do one-off work; it is `true` for a bot running in one process. Hooks run in parallel and never wait for command registration.
-- **`onShutdown`** runs on SIGINT or SIGTERM, before the client is destroyed. All hooks run in parallel and the bot waits up to 10 seconds for them, then shuts down whether or not they finished. A second signal exits at once. If the bot never became ready, for example because the login failed, no `onShutdown` hook runs.
-- A hook that throws is logged and does not stop the others.
+- **`onReady`** runs once the client is ready. It receives the client and `{ primary }`, which says whether this process should do one-off work; it is `true` for a bot running in one process.
+- **Dependency order.** `onReady` hooks run one at a time, each class after the classes it injects: a `DatabaseService` is ready before the `ReminderScheduler` that injects it. Classes with no dependency between them run in declaration order, the `services` first, then the `controllers`. Command registration runs alongside and never delays the hooks. A hook still running after 10 seconds is named in a warning, and the hooks after it wait for it.
+- **`onShutdown`** runs on SIGINT or SIGTERM, before the client is destroyed, in reverse order, so a class stops before the classes it uses. The bot waits for the whole sequence up to `shutdownTimeout` from `meocord.config.ts` (10 seconds by default), then shuts down whether or not it finished. A second signal exits at once. If the bot never became ready, for example because the login failed, no `onShutdown` hook runs.
+- A hook that throws is logged and the next one still runs. When a class's `onReady` failed, the classes that depend on it still run theirs, with a warning naming the failed dependency.
 
 ---
 

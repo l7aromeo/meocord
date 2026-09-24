@@ -5,7 +5,10 @@ import type * as FactoryModule from '@src/core/meocord-factory.js'
 import type * as DecoratorModule from '@src/decorator/index.js'
 import { type OnReady, type OnShutdown, type ReadyInfo } from '@src/interface/index.js'
 
-const { logged } = vi.hoisted(() => ({ logged: { error: [] as unknown[][], warn: [] as unknown[][] } }))
+const { logged, config } = vi.hoisted(() => ({
+  logged: { error: [] as unknown[][], warn: [] as unknown[][] },
+  config: { discordToken: 'test-token' } as { discordToken: string; shutdownTimeout?: number },
+}))
 
 // Logger is constructed with `new`, so the implementation has to be a class.
 vi.mock('@src/common/index.js', async importOriginal => ({
@@ -21,7 +24,7 @@ vi.mock('@src/common/index.js', async importOriginal => ({
 }))
 
 vi.mock('@src/util/meocord-config-loader.util.js', () => ({
-  loadMeoCordConfig: () => ({ discordToken: 'test-token' }),
+  loadMeoCordConfig: () => config,
 }))
 
 vi.mock('@src/util/platform.util.js', () => ({ assertBuiltForThisPlatform: () => {} }))
@@ -71,6 +74,7 @@ describe('lifecycle hooks', () => {
   beforeEach(() => {
     logged.error.length = 0
     logged.warn.length = 0
+    delete config.shutdownTimeout
     exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
     signalListeners = {
       SIGINT: process.listeners('SIGINT') as NodeJS.SignalsListener[],
@@ -120,7 +124,7 @@ describe('lifecycle hooks', () => {
 
       await becomeReady(client)
 
-      expect(calls.map(([who]) => who).sort()).toEqual(['controller', 'dependency', 'service'])
+      expect(calls.map(([who]) => who)).toEqual(['dependency', 'service', 'controller'])
       for (const [, readyClient, info] of calls) {
         expect(readyClient).toBe(client)
         expect(info).toEqual({ primary: true })
@@ -150,6 +154,123 @@ describe('lifecycle hooks', () => {
 
       expect(ran).toEqual(['healthy'])
       expect(logged.error).toContainEqual(['onReady failed in Broken:', new Error('boom')])
+    })
+
+    it('runs one at a time, each class after the ones it injects, ties in declaration order', async () => {
+      const loaded = await load()
+      const order: string[] = []
+      const hook = (name: string) => async () => {
+        order.push(`${name}:start`)
+        await Promise.resolve()
+        order.push(`${name}:end`)
+      }
+
+      @loaded.Service()
+      class DatabaseService implements OnReady {
+        onReady = hook('database')
+      }
+
+      @loaded.Service()
+      class ReminderScheduler implements OnReady {
+        constructor(readonly database: DatabaseService) {}
+        onReady = hook('scheduler')
+      }
+
+      @loaded.Service()
+      class MetricsService implements OnReady {
+        onReady = hook('metrics')
+      }
+
+      @loaded.Controller()
+      class RemindController implements OnReady {
+        constructor(readonly scheduler: ReminderScheduler) {}
+        onReady = hook('controller')
+      }
+
+      const { client } = await startApp(loaded, {
+        controllers: [RemindController],
+        services: [ReminderScheduler, MetricsService],
+      })
+      await becomeReady(client)
+
+      expect(order).toEqual([
+        'database:start',
+        'database:end',
+        'scheduler:start',
+        'scheduler:end',
+        'metrics:start',
+        'metrics:end',
+        'controller:start',
+        'controller:end',
+      ])
+    })
+
+    it('still runs a hook whose dependency failed, and says so', async () => {
+      const loaded = await load()
+      const ran: string[] = []
+
+      @loaded.Service()
+      class DatabaseService implements OnReady {
+        onReady() {
+          throw new Error('connection refused')
+        }
+      }
+
+      @loaded.Service()
+      class ReminderScheduler implements OnReady {
+        constructor(readonly database: DatabaseService) {}
+        onReady() {
+          ran.push('scheduler')
+        }
+      }
+
+      @loaded.Controller()
+      class RemindController implements OnReady {
+        constructor(readonly scheduler: ReminderScheduler) {}
+        onReady() {
+          ran.push('controller')
+        }
+      }
+
+      const { client } = await startApp(loaded, { controllers: [RemindController], services: [ReminderScheduler] })
+      await becomeReady(client)
+
+      expect(ran).toEqual(['scheduler', 'controller'])
+      expect(logged.error).toContainEqual(['onReady failed in DatabaseService:', new Error('connection refused')])
+      const warnings = logged.warn.flat().join('\n')
+      expect(warnings).toContain('Running onReady in ReminderScheduler although it depends on DatabaseService')
+      expect(warnings).toContain('Running onReady in RemindController although it depends on DatabaseService')
+    })
+
+    it('warns about a hook that runs too long, naming it, and lets it finish', async () => {
+      const loaded = await load()
+      const ran: string[] = []
+
+      @loaded.Service()
+      class SlowCache implements OnReady {
+        onReady() {
+          return new Promise<void>(resolve => setTimeout(resolve, loaded.SLOW_READY_HOOK_MS + 5_000))
+        }
+      }
+
+      @loaded.Service()
+      class Later implements OnReady {
+        onReady() {
+          ran.push('later')
+        }
+      }
+
+      const { client } = await startApp(loaded, { controllers: [], services: [SlowCache, Later] })
+      vi.useFakeTimers()
+
+      const ready = becomeReady(client)
+      await vi.advanceTimersByTimeAsync(loaded.SLOW_READY_HOOK_MS)
+      expect(logged.warn.flat().join(' ')).toContain('onReady in SlowCache has run for over')
+      expect(ran).toEqual([])
+
+      await vi.advanceTimersByTimeAsync(5_000)
+      await ready
+      expect(ran).toEqual(['later'])
     })
 
     it('runs without waiting for command registration, which never finishes here', async () => {
@@ -197,7 +318,7 @@ describe('lifecycle hooks', () => {
   })
 
   describe('shutdown', () => {
-    it('runs every onShutdown hook, then destroys the client, then exits 0', async () => {
+    it('runs onShutdown in reverse dependency order, then destroys the client, then exits 0', async () => {
       const loaded = await load()
       const order: string[] = []
 
@@ -223,8 +344,7 @@ describe('lifecycle hooks', () => {
 
       await loaded.shutdownAndExit()
 
-      expect(order.slice(0, 2).sort()).toEqual(['controller', 'service'])
-      expect(order[2]).toBe('destroy')
+      expect(order).toEqual(['controller', 'service', 'destroy'])
       expect(exit).toHaveBeenCalledWith(0)
     })
 
@@ -286,10 +406,47 @@ describe('lifecycle hooks', () => {
       vi.useFakeTimers()
 
       const done = loaded.shutdownAndExit()
-      await vi.advanceTimersByTimeAsync(loaded.SHUTDOWN_HOOK_TIMEOUT_MS)
+      await vi.advanceTimersByTimeAsync(loaded.DEFAULT_SHUTDOWN_TIMEOUT_MS)
       await done
 
       expect(logged.warn.flat().join(' ')).toContain('did not finish')
+      expect(client.destroy).toHaveBeenCalled()
+      expect(exit).toHaveBeenCalledWith(0)
+    })
+
+    it('limits the whole sequence by the configured shutdownTimeout', async () => {
+      const loaded = await load()
+      config.shutdownTimeout = 500
+      const stopped: string[] = []
+      const stop = (name: string) => () =>
+        new Promise<void>(resolve =>
+          setTimeout(() => {
+            stopped.push(name)
+            resolve()
+          }, 400),
+        )
+
+      @loaded.Service()
+      class First implements OnShutdown {
+        onShutdown = stop('first')
+      }
+
+      @loaded.Service()
+      class Second implements OnShutdown {
+        onShutdown = stop('second')
+      }
+
+      const { client } = await startApp(loaded, { controllers: [], services: [First, Second] })
+      await becomeReady(client)
+      vi.useFakeTimers()
+
+      const done = loaded.shutdownAndExit()
+      await vi.advanceTimersByTimeAsync(500)
+      await done
+
+      // Each hook takes 400 ms, within the limit alone; together they pass it
+      expect(stopped).toEqual(['second'])
+      expect(logged.warn.flat().join(' ')).toContain('did not finish within 500 ms')
       expect(client.destroy).toHaveBeenCalled()
       expect(exit).toHaveBeenCalledWith(0)
     })
