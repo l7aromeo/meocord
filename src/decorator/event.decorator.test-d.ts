@@ -58,7 +58,35 @@ describe('@On and @Once', () => {
   })
 })
 
+describe('@On and @Once, misused', () => {
+  it('reject a handler that wants more arguments than the event passes', () => {
+    class Handlers {
+      // @ts-expect-error guildMemberAdd passes one argument
+      @On('guildMemberAdd')
+      greet(member: GuildMember, extra: string) {
+        return member.id + extra
+      }
+    }
+    void Handlers
+  })
+
+  it('reject a property that is not a method', () => {
+    class Handlers {
+      // @ts-expect-error only a method can handle an event
+      @Once('clientReady')
+      ready = true
+    }
+    void Handlers
+  })
+})
+
 describe('HandlerRegistry.list', () => {
+  it('rejects a kind that is not a handler kind', () => {
+    const registry = null as unknown as HandlerRegistry
+    // @ts-expect-error not a handler kind
+    void (() => registry.list({ kind: 'listener' }))
+  })
+
   it('narrows the entries to the kind asked for', () => {
     expectTypeOf<ReturnType<HandlerRegistry['list']>>().toEqualTypeOf<HandlerEntry[]>()
     const events = (null as unknown as HandlerRegistry).list({ kind: 'event' })
