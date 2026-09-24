@@ -25,7 +25,8 @@ vi.mock('node:fs', async importOriginal => {
 
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { MeoCordCLI } from '@src/bin/meocord.js'
+import { FORCE_STOP_GRACE_MS, MeoCordCLI } from '@src/bin/meocord.js'
+import { REPEAT_SIGNAL_WINDOW_MS } from '@src/util/stop-request.util.js'
 import { namePathProblem } from '@src/bin/generator.js'
 import { RUNTIME_OVERRIDE_ENV } from '@src/util/runtime.util.js'
 
@@ -135,25 +136,62 @@ describe('spawning the application', () => {
       expect(exitSpy).toHaveBeenCalledWith(0)
     })
 
-    // The first Ctrl+C lets the child shut down on the SIGINT it already received from
-    // the process group; the second stops waiting for it.
-    it('force-kills the application on a second interrupt', async () => {
-      const before = process.listeners('SIGINT').length
-      await new MeoCordCLI().startProd()
+    describe('stop signals', () => {
+      const listenersBefore = { SIGINT: 0, SIGTERM: 0 }
+      beforeEach(() => {
+        vi.useFakeTimers()
+        listenersBefore.SIGINT = process.listenerCount('SIGINT')
+        listenersBefore.SIGTERM = process.listenerCount('SIGTERM')
+      })
+      afterEach(() => {
+        vi.useRealTimers()
+        for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+          process.listeners(signal).slice(listenersBefore[signal]).forEach(listener => process.removeListener(signal, listener))
+        }
+      })
 
-      const child = spawnMock.mock.results.at(-1)?.value as { kill: ReturnType<typeof vi.fn> }
-      const onSigint = process.listeners('SIGINT').at(-1) as () => void
+      const started = async () => {
+        await new MeoCordCLI().startProd()
+        const child = spawnMock.mock.results.at(-1)?.value as ReturnType<typeof createChild>
+        const send = (signal: 'SIGINT' | 'SIGTERM') => (process.listeners(signal).at(-1) as () => void)()
+        return { child, send }
+      }
 
-      onSigint()
-      expect(child.kill).not.toHaveBeenCalled()
+      // Docker, pm2 and systemd signal the CLI alone; the bot would otherwise keep running
+      it.skipIf(process.platform === 'win32').each(['SIGINT', 'SIGTERM'] as const)('passes %s on to the application', async signal => {
+        const { child, send } = await started()
 
-      onSigint()
-      expect(child.kill).toHaveBeenCalledWith('SIGKILL')
-      expect(exitSpy).toHaveBeenCalledWith(1)
+        send(signal)
 
-      process.listeners('SIGINT')
-        .slice(before)
-        .forEach(listener => process.removeListener('SIGINT', listener as () => void))
+        expect(child.kill).toHaveBeenCalledWith(signal)
+        expect(exitSpy).not.toHaveBeenCalled()
+      })
+
+      // A terminal's Ctrl+C also reaches the CLI's own process group, where the application hears it
+      it('takes a copy of the signal within the window as the same request', async () => {
+        const { child, send } = await started()
+
+        send('SIGINT')
+        vi.advanceTimersByTime(REPEAT_SIGNAL_WINDOW_MS - 1)
+        send('SIGTERM')
+        vi.advanceTimersByTime(FORCE_STOP_GRACE_MS)
+
+        expect(child.kill).toHaveBeenCalledTimes(process.platform === 'win32' ? 0 : 1)
+        expect(exitSpy).not.toHaveBeenCalled()
+      })
+
+      it('kills the application and exits 1 when a repeat after the window does not stop it', async () => {
+        const { child, send } = await started()
+
+        send('SIGINT')
+        vi.advanceTimersByTime(REPEAT_SIGNAL_WINDOW_MS)
+        send('SIGINT')
+        expect(child.kill).not.toHaveBeenCalledWith('SIGKILL')
+        vi.advanceTimersByTime(FORCE_STOP_GRACE_MS)
+
+        expect(child.kill).toHaveBeenCalledWith('SIGKILL')
+        expect(exitSpy).toHaveBeenCalledWith(1)
+      })
     })
   })
 

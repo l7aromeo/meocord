@@ -18,6 +18,7 @@ import { detectInstalledPMs, getInstallCommand, type PackageManager } from '@src
 import { configureCommandHelp, ensureReady } from '@src/util/meocord-cli.util.js'
 import { resolveOwnVersion } from '@src/util/package-version.util.js'
 import { buildAppCommand, resolveRuntime } from '@src/util/runtime.util.js'
+import { stopRequests } from '@src/util/stop-request.util.js'
 import packageJson from '../../package.json' with { type: 'json' }
 import { fileURLToPath } from 'url'
 import {
@@ -92,6 +93,9 @@ function installFailure(error: unknown): Error {
 export function stillRunning(child: ChildProcess | null): child is ChildProcess {
   return child !== null && child.exitCode === null && child.signalCode === null
 }
+
+/** How long the application has to stop itself on a repeated signal before the CLI kills it. */
+export const FORCE_STOP_GRACE_MS = 2_000
 
 export class MeoCordCLI {
   private readonly appName = 'MeoCord'
@@ -547,11 +551,48 @@ copies or substantial portions of the Software.
     this.appEnv[FORCE_REGISTER_ENV] = '1'
     if (guild) this.appEnv[REGISTER_GUILD_ENV] = guild
 
-    this.spawnApp().on('exit', code => process.exit(code ?? 1))
+    const child = this.spawnApp().on('exit', code => process.exit(code ?? 1))
+    this.relayStopSignals(() => child)
+  }
+
+  /**
+   * Passes SIGINT and SIGTERM on to the application: sent to the CLI alone, as Docker, pm2 and systemd
+   * send them, they would otherwise stop the CLI and leave the bot running. A copy within
+   * `REPEAT_SIGNAL_WINDOW_MS` is the same request. A repeat after it is passed on too, for the application
+   * to stop at once; if it has not after `FORCE_STOP_GRACE_MS`, it is killed and the CLI exits 1.
+   *
+   * @param stopping - Runs on the first request, before the signal is passed on.
+   */
+  private relayStopSignals(app: () => ChildProcess | null, stopping?: () => void): void {
+    const request = stopRequests()
+    for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+      process.on(signal, () => {
+        const kind = request()
+        if (kind === 'duplicate') return
+        if (kind === 'first') stopping?.()
+
+        const child = app()
+        if (!stillRunning(child)) {
+          if (kind === 'repeat') process.exit(1)
+          return
+        }
+        // On Windows, kill() ends a process outright, and Ctrl+C reaches the application through the console
+        if (process.platform !== 'win32') child.kill(signal)
+        if (kind === 'repeat') {
+          setTimeout(() => {
+            if (stillRunning(child)) child.kill('SIGKILL')
+            process.exit(1)
+          }, FORCE_STOP_GRACE_MS).unref()
+        }
+      })
+    }
   }
 
   /** The running application, while a watch session owns one. */
   private appProcess: ChildProcess | null = null
+
+  /** Whether a watch session is stopping, when a rebuild must not start the application again. */
+  private stopping = false
 
   /**
    * Replaces the running application with one built from the current sources.
@@ -561,6 +602,7 @@ copies or substantial portions of the Software.
    * login conflict rather than a reload.
    */
   private restartApp(): void {
+    if (this.stopping) return
     const previous = this.appProcess
     this.appProcess = null
 
@@ -571,7 +613,7 @@ copies or substantial portions of the Software.
 
     previous.removeAllListeners('exit')
     previous.once('exit', () => {
-      this.appProcess = this.spawnApp()
+      if (!this.stopping) this.appProcess = this.spawnApp()
     })
     previous.kill()
   }
@@ -631,27 +673,21 @@ copies or substantial portions of the Software.
         }, 300)
       })
 
-      let sigintReceived = false
-      process.on('SIGINT', async () => {
-        if (sigintReceived) {
-          // Second Ctrl+C — force kill and exit immediately
-          if (stillRunning(this.appProcess)) this.appProcess.kill('SIGKILL')
-          process.exit(1)
-        }
-        sigintReceived = true
-        // The application already received SIGINT from the process group. Clean up
-        // parent-owned resources and wait for it to exit on its own terms.
-        fsWatcher.close()
-        if (stillRunning(this.appProcess)) {
-          this.appProcess.on('exit', async () => {
+      this.relayStopSignals(
+        () => this.appProcess,
+        () => {
+          this.stopping = true
+          clearTimeout(debounceWatcher)
+          fsWatcher.close()
+          const app = this.appProcess
+          const finish = async (code: number | null) => {
             await watching?.close()
-            process.exit(0)
-          })
-        } else {
-          await watching?.close()
-          process.exit(0)
-        }
-      })
+            process.exit(code ?? 0)
+          }
+          if (stillRunning(app)) app.on('exit', code => void finish(code))
+          else void finish(0)
+        },
+      )
     } catch (error: any) {
       this.logger.error(`Failed to start: ${error.message}`)
     }
@@ -679,18 +715,7 @@ copies or substantial portions of the Software.
       start.on('exit', code => {
         process.exit(code ?? 0)
       })
-
-      let sigintReceived = false
-      process.on('SIGINT', () => {
-        if (sigintReceived) {
-          // Second Ctrl+C — force kill child and exit immediately
-          if (stillRunning(start)) start.kill('SIGKILL')
-          process.exit(1)
-        }
-        sigintReceived = true
-        // Child process receives SIGINT from the process group directly.
-        // Wait for it to exit via the 'exit' handler above.
-      })
+      this.relayStopSignals(() => start)
     } catch (error) {
       this.logger.error('Failed to start:', error instanceof Error ? error.message : String(error))
       await wait(100)

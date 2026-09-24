@@ -21,6 +21,8 @@ import {
   statSync,
   writeFileSync,
 } from 'fs'
+import { createServer, type Server } from 'http'
+import { type AddressInfo } from 'net'
 import { tmpdir } from 'os'
 import path from 'path'
 import { cleanEnv, installedCliOf, mustRun, outputOf, pack, renderApp } from './lib/packed-app.js'
@@ -50,8 +52,11 @@ interface Scenario {
   before?: string[][]
   /** Paths, relative to cwd, moved away while it runs. */
   hides?: string[]
-  /** A signal sent to its whole process group, as a terminal's Ctrl+C is, once the output shows `after`. */
-  signal?: { name: NodeJS.Signals; after: string }
+  /**
+   * A signal sent once the output shows `after`: to the whole process group, as a terminal's Ctrl+C is,
+   * or to the CLI alone, as Docker, pm2 and systemd send one. `repeatAfterMs` sends it again that much later.
+   */
+  signal?: { name: NodeJS.Signals; after: string; to?: 'group' | 'cli'; repeatAfterMs?: number }
   timeoutMs?: number
   expect: {
     code: number
@@ -93,19 +98,24 @@ const INVALID_TOKEN_ENV = 'DISCORD_TOKEN=not-a-real-token\n'
 
 const templateMain = readFileSync(path.join(import.meta.dirname, '..', 'src', 'bin', 'app-template', 'src', 'main.ts.template'), 'utf8')
 
+/** Where the stalled API listens: it accepts requests and never answers them. */
+const STALLED_API_ENV = 'MEOCORD_SCENARIO_STALLED_API'
+
 /**
- * The template's entry, holding before login where `HOLD_BEFORE_LOGIN` says: in every process, or in
- * shards only. A held process is up and handles signals with no token that works.
+ * An application whose login never completes, its REST requests sent to the stalled API: it is up, with
+ * its signal handlers installed, and needs no token that works.
  */
-const holdingMain = templateMain.replace(
-  '  await app.start()',
-  `  const hold = process.env.HOLD_BEFORE_LOGIN
-  if (hold === 'all' || (hold === 'shards' && process.env.SHARDING_MANAGER)) {
-    logger.log('Holding before login')
-    await new Promise(resolve => setTimeout(resolve, 120_000))
-  }
-  await app.start()`,
-)
+const stalledApp = `import { MeoCord } from 'meocord/decorator'
+
+@MeoCord({ controllers: [], clientOptions: { intents: [], rest: { api: process.env.${STALLED_API_ENV} } } })
+export default class App {}
+`
+
+/** An entry that ignores the signals that stop a bot, as one stuck in its shutdown does. */
+const ignoringMain = `for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => console.log(\`Ignored \${signal}\`))
+console.log('Ignoring stop signals')
+setInterval(() => {}, 60_000)
+`
 
 /** The template's entry, first reporting whether a package another one loads when it can was found. */
 const probingMain = `import optionalProbe from 'optional-probe'\nconsole.log(\`optional probe: \${optionalProbe}\`)\n${templateMain}`
@@ -235,13 +245,21 @@ function run(command: string, args: string[], dir: string, scenario: Scenario): 
     }, timeoutMs)
 
     const { signal } = scenario
+    const send = () => {
+      if (!signal) return
+      if (signal.to === 'cli') child.kill(signal.name)
+      else toGroup(signal.name)
+    }
     const watcher =
       signal &&
       setInterval(() => {
         if (!outputOf({ stdout, stderr }).includes(signal.after)) return
         clearInterval(watcher)
         // A moment for the process to settle, as a person pressing Ctrl+C gives it
-        setTimeout(() => toGroup(signal.name), 1_000)
+        setTimeout(() => {
+          send()
+          if (signal.repeatAfterMs !== undefined) setTimeout(send, signal.repeatAfterMs)
+        }, 1_000)
       }, 100)
 
     child.on('error', spawnError => (error = spawnError.message))
@@ -619,45 +637,51 @@ const scenarios: Scenario[] = [
     expect: { code: 1, says: ['Shard 0 cannot log in (TokenInvalid)', 'Stopping every shard'], never: ['restarting it'] },
   },
 
-  // Slow: Ctrl+C, sent to the whole process group as a terminal sends it
-  {
-    name: 'Ctrl+C stops start --prod and the application',
-    tier: 'slow',
-    platforms: ['linux', 'darwin'],
-    files: { '.env': INVALID_TOKEN_ENV, 'src/main.ts': holdingMain, dist: null },
-    env: { HOLD_BEFORE_LOGIN: 'all' },
-    argv: ['start', '--prod', '--build'],
-    signal: { name: 'SIGINT', after: 'Holding before login' },
-    timeoutMs: 60_000,
-    expect: { code: 0 },
-  },
-  {
-    name: 'Ctrl+C shuts every shard down in process sharding',
-    tier: 'slow',
-    platforms: ['linux', 'darwin'],
-    files: {
-      '.env': INVALID_TOKEN_ENV,
-      'src/main.ts': holdingMain,
-      'meocord.config.ts': configWith("sharding: { mode: 'process', shards: 2 },\n  shutdownTimeout: 1000,"),
-      dist: null,
+  // Slow: stop signals, sent to the whole process group as a terminal's Ctrl+C is, or to the CLI alone
+  // as Docker, pm2 and systemd send them. Either way the bot shuts down through its own path, once.
+  ...(
+    [
+      ['Ctrl+C', { name: 'SIGINT', to: 'group' }],
+      ['SIGINT to the CLI alone', { name: 'SIGINT', to: 'cli' }],
+      ['SIGTERM to the CLI alone', { name: 'SIGTERM', to: 'cli' }],
+    ] as const
+  ).flatMap(([label, signal]): Scenario[] => [
+    {
+      name: `${label} stops start --prod and shuts the bot down`,
+      tier: 'slow',
+      platforms: ['linux', 'darwin'],
+      files: { '.env': INVALID_TOKEN_ENV, 'src/app.ts': stalledApp, dist: null },
+      argv: ['start', '--prod', '--build'],
+      signal: { ...signal, after: 'Starting bot' },
+      timeoutMs: 60_000,
+      expect: { code: 0, says: ['Shutting down bot', 'Bot has shut down'] },
     },
-    env: { HOLD_BEFORE_LOGIN: 'shards' },
-    argv: ['start', '--prod', '--build'],
-    signal: { name: 'SIGINT', after: 'Holding before login' },
-    timeoutMs: 60_000,
-    expect: { code: 0, says: ['Shutting down the shards', 'Every shard has shut down'] },
-  },
-  {
-    name: 'Ctrl+C stops start --dev and the application it watches',
-    tier: 'slow',
-    platforms: ['linux', 'darwin'],
-    files: { '.env': INVALID_TOKEN_ENV, 'src/main.ts': holdingMain },
-    env: { HOLD_BEFORE_LOGIN: 'all' },
-    argv: ['start', '--dev'],
-    signal: { name: 'SIGINT', after: 'Holding before login' },
-    timeoutMs: 60_000,
-    expect: { code: 0, says: ['Starting watch mode'] },
-  },
+    {
+      name: `${label} shuts every shard down in process sharding`,
+      tier: 'slow',
+      platforms: ['linux', 'darwin'],
+      files: {
+        '.env': INVALID_TOKEN_ENV,
+        'src/app.ts': stalledApp,
+        'meocord.config.ts': configWith("sharding: { mode: 'process', shards: 2 },\n  shutdownTimeout: 1000,"),
+        dist: null,
+      },
+      argv: ['start', '--prod', '--build'],
+      signal: { ...signal, after: 'Starting bot' },
+      timeoutMs: 60_000,
+      expect: { code: 0, says: ['Shutting down the shards', 'Bot has shut down', 'Every shard has shut down'], never: ['Stopping every shard now'] },
+    },
+    {
+      name: `${label} stops start --dev and the bot it watches`,
+      tier: 'slow',
+      platforms: ['linux', 'darwin'],
+      files: { '.env': INVALID_TOKEN_ENV, 'src/app.ts': stalledApp },
+      argv: ['start', '--dev'],
+      signal: { ...signal, after: 'Starting bot' },
+      timeoutMs: 60_000,
+      expect: { code: 0, says: ['Starting watch mode', 'Bot has shut down'] },
+    },
+  ]),
   {
     name: 'Ctrl+C stops start --dev once the application has exited on its own',
     tier: 'slow',
@@ -667,6 +691,17 @@ const scenarios: Scenario[] = [
     signal: { name: 'SIGINT', after: 'An invalid token was provided' },
     timeoutMs: 60_000,
     expect: { code: 0, says: ['Starting watch mode'] },
+  },
+  {
+    name: 'a signal repeated after the window kills an application that does not stop, and exits 1',
+    tier: 'slow',
+    platforms: ['linux', 'darwin'],
+    files: { '.env': INVALID_TOKEN_ENV, 'src/main.ts': ignoringMain, dist: null },
+    before: [['build', '--prod']],
+    argv: ['start', '--prod'],
+    signal: { name: 'SIGTERM', to: 'cli', after: 'Ignoring stop signals', repeatAfterMs: 1_500 },
+    timeoutMs: 60_000,
+    expect: { code: 1, says: ['Ignored SIGTERM'] },
   },
 ]
 
@@ -704,6 +739,12 @@ async function main(): Promise<void> {
       cpSync(path.join(npmAppDir, '.env.example'), path.join(npmAppDir, '.env'))
     }
 
+    // Keeps a login waiting, so a bot is up and handling signals without a token that works
+    const stalledApi = createServer()
+    await new Promise<void>(resolve => stalledApi.listen(0, '127.0.0.1', resolve))
+    process.env[STALLED_API_ENV] = `http://127.0.0.1:${(stalledApi.address() as AddressInfo).port}/api`
+    stallServer = stalledApi
+
     let failed = 0
     for (const scenario of selected) {
       const scenarioStarted = performance.now()
@@ -721,8 +762,12 @@ async function main(): Promise<void> {
     console.log(failed === 0 ? `\nEvery scenario behaved (${total}s).` : `\n${failed} of ${selected.length} scenarios failed (${total}s).`)
     if (failed > 0) process.exitCode = 1
   } finally {
+    stallServer?.closeAllConnections()
+    stallServer?.close()
     rmSync(workDir, { recursive: true, force: true })
   }
 }
+
+let stallServer: Server | undefined
 
 await main()
