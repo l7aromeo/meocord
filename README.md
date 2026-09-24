@@ -652,10 +652,18 @@ Apply to a single method or an entire controller:
 @UseGuard({ provide: RateLimiterGuard, params: { limit: 5, window: 60_000 } })
 async search(interaction: ChatInputCommandInteraction) { ... }
 
-// Per-class (applies to every command in the controller)
+// Per-class (applies to every handler in the controller)
 @Controller()
 @UseGuard(MetricsGuard, DefaultGuard)
 export class ProfileController { ... }
+```
+
+A class-level `@UseGuard` also guards the handlers a controller inherits. For a subclass, its own class guards run first, then the base class's guards, then the method's:
+
+```typescript
+@Controller()
+@UseGuard(StaffGuard)
+export class AdminController extends ModerationController { ... } // ModerationController's handlers run StaffGuard first
 ```
 
 ---

@@ -128,7 +128,7 @@ export async function runGuards(guards: readonly GuardEntry[], call: GuardedCall
 export const GUARD_WRAPPERS = Symbol('guard_wrappers')
 
 /** The prototype on the chain that declares `methodName`, which is the function dispatch calls. */
-function declaringPrototype(prototype: object, methodName: string): object | undefined {
+export function declaringPrototype(prototype: object, methodName: string): object | undefined {
   for (let current: object | null = prototype; current; current = Object.getPrototypeOf(current)) {
     if (Object.prototype.hasOwnProperty.call(current, methodName)) return current
   }

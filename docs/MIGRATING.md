@@ -302,6 +302,28 @@ Three type errors that MeoCord 3 users hit are fixed. If you worked around them 
   declarations and was told it could not `require` MeoCord. Each entry point now ships CommonJS declarations
   too.
 
+## Upgrading from 4.0 to 4.1
+
+4.1 is a minor release: a 4.0 bot and its tests keep working without edits, except for the one fix
+below, which changes which guards run.
+
+### Class guards now cover inherited handlers
+
+A class-level `@UseGuard` on a controller that extends another controller now guards the handlers it
+inherits too. In 4.0 it guarded only the handlers the subclass declared itself, so inherited commands,
+components, message and reaction handlers ran without the subclass's guards.
+
+```typescript
+@Controller()
+@UseGuard(StaffGuard)
+export class AdminController extends ModerationController {}
+```
+
+In 4.1, `ModerationController`'s handlers, when reached through `AdminController`, run `StaffGuard`
+first, then `ModerationController`'s own guards. If a bot relied on inherited handlers skipping the
+subclass's guards, move those handlers out of the subclass, or give the subclass a guard that allows
+them. The base controller itself is unaffected.
+
 ---
 
 Something here did not match what you saw? [Open an issue](https://github.com/l7aromeo/meocord/issues/new/choose).

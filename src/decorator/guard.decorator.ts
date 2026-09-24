@@ -7,6 +7,7 @@ import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/dec
 import { MetadataKey } from '@src/enum/index.js'
 import {
   consumeDispatchMark,
+  declaringPrototype,
   GUARD_WRAPPERS,
   type GuardEntry,
   type GuardWithParams,
@@ -64,6 +65,25 @@ function applyGuards(descriptor: PropertyDescriptor, guards: GuardEntry[], proto
 
   const wrappers: number = Reflect.getOwnMetadata(GUARD_WRAPPERS, prototype, propertyKey) ?? 0
   Reflect.defineMetadata(GUARD_WRAPPERS, wrappers + 1, prototype, propertyKey)
+}
+
+/**
+ * The class's own descriptor for a handler. An inherited handler gets one that calls the inherited
+ * method, starting from its guard lists and wrapper count, so class guards wrap it like an own method.
+ */
+function ownHandlerDescriptor(prototype: object, methodName: string): PropertyDescriptor | undefined {
+  const own = Object.getOwnPropertyDescriptor(prototype, methodName)
+  if (own) return own
+
+  const owner = declaringPrototype(prototype, methodName)
+  const inherited = owner && Object.getOwnPropertyDescriptor(owner, methodName)
+  if (!owner || typeof inherited?.value !== 'function') return undefined
+
+  for (const key of [CLASS_GUARDS, METHOD_GUARDS, GUARD_WRAPPERS]) {
+    const value: unknown = Reflect.getOwnMetadata(key, owner, methodName)
+    if (value !== undefined) Reflect.defineMetadata(key, Array.isArray(value) ? [...value] : value, prototype, methodName)
+  }
+  return { ...inherited }
 }
 
 /**
@@ -125,7 +145,7 @@ export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | 
       reactionHandlers.forEach(handler => methods.add(handler.method))
 
       for (const methodName of methods) {
-        const methodDescriptor = Object.getOwnPropertyDescriptor(prototype, methodName)
+        const methodDescriptor = ownHandlerDescriptor(prototype, methodName)
         if (methodDescriptor) {
           applyGuards(methodDescriptor, guards, prototype, methodName)
           Object.defineProperty(prototype, methodName, methodDescriptor)
