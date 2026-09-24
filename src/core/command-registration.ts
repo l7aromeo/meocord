@@ -254,7 +254,8 @@ export interface RegisterCommandsOptions extends TargetOptions {
  * Production always sends: a bulk update is idempotent, so comparing with what Discord holds first
  * would only add a request. In development (`development: true`) a scope whose payload matches the
  * last one sent from this project is skipped, unless `force` is set. Afterwards, the scopes the
- * configuration names but did not send to are checked for leftovers, which `clearOther` removes.
+ * configuration names but did not send to are checked for leftovers, which `clearOther` removes, except
+ * in a development run sending to `developmentGuild`, which only warns.
  * Failures are logged, never thrown.
  *
  * @returns Whether every scope was registered or skipped as unchanged.
@@ -289,13 +290,23 @@ export async function registerCommands(options: RegisterCommandsOptions): Promis
     }
   }
 
-  if (sent && !onlyGuild) await reportOtherScopes(options, commands, targets)
+  // Development and production often share one application, so a development guild run never clears.
+  const toDevelopmentGuild = development && !!config?.developmentGuild?.trim()
+  if (sent && !onlyGuild) await reportOtherScopes(options, commands, targets, !toDevelopmentGuild)
 
   return succeeded
 }
 
-/** Warns about, or with `clearOther` removes, this application's commands left in scopes not sent to. */
-async function reportOtherScopes({ rest, applicationId, config, logger }: RegisterCommandsOptions, commands: CollectedCommand[], targets: RegistrationTarget[]): Promise<void> {
+/**
+ * Warns about, or with `clearOther` removes, this application's commands left in scopes not sent to.
+ * Without `mayClear`, as for a development guild run, it only warns.
+ */
+async function reportOtherScopes(
+  { rest, applicationId, config, logger }: RegisterCommandsOptions,
+  commands: CollectedCommand[],
+  targets: RegistrationTarget[],
+  mayClear: boolean,
+): Promise<void> {
   for (const scope of otherScopes(commands, targets, config)) {
     let existing: { name?: string }[]
     try {
@@ -308,10 +319,13 @@ async function reportOtherScopes({ rest, applicationId, config, logger }: Regist
     if (!Array.isArray(existing) || existing.length === 0) continue
 
     const names = existing.map(({ name }) => name).join(', ')
-    if (!config?.clearOther) {
+    if (!config?.clearOther || !mayClear) {
       logger.warn(
         `${existing.length} command(s) are still registered ${describeScope(scope)} (${names}), which this ` +
-          `configuration does not register to, so Discord keeps showing them there. Set commands.clearOther to remove them.`,
+          `configuration does not register to, so Discord keeps showing them there. ` +
+          (config?.clearOther
+            ? 'clearOther is on, but they are not removed while commands go to the development guild, since a production bot sharing this application may own them.'
+            : 'Set commands.clearOther to remove them.'),
       )
       continue
     }

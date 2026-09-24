@@ -491,8 +491,9 @@ export interface CommandRegistrationConfig {
   /**
    * Whether to remove this application's commands from the scopes this configuration names but is
    * not registering to, such as the global commands left behind after moving to `guilds`. Without it,
-   * such leftovers are reported as a warning. If development and production share one application,
-   * this deletes production's commands whenever the development build registers.
+   * such leftovers are reported as a warning. While `developmentGuild` receives every command, as
+   * under `start --dev`, leftovers are only warned about, since a production bot sharing the
+   * application may own them; production starts and `meocord register` without `--dev` remove them.
    *
    * @defaultValue `false`
    */
