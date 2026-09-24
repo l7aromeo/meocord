@@ -29,6 +29,8 @@ export type { ComponentCommandType, ResolvedRoute, RouteConflict } from './routi
 
 export { createModalFields } from './modal-fields.js'
 
+export { expectCompleteCatalog } from './catalog.js'
+
 export { createExecutionContext } from './execution-context.js'
 export type { ExecutionContextOptions } from './execution-context.js'
 

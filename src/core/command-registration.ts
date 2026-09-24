@@ -4,6 +4,7 @@ import path from 'path'
 import { ApplicationCommandType, Routes } from 'discord.js'
 import Table from 'cli-table3'
 import { getCommandMap } from '@src/decorator/controller.decorator.js'
+import { localizationProblems } from '@src/core/command-localizations.js'
 import { CommandType } from '@src/enum/index.js'
 import { type CommandRegistrationConfig } from '@src/interface/index.js'
 import { type CommandMetadata } from '@src/interface/command-decorator.interface.js'
@@ -72,6 +73,7 @@ export function collectCommands(
   // menu may share a name, and a command split across methods sends its builder once.
   const byKey = new Map<string, { builder: Builder; command: CollectedCommand }>()
   const broken: string[] = []
+  const unlocalizable: string[] = []
 
   for (const controllerClass of controllerClasses) {
     const commandMap = getCommandMap(controllerClass.prototype) ?? {}
@@ -96,6 +98,7 @@ export function collectCommands(
 
         if (existing === undefined) {
           const name = typeof body.name === 'string' ? body.name : commandName
+          unlocalizable.push(...localizationProblems(name, body))
           byKey.set(key, { builder, command: { name, body, ...(guilds && { guilds }) } })
         } else if (existing.builder !== builder) {
           logger.warn(
@@ -112,6 +115,14 @@ export function collectCommands(
     logger.error(
       `No commands were registered: ${broken.length} builder(s) could not be serialised: ${broken.join(', ')}. ` +
         `Registering the rest would remove these from Discord.`,
+    )
+    return undefined
+  }
+
+  if (unlocalizable.length > 0) {
+    logger.error(
+      `No commands were registered: Discord would reject ${unlocalizable.length} localization(s):\n` +
+        unlocalizable.map(problem => `  ${problem}`).join('\n'),
     )
     return undefined
   }

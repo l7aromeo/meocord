@@ -255,7 +255,17 @@ export function Command<CBC extends BuildableCommandType, T extends CommandBuild
     // Determine command type and builder
     if (typeof builderOrType === 'function') {
       const builderObj = new builderOrType() as CommandBuilderBase
-      builderInstance = builderObj.build(commandName)
+      try {
+        builderInstance = builderObj.build(commandName)
+      } catch (error) {
+        // discord.js builders validate as they are set, and their errors name neither the command nor the field.
+        const detail = error instanceof Error ? error.message.split('\n')[0] : String(error)
+        throw new Error(
+          `${builderOrType.name} could not build "${commandName}": ${detail}. Check its names, descriptions and ` +
+            `localizations, which Discord limits to 32 and 100 characters.`,
+          { cause: error },
+        )
+      }
       guilds = Reflect.getMetadata(BUILDER_GUILDS, builderOrType)
       commandType = Reflect.getMetadata(MetadataKey.CommandType, builderOrType) as CommandType
       if (!(commandType in CommandType)) {
