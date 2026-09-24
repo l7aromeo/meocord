@@ -151,6 +151,7 @@ export abstract class Translator<C = CatalogShape> {
    *
    * @param key - A message key of the default catalog.
    * @param params - The message's params, when it takes any.
+   * @returns The message in the default locale.
    */
   abstract default<K extends MessageKey<C>>(key: K, ...params: ParamsArgs<MessageAt<C, K>>): string
 
@@ -160,6 +161,7 @@ export abstract class Translator<C = CatalogShape> {
    * Discord falls back to the default name for them.
    *
    * @param key - A plain message key; names and descriptions have no plural forms.
+   * @returns The message keyed by locale.
    */
   abstract localizations(key: StringMessageKey<C>): Partial<Record<Locale, string>>
 
@@ -169,16 +171,25 @@ export abstract class Translator<C = CatalogShape> {
    * @param interaction - The interaction being answered.
    * @param options - `public: true` uses the server's language instead, for a reply everyone there
    *   sees; outside a server, the user's.
+   * @returns A function that translates a message key.
    */
   abstract for(interaction: Interaction, options?: { public?: boolean }): Translate<C>
 
   /**
    * Translates for a server, in its preferred language: for events and messages, which have no
    * user locale.
+   *
+   * @param guild - The server to translate for.
+   * @returns A function that translates a message key.
    */
   abstract forGuild(guild: Guild): Translate<C>
 
-  /** Translates into a given locale. */
+  /**
+   * Translates into a given locale.
+   *
+   * @param locale - A discord.js `Locale`; one without a catalog falls back as a user's would.
+   * @returns A function that translates a message key.
+   */
   abstract locale(locale: Locale | `${Locale}`): Translate<C>
 }
 
