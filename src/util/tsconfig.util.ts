@@ -2,9 +2,27 @@ import path from 'path'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { Logger } from '@src/common/index.js'
 import { tmpdir } from 'os'
+import { createRequire } from 'module'
 import { fixJSON } from '@src/util/json.util.js'
 
 const logger = new Logger()
+
+/**
+ * An `extends` made to work from another directory: a relative path made absolute, and a package
+ * resolved from the project's `node_modules`, or kept as it is when it cannot be found there.
+ */
+function resolveExtends(value: string | string[], cwd: string): string | string[] {
+  const projectRequire = createRequire(path.join(cwd, 'tsconfig.json'))
+  const resolve = (entry: string) => {
+    if (entry.startsWith('.') || path.isAbsolute(entry)) return path.resolve(cwd, entry)
+    try {
+      return projectRequire.resolve(entry)
+    } catch {
+      return entry
+    }
+  }
+  return Array.isArray(value) ? value.map(resolve) : resolve(value)
+}
 
 /**
  * Writes a copy of the project's `tsconfig.json` for the bundler to a temporary file, with invalid
@@ -43,6 +61,13 @@ export function prepareModifiedTsConfig(): string {
     }
   }
 
+  // The copy lives in the temp directory, so every path in it is made absolute from the project
+  const cwd = process.cwd()
+  if (parsedConfig?.extends) parsedConfig.extends = resolveExtends(parsedConfig.extends, cwd)
+  for (const key of ['include', 'exclude', 'files']) {
+    if (Array.isArray(parsedConfig?.[key])) parsedConfig[key] = parsedConfig[key].map((p: string) => path.resolve(cwd, p))
+  }
+
   // Process compilerOptions
   if (parsedConfig?.compilerOptions) {
     const pathOptions = ['outDir', 'rootDir', 'baseUrl', 'tsBuildInfoFile']
@@ -54,14 +79,9 @@ export function prepareModifiedTsConfig(): string {
       }
     })
 
-    const additionalKeys = ['include', 'exclude', 'typeRoots']
-
-    // Convert relative paths to absolute paths in additional keys
-    additionalKeys.forEach(key => {
-      if (parsedConfig[key]) {
-        parsedConfig[key] = parsedConfig[key].map((p: string) => path.resolve(process.cwd(), p))
-      }
-    })
+    if (Array.isArray(parsedConfig.compilerOptions.typeRoots)) {
+      parsedConfig.compilerOptions.typeRoots = parsedConfig.compilerOptions.typeRoots.map((p: string) => path.resolve(cwd, p))
+    }
 
     // Resolve path mappings in `paths` if present
     if (parsedConfig.compilerOptions.paths) {
