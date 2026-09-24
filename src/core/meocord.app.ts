@@ -52,6 +52,7 @@ import {
 } from '@src/core/event-requirements.js'
 import { lifecycleDependencies } from '@src/core/lifecycle-order.js'
 import { type MeoCordApplication } from '@src/interface/index.js'
+import { stopRequests } from '@src/util/stop-request.util.js'
 import { isShardProcess } from '@src/util/sharding-mode.util.js'
 import { isShardMessage, type ShardMessage } from '@src/core/shard-messages.js'
 import { registerCommands } from '@src/core/command-registration.js'
@@ -79,22 +80,23 @@ interface LifecycleEntry {
 
 /** Closes each started app: runs its shutdown hooks and destroys its client, resolving `false` on failure. */
 const runningApps = new Set<() => Promise<boolean>>()
-let shuttingDown = false
+const stopRequest = stopRequests()
 let signalHandlersInstalled = false
 
 /**
  * Shuts every started app down and exits: `onShutdown` hooks under the configured `shutdownTimeout`,
  * then `destroy()`, then exit 0, or 1 if a client failed to close. SIGINT and SIGTERM call it, and so
- * does a shard its manager tells to stop; a second call while one is running forces exit 1.
+ * does a shard its manager tells to stop. A call within `REPEAT_SIGNAL_WINDOW_MS` of the first is the
+ * same request; one after it forces exit 1.
  */
 export async function shutdownAndExit(): Promise<void> {
-  if (shuttingDown) {
+  const request = stopRequest()
+  if (request !== 'first') {
     // A shard hears Ctrl+C both directly and from its manager, which owns forcing it; so it waits
-    if (isShardProcess()) return
+    if (request === 'duplicate' || isShardProcess()) return
     process.exit(1)
     return
   }
-  shuttingDown = true
 
   const closed = await Promise.all([...runningApps].map(close => close()))
   process.exit(closed.every(Boolean) ? 0 : 1)
