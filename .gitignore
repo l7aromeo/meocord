@@ -15,9 +15,6 @@ dist/
 # Logs
 *.log
 
-# Scratch application built by scripts/verify-generated.ts
-.generated-check/
-
 # Scratch application built by src/build/rsbuild-pipeline.spec.ts
 .rsbuild-spec/
 
