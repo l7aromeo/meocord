@@ -458,6 +458,11 @@ export class ResponseState {
     }
   }
 
+  /** A payload that sets no flags keeps the edited message's suppressed embeds, as a raw edit does. */
+  private keptFlags(body: Body): number {
+    return body.flags === undefined && this.message?.flags?.has(MessageFlags.SuppressEmbeds) ? MessageFlags.SuppressEmbeds : 0
+  }
+
   private withSuppression(flags: number): number {
     return this.suppressNotifications ? flags | MessageFlags.SuppressNotifications : flags
   }
@@ -482,7 +487,7 @@ export class ResponseState {
     this.cancelScheduled()
     this.answering = true
     this.settled = true
-    const flags = this.flagsFor('update', body.flags)
+    const flags = this.flagsFor('update', body.flags) | this.keptFlags(body)
     this.v2 ||= hasComponentsV2(flags)
     const sent = this.withAttachments(forMode(body, this.v2))
     this.record('update', { ...sent, flags })
@@ -499,7 +504,7 @@ export class ResponseState {
   /** Edits the answer through the interaction, and through the channel only once its token has expired. */
   private async editMessage(body: Body, { restoring = false } = {}): Promise<Message | undefined> {
     if (!restoring) this.settled = true
-    const flags = this.flagsFor('edit', body.flags)
+    const flags = this.flagsFor('edit', body.flags) | this.keptFlags(body)
     this.v2 ||= hasComponentsV2(flags)
     const sent = { ...this.withAttachments(forMode(body, this.v2)), flags }
     this.record('editReply', sent)
