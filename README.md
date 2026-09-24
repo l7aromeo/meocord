@@ -593,7 +593,7 @@ async showProfile(interaction: ButtonInteraction, { ownerId, uid }) {
 }
 ```
 
-`/` separates segments, and **a parameter must occupy a whole segment** — the same rule Express and Rails use for a path. A pattern that breaks it is rejected when the command is registered:
+`/` separates segments, and **a parameter must occupy a whole segment** — the same rule Express and Rails use for a path. A pattern that breaks it throws as soon as `@Command` decorates the method, when the controller is loaded:
 
 ```typescript
 @Command('profile/{uuid}', CommandType.BUTTON)      // fine
@@ -640,7 +640,7 @@ Two patterns with the same segment count can still both match. The one spelling 
 @Command('profile/{uuid}/{other}/{uid}', CommandType.BUTTON)     // wins everything else
 ```
 
-Ties between equally literal patterns go to the one with fewer parameters. The ranking is computed once when commands are registered, so dispatch stays a single ordered lookup.
+Ties between equally literal patterns go to the one with fewer parameters. The ranking is computed once when the bot starts, so dispatch stays a single ordered lookup.
 
 Where two patterns trade a literal for a parameter in opposite positions — `a/{x}/c` and `a/b/{y}` both take `a/b/c` — neither is more literal, and MeoCord logs a warning at startup naming the pair.
 
@@ -893,6 +893,8 @@ async search(interaction: ChatInputCommandInteraction) { ... }
 export class ProfileController { ... }
 ```
 
+The rate limiter shows how a guard takes options. To limit how often a handler runs, [`@Cooldown`](#cooldowns) does it without a guard of your own, and answers the caller with how long to wait.
+
 A class-level `@UseGuard` also guards the handlers a controller inherits. For a subclass, its own class guards run first, then the base class's guards, then the method's. A base class's class guards do not wrap the handlers a subclass declares itself:
 
 ```typescript
@@ -1086,14 +1088,15 @@ One instance of a filter serves every call, as with interceptors, so it cannot i
 
 An error no filter handles goes to the built-in fallback. It logs the error, then answers through [`respond(interaction).error()`](#interaction-responses) if the interaction can still take an answer, privately and in the error style of the app's [presenter](#presenters):
 
-| The interaction                                                                 | The fallback                                            |
-| ------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| Not answered yet                                                                | replies                                                 |
-| A command whose reply was deferred                                              | edits the deferred reply into the error                 |
-| Already replied to, or a deferred button, select or modal from a public message | follows up; it never edits the message the user clicked |
-| A deferred button, select or modal from a private (ephemeral) message           | adds the error to that message                          |
-| Autocomplete                                                                    | closes the menu with an empty list                      |
-| Expired (Discord error 10062)                                                   | logs only                                               |
+| The interaction                                                              | The fallback                                            |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Not answered yet                                                             | replies                                                 |
+| A command, or a modal not submitted from a message, whose reply was deferred | edits the deferred reply into the error                 |
+| The same, already replied to                                                 | follows up                                              |
+| A button, select menu or modal from a public message, deferred or answered   | follows up; it never edits the message the user clicked |
+| The same, from a private (ephemeral) message                                 | adds the error to that message                          |
+| Autocomplete                                                                 | closes the menu with an empty list                      |
+| Expired (Discord error 10062)                                                | logs only                                               |
 
 It says "An error occurred while executing the command.", "Command not found!" for `CommandNotFoundError`, a `GuardDeniedError`'s own message, a `CooldownError`'s wait time, and a `ValidationError`'s list of issues — the last three kept private even on a deferred public command, by deleting the deferred reply and following up. Errors from message, reaction and event handlers are only logged, and the next handler still runs; a message blocked by a cooldown is ignored without an error log. The fallback never throws.
 
@@ -1307,15 +1310,15 @@ export class HelpService {
 
 `list({ kind, controller })` filters by what a handler handles and by the class declaring it, and narrows the entries' type to that kind. Each entry has `controller`, `method`, `kind` and `name`, plus `get` and `getAll`, which read metadata as `ExecutionContext` does:
 
-| `kind`         | `name`                                         | Also                                           |
-| -------------- | ---------------------------------------------- | ---------------------------------------------- |
-| `command`      | The command, or a subcommand's full path       | `commandType`, `command` (the registered JSON) |
-| `component`    | The customId pattern, such as `profile/{uid}`  | `commandType`                                  |
-| `modal`        | The customId pattern                           | `commandType`                                  |
-| `autocomplete` | The command path, then the option it completes |                                                |
-| `message`      | The keyword, or `undefined` for every message  |                                                |
-| `reaction`     | The emoji, or `undefined` for every reaction   |                                                |
-| `event`        | The client event                               | `once`                                         |
+| `kind`         | `name`                                         | Also                                                          |
+| -------------- | ---------------------------------------------- | ------------------------------------------------------------- |
+| `command`      | The command, or a subcommand's full path       | `commandType`, `command` (the registered JSON), `description` |
+| `component`    | The customId pattern, such as `profile/{uid}`  | `commandType`                                                 |
+| `modal`        | The customId pattern                           | `commandType`                                                 |
+| `autocomplete` | The command path, then the option it completes |                                                               |
+| `message`      | The keyword, or `undefined` for every message  |                                                               |
+| `reaction`     | The emoji, or `undefined` for every reaction   |                                                               |
+| `event`        | The client event                               | `once`                                                        |
 
 ---
 
@@ -1468,7 +1471,7 @@ const controller = module.get(GreetingSlashController)
 
 ### Running a handler with `invoke`
 
-`module.invoke(Controller, 'method', ...args)` runs a handler the way dispatch does: its guards, class guards first and each once, then its interceptors around the handler. Guards resolve from the module, so `overrideGuard` stubs and injected `ExecutionContext` work as they do in the bot. Pass the arguments dispatch would: the interaction, message or reaction, then the handler's params.
+`module.invoke(Controller, 'method', ...args)` runs a handler through the [pipeline](#how-a-handler-runs) dispatch runs: `@Defer`, its guards, class guards first and each once, then its interceptors around validation, pipes, cooldowns and the handler, all inside its exception filters. Guards resolve from the module, so `overrideGuard` stubs and injected `ExecutionContext` work as they do in the bot. Pass the arguments dispatch would: the interaction, message or reaction, then the handler's params.
 
 ```typescript
 import { ButtonInteraction } from 'discord.js'

@@ -100,9 +100,10 @@ export class TestingModule {
   }
 
   /**
-   * Runs a handler through the same pipeline dispatch runs: the global guards of the module's `app`,
-   * then the handler's own, in order and once each; then the interceptors, the app's first, around
-   * validation, pipes and the handler; all inside the handler's exception filters. Guards resolve
+   * Runs a handler through the same pipeline dispatch runs: `@Defer`'s acknowledgement, the global
+   * guards of the module's `app`, then the handler's own, in order and once each; then the
+   * interceptors, the app's first, around validation, pipes, cooldowns and the handler; all inside the
+   * handler's exception filters. Guards resolve
    * from this module, so `overrideGuard` stubs apply and guards that inject `ExecutionContext` receive
    * it. `overrideInterceptor` and `overrideFilter` stubs apply the same way.
    *
