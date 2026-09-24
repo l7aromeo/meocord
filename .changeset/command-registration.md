@@ -10,4 +10,6 @@ Choose where commands are registered, and register without starting the bot.
 - In development, a scope whose commands are unchanged since the last start is not sent again; `meocord start --dev --force-register` sends it anyway.
 - Commands are read from the controllers' prototypes, so registering constructs no controller.
 
-Nothing changes for an existing bot: with no `commands` setting, every command is still registered globally at each start. New applications get `developmentGuild` wired to `DEV_GUILD_ID` in `.env`.
+With no `commands` setting, an existing bot still registers every command globally at each start. One thing does change: a builder whose `toJSON()` throws, such as a slash command missing its description, now stops that start's registration. You see an error naming the builder, and no commands are sent, where before the rest were registered and the broken one was dropped. A bulk update without it would delete it from Discord. Fix the builder and the next start registers everything.
+
+New applications get `developmentGuild` wired to `DEV_GUILD_ID` in `.env`.
