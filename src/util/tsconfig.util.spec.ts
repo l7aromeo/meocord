@@ -160,10 +160,39 @@ describe('prepareModifiedTsConfig', () => {
     expect(mockRmSync).toHaveBeenCalledWith(path.dirname(file), { recursive: true, force: true })
   })
 
-  it('fixes and re-parses invalid JSON with a trailing comma', () => {
+  it('reads the comments, trailing commas and $schema URL tsconfig.json allows', () => {
     mockExistsSync.mockReturnValue(true)
-    mockReadFileSync.mockReturnValue('{ "compilerOptions": { "noEmit": true, } }' as any)
+    mockReadFileSync.mockReturnValue(`{
+  "$schema": "https://json.schemastore.org/tsconfig", // the editor's schema
+  "compilerOptions": {
+    /* kept strict */
+    "strict": true,
+    "noEmit": true,
+  },
+}` as any)
 
-    expect(() => prepareModifiedTsConfig()).not.toThrow()
+    prepareModifiedTsConfig()
+
+    const written = JSON.parse(mockWriteFileSync.mock.calls[0][1] as string)
+    expect(written.$schema).toBe('https://json.schemastore.org/tsconfig')
+    expect(written.compilerOptions).toEqual({ strict: true })
+  })
+
+  // The build used to rewrite the project's tsconfig.json to repair it, dropping the user's comments
+  it("never writes the project's tsconfig.json, however it is formatted", () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue('{ // mine\n "compilerOptions": { "noEmit": true, }, }' as any)
+
+    const copy = prepareModifiedTsConfig()
+
+    expect(mockWriteFileSync.mock.calls.map(([file]) => file)).toEqual([copy])
+  })
+
+  it('names the file and the fix when tsconfig.json cannot be parsed', () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadFileSync.mockReturnValue('{ compilerOptions: }' as any)
+
+    expect(() => prepareModifiedTsConfig()).toThrow(/Could not parse tsconfig.json in .*Fix the JSON, then build again/)
+    expect(mockWriteFileSync).not.toHaveBeenCalled()
   })
 })

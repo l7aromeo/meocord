@@ -2,7 +2,7 @@ import path from 'path'
 import { existsSync, readFileSync } from 'fs'
 import { createJiti } from 'jiti'
 import { type MeoCordConfig } from '@src/interface/index.js'
-import { fixJSON } from '@src/util/json.util.js'
+import { parseJsonc } from '@src/util/json.util.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
 
 /**
@@ -33,7 +33,7 @@ export function readMeoCordSourceConfig(): { config: MeoCordConfig | undefined }
     const aliases: Record<string, string> = {}
 
     if (existsSync(tsConfigPath)) {
-      const tsConfig = JSON.parse(fixJSON(readFileSync(tsConfigPath, 'utf-8')))
+      const tsConfig = parseJsonc(readFileSync(tsConfigPath, 'utf-8'))
       const paths = tsConfig?.compilerOptions?.paths
 
       if (paths) {

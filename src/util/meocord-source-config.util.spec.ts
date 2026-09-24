@@ -17,10 +17,6 @@ vi.mock('jiti', () => ({
 
 vi.mock('@src/interface/index.js', () => ({}))
 
-vi.mock('@src/util/json.util.js', () => ({
-  fixJSON: vi.fn().mockImplementation((s: unknown) => s),
-}))
-
 vi.mock('@src/util/meocord-config-loader.util.js', () => ({
   loadMeoCordConfig: mockLoadMeoCordConfig,
 }))

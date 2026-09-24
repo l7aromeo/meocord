@@ -1,55 +1,40 @@
-import { fixJSON } from '@src/util/json.util.js'
+import { parseJsonc, stripJsonc } from '@src/util/json.util.js'
 
-describe('fixJSON', () => {
-  it('removes single-line comments', () => {
+describe('parseJsonc', () => {
+  it('reads line and block comments', () => {
     const input = `{
-  "key": "value" // comment
+  // the target
+  "target": "ESNext", /* inline */
+  /* a block
+     over lines */
+  "strict": true
 }`
-    const result = fixJSON(input)
-    expect(result).not.toContain('//')
-    expect(JSON.parse(result)).toEqual({ key: 'value' })
+    expect(parseJsonc(input)).toEqual({ target: 'ESNext', strict: true })
   })
 
-  it('removes trailing commas before }', () => {
+  it('reads trailing commas in objects and arrays, even before a comment', () => {
+    expect(parseJsonc(`{ "a": [1, 2, ], "b": { "c": 1, // last\n }, }`)).toEqual({ a: [1, 2], b: { c: 1 } })
+  })
+
+  it('keeps URLs, globs and escaped quotes inside strings', () => {
     const input = `{
-  "key": "value",
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "include": ["src/**/*.ts", "a,]"],
+  "note": "say \\"hi\\" // not a comment"
 }`
-    expect(JSON.parse(fixJSON(input))).toEqual({ key: 'value' })
+    expect(parseJsonc(input)).toEqual({
+      $schema: 'https://json.schemastore.org/tsconfig',
+      include: ['src/**/*.ts', 'a,]'],
+      note: 'say "hi" // not a comment',
+    })
   })
 
-  it('removes trailing commas before ]', () => {
-    const input = `{"arr": [1, 2, 3,]}`
-    expect(JSON.parse(fixJSON(input))).toEqual({ arr: [1, 2, 3] })
-  })
-
-  it('removes trailing commas at end of string', () => {
-    const input = `{"key": "value",`
-    const result = fixJSON(input)
-    expect(result.trimEnd()).not.toMatch(/,$/)
-  })
-
-  it('handles multiple issues at once', () => {
-    const input = `{
-  "a": 1, // comment
-  "b": [1, 2,],
-  "c": "x",
-}`
-    const parsed = JSON.parse(fixJSON(input))
-    expect(parsed).toEqual({ a: 1, b: [1, 2], c: 'x' })
-  })
-
-  it('leaves valid JSON unchanged', () => {
+  it('leaves strict JSON as it is', () => {
     const input = `{"key":"value","num":42}`
-    expect(JSON.parse(fixJSON(input))).toEqual({ key: 'value', num: 42 })
+    expect(stripJsonc(input)).toBe(input)
   })
 
-  it('removes empty lines', () => {
-    const input = `{
-
-  "key": "value"
-
-}`
-    const result = fixJSON(input)
-    expect(result).not.toMatch(/^\s*$/m)
+  it('still rejects text that is not JSON once comments are gone', () => {
+    expect(() => parseJsonc('{ key: 1 }')).toThrow()
   })
 })
