@@ -5,7 +5,8 @@ below, each under its own license.
 
 None of their code is copied into MeoCord's published package: npm installs each one alongside
 MeoCord, with its own license file. This list is a record of what MeoCord relies on, and of the
-terms those packages are offered under.
+terms those packages are offered under. One published interface is declared in MeoCord's own types
+instead of installed; it is listed last.
 
 ## Dependencies
 
@@ -33,6 +34,14 @@ Installed by the application using MeoCord.
 | ------------------------------------------------------ | ------------ | --------------------------------------- |
 | [discord.js](https://www.npmjs.com/package/discord.js) | Apache-2.0   | https://github.com/discordjs/discord.js |
 | [dotenv](https://www.npmjs.com/package/dotenv)         | BSD-2-Clause | https://github.com/motdotla/dotenv      |
+
+## Interfaces
+
+Declared in MeoCord's type definitions, following a published specification, rather than installed.
+
+| Specification                                 | License | Source                                             | Declared as                               |
+| --------------------------------------------- | ------- | -------------------------------------------------- | ----------------------------------------- |
+| [Standard Schema](https://standardschema.dev) | MIT     | https://github.com/standard-schema/standard-schema | `StandardSchemaV1` in `meocord/interface` |
 
 ---
 
