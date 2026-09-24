@@ -157,6 +157,33 @@ describe('input stages on handlers without interaction input', () => {
     expect(compile(Limited)).toThrow('Limited.joined is an event handler; @Cooldown applies only to interaction and message handlers.')
   })
 
+  it('name an autocomplete handler as one too', () => {
+    const anything: StandardSchemaV1 = { '~standard': { version: 1, vendor: 'test', validate: value => ({ value }) } }
+
+    @Controller()
+    class Validated {
+      @Command('find', CommandType.SLASH)
+      async find(_interaction: ChatInputCommandInteraction) {}
+
+      @Autocomplete('find')
+      async suggest(..._args: unknown[]) {}
+    }
+    Validate(anything)(Validated.prototype, 'suggest', Object.getOwnPropertyDescriptor(Validated.prototype, 'suggest') as never)
+
+    @Controller()
+    class Limited {
+      @Command('find', CommandType.SLASH)
+      async find(_interaction: ChatInputCommandInteraction) {}
+
+      @Autocomplete('find')
+      @Cooldown({ seconds: 5 })
+      async suggest(_interaction: AutocompleteInteraction) {}
+    }
+
+    expect(compile(Validated)).toThrow('Validated.suggest is an autocomplete handler; @Validate and @UsePipe apply only')
+    expect(compile(Limited)).toThrow('Limited.suggest is an autocomplete handler; @Cooldown applies only')
+  })
+
   it('refuse @Defer written below @MessageHandler, which runs before the handler is known', () => {
     @Controller()
     class Deferred {
@@ -219,7 +246,7 @@ describe('a filter that throws under dispatch', () => {
     @Controller()
     class Failing {
       @Command('fail', CommandType.SLASH)
-      @UseFilter(Broken)
+      @UseFilter({ provide: Broken, params: { reason: 'given as an entry' } })
       async fail(_interaction: ChatInputCommandInteraction) {
         throw new Error('handler bug')
       }
