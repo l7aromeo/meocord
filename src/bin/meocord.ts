@@ -20,14 +20,19 @@ import { resolveOwnVersion } from '@src/util/package-version.util.js'
 import { buildAppCommand, resolveRuntime } from '@src/util/runtime.util.js'
 import packageJson from '../../package.json' with { type: 'json' }
 import { fileURLToPath } from 'url'
-import { assertNoWebpackHook, createRsbuildConfig, DISCORD_OPTIONAL_NATIVES } from '@src/build/rsbuild-config.js'
+import {
+  assertNoWebpackHook,
+  createRsbuildConfig,
+  optionalExternalConflicts,
+  optionalExternalNames,
+} from '@src/build/rsbuild-config.js'
 import {
   assertNoBundledNativeAddons,
   bundledModuleFiles,
   copyPackagesInto,
   createNativeExternals,
   findBundledNativeAddons,
-  nativeCarrier,
+  installedPackages,
   type NativePackage,
 } from '@src/build/native-addons.js'
 import { PLATFORM_MANIFEST, writePlatformManifest } from '@src/util/platform.util.js'
@@ -359,7 +364,14 @@ copies or substantial portions of the Software.
       mode,
       bundleDependencies: meocordConfig?.bundleDependencies,
       externals: meocordConfig?.externals,
+      optionalExternals: meocordConfig?.optionalExternals,
     })
+    for (const name of optionalExternalConflicts(meocordConfig?.optionalExternals, meocordConfig?.externals)) {
+      this.logger.warn(
+        `"${name}" is in both optionalExternals and externals. In externals it becomes an import that runs ` +
+          `before the bot's code and fails when the package is missing; remove it from externals.`,
+      )
+    }
     const config = meocordConfig?.rsbuild?.(base) ?? base
 
     // A native addon cannot be inlined into JavaScript, so when bundling, each one is kept out of
@@ -381,8 +393,8 @@ copies or substantial portions of the Software.
 
   /**
    * Makes a bundled build's dist runnable on its own: copies every package the bundle still
-   * imports -- the native addons found while building, anything listed in `externals`, and
-   * discord.js's optional accelerators if they are installed -- into `dist/node_modules`, and
+   * imports -- the native addons found while building, anything listed in `externals`, and the
+   * optional externals, discord.js's accelerators included, if they are installed -- into `dist/node_modules`, and
    * marks dist as ESM. Deploying is then copying dist, with no install step.
    */
   private packDependencies(meocordConfig: MeoCordConfig, natives: Map<string, NativePackage>) {
@@ -391,11 +403,10 @@ copies or substantial portions of the Software.
     const nativeNames = new Set(natives.keys())
 
     const listed = (meocordConfig.externals ?? []).filter((item): item is string => typeof item === 'string')
-    for (const name of [...listed, ...DISCORD_OPTIONAL_NATIVES]) {
-      const dir = path.join(this.projectRoot, 'node_modules', name)
-      if (packages.has(name) || !fs.existsSync(path.join(dir, 'package.json'))) continue
+    const wanted = [...listed, ...optionalExternalNames(meocordConfig.optionalExternals)].filter(name => !packages.has(name))
+    for (const { name, dir, native } of installedPackages(wanted, this.projectRoot)) {
       packages.set(name, dir)
-      if (nativeCarrier(dir, name, this.projectRoot)) nativeNames.add(name)
+      if (native) nativeNames.add(name)
     }
 
     // Replaced rather than merged, so a package dropped from the application does not linger.
