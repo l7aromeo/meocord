@@ -121,3 +121,33 @@ describe('localizations', () => {
     expect(t.localizations('ban.description')).toEqual({ 'es-ES': 'Banear a un miembro', ja: 'メンバーをBANする' })
   })
 })
+
+describe('at the edges', () => {
+  it("returns the key for one that names an object's built-in members", () => {
+    const t = createTranslator({ default: 'en-US', locales: { 'en-US': { greeting: 'Hello' } } })
+    const translate = t.locale('en-US') as unknown as (key: string) => string
+
+    for (const key of ['constructor', 'constructor.name', '__proto__', '__proto__.toString', 'toString', 'greeting.length']) {
+      expect(translate(key)).toBe(key)
+    }
+  })
+
+  it('uses the default locale for an interaction without a locale, and a server without a preferred one', () => {
+    const t = createTranslator({ default: 'en-US', locales: { 'en-US': { hi: 'Hello' }, id: { hi: 'Halo' } } })
+
+    expect(t.for({ locale: undefined } as never)('hi')).toBe('Hello')
+    expect(t.for({ locale: undefined, guildLocale: null } as never, { public: true })('hi')).toBe('Hello')
+    expect(t.forGuild({ preferredLocale: undefined } as never)('hi')).toBe('Hello')
+  })
+
+  it("reads a plural's count as `other` when it is not a number", () => {
+    const t = createTranslator({
+      default: 'en-US',
+      locales: { 'en-US': { items: { one: '{count} item', other: '{count} items' } } },
+    })
+    const translate = t.locale('en-US') as unknown as (key: string, params: Record<string, unknown>) => string
+
+    expect(translate('items', { count: 'many' })).toBe('many items')
+  })
+})
+
