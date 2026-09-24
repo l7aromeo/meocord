@@ -53,6 +53,8 @@ import {
 import { lifecycleDependencies } from '@src/core/lifecycle-order.js'
 import { type MeoCordApplication } from '@src/interface/index.js'
 import { stopRequests } from '@src/util/stop-request.util.js'
+import { explainLoginFailure, type FatalLoginCode, fatalLoginCode } from '@src/core/login-failure.js'
+import { markExplained } from '@src/common/explained-error.js'
 import { isShardProcess } from '@src/util/sharding-mode.util.js'
 import { isShardMessage, type ShardMessage } from '@src/core/shard-messages.js'
 import { registerCommands } from '@src/core/command-registration.js'
@@ -118,14 +120,10 @@ function installSignalHandlers(): void {
   }
 }
 
-/** The discord.js login errors no restart can fix, which a shard reports to its manager before exiting. */
-const FATAL_LOGIN_CODES = new Set(['TokenInvalid', 'DisallowedIntents'])
-
-/** Tells the manager a shard cannot log in, and waits until the message is sent. */
-async function reportFatalLogin(error: unknown): Promise<void> {
-  const code = (error as { code?: unknown } | null)?.code
-  if (!isShardProcess() || !process.send || typeof code !== 'string' || !FATAL_LOGIN_CODES.has(code)) return
-  const message: ShardMessage = { meocord: 'fatal', code, message: error instanceof Error ? error.message : String(error) }
+/** Tells the manager a shard cannot log in, and why, and waits until the message is sent. */
+async function reportFatalLogin(code: FatalLoginCode, reason: string): Promise<void> {
+  if (!isShardProcess() || !process.send) return
+  const message: ShardMessage = { meocord: 'fatal', code, message: reason }
   await new Promise<void>(resolve => process.send!(message, undefined, {}, () => resolve()))
 }
 
@@ -261,7 +259,16 @@ export class MeoCordApp implements MeoCordApplication {
       await this.bot.login(this.discordToken)
     } catch (error) {
       runningApps.delete(this.close)
-      await reportFatalLogin(error)
+      const fatal = fatalLoginCode(error)
+      // Read only for a failure that needs them: a hand-built client in a test may have no options
+      const explanation = fatal && explainLoginFailure(fatal, this.bot.options?.intents)
+      if (explanation) {
+        // The explanation is what to act on, and the stack only for debugging. A shard's manager logs it instead.
+        if (!isShardProcess()) this.logger.error(explanation)
+        this.logger.debug('Login failed:', error)
+        markExplained(error)
+      }
+      if (fatal) await reportFatalLogin(fatal, explanation ?? (error instanceof Error ? error.message : String(error)))
       if (process.exitCode === undefined || process.exitCode === 0) {
         process.exitCode = 1
         MeoCordApp.failedLoginSetExitCode = true

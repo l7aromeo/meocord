@@ -217,19 +217,24 @@ describe('ShardManager', () => {
     expect(shards[0].process).not.toBeNull()
   })
 
-  it('stops every shard and exits 1, without restarting, when a shard cannot log in', async () => {
+  it.each([
+    ['TokenInvalid', 'An invalid token was provided.'],
+    ['DisallowedIntents', 'Discord refused the privileged intents the bot requests (MessageContent). Enable them in the Developer Portal.'],
+    ['InvalidIntents', 'Discord refused the intents the bot requests as invalid.'],
+  ])('stops every shard and exits 1, without restarting, when a shard reports %s', async (code, message) => {
     vi.useFakeTimers()
     const { manager, shards, exit } = setup({ shards: 2 })
     await manager.start()
 
-    shards[0].emit('message', { meocord: 'fatal', code: 'TokenInvalid', message: 'An invalid token was provided.' })
+    shards[0].emit('message', { meocord: 'fatal', code, message })
     shards[0].die(1)
     await vi.advanceTimersByTimeAsync(RESPAWN_CAP_MS)
 
     expect(exit).toHaveBeenCalledWith(1)
     expect(shards.every(shard => shard.process === null)).toBe(true)
     expect(shards.map(shard => shard.spawns)).toEqual([1, 1])
-    expect(logged.error.join('\n')).toContain('Shard 0 cannot log in (TokenInvalid)')
+    // The shard's explanation, in the manager's own log line
+    expect(logged.error.join('\n')).toContain(`Shard 0 cannot log in (${code}): ${message}`)
   })
 
   it('exits 1 before spawning anything when Discord cannot say how many shards to run', async () => {

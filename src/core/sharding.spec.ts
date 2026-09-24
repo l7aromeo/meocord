@@ -40,12 +40,13 @@ async function load() {
   const decorators: typeof DecoratorModule = await import('@src/decorator/index.js')
   const manager: typeof ShardManagerModule = await import('@src/core/shard-manager.js')
   const context: typeof ShardContextModule = await import('@src/core/shard-context.js')
-  return { discord, ...app, ...factory, ...decorators, ...manager, ...context }
+  const { isExplainedError } = await import('@src/common/explained-error.js')
+  return { discord, ...app, ...factory, ...decorators, ...manager, ...context, isExplainedError }
 }
 type Loaded = Awaited<ReturnType<typeof load>>
 
-function appClass(loaded: Loaded, options: { controllers?: any[]; services?: any[] } = {}) {
-  @loaded.MeoCord({ controllers: options.controllers ?? [], services: options.services, clientOptions: { intents: [] } })
+function appClass(loaded: Loaded, options: { controllers?: any[]; services?: any[]; intents?: number[] } = {}) {
+  @loaded.MeoCord({ controllers: options.controllers ?? [], services: options.services, clientOptions: { intents: options.intents ?? [] } })
   class App {}
   return App
 }
@@ -172,6 +173,61 @@ describe('sharding', () => {
     })
   })
 
+  describe('a login Discord refuses for its intents, in one process', () => {
+    beforeEach(() => {
+      config.current = { discordToken: 'secret-token-value' }
+    })
+
+    const start = async (loaded: Loaded, intents: number[], rejection: Error) => {
+      vi.spyOn(loaded.discord.Client.prototype, 'login').mockRejectedValue(rejection)
+      const exitCode = process.exitCode
+      try {
+        await expect(loaded.MeoCordFactory.create(appClass(loaded, { intents })).start()).rejects.toBe(rejection)
+        return process.exitCode
+      } finally {
+        process.exitCode = exitCode
+      }
+    }
+
+    it('says which privileged intents the bot requests and where to enable them, marking the error as explained', async () => {
+      const loaded = await load()
+      const { GatewayIntentBits } = loaded.discord
+      const refused = new Error('Used disallowed intents')
+
+      const exitCode = await start(loaded, [GatewayIntentBits.Guilds, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers], refused)
+
+      expect(logged.error).toEqual([
+        'Discord refused the privileged intents the bot requests (GuildMembers, MessageContent). Enable them in the ' +
+          'Developer Portal → your application → Bot → Privileged Gateway Intents, then start again. A verified bot in ' +
+          "100 or more servers needs Discord's approval for them.",
+      ])
+      expect(logged.error.join('')).not.toContain('secret-token-value')
+      expect(exitCode).toBe(1)
+      expect(loaded.isExplainedError(refused)).toBe(true)
+      expect(Object.keys(refused)).toEqual([])
+    })
+
+    it('explains intents Discord refuses as invalid', async () => {
+      const loaded = await load()
+      const refused = new Error('Used invalid intents')
+
+      await start(loaded, [loaded.discord.GatewayIntentBits.Guilds], refused)
+
+      expect(logged.error).toEqual([expect.stringMatching(/^Discord refused the intents the bot requests as invalid\. Check clientOptions\.intents/)])
+      expect(loaded.isExplainedError(refused)).toBe(true)
+    })
+
+    it('leaves an error it does not explain unmarked, for main.ts to log', async () => {
+      const loaded = await load()
+      const invalid = Object.assign(new Error('An invalid token was provided.'), { code: 'TokenInvalid' })
+
+      await start(loaded, [], invalid)
+
+      expect(loaded.isExplainedError(invalid)).toBe(false)
+      expect(logged.error).toEqual([])
+    })
+  })
+
   describe('in a shard', () => {
     beforeEach(() => {
       vi.stubEnv('SHARDING_MANAGER', 'true')
@@ -196,6 +252,33 @@ describe('sharding', () => {
         process.exitCode = exitCode
       }
       expect(sent).toEqual([{ meocord: 'fatal', code: 'TokenInvalid', message: 'An invalid token was provided.' }])
+    })
+
+    // discord.js passes on the gateway's close as a plain Error, with no code
+    it.each([
+      ['Used disallowed intents', 'DisallowedIntents', 'Discord refused the privileged intents the bot requests (MessageContent)'],
+      ['Used invalid intents', 'InvalidIntents', 'Discord refused the intents the bot requests as invalid'],
+    ])('tells the manager a shard cannot log in when the gateway says "%s", with the explanation', async (closed, code, explanation) => {
+      const loaded = await load()
+      const sent: { meocord: string; code: string; message: string }[] = []
+      Reflect.set(process, 'send', (message: never, _handle: unknown, _options: unknown, callback: () => void) => {
+        sent.push(message)
+        callback()
+        return true
+      })
+      vi.spyOn(loaded.discord.Client.prototype, 'login').mockRejectedValue(new Error(closed))
+      const exitCode = process.exitCode
+
+      try {
+        await expect(
+          loaded.MeoCordFactory.create(appClass(loaded, { intents: [loaded.discord.GatewayIntentBits.MessageContent] })).start(),
+        ).rejects.toThrow(closed)
+      } finally {
+        process.exitCode = exitCode
+      }
+      expect(sent).toEqual([{ meocord: 'fatal', code, message: expect.stringContaining(explanation) }])
+      // The manager logs it for every shard; the shard itself does not
+      expect(logged.error).toEqual([])
     })
 
     it('reports nothing for a login error a restart can fix', async () => {
