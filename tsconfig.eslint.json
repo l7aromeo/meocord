@@ -3,6 +3,7 @@
   "include": [
     "vitest.config.ts",
     "vitest.mutation.config.ts",
+    "vitest.setup.ts",
     "eslint.config.ts",
     "meocord.eslint.d.ts",
     "scripts/**/*.ts"
