@@ -57,6 +57,22 @@ function table(names: string[]): string {
   return ['| Package | License | Source |', '| --- | --- | --- |', ...rows].join('\n')
 }
 
+/** Specifications whose interfaces MeoCord declares itself; no package supplies them, so they are listed here. */
+const INTERFACES = [
+  {
+    name: 'Standard Schema',
+    url: 'https://standardschema.dev',
+    license: 'MIT',
+    source: 'https://github.com/standard-schema/standard-schema',
+    usedIn: '`StandardSchemaV1` in `meocord/interface`',
+  },
+]
+
+function interfaceTable(): string {
+  const rows = INTERFACES.map(({ name, url, license, source, usedIn }) => `| [${name}](${url}) | ${license} | ${source} | ${usedIn} |`)
+  return ['| Specification | License | Source | Declared as |', '| --- | --- | --- | --- |', ...rows].join('\n')
+}
+
 function generate(): string {
   const own = readManifest(repoRoot)
   const dependencies = Object.keys(own.dependencies ?? {}).sort()
@@ -69,7 +85,8 @@ below, each under its own license.
 
 None of their code is copied into MeoCord's published package: npm installs each one alongside
 MeoCord, with its own license file. This list is a record of what MeoCord relies on, and of the
-terms those packages are offered under.
+terms those packages are offered under. One published interface is declared in MeoCord's own types
+instead of installed; it is listed last.
 
 ## Dependencies
 
@@ -82,6 +99,12 @@ ${table(dependencies)}
 Installed by the application using MeoCord.
 
 ${table(peers)}
+
+## Interfaces
+
+Declared in MeoCord's type definitions, following a published specification, rather than installed.
+
+${interfaceTable()}
 
 ---
 
