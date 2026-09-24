@@ -539,6 +539,16 @@ describe('registerCommands', () => {
       expect(rest.put).toHaveBeenCalled()
     })
 
+    it('sends again when the recorded payload cannot be read', async () => {
+      await register({ development: true }).run
+      writeFileSync(path.join(cwd, 'node_modules', '.cache', 'meocord', 'commands-app-global.json'), '{ not json')
+      const { rest, logger, run } = register({ development: true })
+
+      await expect(run).resolves.toBe(true)
+      expect(rest.put).toHaveBeenCalled()
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringMatching(/^Could not read the registered commands, so they are sent again: SyntaxError/))
+    })
+
     it('records nothing when the update is rejected, so the next start retries', async () => {
       const rest = createRest()
       rest.put.mockRejectedValue(new Error('down'))
