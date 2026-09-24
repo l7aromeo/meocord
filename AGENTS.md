@@ -30,7 +30,7 @@ testing toolkit.
 | Item          | Value                                                                       |
 | ------------- | --------------------------------------------------------------------------- |
 | Package       | `meocord` on npm (unscoped), MIT                                            |
-| Repository    | `l7aromeo/meocord`, default branch `main`                                   |
+| Repository    | `meocord/meocord`, default branch `main`                                    |
 | Consumers run | Node.js `>=22.13` or Bun; peer deps `discord.js ^14`, `dotenv ^18`          |
 | Repo tooling  | Bun (install, scripts, tests), rollup (library build), Rsbuild (app builds) |
 | Tests         | Vitest, colocated `*.spec.ts`, type-level `*.test-d.ts`                     |

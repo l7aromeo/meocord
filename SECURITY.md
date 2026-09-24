@@ -17,7 +17,7 @@ Prerelease channels (`alpha`, `beta`) are not covered — move to `latest` befor
 **Do not open a public issue, discussion, or pull request for a security problem.**
 
 Report it privately through GitHub:
-[Report a vulnerability](https://github.com/l7aromeo/meocord/security/advisories/new).
+[Report a vulnerability](https://github.com/meocord/meocord/security/advisories/new).
 
 If that is unavailable to you, email <ukasyahrz@outlook.com> with `MeoCord security` in the subject.
 

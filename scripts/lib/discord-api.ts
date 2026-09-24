@@ -23,7 +23,7 @@ export class DiscordApi {
         headers: {
           Authorization: `Bot ${this.token}`,
           'Content-Type': 'application/json',
-          'User-Agent': 'DiscordBot (https://github.com/l7aromeo/meocord, e2e)',
+          'User-Agent': 'DiscordBot (https://github.com/meocord/meocord, e2e)',
         },
         body: body === undefined ? undefined : JSON.stringify(body),
       })
