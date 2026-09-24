@@ -449,6 +449,15 @@ describe('registerCommands', () => {
     })
 
     // The default scope is sent even when empty, so a configuration naming no guild leaves nothing else to check
+    // Everything goes to the development guild then, so a command's own guilds are scopes not sent to
+    it("checks a command's own guilds while everything goes to the development guild", async () => {
+      const rest = createRest({ '/applications/app/guilds/staff/commands': [{ name: 'ban' }] })
+      const { logger, run } = register({ rest, development: true, config: { developmentGuild: 'dev' }, controllerClasses: [controllerWith([{ name: 'ban', guilds: ['staff'] }])] })
+      await run
+
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('still registered to guild staff (ban)'))
+    })
+
     it('checks no scope when the configuration names no guild', async () => {
       const rest = createRest()
       await register({ rest, config: {}, controllerClasses: [controllerWith([{ name: 'ping', guilds: ['staff'] }])] }).run
