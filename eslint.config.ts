@@ -134,12 +134,31 @@ const specConfig = {
   },
 }
 
+// The shipped code runs on whichever runtime the application picks, so it uses no Bun-only API;
+// Bun remains the repository's own tooling, in scripts/ and package.json.
+const BUN_ONLY = 'MeoCord runs on Node.js as well as Bun; use a Node API instead.'
+const nodeCompatibleConfig = {
+  files: ['src/**/*.ts'],
+  rules: {
+    'no-restricted-globals': ['error', { name: 'Bun', message: BUN_ONLY }],
+    'no-restricted-imports': ['error', { patterns: [{ group: ['bun', 'bun:*'], message: BUN_ONLY }] }],
+    'no-restricted-syntax': [
+      'error',
+      {
+        selector: "MemberExpression[object.type='MetaProperty'][property.name=/^(dir|file|path|main)$/]",
+        message: `${BUN_ONLY} (import.meta.dirname and import.meta.filename work on both.)`,
+      },
+    ],
+  },
+}
+
 export default [
   { ignores: ['dist/*', '.generated-check/*', 'rollup.config.js'] },
   ...recommendedTypeScriptConfigs,
   eslintConfigPrettier,
   typescriptConfig,
   specConfig,
+  nodeCompatibleConfig,
   javaScriptConfig,
   webpackConfig,
 ]
