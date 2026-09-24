@@ -304,8 +304,8 @@ Three type errors that MeoCord 3 users hit are fixed. If you worked around them 
 
 ## Upgrading from 4.0 to 4.1
 
-4.1 is a minor release: a 4.0 bot and its tests keep working without edits, except for the one fix
-below, which changes which guards run.
+4.1 is a minor release: a 4.0 bot and its tests keep working without edits, except for the two fixes
+below, which change which guards run.
 
 ### Class guards now cover inherited handlers
 
@@ -323,6 +323,25 @@ In 4.1, `ModerationController`'s handlers, when reached through `AdminController
 first, then `ModerationController`'s own guards. If a bot relied on inherited handlers skipping the
 subclass's guards, move those handlers out of the subclass, or give the subclass a guard that allows
 them. The base controller itself is unaffected.
+
+### Class guards now cover autocomplete handlers
+
+A class-level `@UseGuard` now also guards the controller's `@Autocomplete` handlers. In 4.0 it guarded
+commands, components, message and reaction handlers, and autocomplete handlers ran without it.
+
+A guard there receives an `AutocompleteInteraction`: it has no `reply()`, and an autocomplete request
+must be answered within three seconds. A guard that denies returns `false`, and MeoCord closes the menu
+with an empty list. Check a class guard that reads command-only data, such as a chat input option it
+requires, or that replies on denial:
+
+```typescript
+canActivate(interaction: BaseInteraction): boolean {
+  if (interaction.isAutocomplete()) return true // or decide from interaction.user, without replying
+  // ...
+}
+```
+
+With `ExecutionContext` injected, `this.context.getType() === 'autocomplete'` tells the same.
 
 ---
 
