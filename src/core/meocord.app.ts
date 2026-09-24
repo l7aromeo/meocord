@@ -32,7 +32,7 @@ import {
 } from '@src/util/interaction.util.js'
 import { CommandType } from '@src/enum/index.js'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
-import { type ReactionHandlerOptions } from '@src/interface/index.js'
+import { type OnReady, type OnShutdown, type ReactionHandlerOptions } from '@src/interface/index.js'
 import { type AutocompleteMetadata, type CommandMetadata } from '@src/interface/command-decorator.interface.js'
 import Table from 'cli-table3'
 import {
@@ -100,10 +100,41 @@ function registrationKey(builder: NonNullable<CommandMetadata['builder']>, fallb
   return `${commandTypeOf(builder)}:${commandNameOf(builder) ?? fallbackName}`
 }
 
+/** How long shutdown waits for the `onShutdown` hooks before destroying the client anyway. */
+export const SHUTDOWN_HOOK_TIMEOUT_MS = 10_000
+
+/** Closes each started app: runs its shutdown hooks and destroys its client, resolving `false` on failure. */
+const runningApps = new Set<() => Promise<boolean>>()
+let shuttingDown = false
+let signalHandlersInstalled = false
+
+/**
+ * Shuts every started app down and exits: `onShutdown` hooks under {@link SHUTDOWN_HOOK_TIMEOUT_MS},
+ * then `destroy()`, then exit 0, or 1 if a client failed to close. SIGINT and SIGTERM call it, and so
+ * does a shard its manager tells to stop; a second call while one is running forces exit 1.
+ */
+export async function shutdownAndExit(): Promise<void> {
+  if (shuttingDown) {
+    process.exit(1)
+    return
+  }
+  shuttingDown = true
+
+  const closed = await Promise.all([...runningApps].map(close => close()))
+  process.exit(closed.every(Boolean) ? 0 : 1)
+}
+
+/** One pair of signal listeners for the process, however many apps it starts. */
+function installSignalHandlers(): void {
+  if (signalHandlersInstalled) return
+  signalHandlersInstalled = true
+  process.on('SIGINT', () => void shutdownAndExit())
+  process.on('SIGTERM', () => void shutdownAndExit())
+}
+
 export class MeoCordApp {
   private readonly logger = new Logger(MeoCordApp.name)
   private readonly bot: Client
-  private isShuttingDown = false
   private activityInterval: ReturnType<typeof setInterval> | null = null
   private controllerInstancesCache = new Map<any, any>()
 
@@ -113,11 +144,15 @@ export class MeoCordApp {
     private readonly discordClient: Client,
     private discordToken: string,
     private activities?: ActivityOptions[],
+    private readonly lifecycleClasses: (new (...args: any[]) => any)[] = [],
   ) {
     this.bot = this.discordClient
-    process.on('SIGINT', () => this.gracefulShutdown())
-    process.on('SIGTERM', () => this.gracefulShutdown())
   }
+
+  /** The resolved instances whose hooks ran at ready, so shutdown calls the same ones; `undefined` before ready. */
+  private lifecycleInstances?: Partial<OnReady & OnShutdown>[]
+
+  private readonly close = () => this.closeClient()
 
   /**
    * Runs an event handler so its failure is logged against the event instead of surfacing as an
@@ -175,10 +210,16 @@ export class MeoCordApp {
   async start() {
     this.logger.log('Starting bot...')
 
-    this.bot.on('clientReady', () =>
+    installSignalHandlers()
+    runningApps.add(this.close)
+
+    this.bot.on('clientReady', readyClient =>
       this.runListener('clientReady', async () => {
         this.activityInterval = setInterval(() => this.updateActivity(), 10000)
+        // Started before registration and not waited on by it, so a slow or failed registration never holds them up
+        const readyHooks = this.runReadyHooks((readyClient ?? this.bot) as Client<true>)
         await this.registerCommands()
+        await readyHooks
       }),
     )
 
@@ -203,6 +244,7 @@ export class MeoCordApp {
     try {
       await this.bot.login(this.discordToken)
     } catch (error) {
+      runningApps.delete(this.close)
       if (process.exitCode === undefined || process.exitCode === 0) {
         process.exitCode = 1
         MeoCordApp.failedLoginSetExitCode = true
@@ -615,24 +657,77 @@ export class MeoCordApp {
     }
   }
 
-  private async gracefulShutdown() {
-    if (this.isShuttingDown) {
-      process.exit(1)
-    }
-
-    if (this.bot) {
+  /** Resolves every bound controller and service and runs the `onReady` hooks they have, each isolated. */
+  private async runReadyHooks(client: Client<true>): Promise<void> {
+    const instances: Partial<OnReady & OnShutdown>[] = []
+    for (const lifecycleClass of this.lifecycleClasses) {
       try {
-        this.isShuttingDown = true
-        this.logger.log('Shutting down bot...')
-        if (this.activityInterval) clearInterval(this.activityInterval)
-        this.bot.removeAllListeners()
-        await this.bot.destroy()
-        this.logger.log('Bot has shut down')
-        process.exit(0)
+        instances.push(this.container.get(lifecycleClass))
       } catch (error) {
-        this.logger.error('Error during shutdown:', error)
-        process.exit(1)
+        this.logger.error(`Could not resolve ${lifecycleClass.name} to run its lifecycle hooks:`, error)
       }
+    }
+    this.lifecycleInstances = instances
+
+    await Promise.all(
+      instances.map(async instance => {
+        if (typeof instance.onReady !== 'function') return
+        try {
+          await instance.onReady(client, { primary: true })
+        } catch (error) {
+          this.logger.error(`onReady failed in ${instance.constructor.name}:`, error)
+        }
+      }),
+    )
+  }
+
+  /** Runs the `onShutdown` hooks in parallel, each isolated, and stops waiting after {@link SHUTDOWN_HOOK_TIMEOUT_MS}. */
+  private async runShutdownHooks(instances: Partial<OnReady & OnShutdown>[]): Promise<void> {
+    const hooks = Promise.all(
+      instances.map(async instance => {
+        if (typeof instance.onShutdown !== 'function') return
+        try {
+          await instance.onShutdown()
+        } catch (error) {
+          this.logger.error(`onShutdown failed in ${instance.constructor.name}:`, error)
+        }
+      }),
+    )
+
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timedOut = new Promise<'timeout'>(resolve => {
+      timer = setTimeout(() => resolve('timeout'), SHUTDOWN_HOOK_TIMEOUT_MS)
+    })
+    try {
+      if ((await Promise.race([hooks, timedOut])) === 'timeout') {
+        this.logger.warn(`onShutdown hooks did not finish within ${SHUTDOWN_HOOK_TIMEOUT_MS} ms; shutting down anyway.`)
+      }
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  /**
+   * Runs the shutdown hooks, if the ready hooks ran, then destroys the client.
+   *
+   * @returns Whether the client was destroyed cleanly.
+   */
+  private async closeClient(): Promise<boolean> {
+    runningApps.delete(this.close)
+    this.logger.log('Shutting down bot...')
+    if (this.activityInterval) clearInterval(this.activityInterval)
+
+    // A login that failed never ran onReady, so there is nothing for onShutdown to undo
+    if (this.lifecycleInstances) await this.runShutdownHooks(this.lifecycleInstances)
+
+    try {
+      this.bot.removeAllListeners()
+      await this.bot.destroy()
+      this.logger.log('Bot has shut down')
+      return true
+    } catch (error) {
+      this.logger.error('Error during shutdown:', error)
+      return false
     }
   }
 }

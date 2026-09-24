@@ -12,20 +12,22 @@ import { appStages, bindGlobalStages } from '@src/core/handler-pipeline.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 
 /**
- * Recursively binds a class and all its constructor dependencies to the container in singleton scope.
+ * Recursively binds a class and all its constructor dependencies to the container in singleton scope,
+ * collecting each class it binds into `bound`.
  */
-function bindDependencies(container: Container, cls: any): void {
+function bindDependencies(container: Container, cls: any, bound: any[]): void {
   if (container.isBound(cls)) return
   if (injectedTokens(cls).includes(ExecutionContext)) throw singletonContextError(cls)
 
   makeInjectable(cls)
 
   container.bind(cls).toSelf().inSingletonScope()
+  bound.push(cls)
 
   const deps: any[] = Reflect.getMetadata(MetadataKey.ParamTypes, cls) || []
   for (const dep of deps) {
     if (dep === Client) continue
-    bindDependencies(container, dep)
+    bindDependencies(container, dep, bound)
   }
 }
 
@@ -60,16 +62,19 @@ export class MeoCordFactory {
     const discordClient = new Client(options.clientOptions)
     container.bind(Client).toConstantValue(discordClient)
 
+    // Every singleton the app binds, which is where lifecycle hooks are looked for
+    const boundClasses: any[] = []
+
     // Bind all controllers and their transitive dependencies
     for (const ctrl of options.controllers as any[]) {
-      bindDependencies(container, ctrl)
+      bindDependencies(container, ctrl, boundClasses)
     }
 
     // Bind and eagerly instantiate standalone services so their constructors run.
     // This is critical for event-driven services that register Discord event
     // listeners (or connect to external systems) inside their constructor.
     for (const svc of (options.services ?? []) as any[]) {
-      bindDependencies(container, svc)
+      bindDependencies(container, svc, boundClasses)
       container.get(svc)
     }
 
@@ -78,6 +83,13 @@ export class MeoCordFactory {
       Reflect.defineMetadata(MetadataKey.Container, container, ctrl)
     }
 
-    return new MeoCordApp(options.controllers, container, discordClient, meocordConfig.discordToken, options.activities)
+    return new MeoCordApp(
+      options.controllers,
+      container,
+      discordClient,
+      meocordConfig.discordToken,
+      options.activities,
+      boundClasses,
+    )
   }
 }
