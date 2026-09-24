@@ -77,7 +77,7 @@ const specConfig = {
 }
 
 module.exports = [
-  { ignores: ['docs/*', 'build/*', 'lib/*', 'dist/*', 'vitest.config.ts'] },
+  { ignores: ['docs/*', 'build/*', 'lib/*', 'dist/*', 'coverage/*', 'vitest.config.ts'] },
   ...recommendedTypeScriptConfigs,
   specConfig,
   eslintConfigPrettier,

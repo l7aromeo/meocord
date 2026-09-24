@@ -193,6 +193,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      # The generated application's tools run through their node shebangs, and the CLI
+      # needs the Node its engines field names, not whichever one the image carries.
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
@@ -202,10 +209,10 @@ jobs:
       - name: Build package
         run: bun run build
 
-      # Runs against dist rather than src, so it covers the package exports map and
-      # the template copy as well as the templates themselves. Rendering a template
-      # says nothing about whether the code it produces compiles.
-      - name: Verify generated applications build
+      # Installs an application from the packed build and runs its own lint, typecheck,
+      # tests, coverage and builds. Rendering a template says nothing about whether the
+      # code it produces passes any of them.
+      - name: Verify generated applications
         run: bun run verify:generated
 
   release:
@@ -256,10 +263,10 @@ jobs:
       - name: Build package
         run: bun run build
 
-      # Runs against dist rather than src, so it covers the package exports map and
-      # the template copy as well as the templates themselves. Rendering a template
-      # says nothing about whether the code it produces compiles.
-      - name: Verify generated applications build
+      # Installs an application from the packed build and runs its own lint, typecheck,
+      # tests, coverage and builds. Rendering a template says nothing about whether the
+      # code it produces passes any of them.
+      - name: Verify generated applications
         run: bun run verify:generated
 
       # With pending changesets, this opens or updates the release pull request and

@@ -153,7 +153,7 @@ const nodeCompatibleConfig = {
 }
 
 export default [
-  { ignores: ['dist/*', '.generated-check/*', 'rollup.config.js'] },
+  { ignores: ['dist/*', 'rollup.config.js'] },
   ...recommendedTypeScriptConfigs,
   eslintConfigPrettier,
   typescriptConfig,

@@ -33,7 +33,7 @@ bun run test
 | `bun run test:coverage`    | Runs the suite with istanbul coverage and enforces the thresholds          |
 | `bun run lint`             | Formats, fixes lint, then typechecks the source, test, and eslint projects |
 | `bun run build`            | Clears `dist/` and builds ESM, CJS, and type declarations through rollup   |
-| `bun run verify:generated` | Generates an app from the built CLI and typechecks it — see below          |
+| `bun run verify:generated` | Generates an app from the packed build and runs its own checks — see below |
 | `bun run changeset`        | Records a release note for your change — see below                         |
 | `bun run notices`          | Regenerates THIRD_PARTY_NOTICES.md after a dependency is added or removed  |
 
@@ -70,11 +70,13 @@ maintainer's approval: a pull request that edits it fails CI until the maintaine
 
 Two classes of bug in this codebase slip past the obvious check, and two jobs exist because of them.
 
-**`verify:generated`** generates one controller of every type through the built CLI — flat and nested,
-in separate throwaway projects — and typechecks the result against the packaged framework. It runs
-against `dist` rather than `src`, so it covers the package `exports` map and the template copy as well
-as the templates themselves. Asserting on the text a template renders says nothing about whether that
-text compiles; two shipped bugs hid in exactly that gap.
+**`verify:generated`** packs `dist` as npm would publish it, generates an application with every
+component in it, installs it from the tarball, and runs the application's own checks: ESLint without
+`--fix`, both tsconfigs, `test`, `test:coverage`, `build --dev` and `build --prod`. It also generates one
+controller of every type flat and nested, in separate projects, and typechecks each. The application
+lives in the system temp directory, so it cannot resolve anything from the repository's `node_modules`,
+and it needs network access for the install. Asserting on the text a template renders says nothing about
+whether that text lints, compiles, tests or builds; shipped bugs have hidden in each of those gaps.
 
 **The Windows job** installs the packed tarball globally and drives the CLI through the `.cmd` shim npm
 writes from the interpreter line. Nothing on a POSIX runner exercises that path, and generation is what
