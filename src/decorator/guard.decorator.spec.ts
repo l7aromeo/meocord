@@ -2,7 +2,10 @@ import { Guard, UseGuard } from '@src/decorator/guard.decorator.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { Container } from 'inversify'
 import { type GuardInterface } from '@src/interface/index.js'
-import { BaseInteraction, Message } from 'discord.js'
+import { BaseInteraction, ChatInputCommandInteraction, Message } from 'discord.js'
+import { Command } from '@src/decorator/controller.decorator.js'
+import { CommandType } from '@src/enum/index.js'
+import { createMockInteraction } from '@src/testing/index.js'
 
 function makeFakeInteraction(): BaseInteraction {
   return Object.create(BaseInteraction.prototype) as BaseInteraction
@@ -176,5 +179,61 @@ describe('@UseGuard (method decorator)', () => {
     await ctrl.handle(makeFakeInteraction())
     expect(order).toEqual(['first'])
     expect(order).not.toContain('second')
+  })
+})
+
+describe('@UseGuard metadata', () => {
+  const order: string[] = []
+
+  @Guard()
+  class ClassGuard implements GuardInterface {
+    canActivate() {
+      order.push('class')
+      return true
+    }
+  }
+
+  @Guard()
+  class OuterGuard implements GuardInterface {
+    canActivate() {
+      order.push('outer')
+      return true
+    }
+  }
+
+  @Guard()
+  class InnerGuard implements GuardInterface {
+    canActivate() {
+      order.push('inner')
+      return true
+    }
+  }
+
+  @UseGuard(ClassGuard)
+  class TestController {
+    @Command('ping', CommandType.SLASH)
+    @UseGuard(OuterGuard)
+    @UseGuard(InnerGuard)
+    async ping(_ctx: any) {}
+  }
+
+  it('stores class guards before method guards, in the order they run', async () => {
+    attachContainer(TestController, ClassGuard, OuterGuard, InnerGuard)
+    await new TestController().ping(createMockInteraction(ChatInputCommandInteraction))
+
+    expect(order).toEqual(['class', 'outer', 'inner'])
+    expect(Reflect.getMetadata(MetadataKey.Guards, TestController.prototype, 'ping')).toEqual([
+      ClassGuard,
+      OuterGuard,
+      InnerGuard,
+    ])
+  })
+
+  it('keeps the class and method lists out of the public enum', () => {
+    const keys = Reflect.getOwnMetadataKeys(TestController.prototype, 'ping')
+    expect(keys.filter(key => typeof key === 'string')).toEqual(expect.arrayContaining([MetadataKey.Guards]))
+    expect(keys.filter(key => typeof key === 'symbol').map(key => key.description)).toEqual(
+      expect.arrayContaining(['class_guards', 'method_guards']),
+    )
   })
 })

@@ -25,6 +25,23 @@ const REACTION_HANDLER_METADATA_KEY = Symbol('reaction_handlers')
 const AUTOCOMPLETE_METADATA_KEY = Symbol('autocomplete_handlers')
 
 /**
+ * The class's own handler list, started from a copy of the inherited one, so a subclass's
+ * handlers never land in its base class's metadata.
+ */
+function ownHandlerList<T>(key: symbol, target: object): T[] {
+  return Reflect.getOwnMetadata(key, target) ?? [...(Reflect.getMetadata(key, target) ?? [])]
+}
+
+/** The class's own command map, started from a copy of the inherited one, for the same reason. */
+function ownCommandMap(target: object): Record<string, CommandMetadata[]> {
+  const own: Record<string, CommandMetadata[]> | undefined = Reflect.getOwnMetadata(COMMAND_METADATA_KEY, target)
+  if (own) return own
+
+  const inherited: Record<string, CommandMetadata[]> = Reflect.getMetadata(COMMAND_METADATA_KEY, target) ?? {}
+  return Object.fromEntries(Object.entries(inherited).map(([name, metas]) => [name, [...metas]]))
+}
+
+/**
  * Decorator to register message handlers in the controller.
  *
  * @param keyword - An optional keyword to filter messages this handler should respond to.
@@ -46,7 +63,7 @@ export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boole
   keyword?: string,
 ) {
   return function (target: object, propertyKey: string, _descriptor: TypedPropertyDescriptor<(message: T) => R>) {
-    const handlers = Reflect.getMetadata(MESSAGE_HANDLER_METADATA_KEY, target) || []
+    const handlers = ownHandlerList(MESSAGE_HANDLER_METADATA_KEY, target)
     handlers.push({ keyword, method: propertyKey.toString() })
     Reflect.defineMetadata(MESSAGE_HANDLER_METADATA_KEY, handlers, target)
   }
@@ -80,7 +97,7 @@ export function ReactionHandler<T extends MessageReaction | PartialMessageReacti
       | TypedPropertyDescriptor<(reaction: T, options: ReactionHandlerOptions) => R>
       | TypedPropertyDescriptor<(reaction: T) => R>,
   ) {
-    const handlers = Reflect.getMetadata(REACTION_HANDLER_METADATA_KEY, target) || []
+    const handlers = ownHandlerList(REACTION_HANDLER_METADATA_KEY, target)
     handlers.push({ emoji, method: propertyKey.toString() })
     Reflect.defineMetadata(REACTION_HANDLER_METADATA_KEY, handlers, target)
   }
@@ -224,8 +241,8 @@ export function Command<CBC extends BuildableCommandType, T extends CommandBuild
       return originalMethod.apply(this, [interaction, params])
     }
 
-    // Retrieve existing metadata or initialize it
-    const commands: Record<string, CommandMetadata[]> = Reflect.getMetadata(COMMAND_METADATA_KEY, target) || {}
+    // This class's own map, inherited routes included
+    const commands = ownCommandMap(target)
 
     let builderInstance: CommandMetadata['builder']
     let commandType: CommandType
@@ -306,7 +323,7 @@ export function Autocomplete<R extends void | Promise<void>>(commandPath: string
       | TypedPropertyDescriptor<(interaction: AutocompleteInteraction, params: P) => R>
       | TypedPropertyDescriptor<(interaction: AutocompleteInteraction) => R>,
   ) {
-    const handlers: AutocompleteMetadata[] = Reflect.getMetadata(AUTOCOMPLETE_METADATA_KEY, target) || []
+    const handlers = ownHandlerList<AutocompleteMetadata>(AUTOCOMPLETE_METADATA_KEY, target)
     handlers.push({ commandPath, optionName, methodName: propertyKey.toString() })
     Reflect.defineMetadata(AUTOCOMPLETE_METADATA_KEY, handlers, target)
   }

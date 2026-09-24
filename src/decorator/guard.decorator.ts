@@ -5,6 +5,27 @@ import { type GuardInterface } from '@src/interface/index.js'
 import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator/controller.decorator.js'
 import { MetadataKey } from '@src/enum/index.js'
 
+/** The guards a class-level `@UseGuard` applies to one method, in the order they run. */
+const CLASS_GUARDS = Symbol('class_guards')
+
+/** The guards method-level `@UseGuard` applies to one method, in the order they run. */
+const METHOD_GUARDS = Symbol('method_guards')
+
+type GuardEntry = (new (...args: any[]) => GuardInterface) | GuardWithParams
+
+/**
+ * Adds guards to a method's class or method list, then republishes the effective list under
+ * `MetadataKey.Guards`. The latest decorator wraps outermost, so its guards run first.
+ */
+function recordGuards(key: symbol, guards: GuardEntry[], prototype: object, methodName: string): void {
+  const existing: GuardEntry[] = Reflect.getOwnMetadata(key, prototype, methodName) ?? []
+  Reflect.defineMetadata(key, [...guards, ...existing], prototype, methodName)
+
+  const classGuards: GuardEntry[] = Reflect.getOwnMetadata(CLASS_GUARDS, prototype, methodName) ?? []
+  const methodGuards: GuardEntry[] = Reflect.getOwnMetadata(METHOD_GUARDS, prototype, methodName) ?? []
+  Reflect.defineMetadata(MetadataKey.Guards, [...classGuards, ...methodGuards], prototype, methodName)
+}
+
 function isValidContext(context: unknown): context is BaseInteraction | Message | MessageReaction {
   return context instanceof BaseInteraction || context instanceof Message || context instanceof MessageReaction
 }
@@ -110,7 +131,7 @@ export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | 
     if (descriptor && propertyKey) {
       // Method Decorator
       applyGuards(descriptor, guards as any, String(propertyKey))
-      Reflect.defineMetadata(MetadataKey.Guards, guards, target, propertyKey)
+      recordGuards(METHOD_GUARDS, guards, target, String(propertyKey))
     } else if (typeof target === 'function' && !propertyKey && !descriptor) {
       // Class Decorator
       const prototype = target.prototype
@@ -133,7 +154,7 @@ export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | 
         if (methodDescriptor) {
           applyGuards(methodDescriptor, guards as any, methodName)
           Object.defineProperty(prototype, methodName, methodDescriptor)
-          Reflect.defineMetadata(MetadataKey.Guards, guards, prototype, methodName)
+          recordGuards(CLASS_GUARDS, guards, prototype, methodName)
         }
       }
     }
