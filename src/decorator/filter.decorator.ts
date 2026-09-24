@@ -2,6 +2,7 @@ import 'reflect-metadata'
 import { type ExceptionFilter } from '@src/interface/index.js'
 import { CATCH_TYPES, CLASS_FILTERS, type FilterEntry, METHOD_FILTERS } from '@src/core/filter-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
+import { assertStageEntries } from '@src/core/stage-scope.js'
 
 /**
  * Marks a class as an exception filter that handles the given error types, matched with
@@ -41,8 +42,8 @@ export function Catch(...errorTypes: (abstract new (...args: any[]) => unknown)[
  * dispatched handlers and under `invoke`; a controller method called directly throws as it would
  * without them.
  *
- * @param filters - Filter classes, or `{ provide, params }` to hand `params` to the filter through
- *   `context.getParams()`.
+ * @param filters - Filter classes, or `{ provide, params? }` to hand `params` to the filter through
+ *   `context.getParams()`. Any other entry is refused when the decorator applies.
  *
  * @example
  * ```typescript
@@ -58,10 +59,12 @@ export function Catch(...errorTypes: (abstract new (...args: any[]) => unknown)[
 export function UseFilter(
   ...filters: (
     | (new (...args: any[]) => ExceptionFilter<any>)
-    | { provide: new (...args: any[]) => ExceptionFilter<any>; params: Record<string, any> }
+    | { provide: new (...args: any[]) => ExceptionFilter<any>; params?: Record<string, any> }
   )[]
 ): ClassDecorator & MethodDecorator {
   return function (target: object, propertyKey?: string | symbol) {
+    const where = propertyKey === undefined ? (target as { name: string }).name : `${target.constructor.name}.${String(propertyKey)}`
+    assertStageEntries('@UseFilter', 'filter', where, filters)
     // Decorators apply bottom-up, so a higher decorator's filters are tried first.
     if (propertyKey === undefined) {
       const existing: FilterEntry[] = Reflect.getOwnMetadata(CLASS_FILTERS, target) ?? []

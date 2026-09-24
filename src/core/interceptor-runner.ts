@@ -11,13 +11,14 @@ export type InterceptorClass = new (...args: any[]) => InterceptorInterface
 /** An interceptor class, and the params its `ExecutionContext.getParams()` returns. */
 export interface InterceptorWithParams {
   provide: InterceptorClass
-  params: Record<string, any>
+  params?: Record<string, any>
 }
 
 export type InterceptorEntry = InterceptorClass | InterceptorWithParams
 
 function isInterceptorWithParams(entry: unknown): entry is InterceptorWithParams {
-  return typeof entry === 'object' && entry !== null && 'provide' in entry && 'params' in entry
+  // Entries are checked when @UseInterceptor or @MeoCord applies, so an object here is always { provide, params? }
+  return typeof entry === 'object'
 }
 
 /** Private metadata: the interceptors a class-level `@UseInterceptor` applies, on the class. */

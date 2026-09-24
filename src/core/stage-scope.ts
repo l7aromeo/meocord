@@ -4,7 +4,7 @@ import { type ExecutionContextType } from '@src/common/execution-context.js'
 /** The context types a guard or interceptor class declared it runs for, with `@Guard({ types })`. */
 const STAGE_TYPES = Symbol('stage_types')
 
-/** A stage entry as the pipeline lists it: a class, or `{ provide, params }`. */
+/** A stage entry as the pipeline lists it: a class, or `{ provide, params? }`. */
 type StageEntry = (new (...args: any[]) => unknown) | { provide: new (...args: any[]) => unknown }
 
 /**
@@ -31,6 +31,43 @@ export function defineStageTypes(
     )
   }
   Reflect.defineMetadata(STAGE_TYPES, [...types], cls)
+}
+
+/** Why an entry is not a class or `{ provide: Class, params? }`, or undefined when it is one. */
+function malformation(entry: unknown): string | undefined {
+  if (typeof entry === 'function') return undefined
+  if (typeof entry !== 'object' || entry === null) return `${entry === null ? 'null' : typeof entry} is not a class`
+  const { provide, params } = entry as { provide?: unknown; params?: unknown }
+  if (typeof provide !== 'function') return '{ provide } does not name a class'
+  if (params !== undefined && (typeof params !== 'object' || params === null || Array.isArray(params))) {
+    return `the params of ${provide.name || 'an entry'} are not an object`
+  }
+  return undefined
+}
+
+/**
+ * Refuses a stage entry that is neither a class nor `{ provide: Class, params? }` when the decorator
+ * applies, rather than when a call first resolves it.
+ *
+ * @param decorator - What was given the entries, such as `@UseGuard` or `@MeoCord({ guards })`.
+ * @param kind - What each entry must be: `'guard'`, `'interceptor'`, `'filter'` or `'pipe'`.
+ * @param where - The class, or `Class.method`, the decorator applies to.
+ */
+export function assertStageEntries(
+  decorator: string,
+  kind: 'guard' | 'interceptor' | 'filter' | 'pipe',
+  where: string,
+  entries: readonly unknown[],
+): void {
+  for (const entry of entries) {
+    const reason = malformation(entry)
+    if (!reason) continue
+    const Kind = `${kind[0].toUpperCase()}${kind.slice(1)}`
+    throw new Error(
+      `${decorator} on ${where}: ${reason}. Give ${kind === 'interceptor' ? 'an' : 'a'} ${kind} class, or ` +
+        `{ provide: ${Kind}Class, params? } with params an object.`,
+    )
+  }
 }
 
 /** The class of a stage entry. */

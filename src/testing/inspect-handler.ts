@@ -9,17 +9,17 @@ import { type CooldownScope } from '@src/common/errors.js'
 /** A guard as `@UseGuard` declares it: the class, or the class with the params set on its instance. */
 export type InspectedGuard =
   | (new (...args: any[]) => GuardInterface)
-  | { provide: new (...args: any[]) => GuardInterface; params: Record<string, any> }
+  | { provide: new (...args: any[]) => GuardInterface; params?: Record<string, any> }
 
 /** An interceptor as `@UseInterceptor` declares it: the class, or the class with its params. */
 export type InspectedInterceptor =
   | (new (...args: any[]) => InterceptorInterface)
-  | { provide: new (...args: any[]) => InterceptorInterface; params: Record<string, any> }
+  | { provide: new (...args: any[]) => InterceptorInterface; params?: Record<string, any> }
 
 /** A filter as `@UseFilter` declares it: the class, or the class with its params. */
 export type InspectedFilter =
   | (new (...args: any[]) => ExceptionFilter<any>)
-  | { provide: new (...args: any[]) => ExceptionFilter<any>; params: Record<string, any> }
+  | { provide: new (...args: any[]) => ExceptionFilter<any>; params?: Record<string, any> }
 
 /** What runs for one handler, and the metadata declared on it, as {@link inspectHandler} reports it. */
 export interface HandlerInspection {

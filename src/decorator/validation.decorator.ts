@@ -3,6 +3,7 @@ import { type PipeInterface } from '@src/interface/index.js'
 import { type InferSchemaOutput, type PIPED_BRAND, type StandardSchemaV1 } from '@src/interface/standard-schema.interface.js'
 import { METHOD_PIPES, METHOD_VALIDATION, type PipeEntry, type ValidationMetadata } from '@src/core/input-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
+import { assertStageEntries } from '@src/core/stage-scope.js'
 
 type Handler = (interaction: any, params: any, ...rest: any[]) => unknown
 
@@ -13,7 +14,7 @@ type PipeClassOf<E> = E extends { provide: infer C } ? C : E
 type PipeOutput<E> = PipeClassOf<E> extends new (...args: any[]) => PipeInterface<any, infer O> ? Awaited<O> : never
 type LastPipeOutput<E> = E extends readonly [...unknown[], infer Last] ? PipeOutput<Last> : PipeOutput<E>
 
-type PipeEntryOf = (new (...args: any[]) => PipeInterface) | { provide: new (...args: any[]) => PipeInterface; params: Record<string, any> }
+type PipeEntryOf = (new (...args: any[]) => PipeInterface) | { provide: new (...args: any[]) => PipeInterface; params?: Record<string, any> }
 
 /** Pipes for some of a schema's output keys, each one pipe or several applied in order. */
 type SchemaPipes<S extends StandardSchemaV1> = { [K in keyof InferSchemaOutput<S>]?: PipeEntryOf | readonly PipeEntryOf[] }
@@ -78,6 +79,8 @@ export function Validate<S extends StandardSchemaV1, const Pipes extends SchemaP
         `${target.constructor.name}.${propertyKey} has more than one @Validate; one @Validate per handler: combine the schemas into one.`,
       )
     }
+    const inlinePipes = Object.values(options.pipes ?? {}).flatMap(entries => (Array.isArray(entries) ? entries : [entries]))
+    assertStageEntries('@Validate', 'pipe', `${target.constructor.name}.${propertyKey}`, inlinePipes)
     const metadata: ValidationMetadata = { schema, pipes: (options.pipes ?? {}) as ValidationMetadata['pipes'] }
     Reflect.defineMetadata(METHOD_VALIDATION, metadata, target, propertyKey)
   }
@@ -98,8 +101,8 @@ type AcceptsPiped<P, K extends string, Out> = K extends keyof P
  * With `@Validate`, mark the handler param `Piped<T>`, or give the pipe to `@Validate` itself.
  *
  * @param key - The input key: a command option, customId param or modal field name.
- * @param pipes - Pipe classes, or `{ provide, params }` to hand `params` to the pipe through
- *   `context.getParams()`.
+ * @param pipes - Pipe classes, or `{ provide, params? }` to hand `params` to the pipe through
+ *   `context.getParams()`. Any other entry is refused when the decorator applies.
  *
  * @example
  * ```ts
@@ -114,6 +117,7 @@ export function UsePipe<K extends string, const Pipes extends readonly [PipeEntr
     propertyKey: string,
     _descriptor: TypedPropertyDescriptor<M> & AcceptsPiped<ParamsOf<M>, K, LastPipeOutput<Pipes>>,
   ): void {
+    assertStageEntries('@UsePipe', 'pipe', `${target.constructor.name}.${propertyKey}`, pipes)
     // Decorators apply bottom-up, so a higher @UsePipe's pipes go first, in the order they read.
     const existing = (Reflect.getOwnMetadata(METHOD_PIPES, target, propertyKey) as { key: string; entry: PipeEntry }[]) ?? []
     Reflect.defineMetadata(METHOD_PIPES, [...pipes.map(entry => ({ key, entry: entry as PipeEntry })), ...existing], target, propertyKey)

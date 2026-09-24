@@ -2,7 +2,7 @@ import 'reflect-metadata'
 import { type InterceptorInterface } from '@src/interface/index.js'
 import { CLASS_INTERCEPTORS, type InterceptorEntry, METHOD_INTERCEPTORS } from '@src/core/interceptor-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
-import { defineStageTypes } from '@src/core/stage-scope.js'
+import { assertStageEntries, defineStageTypes } from '@src/core/stage-scope.js'
 import { type ExecutionContextType } from '@src/common/execution-context.js'
 
 /**
@@ -48,8 +48,8 @@ export function Interceptor(options: { types?: readonly ExecutionContextType[] }
  * controller method called directly runs its guards but no interceptors. Autocomplete handlers run
  * none.
  *
- * @param interceptors - Interceptor classes, or `{ provide, params }` to hand `params` to the
- *   interceptor through `context.getParams()`.
+ * @param interceptors - Interceptor classes, or `{ provide, params? }` to hand `params` to the
+ *   interceptor through `context.getParams()`. Any other entry is refused when the decorator applies.
  *
  * @example
  * ```typescript
@@ -65,10 +65,12 @@ export function Interceptor(options: { types?: readonly ExecutionContextType[] }
 export function UseInterceptor(
   ...interceptors: (
     | (new (...args: any[]) => InterceptorInterface)
-    | { provide: new (...args: any[]) => InterceptorInterface; params: Record<string, any> }
+    | { provide: new (...args: any[]) => InterceptorInterface; params?: Record<string, any> }
   )[]
 ): ClassDecorator & MethodDecorator {
   return function (target: object, propertyKey?: string | symbol) {
+    const where = propertyKey === undefined ? (target as { name: string }).name : `${target.constructor.name}.${String(propertyKey)}`
+    assertStageEntries('@UseInterceptor', 'interceptor', where, interceptors)
     // Decorators apply bottom-up, so a higher decorator's interceptors go first, as with @UseGuard.
     if (propertyKey === undefined) {
       const existing: InterceptorEntry[] = Reflect.getOwnMetadata(CLASS_INTERCEPTORS, target) ?? []

@@ -13,7 +13,7 @@ export type PipeClass = new (...args: any[]) => PipeInterface
 /** A pipe class, and the params its `ExecutionContext.getParams()` returns. */
 export interface PipeWithParams {
   provide: PipeClass
-  params: Record<string, any>
+  params?: Record<string, any>
 }
 
 export type PipeEntry = PipeClass | PipeWithParams
@@ -31,7 +31,8 @@ export const METHOD_VALIDATION = Symbol('method_validation')
 export const METHOD_PIPES = Symbol('method_pipes')
 
 function isPipeWithParams(entry: PipeEntry): entry is PipeWithParams {
-  return typeof entry === 'object' && entry !== null && 'provide' in entry
+  // Entries are checked when @UsePipe or @Validate applies, so an object here is always { provide, params? }
+  return typeof entry === 'object'
 }
 
 const asList = (entries: PipeEntry | readonly PipeEntry[]): readonly PipeEntry[] =>
