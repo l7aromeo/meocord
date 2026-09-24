@@ -297,4 +297,36 @@ describe('sharding', () => {
 
     expect(await shards!.call(Stats, 'count')).toEqual([{ shardIds: [0], ok: true, value: 42 }])
   })
+
+  it('calls the very class it is given in one process, even when another class shares its name', async () => {
+    const loaded = await load()
+    let shards: InstanceType<typeof loaded.ShardContext> | undefined
+    const { inject } = await import('inversify')
+
+    const first = (() => {
+      @loaded.Service()
+      class Stats {
+        constructor(@inject(loaded.ShardContext) context: InstanceType<typeof loaded.ShardContext>) {
+          shards = context
+        }
+        which() {
+          return 'first'
+        }
+      }
+      return Stats
+    })()
+    const second = (() => {
+      @loaded.Service()
+      class Stats {
+        which() {
+          return 'second'
+        }
+      }
+      return Stats
+    })()
+
+    await startApp(loaded, { services: [first, second] })
+
+    expect(await shards!.call(first, 'which')).toEqual([{ shardIds: [0], ok: true, value: 'first' }])
+  })
 })
