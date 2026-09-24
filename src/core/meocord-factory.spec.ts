@@ -23,6 +23,8 @@ vi.mock('@src/util/meocord-config-loader.util.js', () => ({
 const { MeoCordFactory } = await import('@src/core/meocord-factory.js')
 const { MeoCordApp } = await import('@src/core/meocord.app.js')
 const { MetadataKey } = await import('@src/enum/index.js')
+const { ExecutionContext } = await import('@src/common/execution-context.js')
+const { injectable } = await import('inversify')
 
 describe('MeoCordFactory.create()', () => {
   afterEach(() => {
@@ -51,5 +53,31 @@ describe('MeoCordFactory.create()', () => {
 
     const result = MeoCordFactory.create(MyApp)
     expect(result).toBeInstanceOf(MeoCordApp)
+  })
+
+  it('refuses a controller dependency that injects ExecutionContext, since it is shared across calls', () => {
+    mockLoadConfig.mockReturnValue({ discordToken: 'test-token' })
+
+    class ContextService {
+      constructor(readonly context: InstanceType<typeof ExecutionContext>) {}
+    }
+    Reflect.defineMetadata(MetadataKey.ParamTypes, [ExecutionContext], ContextService)
+    injectable()(ContextService)
+
+    class UsesService {
+      constructor(readonly service: ContextService) {}
+    }
+    Reflect.defineMetadata(MetadataKey.ParamTypes, [ContextService], UsesService)
+
+    class MyApp {}
+    Reflect.defineMetadata(
+      MetadataKey.AppOptions,
+      { controllers: [UsesService], clientOptions: { intents: [] } },
+      MyApp,
+    )
+
+    expect(() => MeoCordFactory.create(MyApp)).toThrow(
+      'ContextService is resolved once and shared, so it cannot inject ExecutionContext',
+    )
   })
 })

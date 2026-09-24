@@ -33,7 +33,7 @@ export class GuardGeneratorHelper {
     // Both files checked before either is written, so an existing guard is never replaced.
     assertFilesAbsent([guardFile, specFile])
 
-    const guardTemplate = buildTemplate(className, 'guard.template')
+    const guardTemplate = buildTemplate(className, 'guard.template', { kebabCaseName })
     const specTemplate = buildTemplate(className, 'guard.spec.template', { kebabCaseName })
 
     createDirectoryIfNotExists(guardDir)

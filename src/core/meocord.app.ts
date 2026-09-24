@@ -41,6 +41,7 @@ import {
   findComponentRouteConflicts,
   matchComponentRoute,
 } from '@src/core/component-routes.js'
+import { callGuardedHandler, handlerGuards, runGuards } from '@src/core/guard-runner.js'
 
 interface AutocompleteRoute {
   controllerClass: new (...args: any[]) => any
@@ -442,7 +443,7 @@ export class MeoCordApp {
         try {
           const controllerInstance = this.getInstance(controllerClass)
           this.logger.log('[AUTOCOMPLETE]', `[${path}]`, `[${meta.methodName}]`)
-          await controllerInstance[meta.methodName](interaction, resolveOptionParams(interaction))
+          await this.invokeHandler(controllerInstance, meta.methodName, [interaction, resolveOptionParams(interaction)])
         } catch (error) {
           this.logger.error(`Error handling ${describeInteraction(interaction)}:`, error)
           await this.respondEmpty(interaction)
@@ -495,11 +496,27 @@ export class MeoCordApp {
         dynamicParams = (interaction as Interaction & { dynamicParams?: Record<string, string> }).dynamicParams ?? {}
       }
 
-      await controllerInstance[methodName](interaction, dynamicParams)
+      await this.invokeHandler(controllerInstance, methodName, [interaction, dynamicParams])
     } catch (error) {
       this.logger.error(`Error executing command "${commandIdentifier}":`, error)
       await this.replyWithError(interaction, 'An error occurred while executing the command.')
     }
+  }
+
+  /**
+   * Runs a handler's guards, then the handler. The handler's own guard wrappers let this call
+   * through, so each guard runs once, and a direct call from inside the handler runs its guards.
+   */
+  private async invokeHandler(
+    instance: Record<string, (...args: unknown[]) => unknown>,
+    methodName: string,
+    args: unknown[],
+  ): Promise<void> {
+    const controller = instance.constructor as new (...args: any[]) => unknown
+    const guards = handlerGuards(Object.getPrototypeOf(instance), methodName)
+    if (!(await runGuards(guards, { container: this.container, controller, methodName, args }))) return
+
+    await callGuardedHandler(instance, methodName, args)
   }
 
   /**
@@ -545,7 +562,7 @@ export class MeoCordApp {
 
         if (!keyword || keyword === messageContent) {
           try {
-            await controllerInstance[method](message)
+            await this.invokeHandler(controllerInstance, method, [message])
           } catch (error) {
             this.logger.error(`Error handling message "${messageContent}" for method "${method}":`, error)
           }
@@ -590,7 +607,7 @@ export class MeoCordApp {
 
         if (!emoji || emoji === reaction.emoji.name) {
           try {
-            await controllerInstance[method](reaction, { user, action })
+            await this.invokeHandler(controllerInstance, method, [reaction, { user, action }])
           } catch (error) {
             this.logger.error(`Error handling reaction "${reaction.emoji.name}" for method "${method}":`, error)
           }

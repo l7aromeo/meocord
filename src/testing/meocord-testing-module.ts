@@ -1,6 +1,8 @@
 import 'reflect-metadata'
 import { Container, injectable, type ServiceIdentifier } from 'inversify'
 import { MetadataKey } from '@src/enum/index.js'
+import { ExecutionContext } from '@src/common/execution-context.js'
+import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import { type GuardInterface } from '@src/interface/index.js'
 
 export interface ValueProvider<T = any> {
@@ -94,6 +96,7 @@ export class TestingModuleBuilder {
         container.bind(provider.provide).toConstantValue(provider.useValue)
       } else {
         const cls = provider.useClass
+        if (injectedTokens(cls).includes(ExecutionContext)) throw singletonContextError(cls)
         if (!Reflect.hasMetadata(MetadataKey.Injectable, cls)) {
           injectable()(cls)
         }
@@ -109,6 +112,7 @@ export class TestingModuleBuilder {
     // Recursively bind controllers and their dependencies, skipping already-bound tokens
     const bindClass = (cls: new (...args: any[]) => any) => {
       if (container.isBound(cls)) return
+      if (injectedTokens(cls).includes(ExecutionContext)) throw singletonContextError(cls)
 
       if (!Reflect.hasMetadata(MetadataKey.Injectable, cls)) {
         injectable()(cls)

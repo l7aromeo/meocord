@@ -624,7 +624,7 @@ export class ProfileController { ... }
 
 ## Custom Decorators
 
-MeoCord exports `applyDecorators` and `SetMetadata` from `meocord/common` for composing reusable decorators.
+MeoCord exports `applyDecorators`, `createMetadata` and `SetMetadata` from `meocord/common` for composing reusable decorators.
 
 ### Composing guards into a reusable decorator
 
@@ -645,30 +645,45 @@ async profile(interaction: ChatInputCommandInteraction) { ... }
 
 ### Attaching metadata for guards to read
 
+`createMetadata` makes a typed decorator for handler metadata. Put it on a controller, a handler, or both; a guard reads it through `ExecutionContext`, which describes the handler being guarded. The handler's value wins over the controller's.
+
 ```typescript
+import { applyDecorators, createMetadata, ExecutionContext } from 'meocord/common'
+import { Guard, UseGuard } from 'meocord/decorator'
+import { type GuardInterface } from 'meocord/interface'
+
 // Define the metadata decorator
-import { SetMetadata } from 'meocord/common'
-export const Roles = (...roles: string[]) => SetMetadata('roles', roles)
+export const Roles = createMetadata<string[]>('roles')
 
 // Read it inside a guard
 @Guard()
 export class RolesGuard implements GuardInterface {
-  async canActivate(interaction: ChatInputCommandInteraction): Promise<boolean> {
-    const required: string[] = Reflect.getMetadata('roles', interaction.constructor) ?? []
+  constructor(private readonly context: ExecutionContext) {}
+
+  canActivate(interaction: ChatInputCommandInteraction): boolean {
+    const required = this.context.get(Roles) ?? []
     if (!required.length) return true
-    // ... validate member roles
-    return true
+    return interaction.inCachedGuild() && required.some(role => interaction.member.roles.cache.has(role))
   }
 }
 
 // Compose into a single decorator
-export const RequireRoles = (...roles: string[]) =>
-  applyDecorators(Roles(...roles), UseGuard(RolesGuard))
+export const RequireRoles = (...roles: string[]) => applyDecorators(Roles(roles), UseGuard(RolesGuard))
 
 // Apply
 @Command('ban', CommandType.SLASH)
 @RequireRoles('admin', 'moderator')
 async ban(interaction: ChatInputCommandInteraction) { ... }
+```
+
+Use params for configuring one guard (`{ provide, params }`, above), and `createMetadata` for facts about a handler that any guard can read. `ExecutionContext` is injected only into guards: each call gets its own, so a controller or service, which is shared across calls, cannot inject it. The context also gives the handler's arguments (`getArgs()`, `getInteraction()`, `getMessage()`, `getReaction()`), what it is handling (`getType()`), the controller and method (`getController()`, `getHandlerName()`), and the guard's own params (`getParams()`). Values declared with `SetMetadata` are read with their key: `this.context.get<string[]>('roles')`.
+
+In a unit test, build the context with `createExecutionContext` from `meocord/testing`:
+
+```typescript
+const interaction = createMockInteraction(ChatInputCommandInteraction)
+const guard = new RolesGuard(createExecutionContext(ModerationController, 'ban', { args: [interaction] }))
+expect(guard.canActivate(interaction)).toBe(false)
 ```
 
 ---

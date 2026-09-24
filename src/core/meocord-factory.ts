@@ -6,12 +6,15 @@ import { MeoCordApp } from '@src/core/meocord.app.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
 import { assertBuiltForThisPlatform } from '@src/util/platform.util.js'
 import { MetadataKey } from '@src/enum/index.js'
+import { ExecutionContext } from '@src/common/execution-context.js'
+import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 
 /**
  * Recursively binds a class and all its constructor dependencies to the container in singleton scope.
  */
 function bindDependencies(container: Container, cls: any): void {
   if (container.isBound(cls)) return
+  if (injectedTokens(cls).includes(ExecutionContext)) throw singletonContextError(cls)
 
   if (!Reflect.hasMetadata(MetadataKey.Injectable, cls)) {
     injectable()(cls)

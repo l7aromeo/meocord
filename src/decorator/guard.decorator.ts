@@ -4,14 +4,19 @@ import { BaseInteraction, Message, MessageReaction, type Interaction } from 'dis
 import { type GuardInterface } from '@src/interface/index.js'
 import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator/controller.decorator.js'
 import { MetadataKey } from '@src/enum/index.js'
+import {
+  consumeDispatchMark,
+  GUARD_WRAPPERS,
+  type GuardEntry,
+  type GuardWithParams,
+  runGuards,
+} from '@src/core/guard-runner.js'
 
 /** The guards a class-level `@UseGuard` applies to one method, in the order they run. */
 const CLASS_GUARDS = Symbol('class_guards')
 
 /** The guards method-level `@UseGuard` applies to one method, in the order they run. */
 const METHOD_GUARDS = Symbol('method_guards')
-
-type GuardEntry = (new (...args: any[]) => GuardInterface) | GuardWithParams
 
 /**
  * Adds guards to a method's class or method list, then republishes the effective list under
@@ -30,11 +35,11 @@ function isValidContext(context: unknown): context is BaseInteraction | Message 
   return context instanceof BaseInteraction || context instanceof Message || context instanceof MessageReaction
 }
 
-function applyGuards(
-  descriptor: PropertyDescriptor,
-  guards: ((new (...args: any[]) => GuardInterface) | GuardWithParams)[],
-  propertyKey: string,
-) {
+/**
+ * Wraps a method so a direct call runs `guards` first. A call from dispatch, which has already run
+ * the method's guards, passes through.
+ */
+function applyGuards(descriptor: PropertyDescriptor, guards: GuardEntry[], prototype: object, propertyKey: string) {
   const originalMethod = descriptor.value
 
   descriptor.value = async function (...args: [Interaction | Message | MessageReaction, ...any[]]) {
@@ -46,33 +51,18 @@ function applyGuards(
       )
     }
 
-    const container: Container = Reflect.getMetadata(MetadataKey.Container, this.constructor)
-
-    for (const guard of guards) {
-      let guardInstance: GuardInterface
-
-      if (isGuardWithParams(guard)) {
-        const { provide, params } = guard
-        guardInstance = container.get(provide, { autobind: true })
-        Object.assign(guardInstance, params)
-      } else {
-        guardInstance = container.get(guard, { autobind: true })
-      }
-
-      if (!guardInstance.canActivate) {
-        throw new Error(
-          `Guard ${guard.constructor.name} applied to ${String(propertyKey)} does not have a valid canActivate method.`,
-        )
-      }
-
-      const canActivate = await guardInstance.canActivate(...args)
-      if (!canActivate) {
-        return
-      }
+    if (!consumeDispatchMark(context, propertyKey)) {
+      const container: Container = Reflect.getMetadata(MetadataKey.Container, this.constructor)
+      const controller = this.constructor as new (...args: any[]) => unknown
+      const allowed = await runGuards(guards, { container, controller, methodName: propertyKey, args })
+      if (!allowed) return
     }
 
     return originalMethod.apply(this, args)
   }
+
+  const wrappers: number = Reflect.getOwnMetadata(GUARD_WRAPPERS, prototype, propertyKey) ?? 0
+  Reflect.defineMetadata(GUARD_WRAPPERS, wrappers + 1, prototype, propertyKey)
 }
 
 /**
@@ -96,20 +86,6 @@ export function Guard() {
   }
 }
 
-/** A guard class, and the properties set on its instance before `canActivate` runs. */
-interface GuardWithParams {
-  /** The guard class to resolve. */
-  provide: new (...args: any[]) => GuardInterface
-
-  /** Properties assigned to the guard instance. */
-  params: Record<string, any>
-}
-
-/** Whether a `@UseGuard` entry is a guard with params rather than a guard class. */
-function isGuardWithParams(guard: any): guard is GuardWithParams {
-  return typeof guard === 'object' && 'provide' in guard && 'params' in guard
-}
-
 /**
  * Runs guards before a method, or before every method of a class; the method runs only when every
  * guard's `canActivate` returns true.
@@ -130,7 +106,7 @@ export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | 
   return function (target: any, propertyKey?: string | symbol, descriptor?: PropertyDescriptor) {
     if (descriptor && propertyKey) {
       // Method Decorator
-      applyGuards(descriptor, guards as any, String(propertyKey))
+      applyGuards(descriptor, guards, target, String(propertyKey))
       recordGuards(METHOD_GUARDS, guards, target, String(propertyKey))
     } else if (typeof target === 'function' && !propertyKey && !descriptor) {
       // Class Decorator
@@ -152,7 +128,7 @@ export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | 
       for (const methodName of methods) {
         const methodDescriptor = Object.getOwnPropertyDescriptor(prototype, methodName)
         if (methodDescriptor) {
-          applyGuards(methodDescriptor, guards as any, methodName)
+          applyGuards(methodDescriptor, guards, prototype, methodName)
           Object.defineProperty(prototype, methodName, methodDescriptor)
           recordGuards(CLASS_GUARDS, guards, prototype, methodName)
         }
