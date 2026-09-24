@@ -2,16 +2,24 @@ import { vi } from 'vitest'
 import path from 'path'
 import { tmpdir } from 'os'
 
-const { mockExistsSync, mockReadFileSync, mockWriteFileSync } = vi.hoisted(() => ({
-  mockExistsSync: vi.fn(),
-  mockReadFileSync: vi.fn(),
-  mockWriteFileSync: vi.fn(),
-}))
+const { mockExistsSync, mockReadFileSync, mockWriteFileSync, mockMkdtempSync, mockRmSync } = vi.hoisted(() => {
+  let made = 0
+  return {
+    mockExistsSync: vi.fn(),
+    mockReadFileSync: vi.fn(),
+    mockWriteFileSync: vi.fn(),
+    // A fresh directory per call, as the real one makes
+    mockMkdtempSync: vi.fn((prefix: string) => `${prefix}${++made}`),
+    mockRmSync: vi.fn(),
+  }
+})
 
 vi.mock('fs', () => ({
   existsSync: mockExistsSync,
   readFileSync: mockReadFileSync,
   writeFileSync: mockWriteFileSync,
+  mkdtempSync: mockMkdtempSync,
+  rmSync: mockRmSync,
 }))
 
 vi.mock('@src/util/meocord-config-loader.util.js', () => ({
@@ -26,10 +34,19 @@ function mockTsConfig(config: object) {
 }
 
 describe('prepareModifiedTsConfig', () => {
+  const exitListeners = process.listeners('exit')
+
+  afterEach(() => {
+    for (const listener of process.listeners('exit')) {
+      if (!exitListeners.includes(listener)) process.off('exit', listener)
+    }
+  })
+
   beforeEach(() => {
     mockExistsSync.mockReset()
     mockReadFileSync.mockReset()
     mockWriteFileSync.mockReset()
+    mockRmSync.mockReset()
   })
 
   it('throws when tsconfig.json does not exist', () => {
@@ -81,6 +98,29 @@ describe('prepareModifiedTsConfig', () => {
     expect(result).toContain(tmpdir())
     expect(result).toContain('modified-tsconfig.json')
     expect(mockWriteFileSync).toHaveBeenCalledWith(result, expect.any(String))
+  })
+
+  // Two builds at once, such as CI jobs sharing a runner, would otherwise write over each other's file
+  it('gives each call a file of its own', () => {
+    mockTsConfig({ compilerOptions: {} })
+
+    const first = prepareModifiedTsConfig()
+    const second = prepareModifiedTsConfig()
+
+    expect(first).not.toBe(second)
+    expect(path.dirname(first)).toContain(path.join(tmpdir(), 'meocord-tsconfig-'))
+  })
+
+  it('removes its directory when the process exits', () => {
+    mockTsConfig({ compilerOptions: {} })
+    const exitListeners = process.listeners('exit')
+
+    const file = prepareModifiedTsConfig()
+    const cleanup = process.listeners('exit').find(listener => !exitListeners.includes(listener))!
+    process.off('exit', cleanup)
+    cleanup(0)
+
+    expect(mockRmSync).toHaveBeenCalledWith(path.dirname(file), { recursive: true, force: true })
   })
 
   it('fixes and re-parses invalid JSON with a trailing comma', () => {
