@@ -9,7 +9,7 @@ import {
   resolveColor,
 } from 'discord.js'
 import { vi } from 'vitest'
-import { CommandNotFoundError, GuardDeniedError, Theme } from '@src/common/index.js'
+import { CommandNotFoundError, GuardDeniedError, Theme, ValidationError } from '@src/common/index.js'
 import { type Logger } from '@src/common/logger.js'
 import { UnroutedExecutionContext } from '@src/common/execution-context.js'
 import { createFallback } from '@src/core/fallback.js'
@@ -85,6 +85,22 @@ describe('the fallback', () => {
       expect(payload.flags).toBe(Ephemeral)
       expect(logger.error).not.toHaveBeenCalled()
     })
+
+    it("lists a ValidationError's issues privately, logging it only at debug level", async () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      const invalid = new ValidationError([
+        { message: 'Must be at least 1', path: ['minutes'] },
+        { message: 'Too long', path: ['note'] },
+      ])
+
+      const logger = await fail(interaction, invalid)
+
+      const payload = sent(interaction.reply)
+      expect(describedAs(payload)).toBe('minutes: Must be at least 1\nnote: Too long')
+      expect(payload.flags).toBe(Ephemeral)
+      expect(logger.error).not.toHaveBeenCalled()
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('Invalid input'))
+    })
   })
 
   describe('on a command whose reply was deferred', () => {
@@ -96,6 +112,17 @@ describe('the fallback', () => {
 
       expect(describedAs(sent(interaction.editReply))).toBe(GENERIC)
       expect(interaction.followUp).not.toHaveBeenCalled()
+    })
+
+    it('keeps validation issues private on a public deferred command', async () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      await interaction.deferReply()
+
+      await fail(interaction, new ValidationError([{ message: 'Must be at least 1', path: ['minutes'] }]))
+
+      expect(interaction.editReply).not.toHaveBeenCalled()
+      expect(interaction.deleteReply).toHaveBeenCalled()
+      expect(sent(interaction.followUp).flags).toBe(Ephemeral)
     })
 
     it('deletes the deferred reply, then follows up privately, for an error about the caller', async () => {

@@ -23,6 +23,7 @@ import {
   prepareFilter,
 } from '@src/core/filter-runner.js'
 import { type Fallback } from '@src/core/fallback.js'
+import { handlerInputStages, prepareHandlerArgs, preparePipe } from '@src/core/input-runner.js'
 import { Logger } from '@src/common/logger.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
 import {
@@ -122,6 +123,27 @@ export function prepareHandlerStages(container: Container, controllers: readonly
     for (const method of methods) {
       for (const entry of handlerInterceptors(prototype, method)) prepareInterceptor(container, entry)
       for (const entry of handlerFilterLevels(prototype, method, []).flat()) prepareFilter(container, entry)
+      for (const { entry } of handlerInputStages(prototype, method).pipes) preparePipe(container, entry)
+    }
+    assertInputStagesOnInteractions(controller, prototype)
+  }
+}
+
+/** Refuses `@Validate` and `@UsePipe` on handlers that have no interaction input to check. */
+function assertInputStagesOnInteractions(controller: new (...args: any[]) => unknown, prototype: object): void {
+  const others: [string, string][] = [
+    ...getMessageHandlers(prototype).map(handler => [handler.method, 'message'] as [string, string]),
+    ...getReactionHandlers(prototype).map(handler => [handler.method, 'reaction'] as [string, string]),
+    ...getAutocompleteHandlers(prototype).map(handler => [handler.methodName, 'autocomplete'] as [string, string]),
+    ...getEventHandlers(prototype).map(handler => [handler.method, 'event'] as [string, string]),
+  ]
+  for (const [method, kind] of others) {
+    const { schema, pipes } = handlerInputStages(prototype, method)
+    if (schema || pipes.length > 0) {
+      throw new Error(
+        `${controller.name}.${method} is ${kind === 'autocomplete' || kind === 'event' ? 'an' : 'a'} ${kind} handler; @Validate and @UsePipe apply only to interaction ` +
+          `handlers, whose options, customId params and modal fields they check.`,
+      )
     }
   }
 }
@@ -191,8 +213,10 @@ export async function runHandler(
     if (!(await runGuards(guards, { container, controller, methodName, args, type }))) return { ran: false }
 
     const handler = async () => {
+      // Inside the interceptors, so they see a validation failure as the handler's error.
+      const handlerArgs = await prepareHandlerArgs(container, Object.getPrototypeOf(instance), methodName, contextOf, args)
       ran = true
-      return callGuardedHandler(instance, methodName, args)
+      return callGuardedHandler(instance, methodName, handlerArgs)
     }
     // Autocomplete answers within three seconds and has no reply to shape, so it skips interceptors.
     const applicable = type === 'autocomplete' ? [] : interceptors.filter(entry => appliesTo(entry, type))

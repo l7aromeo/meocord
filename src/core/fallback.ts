@@ -6,7 +6,7 @@ import {
   type RepliableInteraction,
 } from 'discord.js'
 import { type ExecutionContext } from '@src/common/execution-context.js'
-import { CommandNotFoundError, GuardDeniedError } from '@src/common/errors.js'
+import { CommandNotFoundError, GuardDeniedError, ValidationError } from '@src/common/errors.js'
 import { type Logger } from '@src/common/logger.js'
 import { EmbedUtil } from '@src/util/index.js'
 import { describeInteraction } from '@src/util/interaction.util.js'
@@ -132,6 +132,10 @@ export function createFallback(logger: Logger): Fallback {
       await answerError(interaction, 'Command not found!', 'reply', logger)
     } else if (error instanceof GuardDeniedError) {
       logger.debug(`Denied ${describeInteraction(interaction)}: ${error.message}`)
+      await answerError(interaction, error.message, 'private', logger)
+    } else if (error instanceof ValidationError) {
+      // The caller's own input is wrong: only they need to see which part, and it is no fault to log.
+      logger.debug(`Invalid input for ${describeInteraction(interaction)}: ${error.message}`)
       await answerError(interaction, error.message, 'private', logger)
     } else {
       logger.error(`Error handling ${describeInteraction(interaction)}:`, error)

@@ -39,6 +39,7 @@ import {
 } from '@src/core/component-routes.js'
 import { globalStagesOf, handleUnroutedError, runHandler } from '@src/core/handler-pipeline.js'
 import { closeAutocomplete, createFallback, type Fallback } from '@src/core/fallback.js'
+import { handlerInput } from '@src/core/handler-input.js'
 import { CommandNotFoundError } from '@src/common/errors.js'
 import { stageClass, stageTypes } from '@src/core/stage-scope.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
@@ -449,6 +450,24 @@ export class MeoCordApp {
     await closeAutocomplete(interaction, this.logger)
   }
 
+  /** Handler and name pairs already warned about, so a colliding modal warns once rather than per submit. */
+  private readonly warnedCollisions = new Set<string>()
+
+  /** Tells a developer that a modal field is hidden by a customId param of the same name. */
+  private warnCollisions(methodName: string, names: string[]): void {
+    if (process.env.NODE_ENV !== 'development') return
+
+    for (const name of names) {
+      const key = `${methodName}:${name}`
+      if (this.warnedCollisions.has(key)) continue
+      this.warnedCollisions.add(key)
+      this.logger.warn(
+        `"${name}" is both a customId param and a modal field of ${methodName}; the handler receives the customId ` +
+          `param. Rename one to receive both.`,
+      )
+    }
+  }
+
   /**
    * Runs a resolved command, shared by both dispatch paths so a pattern-matched
    * component and a named slash command behave identically once the route is chosen.
@@ -465,15 +484,11 @@ export class MeoCordApp {
     // interaction on the way into the handler.
     this.logger.log('[INTERACTION]', `[${type}]`, `[${methodName}]`)
 
-    let dynamicParams: Record<string, unknown> = {}
+    const routeParams = (interaction as Interaction & { dynamicParams?: Record<string, string> }).dynamicParams
+    const { params, collisions } = handlerInput(interaction, routeParams)
+    this.warnCollisions(methodName, collisions)
 
-    if (interaction.isChatInputCommand()) {
-      dynamicParams = resolveOptionParams(interaction)
-    } else if (hasCustomId(interaction)) {
-      dynamicParams = (interaction as Interaction & { dynamicParams?: Record<string, string> }).dynamicParams ?? {}
-    }
-
-    await this.invokeHandler(controllerInstance, methodName, [interaction, dynamicParams])
+    await this.invokeHandler(controllerInstance, methodName, [interaction, params])
   }
 
   /**

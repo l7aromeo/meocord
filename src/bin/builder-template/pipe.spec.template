@@ -1,0 +1,29 @@
+import { ButtonInteraction } from 'discord.js'
+import { Command, Controller, UsePipe } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+import { createMockInteraction, MeoCordTestingModule } from 'meocord/testing'
+import { {{className}}Pipe } from './{{kebabCaseName}}.pipe.js'
+
+@Controller()
+class SampleController {
+  received: string[] = []
+
+  @Command('sample/{value}', CommandType.BUTTON)
+  @UsePipe('value', {{className}}Pipe)
+  async sample(_interaction: ButtonInteraction, { value }: { value: string }) {
+    this.received.push(value)
+  }
+}
+
+describe('{{className}}Pipe', () => {
+  const module = MeoCordTestingModule.create({ controllers: [SampleController] }).compile()
+
+  it('hands the handler the transformed value', async () => {
+    const interaction = createMockInteraction(ButtonInteraction, { customId: 'sample/  abc  ' })
+
+    const { ran } = await module.invoke(SampleController, 'sample', interaction)
+
+    expect(ran).toBe(true)
+    expect(module.get(SampleController).received).toEqual(['abc'])
+  })
+})

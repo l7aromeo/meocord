@@ -1,10 +1,11 @@
 import 'reflect-metadata'
 import { Container, type ServiceIdentifier } from 'inversify'
-import { type ClientEvents } from 'discord.js'
+import { BaseInteraction, type ClientEvents, type Interaction } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import { appStages, bindGlobalStages, prepareHandlerStages, runHandler } from '@src/core/handler-pipeline.js'
+import { handlerInput, routeParamsFor } from '@src/core/handler-input.js'
 import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
@@ -44,8 +45,9 @@ export type HandlerName<C extends new (...args: any[]) => unknown> = {
 }[keyof InstanceType<C>] &
   string
 
+/** The handler's arguments, or the interaction alone, whose params `invoke` then builds as dispatch does. */
 type HandlerArgs<C extends new (...args: any[]) => unknown, M extends HandlerName<C>> =
-  InstanceType<C>[M] extends (...args: infer A) => unknown ? A : never
+  InstanceType<C>[M] extends (...args: infer A) => unknown ? (A extends [infer First, unknown, ...unknown[]] ? A | [First] : A) : never
 
 /** How a call made with `TestingModule.invoke` ended. */
 export interface InvocationResult {
@@ -92,7 +94,8 @@ export class TestingModule {
    * @param controller - A controller passed to `MeoCordTestingModule.create`.
    * @param methodName - The handler method's name.
    * @param args - The arguments dispatch would pass: the interaction, message or reaction, then the
-   *   handler's params.
+   *   handler's params. With an interaction alone, the params are built as dispatch builds them: a
+   *   command's options, or the handler's customId params and a modal's fields.
    * @returns Whether the handler ran, and the error a filter handled, if any. Rejects with an error no
    *   filter handles, or with the error a filter throws: the built-in fallback, which answers such
    *   errors in the bot, does not run here.
@@ -118,7 +121,12 @@ export class TestingModule {
     }
 
     const instance = this.container.get(controller) as Record<string, (...args: unknown[]) => unknown>
-    const { ran, error } = await runHandler(this.container, instance, methodName, args)
+    const [first] = args as unknown[]
+    const callArgs =
+      args.length === 1 && first instanceof BaseInteraction
+        ? [first, handlerInput(first as Interaction, routeParamsFor(controller.prototype as object, methodName, first as Interaction)).params]
+        : (args as unknown[])
+    const { ran, error } = await runHandler(this.container, instance, methodName, callArgs)
     return error === undefined ? { ran } : { ran, error }
   }
 

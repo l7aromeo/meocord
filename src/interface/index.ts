@@ -189,6 +189,37 @@ export interface ExceptionFilter<E = unknown> {
   catch(error: E, context: ExecutionContext): Promise<void> | void
 }
 
+/**
+ * A pipe, run by `@Validate(schema, { pipes })` or `@UsePipe` on one value of a handler's input after
+ * validation, to turn it into what the handler works with: an id into an account, say. One instance is
+ * shared across calls.
+ *
+ * @typeParam In - The value it receives.
+ * @typeParam Out - The value the handler receives in its place.
+ *
+ * @example
+ * ```ts
+ * @Pipe()
+ * export class AccountPipe implements PipeInterface<string, Account> {
+ *   constructor(private readonly accounts: AccountService) {}
+ *
+ *   async transform(uid: string): Promise<Account> {
+ *     return this.accounts.find(uid)
+ *   }
+ * }
+ * ```
+ */
+export interface PipeInterface<In = any, Out = any> {
+  /**
+   * Transforms one value.
+   *
+   * @param value - The value, after validation and any pipe before this one.
+   * @param context - The call being handled; `getParams()` returns this use's `{ provide, params }` values.
+   * @returns The value the handler receives. Throw to stop the call; the error reaches the filters.
+   */
+  transform(value: In, context: ExecutionContext): Out | Promise<Out>
+}
+
 /** The second argument a `@ReactionHandler` method receives. */
 export interface ReactionHandlerOptions {
   /** The user who added or removed the reaction. */
@@ -320,6 +351,14 @@ export interface CommandBuilderOptions {
   guilds?: (string | undefined)[]
 }
 
+export type {
+  InferSchemaOutput,
+  Piped,
+  StandardSchemaV1,
+  StandardSchemaV1Issue,
+  StandardSchemaV1Props,
+  StandardSchemaV1Result,
+} from './standard-schema.interface.js'
 export type {
   AutocompleteMetadata,
   BuildableCommandType,

@@ -32,6 +32,7 @@ import {
   MentionableSelectMenuInteraction,
   MessageFlags,
   MessageReaction,
+  ModalSubmitInteraction,
   PrimaryEntryPointCommandInteraction,
   RoleSelectMenuInteraction,
   StringSelectMenuInteraction,
@@ -40,10 +41,11 @@ import {
 } from 'discord.js'
 import { Logger } from '@src/common/index.js'
 import { EmbedUtil } from '@src/util/index.js'
-import { createChatInputOptions, createMockInteraction, resolveRoute } from '@src/testing/index.js'
-import { Autocomplete, Command, Controller, MeoCord, ReactionHandler } from '@src/decorator/index.js'
+import { createChatInputOptions, createMockInteraction, createModalFields, resolveRoute } from '@src/testing/index.js'
+import { Autocomplete, Command, Controller, MeoCord, ReactionHandler, Validate } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { MeoCordApp, shutdownAndExit } from '@src/core/meocord.app.js'
+import { type StandardSchemaV1 } from '@src/interface/index.js'
 
 function createMockClient() {
   const listeners = new Map<string, ((...args: any[]) => any)[]>()
@@ -717,6 +719,98 @@ describe('MeoCordApp', () => {
       expect(interaction.respond).toHaveBeenCalledWith([])
       const error = vi.mocked(Logger).mock.results[0]?.value.error
       expect(error).toHaveBeenCalledWith(expect.stringContaining('autocomplete for "search"'), expect.any(Error))
+    })
+  })
+
+  // A validation failure is about the caller's own input, so only they see which part was wrong.
+  it('answers invalid input privately with its issues, and never runs the handler', async () => {
+    const ran = vi.fn()
+    const minutes: StandardSchemaV1<unknown, { minutes: number }> = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: (value: unknown) =>
+          (value as { minutes?: number }).minutes! > 0
+            ? { value: value as { minutes: number } }
+            : { issues: [{ message: 'Must be at least 1', path: ['minutes'] }] },
+      },
+    }
+
+    @Controller()
+    class RemindController {
+      @Command('remind', CommandType.SLASH)
+      @Validate(minutes)
+      async remind(_interaction: ChatInputCommandInteraction, _params: { minutes: number }) {
+        ran()
+      }
+    }
+
+    await new MeoCordApp([RemindController] as any, createMockContainer() as any, mockClient as any, 't').start()
+    const interaction = createMockInteraction(ChatInputCommandInteraction, { commandName: 'remind' })
+    interaction.options = createChatInputOptions({ minutes: 0 }) as never
+
+    await mockClient.listenersFor('interactionCreate')[0](interaction)
+
+    expect(ran).not.toHaveBeenCalled()
+    expect(EmbedUtil.createErrorEmbed).toHaveBeenCalledWith('minutes: Must be at least 1')
+    expect(interaction.reply).toHaveBeenCalledWith(expect.objectContaining({ flags: MessageFlags.Ephemeral }))
+  })
+
+  // A modal handler's second argument carries the customId params and the submitted fields together.
+  describe('modal input', () => {
+    const received: unknown[] = []
+
+    @Controller()
+    class FeedbackController {
+      @Command('feedback/{topic}', CommandType.MODAL_SUBMIT)
+      async feedback(_interaction: ModalSubmitInteraction, params: Record<string, unknown>) {
+        received.push(params)
+      }
+    }
+
+    const submit = (values: Record<string, string>) =>
+      createMockInteraction(ModalSubmitInteraction, {
+        customId: 'feedback/bugs',
+        fields: createModalFields(values),
+      })
+
+    const dispatch = async (values: Record<string, string>) => {
+      await mockClient.listenersFor('interactionCreate')[0](submit(values))
+    }
+
+    beforeEach(async () => {
+      received.length = 0
+      await new MeoCordApp([FeedbackController] as any, createMockContainer() as any, mockClient as any, 't').start()
+    })
+
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    it('passes the fields with the customId params', async () => {
+      await dispatch({ body: 'It crashed' })
+
+      expect(received).toEqual([{ topic: 'bugs', body: 'It crashed' }])
+    })
+
+    it('keeps the customId param over a field of the same name, and warns once in development', async () => {
+      vi.stubEnv('NODE_ENV', 'development')
+
+      await dispatch({ topic: 'typed' })
+      await dispatch({ topic: 'typed again' })
+
+      expect(received).toEqual([{ topic: 'bugs' }, { topic: 'bugs' }])
+      const warn = vi.mocked(Logger).mock.results[0]?.value.warn
+      expect(warn.mock.calls.filter(([message]: [string]) => message.includes('"topic" is both'))).toHaveLength(1)
+    })
+
+    it('does not warn in production', async () => {
+      vi.stubEnv('NODE_ENV', 'production')
+
+      await dispatch({ topic: 'typed' })
+
+      const warn = vi.mocked(Logger).mock.results[0]?.value.warn
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('"topic" is both'))
     })
   })
 
