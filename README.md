@@ -29,6 +29,9 @@
 - [Command Parameters](#command-parameters)
 - [Subcommands](#subcommands)
 - [Autocomplete](#autocomplete)
+- [Interaction responses](#interaction-responses)
+  - [Where the interaction happened](#where-the-interaction-happened)
+  - [Presenters](#presenters)
 - [How a handler runs](#how-a-handler-runs)
 - [Guards](#guards)
   - [Passing options to a guard](#passing-options-to-a-guard)
@@ -36,7 +39,6 @@
   - [Guards on autocomplete, and denying with a reason](#guards-on-autocomplete-and-denying-with-a-reason)
 - [Interceptors](#interceptors)
 - [Exception filters](#exception-filters)
-- [Interaction responses](#interaction-responses)
 - [Validation and Pipes](#validation-and-pipes)
 - [Cooldowns](#cooldowns)
   - [Where calls are counted](#where-calls-are-counted)
@@ -64,6 +66,7 @@
 - **Decorator-based controllers** — Handle every Discord interaction type — slash commands and their subcommands, autocomplete, buttons, modals, all five select menus, context menus, activity entry points, messages, and reactions — with `@Command`, `@Autocomplete`, `@MessageHandler` and `@ReactionHandler`. No routing boilerplate.
 - **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators.
 - **A request pipeline** — [Guards](#guards) decide whether a handler runs, [interceptors](#interceptors) wrap it, [validation and pipes](#validation-and-pipes) check and transform its input, [cooldowns](#cooldowns) limit how often it runs, and [exception filters](#exception-filters) decide what the user is told when something throws. Each applies to a method, a controller, or the whole bot.
+- **Interaction responses** — `respond(interaction)` answers every interaction type correctly from any state, deferred or replied, wherever a user-installed app is used; a presenter styles MeoCord's own answers.
 - **Cooldowns** — `@Cooldown` limits how often a handler runs, per user, server, channel or for everyone, with a pluggable store to share the count across shards.
 - **Gateway events** — `@On` and `@Once` handle any discord.js client event on a controller or service, with typed arguments and the same pipeline. `HandlerRegistry` lists every handler for a `/help` command or generated docs.
 - **Lifecycle hooks** — `onReady` and `onShutdown` on any controller or service, in dependency order, for schedulers, cache warm-up and clean shutdown.
@@ -716,6 +719,76 @@ If no handler claims an option, MeoCord answers with an empty list and logs whic
 
 ---
 
+## Interaction responses
+
+`respond(interaction)` from `meocord/common` is the one place an interaction is answered. It remembers where the answer stands and picks the right Discord call each time, so a handler says what to send, not how:
+
+```typescript
+import { respond } from 'meocord/common'
+
+@Command('profile', CommandType.SLASH)
+async profile(interaction: ChatInputCommandInteraction) {
+  await respond(interaction).acknowledge() // "thinking…" while the profile loads
+  const card = await this.profiles.render(interaction.user.id)
+  await respond(interaction).send({ embeds: [card] })
+}
+```
+
+| Call                                    | What it does                                                                                                                                                                       |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `acknowledge({ ephemeral })`            | A deferred reply for a command; an invisible deferred update for a component or a modal from a message. Once only, however often it is called.                                     |
+| `send(payload)`                         | Replies to an unanswered command, updates an unanswered component's message, and edits once the interaction is deferred or replied. A second `send()` edits again.                 |
+| `edit(payload)`                         | Edits the answer, as `send()` does once answered.                                                                                                                                  |
+| `followUp(payload)`                     | Another message after the answer. While a command's reply is deferred and nothing is sent, Discord makes a follow-up that reply and ignores its flags, so it is sent as that edit. |
+| `delete()`                              | Deletes the answer.                                                                                                                                                                |
+| `modal(modal)`                          | Shows a modal. A modal must be the first response, so this throws once the interaction is acknowledged.                                                                            |
+| `error(error, { message, visibility })` | Shows an error in the presenter's style, and never throws. `'reply'` may turn a public deferred reply into the error; `'private'` shows it only to the user who made the call.     |
+
+`state` tells where the answer stands (`'unanswered'`, `'deferred'` or `'replied'`), re-read from the interaction on every call, so answers made directly with discord.js or by a collector still count. `message` is the message last sent or edited. Interceptors and filters reach the same state as `context.response`.
+
+Each call takes only the flags Discord accepts for it, computed afresh: an ephemeral follow-up never makes later messages ephemeral. `send()` and `followUp()` payloads are typed so an impossible flag does not compile. Once a message uses Components V2 its edits keep the flag, and content and embeds are dropped from them. When an edit re-sends an embed or Components V2 media whose image is one of the message's own Discord attachments, the URL is pointed at `attachment://` so the image survives the edit.
+
+### Where the interaction happened
+
+A user-installed app can be used in servers the bot is not in and in direct messages between users, where the bot cannot use the channel API. `respond()` always answers through the interaction's own methods, which work everywhere, and turns to the channel only when the interaction's fifteen-minute token has expired and the bot is present. `getInstallContext(interaction)` reports the same thing to your code:
+
+```typescript
+import { getInstallContext } from 'meocord/common'
+
+const { where, botInstalled } = getInstallContext(interaction) // where: 'guild' | 'bot-dm' | 'private-channel'
+```
+
+### Presenters
+
+A presenter decides how MeoCord's answers look — the error view, and the loading view `@Defer` shows — while filters and the fallback decide what they say. It returns `{ text, title?, color?, emoji?, components? }`, rendered as an embed, or as a Components V2 container on a Components V2 message. Register one with `@MeoCord({ presenter })`; it is resolved once from the container, so it can inject services such as a `Translator`.
+
+```typescript
+import { Theme, Translator } from 'meocord/common'
+import { MeoCord, Service } from 'meocord/decorator'
+import { type PresentedError, type ResponseContext, type ResponsePresenter } from 'meocord/interface'
+import enUS from '@src/locales/en-US'
+
+@Service()
+export class BrandPresenter implements ResponsePresenter {
+  constructor(private readonly t: Translator<typeof enUS>) {}
+
+  loading(context: ResponseContext) {
+    return { text: this.t.for(context.interaction)('common.working'), emoji: '⏳', color: Theme.primaryColor }
+  }
+
+  error(_context: ResponseContext, { message }: PresentedError) {
+    return { title: 'Something went wrong', text: message, color: Theme.errorColor }
+  }
+}
+
+@MeoCord({ controllers: [...], clientOptions: { ... }, presenter: BrandPresenter })
+class App {}
+```
+
+Without one, errors show "Oops!" as their title in `Theme.errorColor`, and the loading view is "⏳ Working on it…" in `Theme.primaryColor`.
+
+---
+
 ## How a handler runs
 
 Every handler — a command, a component, an autocomplete, a message, a reaction or an [event](#gateway-events) — runs through the same stages, in this order:
@@ -726,7 +799,7 @@ Every handler — a command, a component, an autocomplete, a message, a reaction
 4. **Cooldowns** count the call, and block it once the handler has run too often.
 5. **The handler** runs with what the stages produced.
 
-**Exception filters** surround all of it: an error from any stage or the handler reaches them, and one no filter handles goes to the built-in fallback.
+**Exception filters** surround all of it: an error from any stage or the handler reaches them, and one no filter handles goes to the built-in fallback. The handler, its interceptors and filters, and the fallback all answer through [`respond()`](#interaction-responses), so each sees where the others left the answer.
 
 Validation and pipes apply to command, component and modal handlers, whose options, customId params and fields they check. Cooldowns apply to those and to message handlers. An autocomplete handler, which must answer within three seconds, runs its guards and filters but no interceptors.
 
@@ -988,73 +1061,6 @@ It says "An error occurred while executing the command.", "Command not found!" f
 Filters apply when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke); a controller method called directly throws as it would without them. Under `invoke` the fallback does not run: an error no filter handles rejects, so tests see it.
 
 Generate a filter with `npx meocord g f <name>`.
-
----
-
-## Interaction responses
-
-`respond(interaction)` from `meocord/common` is the one place an interaction is answered. It remembers where the answer stands and picks the right Discord call each time, so a handler says what to send, not how:
-
-```typescript
-import { respond } from 'meocord/common'
-
-@Command('profile', CommandType.SLASH)
-async profile(interaction: ChatInputCommandInteraction) {
-  await respond(interaction).acknowledge() // "thinking…" while the profile loads
-  const card = await this.profiles.render(interaction.user.id)
-  await respond(interaction).send({ embeds: [card] })
-}
-```
-
-| Call                                    | What it does                                                                                                                                                                       |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `acknowledge({ ephemeral })`            | A deferred reply for a command; an invisible deferred update for a component or a modal from a message. Once only, however often it is called.                                     |
-| `send(payload)`                         | Replies to an unanswered command, updates an unanswered component's message, and edits once the interaction is deferred or replied. A second `send()` edits again.                 |
-| `edit(payload)`                         | Edits the answer, as `send()` does once answered.                                                                                                                                  |
-| `followUp(payload)`                     | Another message after the answer. While a command's reply is deferred and nothing is sent, Discord makes a follow-up that reply and ignores its flags, so it is sent as that edit. |
-| `delete()`                              | Deletes the answer.                                                                                                                                                                |
-| `modal(modal)`                          | Shows a modal. A modal must be the first response, so this throws once the interaction is acknowledged.                                                                            |
-| `error(error, { message, visibility })` | Shows an error in the presenter's style, and never throws. `'reply'` may turn a public deferred reply into the error; `'private'` shows it only to the user who made the call.     |
-
-`state` tells where the answer stands (`'unanswered'`, `'deferred'` or `'replied'`), re-read from the interaction on every call, so answers made directly with discord.js or by a collector still count. `message` is the message last sent or edited. Interceptors and filters reach the same state as `context.response`.
-
-Each call takes only the flags Discord accepts for it, computed afresh: an ephemeral follow-up never makes later messages ephemeral. `send()` and `followUp()` payloads are typed so an impossible flag does not compile. Once a message uses Components V2 its edits keep the flag, and content and embeds are dropped from them. When an edit re-sends an embed or Components V2 media whose image is one of the message's own Discord attachments, the URL is pointed at `attachment://` so the image survives the edit.
-
-### Where the interaction happened
-
-A user-installed app can be used in servers the bot is not in and in direct messages between users, where the bot cannot use the channel API. `respond()` always answers through the interaction's own methods, which work everywhere, and turns to the channel only when the interaction's fifteen-minute token has expired and the bot is present. `getInstallContext(interaction)` reports the same thing to your code:
-
-```typescript
-import { getInstallContext } from 'meocord/common'
-
-const { where, botInstalled } = getInstallContext(interaction) // where: 'guild' | 'bot-dm' | 'private-channel'
-```
-
-### Presenters
-
-A presenter decides how MeoCord's answers look — the error view, and the loading view `@Defer` shows — while filters and the fallback decide what they say. It returns `{ text, title?, color?, emoji?, components? }`, rendered as an embed, or as a Components V2 container on a Components V2 message. Register one with `@MeoCord({ presenter })`; it is resolved once from the container, so it can inject services such as a `Translator`.
-
-```typescript
-import { type PresentedError, type ResponseContext, type ResponsePresenter } from 'meocord/interface'
-
-@Service()
-export class BrandPresenter implements ResponsePresenter {
-  constructor(private readonly t: Translator) {}
-
-  loading(context: ResponseContext) {
-    return { text: this.t.for(context.interaction)('common.working'), emoji: '⏳', color: Theme.primaryColor }
-  }
-
-  error(_context: ResponseContext, { message }: PresentedError) {
-    return { title: 'Something went wrong', text: message, color: Theme.errorColor }
-  }
-}
-
-@MeoCord({ controllers: [...], clientOptions: { ... }, presenter: BrandPresenter })
-class App {}
-```
-
-Without one, errors look as they always have — "Oops!" in `Theme.errorColor` — and the loading view is "⏳ Working on it…" in `Theme.primaryColor`.
 
 ---
 
@@ -1769,7 +1775,8 @@ expect(response.calls.map(call => call.method)).toEqual(['deferUpdate', 'editRep
 ```typescript
 const interaction = createMockInteraction(ButtonInteraction, {
   context: InteractionContextType.PrivateChannel,
-  authorizingIntegrationOwners: { [ApplicationIntegrationType.UserInstall]: userId },
+  // discord.js gives AuthorizingIntegrationOwners a private constructor; a plain map stands in for it
+  authorizingIntegrationOwners: { [ApplicationIntegrationType.UserInstall]: '123456789012345678' } as never,
 })
 interaction.editReply.mockRejectedValueOnce(createDiscordError(50027))
 ```
