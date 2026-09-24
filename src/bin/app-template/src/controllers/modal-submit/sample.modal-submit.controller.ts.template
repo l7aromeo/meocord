@@ -1,13 +1,14 @@
 import { ModalSubmitInteraction } from 'discord.js'
-import { Controller, Command, UseGuard } from 'meocord/decorator'
+import { respond } from 'meocord/common'
+import { Command, Controller, Cooldown, Defer } from 'meocord/decorator'
 import { CommandType } from 'meocord/enum'
-import { RateLimitGuard } from '@src/guards/rate-limit.guard'
 
 @Controller()
 export class SampleModalSubmitController {
   @Command('submit-modal', CommandType.MODAL_SUBMIT)
-  @UseGuard(RateLimitGuard)
+  @Cooldown({ uses: 5, seconds: 60 })
+  @Defer({ ephemeral: true })
   async handleModal(interaction: ModalSubmitInteraction) {
-    await interaction.reply('Modal submitted!')
+    await respond(interaction).send('Modal submitted!')
   }
 }

@@ -7,6 +7,7 @@ import { SampleMessageController } from '@src/controllers/message/sample.message
 import { SampleReactionController } from '@src/controllers/reaction/sample.reaction.controller'
 import { SampleContextMenuController } from '@src/controllers/context-menu/sample.context-menu.controller'
 import { SampleModalSubmitController } from '@src/controllers/modal-submit/sample.modal-submit.controller'
+import { AppPresenter } from '@src/presenters/app.presenter'
 
 @MeoCord({
   controllers: [
@@ -40,5 +41,7 @@ import { SampleModalSubmitController } from '@src/controllers/modal-submit/sampl
       type: ActivityType.Custom,
     },
   ],
+  // How loading and error views look; see src/presenters/app.presenter.ts
+  presenter: AppPresenter,
 })
 export default class App {}

@@ -1,17 +1,29 @@
-import { MeoCordTestingModule } from 'meocord/testing'
+import { ChatInputCommandInteraction } from 'discord.js'
+import { createChatInputOptions, createMockInteraction, getResponse, MeoCordTestingModule } from 'meocord/testing'
 import { SampleSlashController } from '@src/controllers/slash/sample.slash.controller.js'
 
-describe('SampleSlashController', () => {
-  let controller: SampleSlashController
+const slash = () => {
+  const interaction = createMockInteraction(ChatInputCommandInteraction)
+  interaction.options = createChatInputOptions({})
+  return interaction
+}
 
-  beforeEach(() => {
-    const module = MeoCordTestingModule.create({
-      controllers: [SampleSlashController],
-    }).compile()
-    controller = module.get(SampleSlashController)
+describe('SampleSlashController', () => {
+  const module = MeoCordTestingModule.create({ controllers: [SampleSlashController] }).compile()
+
+  it('replies', async () => {
+    const interaction = slash()
+
+    await module.invoke(SampleSlashController, 'handleSampleSlash', interaction)
+
+    expect(getResponse(interaction).calls.map(call => call.method)).toEqual(['reply'])
   })
 
-  it('should be defined', () => {
-    expect(controller).toBeDefined()
+  it('defers privately, then edits the reply', async () => {
+    const interaction = slash()
+
+    await module.invoke(SampleSlashController, 'handleSampleSlashTwo', interaction)
+
+    expect(getResponse(interaction).calls.map(call => call.method)).toEqual(['deferReply', 'editReply'])
   })
 })

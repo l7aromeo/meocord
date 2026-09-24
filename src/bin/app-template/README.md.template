@@ -45,12 +45,24 @@ Set `commands.register: false` in `meocord.config.ts` to leave registration to t
 {{packageManager}} run build:prod
 ```
 
+## Answering interactions
+
+The sample controllers answer through `respond(interaction)` from `meocord/common`, which
+picks the right Discord call — reply, update, edit or follow-up — from where the answer
+stands. `@Defer()` acknowledges before a slow handler runs, and on a button or menu
+disables the message's controls with a loading view until the handler answers.
+`src/presenters/app.presenter.ts` decides how the loading and error views look.
+
+`@Cooldown({ uses: 5, seconds: 60 })` limits how often a user can run a handler, and
+`src/guards/owner.guard.ts` shows a guard that denies with a reason by throwing
+`GuardDeniedError`.
+
 ## Generating components
 
 ```shell
 npx meocord g co slash "profile"     # a slash controller, its spec and its builder
 npx meocord g s "profile"            # a service
-npx meocord g gu "rate-limit"        # a guard
+npx meocord g gu "role"              # a guard
 npx meocord g i "timing"             # an interceptor
 npx meocord g f "not-found"          # an exception filter
 npx meocord g pi "account"           # a pipe

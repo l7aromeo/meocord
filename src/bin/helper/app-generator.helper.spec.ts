@@ -83,7 +83,7 @@ describe('AppGeneratorHelper', () => {
   // every generated application crashing on the first import.
   it('ships component patterns the framework accepts', () => {
     expect(read(path.join('src', 'controllers', 'button', 'sample.button.controller.ts'))).toContain(
-      "@Command('button-with/{id}', CommandType.BUTTON)",
+      "@Command('button-with/{ownerId}', CommandType.BUTTON)",
     )
   })
 
