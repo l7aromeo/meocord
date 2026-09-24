@@ -2,6 +2,7 @@ import { Container } from 'inversify'
 import {
   type APIEmbed,
   ApplicationIntegrationType,
+  AutocompleteInteraction,
   ButtonInteraction,
   ChatInputCommandInteraction,
   ComponentType,
@@ -12,9 +13,10 @@ import {
   MessageFlagsBitField,
   ModalBuilder,
   ModalSubmitInteraction,
+  type MessageReaction,
 } from 'discord.js'
 import { vi } from 'vitest'
-import { Command, Controller, Cooldown, Defer, Guard, MessageHandler, UseGuard } from '@src/decorator/index.js'
+import { Autocomplete, Command, Controller, Cooldown, Defer, Guard, MessageHandler, On, ReactionHandler, UseGuard } from '@src/decorator/index.js'
 import { CommandType, MetadataKey } from '@src/enum/index.js'
 import { type GuardInterface } from '@src/interface/index.js'
 import { GuardDeniedError } from '@src/common/errors.js'
@@ -107,6 +109,12 @@ class CardController {
   @UseGuard(OwnerGuard)
   @Defer({ mode: 'auto' })
   async guardedFast(interaction: ButtonInteraction) {
+    await handlerBody(interaction)
+  }
+
+  @Command('secret-slow', CommandType.SLASH)
+  @Defer({ mode: 'auto', ephemeral: true })
+  async secretSlow(interaction: ChatInputCommandInteraction) {
     await handlerBody(interaction)
   }
 
@@ -600,6 +608,22 @@ describe('@Defer', () => {
       expect(calls(interaction)).toEqual(['deferUpdate'])
     })
 
+    it('makes a slow command\'s late deferred reply private with ephemeral', async () => {
+      vi.useFakeTimers({ now: Date.now() })
+      const emit = await startApp()
+      let finish!: () => void
+      handlerBody = () => new Promise<void>(resolve => (finish = resolve))
+      const interaction = createMockInteraction(ChatInputCommandInteraction, { commandName: 'secret-slow', createdTimestamp: Date.now() })
+      interaction.options = createChatInputOptions({})
+
+      const done = emit(interaction)
+      await vi.advanceTimersByTimeAsync(1_500)
+      expect(calls(interaction)[0]).toBe('deferReply')
+      expect(Number(payloads(interaction)[0].flags) & Ephemeral).toBe(Ephemeral)
+      finish()
+      await done
+    })
+
     it('suppresses notifications on new messages when asked', async () => {
       const emit = await startApp()
       handlerBody = async interaction => void (await respond(interaction).followUp({ content: 'note' }))
@@ -684,6 +708,77 @@ describe('@Defer', () => {
       expect(ran).toBe(false)
       expect(calls(interaction)).toEqual(['deferUpdate'])
     })
+  })
+
+  it.each([
+    [
+      'a reaction',
+      () => {
+        @Controller()
+        class Reactions {
+          @Defer()
+          @ReactionHandler('👍')
+          async like(_reaction: MessageReaction) {}
+        }
+        return Reactions
+      },
+      'Reactions.like',
+    ],
+    [
+      'an autocomplete',
+      () => {
+        @Controller()
+        class Suggestions {
+          @Command('find', CommandType.SLASH)
+          async find(_interaction: ChatInputCommandInteraction) {}
+
+          @Defer()
+          @Autocomplete('find')
+          async suggest(_interaction: AutocompleteInteraction) {}
+        }
+        return Suggestions
+      },
+      'Suggestions.suggest',
+    ],
+    [
+      'an event',
+      () => {
+        @Controller()
+        class Events {
+          @Defer()
+          @On('guildCreate')
+          async joined() {}
+        }
+        return Events
+      },
+      'Events.joined',
+    ],
+  ])('refuses %s handler at decoration, naming its kind', (kind, declare, handler) => {
+    expect(declare).toThrow(`@Defer is for interaction handlers, but ${handler} is ${kind} handler. Remove @Defer from it.`)
+  })
+
+  it('accepts a command in a controller that also has message, reaction, autocomplete and event handlers', () => {
+    expect(() => {
+      @Controller()
+      class Mixed {
+        @MessageHandler('hi')
+        async hi(_message: Message) {}
+
+        @ReactionHandler('👍')
+        async like(_reaction: MessageReaction) {}
+
+        @Autocomplete('find')
+        async suggest(_interaction: AutocompleteInteraction) {}
+
+        @On('guildCreate')
+        async joined() {}
+
+        @Command('find', CommandType.SLASH)
+        @Defer()
+        async find(_interaction: ChatInputCommandInteraction) {}
+      }
+      return Mixed
+    }).not.toThrow()
   })
 
   it('refuses a message handler at decoration', () => {

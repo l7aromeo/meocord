@@ -49,7 +49,7 @@ export function nonInteractionHandler(prototype: object, methodName: string): st
 /** The error for `@Defer` on a handler that cannot be deferred. */
 export function deferMisuseError(className: string, methodName: string, kind: string): Error {
   return new Error(
-    `@Defer is for interaction handlers, but ${className}.${methodName} is ${kind === 'autocomplete' ? 'an' : 'a'} ${kind} ` +
+    `@Defer is for interaction handlers, but ${className}.${methodName} is ${kind === 'autocomplete' || kind === 'event' ? 'an' : 'a'} ${kind} ` +
       `handler. Remove @Defer from it.`,
   )
 }
