@@ -26,6 +26,7 @@ vi.mock('node:fs', async importOriginal => {
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { MeoCordCLI } from '@src/bin/meocord.js'
+import { namePathProblem } from '@src/bin/generator.js'
 import { RUNTIME_OVERRIDE_ENV } from '@src/util/runtime.util.js'
 
 /** Stands in for the spawned application; `.on` is chained straight off `spawn`. */
@@ -284,5 +285,15 @@ describe('spawning the application', () => {
 
       expect(spawnMock).toHaveBeenCalledTimes(1)
     })
+  })
+})
+
+describe('namePathProblem', () => {
+  it.each(['../ban', 'admin/../../ban', '/etc/ban', 'C:/ban', 'c:ban'])('refuses %s, which leaves the folder', name => {
+    expect(namePathProblem(name, 'src/services/')).toContain('Names are paths inside src/services/')
+  })
+
+  it.each(['Ban', 'admin/ban', 'admin/ban-list', 'a..b'])('accepts %s', name => {
+    expect(namePathProblem(name, 'src/services/')).toBeUndefined()
   })
 })

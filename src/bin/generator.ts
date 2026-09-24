@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import { Argument, Command } from 'commander'
 import { ControllerType } from '@src/enum/controller.enum.js'
 import { ControllerGeneratorHelper } from '@src/bin/helper/controller-generator.helper.js'
@@ -8,6 +10,17 @@ import { InterceptorGeneratorHelper } from '@src/bin/helper/interceptor-generato
 import { FilterGeneratorHelper } from '@src/bin/helper/filter-generator.helper.js'
 import { PipeGeneratorHelper } from '@src/bin/helper/pipe-generator.helper.js'
 import wait from '@src/util/wait.util.js'
+
+/**
+ * Why a name cannot be a path inside the kind's folder: one that climbs out with `..`, starts at the
+ * root, or names a drive. Undefined when it can.
+ */
+export function namePathProblem(name: string, folder: string): string | undefined {
+  const escapes = name.split('/').includes('..') || name.startsWith('/') || /^[a-z]:/i.test(name)
+  return escapes
+    ? `"${name}" leaves ${folder}. Names are paths inside ${folder}: use admin/ban, not ../ban or an absolute path.`
+    : undefined
+}
 
 export class GeneratorCLI {
   private logger: Logger
@@ -119,10 +132,28 @@ export class GeneratorCLI {
     name: string
     type?: ControllerType
   }): Promise<void> {
-    const { component, name, type } = args
+    const { component, type } = args
+    let { name } = args
 
     if (!name) {
       this.logger.error('Name is required')
+      await wait(100)
+      process.exit(1)
+    }
+
+    // Generators write relative to the working directory, so outside a project they would scatter files.
+    if (!fs.existsSync(path.join(process.cwd(), 'package.json'))) {
+      this.logger.error("No package.json here: run meocord generate from your project's root.")
+      await wait(100)
+      process.exit(1)
+    }
+
+    // Windows users may separate folders with a backslash; the generators split on forward slashes.
+    if (process.platform === 'win32') name = name.replace(/\\/g, '/')
+
+    const problem = namePathProblem(name, component === 'controller' ? `src/controllers/${type}/` : `src/${component}s/`)
+    if (problem) {
+      this.logger.error(problem)
       await wait(100)
       process.exit(1)
     }

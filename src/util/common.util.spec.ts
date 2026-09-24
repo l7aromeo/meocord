@@ -1,7 +1,8 @@
 import { vi } from 'vitest'
 import path from 'path'
 
-const { mockExistsSync, mockReadFileSync, mockWriteFileSync, mockLoadMeoCordConfig, mockWait } = vi.hoisted(() => ({
+const { mockExistsSync, mockReadFileSync, mockWriteFileSync, mockLoadMeoCordConfig, mockReadSourceConfig, mockWait } = vi.hoisted(() => ({
+  mockReadSourceConfig: vi.fn(),
   mockExistsSync: vi.fn(),
   mockReadFileSync: vi.fn(),
   mockWriteFileSync: vi.fn(),
@@ -23,11 +24,13 @@ vi.mock('fs', () => ({
 vi.mock('chalk', () => ({
   default: {
     red: (...args: any[]) => args.join(' '),
+    yellow: (...args: any[]) => args.join(' '),
   },
 }))
 
 vi.mock('@src/util/meocord-source-config.util.js', () => ({
   loadMeoCordCliConfig: mockLoadMeoCordConfig,
+  readMeoCordSourceConfig: mockReadSourceConfig,
 }))
 
 vi.mock('@src/util/wait.util.js', () => ({
@@ -89,7 +92,50 @@ describe('compileAndValidateConfig', () => {
   beforeEach(() => {
     mockExistsSync.mockReset()
     mockLoadMeoCordConfig.mockReset()
+    mockReadSourceConfig.mockReset()
     mockWait.mockClear()
+  })
+
+  it('exits, with the loader\'s message, when meocord.config.ts cannot be loaded', async () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadSourceConfig.mockReturnValue({ error: 'ParseError: Unexpected token  meocord.config.ts:2:0' })
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await compileAndValidateConfig()
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('meocord.config.ts:2:0'))
+    exitSpy.mockRestore()
+    consoleSpy.mockRestore()
+  })
+
+  it('exits, listing every problem, when options have the wrong type', async () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadSourceConfig.mockReturnValue({ config: { discordToken: 't', sharding: { mode: 'bogus' }, shutdownTimeout: 'soon' } })
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await compileAndValidateConfig()
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('has 2 problem(s)'))
+    exitSpy.mockRestore()
+    consoleSpy.mockRestore()
+  })
+
+  it('warns about an unknown option and carries on', async () => {
+    mockExistsSync.mockReturnValue(true)
+    mockReadSourceConfig.mockReturnValue({ config: { discordToken: 't', bundleDependancies: true } })
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await compileAndValidateConfig()
+
+    expect(exitSpy).not.toHaveBeenCalled()
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('bundleDependancies is not a MeoCord option'))
+    exitSpy.mockRestore()
+    warnSpy.mockRestore()
   })
 
   it('calls process.exit(1) when meocord.config.ts does not exist', async () => {
@@ -111,7 +157,7 @@ describe('compileAndValidateConfig', () => {
   // reason to refuse to build.
   it('does not call process.exit when only the token is missing', async () => {
     mockExistsSync.mockReturnValue(true)
-    mockLoadMeoCordConfig.mockReturnValue({ appName: 'TestApp' })
+    mockReadSourceConfig.mockReturnValue({ config: { appName: 'TestApp' } })
 
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -126,7 +172,7 @@ describe('compileAndValidateConfig', () => {
 
   it('does not call process.exit when config is valid', async () => {
     mockExistsSync.mockReturnValue(true)
-    mockLoadMeoCordConfig.mockReturnValue({ discordToken: 'valid-token' })
+    mockReadSourceConfig.mockReturnValue({ config: { discordToken: 'valid-token' } })
 
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})

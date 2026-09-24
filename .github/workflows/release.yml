@@ -186,6 +186,10 @@ jobs:
           test -f src/controllers/slash/builders/sample.builder.ts
         shell: bash
 
+      # Paths, separators and the create and config errors, where Windows resolves them differently.
+      - name: Run the Windows CLI scenarios
+        run: bun run cli:scenarios --windows
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -214,6 +218,11 @@ jobs:
       # code it produces passes any of them.
       - name: Verify generated applications
         run: bun run verify:generated
+
+      # The real CLI from the packed build, through what must work and what must fail clearly: each
+      # scenario asserts the exit code and what the output tells the user.
+      - name: Run CLI scenarios
+        run: bun run cli:scenarios
 
   release:
     name: Release

@@ -9,7 +9,8 @@ import wait from '@src/util/wait.util.js'
 import { GeneratorCLI } from '@src/bin/generator.js'
 import { AppGeneratorHelper, runtimePrefixFor } from '@src/bin/helper/app-generator.helper.js'
 import * as fs from 'node:fs'
-import { compileAndValidateConfig, setEnvironment, validateDiscordToken } from '@src/util/common.util.js'
+import { assertConfigShape, compileAndValidateConfig, setEnvironment, validateDiscordToken } from '@src/util/common.util.js'
+import { loadMeoCordCliConfig } from '@src/util/meocord-source-config.util.js'
 import { Command } from 'commander'
 import { simpleGit } from 'simple-git'
 import { execSync } from 'child_process'
@@ -192,15 +193,19 @@ copies or substantial portions of the Software.
         const mode = options.prod ? 'production' : 'development'
         setEnvironment(mode)
 
-        if (options.build || options.dev) {
+        if (options.build || !options.prod) {
           await compileAndValidateConfig()
+        } else {
+          // The compiled config, when there is one, is what the bot will run with.
+          await assertConfigShape(loadMeoCordCliConfig())
         }
 
         // Checked for every start, including one that skips the build: this is the point
         // where the application actually needs to log in.
         await validateDiscordToken()
 
-        if (options.build) {
+        // Watch mode builds as it starts, so --build would only build twice.
+        if (options.build && options.prod) {
           await this.build(mode)
           await this.compileConfig()
         }
@@ -251,6 +256,13 @@ copies or substantial portions of the Software.
     const appPath = path.resolve(process.cwd(), kebabCaseAppName)
 
     p.intro(`meocord v${this.version}`)
+
+    // A name of only symbols would resolve to the current directory itself.
+    if (!kebabCaseAppName) {
+      p.cancel(`"${appName}" needs a name with letters or digits, such as my-bot: it names the app's directory.`)
+      await wait(100)
+      process.exit(1)
+    }
 
     // Validate directory
     if (fs.existsSync(appPath)) {
@@ -473,6 +485,9 @@ copies or substantial portions of the Software.
         bundleDependencies,
         externals: meocordConfig?.externals,
       })
+      // Compiled beside dist and moved in only once it built, so a failed compile leaves the last good one.
+      const staging = path.resolve(this.projectRoot, 'dist', '.meocord-config')
+      fs.rmSync(staging, { recursive: true, force: true })
       const rsbuild = await createRsbuild({
         cwd: this.projectRoot,
         config: {
@@ -480,7 +495,7 @@ copies or substantial portions of the Software.
           source: { ...base.source, entry: { 'meocord.config': configPath } },
           output: {
             ...base.output,
-            distPath: { root: path.resolve(this.projectRoot, 'dist'), js: '' },
+            distPath: { root: staging, js: '' },
             filename: { js: '[name].mjs' },
             minify: { js: false },
             sourceMap: false,
@@ -491,8 +506,11 @@ copies or substantial portions of the Software.
       })
 
       await rsbuild.build()
+      fs.renameSync(path.join(staging, 'meocord.config.mjs'), path.resolve(this.projectRoot, 'dist', 'meocord.config.mjs'))
+      fs.rmSync(staging, { recursive: true, force: true })
       this.logger.info('Config compiled to dist/meocord.config.mjs')
     } catch (error) {
+      fs.rmSync(path.resolve(this.projectRoot, 'dist', '.meocord-config'), { recursive: true, force: true })
       // The built application reads only the compiled config, so without it the bot cannot start.
       this.logger.error(`Failed to compile meocord.config.ts: ${error instanceof Error ? error.message : error}`)
       await wait(100)

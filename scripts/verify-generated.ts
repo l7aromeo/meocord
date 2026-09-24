@@ -8,12 +8,8 @@ import { spawnSync } from 'child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import { ControllerType } from '../src/enum/controller.enum.js'
-import { AppGeneratorHelper } from '../src/bin/helper/app-generator.helper.js'
-
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const builtCli = path.join(repoRoot, 'dist', 'esm', 'bin', 'meocord.js')
+import { builtCli, cleanEnv, installedCliOf, outputOf, pack as packInto, renderApp, repoRoot } from './lib/packed-app.js'
 
 /**
  * Outside the repository, so module resolution cannot climb into the repository's node_modules and
@@ -23,15 +19,9 @@ const workDir = mkdtempSync(path.join(tmpdir(), 'meocord-verify-'))
 const appDir = path.join(workDir, 'app')
 
 /** The CLI as the application installed it, from the packed tarball. */
-const installedCli = path.join(appDir, 'node_modules', 'meocord', 'dist', 'esm', 'bin', 'meocord.js')
+const installedCli = installedCliOf(appDir)
 
-/**
- * The environment every step runs in. `NODE_ENV` is dropped because the CLI keeps an inherited one,
- * which would make `build --dev` build for production; colour is off so failures read cleanly.
- */
-const stepEnv: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: '1' }
-delete stepEnv.FORCE_COLOR
-delete stepEnv.NODE_ENV
+const stepEnv = cleanEnv()
 
 /** Runs a command, printing one line on success and the command's full output on failure. */
 function run(label: string, command: string, args: string[], cwd: string, { quiet = false } = {}): void {
@@ -40,12 +30,7 @@ function run(label: string, command: string, args: string[], cwd: string, { quie
   const seconds = ((performance.now() - started) / 1000).toFixed(1)
 
   if (result.status !== 0) {
-    // Escape sequences stripped: the CLI clears the screen, which would wipe what came before.
-    const output = [result.stdout, result.stderr]
-      .filter(Boolean)
-      .join('\n')
-      .replace(/\u001b\[[0-9;]*[A-Za-z]/g, '')
-      .trim()
+    const output = outputOf(result)
     throw new Error(
       `${label} failed (${[command, ...args].join(' ')}, in ${path.relative(workDir, cwd) || '.'}):\n\n` +
         (output || String(result.error ?? `exit code ${result.status}`)),
@@ -69,15 +54,12 @@ function filesIn(dir: string): string[] {
   })
 }
 
-/**
- * Packs the framework as npm would publish it, so the application installs the tarball rather than
- * a link to the repository: only what `files` ships, resolved through `exports`.
- */
+/** Packs the framework into the work directory. */
 function pack(): string {
-  run('pack the framework', 'npm', ['pack', '--ignore-scripts', '--silent', '--pack-destination', workDir], repoRoot)
-  const tarball = readdirSync(workDir).find(name => name.endsWith('.tgz'))
-  if (!tarball) throw new Error(`npm pack wrote no tarball into ${workDir}`)
-  return path.join(workDir, tarball)
+  const started = performance.now()
+  const tarball = packInto(workDir)
+  console.log(`  ok  pack the framework (${((performance.now() - started) / 1000).toFixed(1)}s)`)
+  return tarball
 }
 
 /**
@@ -96,20 +78,7 @@ function generate(label: string, cwd: string, commands: string[][]): void {
 
 /** Renders the application template and points its framework dependency at the packed build. */
 function createApp(tarball: string): void {
-  mkdirSync(appDir, { recursive: true })
-
-  new AppGeneratorHelper().generateApp(appDir, {
-    appName: 'generated-check',
-    displayName: 'Generated Check',
-    version: '0.0.0',
-    packageManager: 'bun',
-    runtimePrefix: '',
-  })
-
-  const manifestPath = path.join(appDir, 'package.json')
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  manifest.dependencies.meocord = `file:${tarball}`
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+  renderApp(appDir, tarball)
 }
 
 /**
