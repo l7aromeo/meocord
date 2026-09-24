@@ -207,11 +207,12 @@ const hashOf = (commands: CollectedCommand[]) =>
     .update(JSON.stringify(commands.map(({ body }) => body)))
     .digest('hex')
 
-function readHash(file: string | undefined): string | undefined {
+function readHash(file: string | undefined, logger: RegistrationLogger): string | undefined {
   if (!file || !existsSync(file)) return undefined
   try {
     return (JSON.parse(readFileSync(file, 'utf8')) as { hash?: string }).hash
-  } catch {
+  } catch (error) {
+    logger.debug(`Could not read the registered commands, so they are sent again: ${String(error)}`)
     return undefined
   }
 }
@@ -274,7 +275,7 @@ export async function registerCommands(options: RegisterCommandsOptions): Promis
     const file = development ? cacheFile(applicationId, target.scope) : undefined
     const hash = hashOf(target.commands)
 
-    if (development && !force && readHash(file) === hash) {
+    if (development && !force && readHash(file, logger) === hash) {
       logger.log(`Commands ${describeScope(target.scope)} are unchanged; not registering them again.`)
       continue
     }
