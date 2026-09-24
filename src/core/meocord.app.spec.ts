@@ -348,11 +348,14 @@ describe('MeoCordApp', () => {
       const app = new MeoCordApp([AmbiguousController] as any, createMockContainer() as any, mockClient as any, 't')
       await app.start()
 
-      mockClient.emit('interactionCreate', createMockInteraction(ButtonInteraction))
-      await vi.advanceTimersByTimeAsync(0)
-
+      // Before any interaction arrives
       const warn = vi.mocked(Logger).mock.results[0]?.value.warn
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('can match the same customId'))
+
+      // Built once: the first click reuses the routes and does not warn again
+      mockClient.emit('interactionCreate', createMockInteraction(ButtonInteraction))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(warn.mock.calls.filter(([message]: [string]) => message.includes('can match the same customId'))).toHaveLength(1)
     })
 
     it('stays quiet when the patterns cannot collide', async () => {

@@ -249,6 +249,8 @@ export class MeoCordApp implements MeoCordApplication {
     this.attachEventHandlers()
     this.warnAboutMissingRequirements()
     this.noteGlobalStagesOnEvents()
+    // Built now rather than on the first click, so overlapping patterns are reported at startup
+    this.getComponentRoutes()
 
     try {
       await this.bot.login(this.discordToken)
@@ -323,7 +325,7 @@ export class MeoCordApp implements MeoCordApplication {
   }
 
   /**
-   * Every pattern-matched route, most specific first, built once. The ordering lets
+   * Every pattern-matched route, most specific first, built once at start. The ordering lets
    * `gi-profile/summary/{ownerId}/{uid}` win over `gi-profile/{uuid}/{uid}` regardless of registration order.
    */
   private componentRoutes?: ComponentRoute[]
