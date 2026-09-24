@@ -4,7 +4,8 @@ import { CLASS_COOLDOWNS, type CooldownOptions, METHOD_COOLDOWNS } from '@src/co
 /**
  * Limits how often a handler runs: at most `uses` calls within `seconds`, counted per user, server,
  * channel or for everyone. The window slides, so each use comes back `seconds` after it was spent.
- * Stack several for layered limits, such as one every 3 seconds and 5 a minute.
+ * Stack several for layered limits, such as one every 3 seconds and 5 a minute. They are counted in the
+ * order they read, and a call one refuses has already spent those above it, so put the shortest first.
  *
  * A blocked call throws `CooldownError`, answered only to the caller with how long to wait. The
  * cooldown is counted after guards, validation and pipes allow the call, so a denied call or bad
