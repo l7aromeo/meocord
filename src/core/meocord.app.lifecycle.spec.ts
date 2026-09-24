@@ -483,6 +483,59 @@ describe('lifecycle hooks', () => {
       expect(exit).toHaveBeenCalledWith(0)
     })
 
+    it('on a signal mid-ready, shuts down only classes whose onReady finished, and starts no more', async () => {
+      const loaded = await load()
+      const stopped: string[] = []
+      let finishSlow!: () => void
+
+      @loaded.Service()
+      class Cache implements OnReady, OnShutdown {
+        onReady() {}
+        onShutdown() {
+          stopped.push('Cache')
+        }
+      }
+
+      @loaded.Service()
+      class Metrics implements OnShutdown {
+        onShutdown() {
+          stopped.push('Metrics')
+        }
+      }
+
+      @loaded.Service()
+      class Scheduler implements OnReady, OnShutdown {
+        onReady() {
+          return new Promise<void>(resolve => (finishSlow = resolve))
+        }
+        onShutdown() {
+          stopped.push('Scheduler')
+        }
+      }
+
+      @loaded.Service()
+      class Later implements OnReady, OnShutdown {
+        onReady() {
+          stopped.push('Later started')
+        }
+        onShutdown() {
+          stopped.push('Later')
+        }
+      }
+
+      const { client } = await startApp(loaded, { controllers: [], services: [Cache, Metrics, Scheduler, Later] })
+      const ready = becomeReady(client)
+      await vi.waitFor(() => expect(finishSlow).toBeDefined())
+
+      await loaded.shutdownAndExit()
+      finishSlow()
+      await ready
+
+      expect(stopped).toEqual(['Metrics', 'Cache'])
+      expect(client.destroy).toHaveBeenCalled()
+      expect(exit).toHaveBeenCalledWith(0)
+    })
+
     it('runs no onShutdown when onReady never ran', async () => {
       const loaded = await load()
       let stopped = false

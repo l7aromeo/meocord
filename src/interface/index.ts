@@ -126,6 +126,10 @@ export interface OnReady {
  * The whole sequence is limited by `shutdownTimeout` in `meocord.config.ts`; the process then exits
  * whether or not it finished. A hook that throws is logged and the next one still runs.
  *
+ * It runs only for a class whose `onReady` has finished, or that has none: a signal that arrives
+ * while the ready hooks are running skips the class still starting and those not reached yet, and no
+ * further `onReady` starts.
+ *
  * @example
  * ```ts
  * @Service()
