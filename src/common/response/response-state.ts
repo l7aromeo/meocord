@@ -278,7 +278,6 @@ export class InteractionResponse implements ResponseState {
   private settled = false
   private suppressNotifications = false
   private timer?: ReturnType<typeof setTimeout>
-  private answering = false
   /** A lock `@Defer({ mode: 'auto' })` asked for before acknowledging, applied once the timer acknowledges. */
   private pendingLock?: ResponseLockOptions
 
@@ -370,7 +369,7 @@ export class InteractionResponse implements ResponseState {
     this.timer = setTimeout(() => {
       this.timer = undefined
       this.sync()
-      if (this.answering || this.phase !== 'unanswered') {
+      if (this.phase !== 'unanswered') {
         this.warnIfAnsweredOutside()
         return
       }
@@ -584,7 +583,6 @@ export class InteractionResponse implements ResponseState {
     }
     if (!('showModal' in this.interaction)) throw new Error('This interaction cannot show a modal.')
     this.record('showModal', modal)
-    this.answering = true
     await this.interaction.showModal(modal)
     this.phase = 'replied'
   }
@@ -619,7 +617,6 @@ export class InteractionResponse implements ResponseState {
 
   private async reply(body: Body): Promise<Message | undefined> {
     this.cancelScheduled()
-    this.answering = true
     const flags = this.withSuppression(this.flagsFor('reply', body.flags, false))
     this.v2 = hasComponentsV2(flags)
     const sent = forMode(body, this.v2)
@@ -635,7 +632,6 @@ export class InteractionResponse implements ResponseState {
   private async update(body: Body): Promise<Message | undefined> {
     if (!('update' in this.interaction)) return this.reply(body)
     this.cancelScheduled()
-    this.answering = true
     this.settled = true
     const flags = this.flagsFor('update', body.flags) | this.keptFlags(body)
     this.v2 ||= hasComponentsV2(flags)
