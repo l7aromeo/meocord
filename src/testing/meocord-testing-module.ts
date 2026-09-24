@@ -113,7 +113,7 @@ export class TestingModule {
    * @param methodName - The handler method's name.
    * @param args - The arguments dispatch would pass: the interaction, message or reaction, then the
    *   handler's params. With an interaction alone, the params are built as dispatch builds them: a
-   *   command's options, or the handler's customId params and a modal's fields.
+   *   command's or an autocomplete's options, or the handler's customId params and a modal's fields.
    * @returns Whether the handler ran, and the error a filter handled, if any. Rejects with an error no
    *   filter handles, or with the error a filter throws: the built-in fallback, which answers such
    *   errors in the bot, does not run here.
