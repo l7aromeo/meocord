@@ -7,6 +7,7 @@ import { type RsbuildConfig } from '@rsbuild/core'
  */
 export type { RsbuildConfig }
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
+import { type ExecutionContext } from '@src/common/execution-context.js'
 
 /**
  * A guard, run by `@UseGuard` before a handler to decide whether it may run.
@@ -96,6 +97,56 @@ export interface OnReady {
 export interface OnShutdown {
   /** Runs before the client is destroyed. */
   onShutdown(): Promise<void> | void
+}
+
+/**
+ * Runs the rest of the pipeline from inside an interceptor: the next interceptor, then the handler.
+ */
+export interface CallHandler {
+  /**
+   * Continues the call. Call it at most once: each call runs the rest of the pipeline, and the
+   * handler, again.
+   *
+   * @returns What the handler returns, once it has run. Rejects with what the handler throws.
+   */
+  handle(): Promise<unknown>
+}
+
+/**
+ * An interceptor, run by `@UseInterceptor` around a handler after its guards allow the call.
+ *
+ * It receives the call's `ExecutionContext` as an argument and continues with `next.handle()`, called
+ * at most once, since each call runs the handler again. It can act before and after the handler, skip
+ * the handler by not calling `next.handle()`, or catch and replace the error the handler throws. One
+ * instance is shared across calls, so keep per-call state in local variables, and read
+ * `{ provide, params }` through `context.getParams()`.
+ *
+ * @example
+ * ```ts
+ * @Interceptor()
+ * export class TimingInterceptor implements InterceptorInterface {
+ *   private readonly logger = new Logger(TimingInterceptor.name)
+ *
+ *   async intercept(context: ExecutionContext, next: CallHandler): Promise<unknown> {
+ *     const started = performance.now()
+ *     try {
+ *       return await next.handle()
+ *     } finally {
+ *       this.logger.log(`${context.getHandlerName()} took ${Math.round(performance.now() - started)} ms`)
+ *     }
+ *   }
+ * }
+ * ```
+ */
+export interface InterceptorInterface {
+  /**
+   * Runs around the handler.
+   *
+   * @param context - The call being handled: its arguments, controller, handler and metadata.
+   * @param next - Continues with the next interceptor, then the handler.
+   * @returns What the call returns: usually the result of `next.handle()`.
+   */
+  intercept(context: ExecutionContext, next: CallHandler): Promise<unknown> | unknown
 }
 
 /** The second argument a `@ReactionHandler` method receives. */

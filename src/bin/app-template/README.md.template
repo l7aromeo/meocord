@@ -37,6 +37,7 @@ process, launch with node and it is a node process. Node needs to be 22.13 or ne
 npx meocord g co slash "profile"     # a slash controller, its spec and its builder
 npx meocord g s "profile"            # a service
 npx meocord g gu "rate-limit"        # a guard
+npx meocord g i "timing"             # an interceptor
 npx meocord g --help                 # every generator
 ```
 

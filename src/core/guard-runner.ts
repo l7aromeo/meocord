@@ -135,6 +135,23 @@ export function declaringPrototype(prototype: object, methodName: string): objec
   return undefined
 }
 
+/** Private metadata: the prototype whose method a class-level `@UseGuard` re-declared on a subclass. */
+export const INHERITED_FROM = Symbol('inherited_from')
+
+/**
+ * The prototype that declares the handler as written, looking through methods a class-level
+ * `@UseGuard` re-declared on a subclass to wrap an inherited handler.
+ */
+export function sourcePrototype(prototype: object, methodName: string): object | undefined {
+  let owner = declaringPrototype(prototype, methodName)
+  while (owner) {
+    const from = Reflect.getOwnMetadata(INHERITED_FROM, owner, methodName) as object | undefined
+    if (!from) return owner
+    owner = declaringPrototype(from, methodName)
+  }
+  return undefined
+}
+
 /** The guards dispatch runs before a handler, which are the guards its own wrappers would run. */
 export function handlerGuards(prototype: object, methodName: string): GuardEntry[] {
   const owner = declaringPrototype(prototype, methodName)

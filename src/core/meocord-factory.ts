@@ -8,7 +8,7 @@ import { assertBuiltForThisPlatform } from '@src/util/platform.util.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
-import { appStages, bindGlobalStages } from '@src/core/handler-pipeline.js'
+import { appStages, bindGlobalStages, prepareHandlerStages } from '@src/core/handler-pipeline.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { dependencyOrder, isAppClassToken } from '@src/core/lifecycle-order.js'
 
@@ -77,6 +77,7 @@ export class MeoCordFactory {
     for (const ctrl of options.controllers as any[]) {
       Reflect.defineMetadata(MetadataKey.Container, container, ctrl)
     }
+    prepareHandlerStages(container, options.controllers)
 
     return new MeoCordApp(
       options.controllers,

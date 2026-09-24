@@ -3,8 +3,8 @@ import { Container, type ServiceIdentifier } from 'inversify'
 import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
-import { appStages, bindGlobalStages, runHandler } from '@src/core/handler-pipeline.js'
-import { type GuardInterface } from '@src/interface/index.js'
+import { appStages, bindGlobalStages, prepareHandlerStages, runHandler } from '@src/core/handler-pipeline.js'
+import { type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 
 export interface ValueProvider<T = any> {
@@ -24,7 +24,7 @@ export interface TestingModuleOptions {
   providers?: Provider[]
 
   /**
-   * The `@MeoCord` application class, whose global stages, such as `guards`, `invoke` runs before
+   * The `@MeoCord` application class, whose global `guards` and `interceptors` `invoke` runs before
    * each handler's own. Its controllers and services are not registered; list them here.
    */
   app?: new (...args: any[]) => unknown
@@ -45,7 +45,7 @@ type HandlerArgs<C extends new (...args: any[]) => unknown, M extends HandlerNam
 
 /** How a call made with `TestingModule.invoke` ended. */
 export interface InvocationResult {
-  /** Whether the handler ran; `false` when a guard denied the call. */
+  /** Whether the handler ran; `false` when a guard denied the call or an interceptor skipped it. */
   ran: boolean
 }
 
@@ -64,11 +64,12 @@ export class TestingModule {
 
   /**
    * Runs a handler through the same pipeline dispatch runs: the global guards of the module's `app`,
-   * then the handler's own, in order and once each, then the handler. Guards resolve from this module, so `overrideGuard` stubs apply and guards
-   * that inject `ExecutionContext` receive it.
+   * then the handler's own, in order and once each; then the interceptors, the app's first, around
+   * the handler. Guards resolve from this module, so `overrideGuard` stubs apply and guards
+   * that inject `ExecutionContext` receive it. `overrideInterceptor` stubs apply the same way.
    *
-   * Calling the controller method directly still runs its guards as well; `invoke` is the way to test
-   * everything dispatch runs around a handler.
+   * Calling the controller method directly runs its guards but no interceptors; `invoke` is the way
+   * to test everything dispatch runs around a handler.
    *
    * @param controller - A controller passed to `MeoCordTestingModule.create`.
    * @param methodName - The handler method's name.
@@ -109,6 +110,10 @@ export class TestingModule {
 export class TestingModuleBuilder {
   private readonly overrides = new Map<ServiceIdentifier, Provider>()
   private readonly guardOverrides = new Map<new (...args: any[]) => GuardInterface, Partial<GuardInterface>>()
+  private readonly interceptorOverrides = new Map<
+    new (...args: any[]) => InterceptorInterface,
+    Partial<InterceptorInterface>
+  >()
 
   constructor(private readonly options: TestingModuleOptions) {}
 
@@ -138,6 +143,27 @@ export class TestingModuleBuilder {
     return {
       useValue: (stub: Partial<GuardInterface>) => {
         this.guardOverrides.set(guard, stub)
+        return this
+      },
+    }
+  }
+
+  /**
+   * Replaces an interceptor with a stub wherever it applies, globally or on a controller or handler.
+   * The stub's `intercept` receives the context and `next`; call `next.handle()` to run the handler.
+   *
+   * @param interceptor - The interceptor class to replace.
+   * @example
+   * ```ts
+   * builder.overrideInterceptor(TimingInterceptor).useValue({ intercept: (_context, next) => next.handle() })
+   * ```
+   */
+  overrideInterceptor(interceptor: new (...args: any[]) => InterceptorInterface): {
+    useValue: (stub: Partial<InterceptorInterface>) => TestingModuleBuilder
+  } {
+    return {
+      useValue: (stub: Partial<InterceptorInterface>) => {
+        this.interceptorOverrides.set(interceptor, stub)
         return this
       },
     }
@@ -173,6 +199,10 @@ export class TestingModuleBuilder {
       container.bind(guardClass).toConstantValue(stub as GuardInterface)
     }
 
+    for (const [interceptorClass, stub] of this.interceptorOverrides) {
+      container.bind(interceptorClass).toConstantValue(stub as InterceptorInterface)
+    }
+
     // Recursively bind controllers and their dependencies, skipping already-bound tokens
     const bindClass = (cls: new (...args: any[]) => any) => {
       if (container.isBound(cls)) return
@@ -192,6 +222,7 @@ export class TestingModuleBuilder {
       // Stamp container on controller class so @UseGuard works in tests too
       Reflect.defineMetadata(MetadataKey.Container, container, ctrl)
     }
+    prepareHandlerStages(container, this.options.controllers ?? [])
 
     return new TestingModule(container, [...(this.options.controllers ?? [])])
   }
