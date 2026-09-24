@@ -549,7 +549,7 @@ export class ResponseState {
    * - Unanswered: a private reply.
    * - A command whose reply is deferred: `'reply'` edits that reply into the error; `'private'`
    *   deletes it, then follows up privately.
-   * - A component on a private (ephemeral) message: the error is added to that message.
+   * - A component on a private (ephemeral) message: the error is added to that message, where it fits.
    * - Otherwise: a private follow-up, never an edit of the message the user clicked.
    *
    * @param error - The error, handed to the presenter so it can style it by kind.
@@ -612,11 +612,21 @@ export class ResponseState {
     // The message the component is on: whether it is private does not change with edits.
     const current = 'message' in this.interaction ? (this.interaction.message ?? undefined) : this.message
     if (current?.flags?.has(MessageFlags.Ephemeral)) {
-      await this.editMessage(this.appendError(current, this.view(error, message, this.v2)))
-      return
+      const appended = this.appendError(current, this.view(error, message, this.v2))
+      if (this.fits(appended)) {
+        await this.editMessage(appended)
+        return
+      }
     }
     await this.restore()
     await this.followUp(this.privateError(error, message))
+  }
+
+  /** Whether a message stays within Discord's limits of 10 embeds and of Components V2 components. */
+  private fits(body: Body): boolean {
+    return this.v2
+      ? countComponents((body.components ?? []) as Record<string, unknown>[]) <= V2_COMPONENT_LIMIT
+      : (body.embeds?.length ?? 0) <= EMBED_LIMIT
   }
 
   /** The private message the component is on, as it was before loading, with the error added. */
