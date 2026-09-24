@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
-import { loadMeoCordCliConfig } from '@src/util/meocord-source-config.util.js'
+import { loadMeoCordCliConfig, readMeoCordSourceConfig } from '@src/util/meocord-source-config.util.js'
+import { configProblems } from '@src/util/meocord-config-validation.util.js'
 import wait from '@src/util/wait.util.js'
 import chalk from 'chalk'
 
@@ -33,16 +34,39 @@ export const findModulePackageDir = (moduleName: string, baseDir: string = proce
   }
 }
 
-/** Exits the process unless `meocord.config.ts` exists, then loads it. */
+/**
+ * Loads `meocord.config.ts` and checks its shape, exiting when it is missing, fails to load, or has
+ * options of the wrong type; options it does not know are reported and left alone.
+ */
 export async function compileAndValidateConfig() {
   const meocordConfigPath = path.resolve(process.cwd(), 'meocord.config.ts')
   if (!fs.existsSync(meocordConfigPath)) {
     console.error(chalk.red('Configuration file "meocord.config.ts" is missing!'))
     await wait(100)
     process.exit(1)
+    return
   }
 
-  loadMeoCordCliConfig()
+  const loaded = readMeoCordSourceConfig()
+  if ('error' in loaded) {
+    console.error(chalk.red(`meocord.config.ts could not be loaded, so nothing was built or started:\n  ${loaded.error}`))
+    await wait(100)
+    process.exit(1)
+    return
+  }
+
+  await assertConfigShape(loaded.config)
+}
+
+/** Exits with every problem when a configuration has options of the wrong type, and warns about unknown ones. */
+export async function assertConfigShape(config: unknown) {
+  const { errors, warnings } = configProblems(config)
+  for (const warning of warnings) console.warn(chalk.yellow(`meocord.config.ts: ${warning}`))
+  if (errors.length === 0) return
+
+  console.error(chalk.red(`meocord.config.ts has ${errors.length} problem(s):\n${errors.map(error => `  - ${error}`).join('\n')}`))
+  await wait(100)
+  process.exit(1)
 }
 
 /**
@@ -54,7 +78,11 @@ export async function compileAndValidateConfig() {
  */
 export async function validateDiscordToken() {
   if (!loadMeoCordCliConfig()?.discordToken) {
-    console.error(chalk.red('Discord token is missing!'))
+    console.error(
+      chalk.red(
+        'Discord token is missing: meocord.config.ts sets discordToken, and a new app reads it from DISCORD_TOKEN in .env.',
+      ),
+    )
     await wait(100)
     process.exit(1)
   }

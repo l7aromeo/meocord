@@ -26,16 +26,17 @@ bun install
 bun run test
 ```
 
-| Command                    | What it does                                                               |
-| -------------------------- | -------------------------------------------------------------------------- |
-| `bun run test`             | Runs the suite, including the `*.test-d.ts` type-level assertions          |
-| `bun run test:watch`       | Same, in watch mode                                                        |
-| `bun run test:coverage`    | Runs the suite with istanbul coverage and enforces the thresholds          |
-| `bun run lint`             | Formats, fixes lint, then typechecks the source, test, and eslint projects |
-| `bun run build`            | Clears `dist/` and builds ESM, CJS, and type declarations through rollup   |
-| `bun run verify:generated` | Generates an app from the packed build and runs its own checks — see below |
-| `bun run changeset`        | Records a release note for your change — see below                         |
-| `bun run notices`          | Regenerates THIRD_PARTY_NOTICES.md after a dependency is added or removed  |
+| Command                    | What it does                                                                      |
+| -------------------------- | --------------------------------------------------------------------------------- |
+| `bun run test`             | Runs the suite, including the `*.test-d.ts` type-level assertions                 |
+| `bun run test:watch`       | Same, in watch mode                                                               |
+| `bun run test:coverage`    | Runs the suite with istanbul coverage and enforces the thresholds                 |
+| `bun run lint`             | Formats, fixes lint, then typechecks the source, test, and eslint projects        |
+| `bun run build`            | Clears `dist/` and builds ESM, CJS, and type declarations through rollup          |
+| `bun run verify:generated` | Generates an app from the packed build and runs its own checks — see below        |
+| `bun run cli:scenarios`    | Runs the packed CLI through what must work and what must fail clearly — see below |
+| `bun run changeset`        | Records a release note for your change — see below                                |
+| `bun run notices`          | Regenerates THIRD_PARTY_NOTICES.md after a dependency is added or removed         |
 
 ## Making a change
 
@@ -77,6 +78,8 @@ controller of every type flat and nested, in separate projects, and typechecks e
 lives in the system temp directory, so it cannot resolve anything from the repository's `node_modules`,
 and it needs network access for the install. Asserting on the text a template renders says nothing about
 whether that text lints, compiles, tests or builds; shipped bugs have hidden in each of those gaps.
+
+**`cli:scenarios`** installs an application from the packed build and runs the real CLI through scenarios that must succeed and scenarios that must fail: each asserts the exit code, what the output says, and which files were written or left alone. Run it after `bun run build`; `--only <text>` picks scenarios by name, `--windows` runs the subset that also runs on Windows. Add a scenario whenever a command gains a flag or a failure gains a message.
 
 **The Windows job** installs the packed tarball globally and drives the CLI through the `.cmd` shim npm
 writes from the interpreter line. Nothing on a POSIX runner exercises that path, and generation is what

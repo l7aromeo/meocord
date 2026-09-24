@@ -10,8 +10,23 @@ import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
  * rather than the previous build's compiled copy. CLI-only, since it needs jiti to run TypeScript.
  */
 export function loadMeoCordSourceConfig(): MeoCordConfig | undefined {
+  const result = readMeoCordSourceConfig()
+  if ('error' in result) {
+    console.error(`[MeoCord] Failed to load config: ${result.error}`)
+    return undefined
+  }
+  return result.config
+}
+
+/**
+ * Loads `meocord.config.ts` from source, reporting a failure instead of logging it, for the CLI to stop
+ * on. jiti's message names the file, line and column of a syntax error.
+ *
+ * @returns The config (undefined when the file does not exist), or the reason it could not be loaded.
+ */
+export function readMeoCordSourceConfig(): { config: MeoCordConfig | undefined } | { error: string } {
   const configPath = path.resolve(process.cwd(), 'meocord.config.ts')
-  if (!existsSync(configPath)) return undefined
+  if (!existsSync(configPath)) return { config: undefined }
 
   try {
     const tsConfigPath = path.resolve(process.cwd(), 'tsconfig.json')
@@ -35,14 +50,9 @@ export function loadMeoCordSourceConfig(): MeoCordConfig | undefined {
       moduleCache: false,
     })
 
-    return jiti(configPath) as MeoCordConfig
+    return { config: jiti(configPath) as MeoCordConfig }
   } catch (error) {
-    if (error instanceof Error) {
-      console.error(`[MeoCord] Failed to load config: ${error.message}`)
-    } else {
-      console.error(`[MeoCord] Failed to load config: Unknown error`)
-    }
-    return undefined
+    return { error: error instanceof Error ? error.message : String(error) }
   }
 }
 

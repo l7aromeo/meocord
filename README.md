@@ -466,6 +466,10 @@ Every command's own flags:
 
 `meocord -V` / `--version` prints the installed version.
 
+`build` and `start` default to development; `-p` wins when both `-d` and `-p` are given. `start --dev` builds as it starts and on every change, so `--build` only matters with `--prod`.
+
+`build`, `start` and `register` check `meocord.config.ts` before doing anything: one that fails to load stops them with the file and line, an option of the wrong type stops them with a list of every problem, and an option MeoCord does not know is reported as a warning. Every failure exits with code 1.
+
 `start` accepts one environment variable, `MEOCORD_RUNTIME`, which pins the binary the application is run with — see [Which runtime the bot runs on](#which-runtime-the-bot-runs-on).
 
 ```shell
@@ -510,7 +514,7 @@ Each controller gets its own builder, `<Name>CommandBuilder`, and registers a co
 
 Generating never overwrites. If any file it would write already exists, it refuses, names the files, and writes nothing.
 
-`<name>` may contain `/` to nest: `npx meocord g co button "admin/ban"` writes into `src/controllers/button/admin/`.
+`<name>` may contain `/` to nest: `npx meocord g co button "admin/ban"` writes into `src/controllers/button/admin/`. Names are paths inside that folder: `..`, a leading `/` and drive letters are refused. On Windows, `\` separates folders too. Run generators from your project's root, where its `package.json` is.
 
 Directory layout is organisational only. Controllers are wired up by the `controllers` array on `@MeoCord()`, not by where they sit on disk.
 
