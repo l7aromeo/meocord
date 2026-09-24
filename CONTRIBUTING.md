@@ -14,6 +14,9 @@ Thanks for taking the time. Issues, questions, and pull requests are all welcome
 ## Getting set up
 
 MeoCord builds and tests with [Bun](https://bun.sh), and ships to consumers running Node `>=22.13`.
+Bun is the repository's tooling only: the code MeoCord ships — `src/`, and the application templates —
+runs on whichever runtime the application chooses, so it uses Node APIs and no Bun-only ones such as
+`Bun.serve`, `Bun.file` or `bun:*` modules. `bun run lint` rejects them in `src/`.
 
 ```bash
 git clone https://github.com/l7aromeo/meocord.git
