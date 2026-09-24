@@ -23,7 +23,15 @@ import {
 } from '@src/common/response/flags.js'
 import { keptAttachmentNames, rewriteAttachmentUrls } from '@src/common/response/attachments.js'
 import { presenterFor, renderContainer, renderEmbed } from '@src/common/response/presenter.js'
-import { type ResponseView } from '@src/interface/index.js'
+import {
+  countComponents,
+  EMBED_LIMIT,
+  lockComponents,
+  sameJson,
+  V2_COMPONENT_LIMIT,
+  withoutRenderedViews,
+} from '@src/common/response/components.js'
+import { type ResponseContext, type ResponseView } from '@src/interface/index.js'
 
 /** The flags a message sent through `respond()` can ask for. */
 export type ResponseFlags = BitFieldResolvable<
@@ -56,6 +64,15 @@ export interface ResponseErrorOptions {
    * anyone but the user who made the call.
    */
   visibility?: 'reply' | 'private'
+}
+
+/** Options for {@link ResponseState.lock}. */
+export interface ResponseLockOptions {
+  /**
+   * Which controls to disable: every control on the message (`'all'`, the default), only the one the
+   * user used (`'clicked'`), or none, which also skips the loading view (`'none'`).
+   */
+  disable?: 'all' | 'clicked' | 'none'
 }
 
 /** One Discord call made through a response state, as the testing helpers report it. */
@@ -123,7 +140,16 @@ export class ResponseState {
   private lastMessage?: Message
   private readonly calls: ResponseCall[] = []
 
-  private snapshot?: { components: unknown[]; embeds: APIEmbed[] }
+  private snapshot?: { components: Record<string, unknown>[]; embeds: APIEmbed[] }
+  /** The components the lock wrote, to tell whether the message changed since. */
+  private lockedComponents?: unknown[]
+  /** Whether the locked message was answered, so nothing restores it again. */
+  private settled = false
+  private suppressNotifications = false
+  private timer?: ReturnType<typeof setTimeout>
+  private answering = false
+  /** A lock `@Defer({ mode: 'auto' })` asked for before acknowledging, applied once the timer acknowledges. */
+  private pendingLock?: ResponseLockOptions
 
   constructor(readonly interaction: RepliableInteraction) {
     this.location = getInstallContext(interaction)
@@ -201,17 +227,158 @@ export class ResponseState {
     }
   }
 
+  /** Sets what `@Defer` asks of every answer: notifications suppressed on new messages. */
+  configure({ suppressNotifications = false }: { suppressNotifications?: boolean }): void {
+    this.suppressNotifications = suppressNotifications
+  }
+
+  /**
+   * Acknowledges after `delayMs` unless the interaction is answered first, as `@Defer({ mode: 'auto' })`
+   * does. A timer cannot fire while synchronous work blocks the event loop.
+   */
+  scheduleAcknowledge(delayMs: number, options: { ephemeral?: boolean } = {}): void {
+    this.cancelScheduled()
+    this.timer = setTimeout(() => {
+      this.timer = undefined
+      this.sync()
+      if (this.answering || this.phase !== 'unanswered') {
+        this.warnIfAnsweredOutside()
+        return
+      }
+      this.acknowledge(options)
+        .then(() => (this.pendingLock ? this.lock(this.pendingLock) : undefined))
+        .catch(error => logger.debug(`Could not acknowledge in time: ${String(error)}`))
+    }, delayMs)
+    this.timer.unref?.()
+  }
+
+  private cancelScheduled(): void {
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = undefined
+    this.pendingLock = undefined
+  }
+
+  private warnIfAnsweredOutside(): void {
+    if (this.calls.length === 0 && (this.interaction.replied || this.interaction.deferred) && development()) {
+      logger.warn(
+        'An interaction under @Defer was answered with a raw discord.js call; answer through respond(interaction) ' +
+          'so its state stays in step.',
+      )
+    }
+  }
+
+  /**
+   * Locks the message a component is on, as `@Defer`'s second step does: snapshots its components
+   * and embeds, disables its controls, shows the loading emoji on the clicked button, and adds the
+   * presenter's loading view. Commands have no message to lock. Does nothing once locked.
+   *
+   * The loading view is left out when it would pass 10 embeds or the Components V2 component limit;
+   * the lock still applies. A loading view left behind by a crash or restart is dropped first.
+   *
+   * @param options - Which controls to disable.
+   */
+  async lock({ disable = 'all' }: ResponseLockOptions = {}): Promise<void> {
+    if (this.snapshot || disable === 'none' || answersWithOwnMessage(this.interaction)) return
+    const message = 'message' in this.interaction ? this.interaction.message : undefined
+    if (!message) return
+    if (this.timer) {
+      // Not acknowledged yet under 'auto': lock only if the timer fires before an answer.
+      this.pendingLock = { disable }
+      return
+    }
+    await this.acknowledge()
+    this.sync()
+    if (this.phase === 'replied' && !this.acknowledging) return
+
+    const view = presenterFor(this.interaction.client).loading(this.presenterContext(this.v2))
+    const loadingEmbed = renderEmbed(view)
+    this.snapshot = {
+      components: withoutRenderedViews(message.components.map(component => component.toJSON() as unknown as Record<string, unknown>)),
+      embeds: message.embeds.map(embed => embed.toJSON()).filter(embed => !sameJson(embed, loadingEmbed)),
+    }
+    const clickedId = 'customId' in this.interaction ? this.interaction.customId : undefined
+    const locked = lockComponents(this.snapshot.components, { disable, clickedId, loadingEmoji: view.emoji })
+
+    let body: Body
+    if (this.v2) {
+      const withView = [...locked, renderContainer(view) as unknown as Record<string, unknown>]
+      body = { components: countComponents(withView) <= V2_COMPONENT_LIMIT ? withView : locked }
+    } else {
+      const embeds = this.snapshot.embeds.length < EMBED_LIMIT ? [...this.snapshot.embeds, loadingEmbed] : this.snapshot.embeds
+      body = { components: locked, embeds }
+    }
+    const written = await this.editMessage(body, { restoring: true })
+    this.lockedComponents = written?.components?.map(component => component.toJSON()) ?? body.components
+    this.settled = false
+  }
+
+  /**
+   * Puts a locked message back as it was, unless something else changed it since the lock. `@Defer`
+   * calls it after the handler, for a handler that never answered. Never throws.
+   */
+  async release(): Promise<void> {
+    this.cancelScheduled()
+    this.warnIfAnsweredOutside()
+    try {
+      await this.restore()
+    } catch (error) {
+      logger.debug(`Could not restore the message: ${String(error)}`)
+    }
+  }
+
+  /** Restores the snapshot while the message still shows the lock. */
+  private async restore(): Promise<void> {
+    if (!this.snapshot || this.settled) return
+    this.settled = true
+    try {
+      const current = await this.interaction.fetchReply()
+      const components = current?.components?.map(component => component.toJSON())
+      if (components && !sameJson(components, this.lockedComponents)) return
+    } catch {
+      // The message cannot be read here, as in a direct message the bot is not in: restore anyway.
+    }
+    await this.editMessage(this.restoredBody(), { restoring: true })
+  }
+
+  private restoredBody(): Body {
+    const snapshot = this.snapshot!
+    return this.v2 ? { components: snapshot.components } : { components: snapshot.components, embeds: snapshot.embeds }
+  }
+
+  /**
+   * Undoes `@Defer`'s acknowledgement after a guard denied the call silently: a command's deferred
+   * reply is deleted while nothing was sent into it; a component's invisible acknowledgement needs
+   * nothing. Never throws.
+   */
+  async abandon(): Promise<void> {
+    this.cancelScheduled()
+    await this.acknowledging?.catch(() => undefined)
+    this.sync()
+    const onlyDeferred = this.calls.every(call => call.method === 'deferReply')
+    if (this.phase !== 'deferred' || !answersWithOwnMessage(this.interaction) || !onlyDeferred) return
+    try {
+      this.record('deleteReply')
+      await this.interaction.deleteReply()
+    } catch (error) {
+      logger.debug(`Could not delete the deferred reply: ${String(error)}`)
+    }
+  }
+
   /**
    * Sends the answer: a reply to an unanswered command, an update of an unanswered component's
    * message, and an edit once the interaction is deferred or replied. A second `send()` edits again.
+   *
+   * After `@Defer` locked a message, omitting `components` puts back its components as they were
+   * before the lock, and omitting `embeds` drops the loading view; `components: []` clears them.
    *
    * @param payload - Text, or reply options.
    * @returns The message sent or edited, when Discord returns it.
    */
   async send(payload: ResponsePayload): Promise<Message | undefined> {
+    this.cancelScheduled()
     await this.acknowledging
     this.sync()
-    const body = toBody(payload)
+    const body = this.withRestore(toBody(payload))
     if (this.phase !== 'unanswered') return this.editMessage(body)
     return answersWithOwnMessage(this.interaction) ? this.reply(body) : this.update(body)
   }
@@ -235,6 +402,7 @@ export class ResponseState {
    * @returns The message sent, when Discord returns it.
    */
   async followUp(payload: ResponsePayload): Promise<Message | undefined> {
+    this.cancelScheduled()
     await this.acknowledging
     this.sync()
     const body = toBody(payload)
@@ -245,7 +413,7 @@ export class ResponseState {
       }
       return this.editMessage(body)
     }
-    const flags = this.flagsFor('followUp', body.flags, false)
+    const flags = this.withSuppression(this.flagsFor('followUp', body.flags, false))
     const sent = forMode(body, hasComponentsV2(flags))
     this.record('followUp', { ...sent, flags })
     return (await this.interaction.followUp({ ...sent, flags } as InteractionReplyOptions)) as Message
@@ -267,18 +435,37 @@ export class ResponseState {
    * @param modal - The modal to show.
    */
   async modal(modal: JSONEncodable<APIModalInteractionResponseCallbackData> | ModalComponentData): Promise<void> {
+    this.cancelScheduled()
     this.sync()
     if (this.phase !== 'unanswered' || this.acknowledging) {
       throw new Error('A modal must be the first response to an interaction, and this one is already acknowledged.')
     }
     if (!('showModal' in this.interaction)) throw new Error('This interaction cannot show a modal.')
     this.record('showModal', modal)
+    this.answering = true
     await this.interaction.showModal(modal)
     this.phase = 'replied'
   }
 
+  /** Omitted components and embeds put back the message as it was before the lock. */
+  private withRestore(body: Body): Body {
+    if (!this.snapshot || this.settled) return body
+    const restored = this.restoredBody()
+    return {
+      ...body,
+      ...(body.components === undefined ? { components: restored.components } : {}),
+      ...(body.embeds === undefined && restored.embeds && !this.v2 ? { embeds: restored.embeds } : {}),
+    }
+  }
+
+  private withSuppression(flags: number): number {
+    return this.suppressNotifications ? flags | MessageFlags.SuppressNotifications : flags
+  }
+
   private async reply(body: Body): Promise<Message | undefined> {
-    const flags = this.flagsFor('reply', body.flags, false)
+    this.cancelScheduled()
+    this.answering = true
+    const flags = this.withSuppression(this.flagsFor('reply', body.flags, false))
     this.v2 = hasComponentsV2(flags)
     const sent = forMode(body, this.v2)
     this.record('reply', { ...sent, flags })
@@ -292,6 +479,9 @@ export class ResponseState {
 
   private async update(body: Body): Promise<Message | undefined> {
     if (!('update' in this.interaction)) return this.reply(body)
+    this.cancelScheduled()
+    this.answering = true
+    this.settled = true
     const flags = this.flagsFor('update', body.flags)
     this.v2 ||= hasComponentsV2(flags)
     const sent = this.withAttachments(forMode(body, this.v2))
@@ -307,7 +497,8 @@ export class ResponseState {
   }
 
   /** Edits the answer through the interaction, and through the channel only once its token has expired. */
-  private async editMessage(body: Body): Promise<Message | undefined> {
+  private async editMessage(body: Body, { restoring = false } = {}): Promise<Message | undefined> {
+    if (!restoring) this.settled = true
     const flags = this.flagsFor('edit', body.flags)
     this.v2 ||= hasComponentsV2(flags)
     const sent = { ...this.withAttachments(forMode(body, this.v2)), flags }
@@ -363,9 +554,12 @@ export class ResponseState {
     }
   }
 
+  private presenterContext(v2: boolean): ResponseContext {
+    return { interaction: this.interaction as Interaction, locale: this.interaction.locale, mode: v2 ? 'v2' : 'embed' }
+  }
+
   private view(error: unknown, message: string, v2: boolean): ResponseView {
-    const presenter = presenterFor(this.interaction.client)
-    return presenter.error({ interaction: this.interaction as Interaction, locale: this.interaction.locale, mode: v2 ? 'v2' : 'embed' }, { message, error })
+    return presenterFor(this.interaction.client).error(this.presenterContext(v2), { message, error })
   }
 
   private privateError(error: unknown, message: string): ResponsePayload {
@@ -395,11 +589,13 @@ export class ResponseState {
       return
     }
 
-    const current = this.message
+    // The message the component is on: whether it is private does not change with edits.
+    const current = 'message' in this.interaction ? (this.interaction.message ?? undefined) : this.message
     if (current?.flags?.has(MessageFlags.Ephemeral)) {
       await this.editMessage(this.appendError(current, this.view(error, message, this.v2)))
       return
     }
+    await this.restore()
     await this.followUp(this.privateError(error, message))
   }
 

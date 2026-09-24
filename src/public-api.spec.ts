@@ -14,6 +14,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'Command',
     'CommandBuilder',
     'Controller',
+    'Defer',
     'Cooldown',
     'Guard',
     'Interceptor',

@@ -3,6 +3,8 @@ import { type Container } from 'inversify'
 import { MetadataKey } from '@src/enum/index.js'
 import { type ResponsePresenter } from '@src/interface/index.js'
 import { setPresenter } from '@src/common/response/presenter.js'
+import { respond, type ResponseState } from '@src/common/response/response-state.js'
+import { deferMisuseError, handlerDefer, nonInteractionHandler, startDefer } from '@src/core/defer.js'
 import { callGuardedHandler, type GuardEntry, handlerGuards, runGuards } from '@src/core/guard-runner.js'
 import {
   bindShared,
@@ -147,6 +149,8 @@ export function prepareHandlerStages(container: Container, controllers: readonly
       ...getEventHandlers(prototype).map(handler => handler.method),
     ])
     for (const method of methods) {
+      const kind = handlerDefer(prototype, method) ? nonInteractionHandler(prototype, method) : undefined
+      if (kind) throw deferMisuseError(controller.name, method, kind)
       for (const entry of handlerInterceptors(prototype, method)) prepareInterceptor(container, entry)
       for (const entry of handlerFilterLevels(prototype, method, []).flat()) prepareFilter(container, entry)
       for (const { entry } of handlerInputStages(prototype, method).pipes) preparePipe(container, entry)
@@ -240,14 +244,26 @@ export async function runHandler(
   const type = options.type ?? inferContextType(args[0])
   let context: HandlerExecutionContext | undefined
   const contextOf = () => (context ??= new HandlerExecutionContext({ controller, methodName, args, type }))
+  const receivedAt = Date.now()
+  const defer = type === 'interaction' ? handlerDefer(Object.getPrototypeOf(instance), methodName) : undefined
+  const [first] = args as [{ isRepliable?: () => boolean } | undefined]
+  const response: ResponseState | undefined =
+    defer && first?.isRepliable?.() ? respond(first as Parameters<typeof respond>[0]) : undefined
 
   let ran = false
   try {
-    if (!(await runGuards(guards, { container, controller, methodName, args, type }))) return { ran: false }
+    // @Defer's first step, inside the filters so a failed acknowledgement reaches them.
+    if (response) await startDefer(response, defer!, receivedAt)
+    if (!(await runGuards(guards, { container, controller, methodName, args, type }))) {
+      await response?.abandon()
+      return { ran: false }
+    }
 
     const handler = async () => {
       // Inside the interceptors, so they see a validation failure as the handler's error.
       const handlerArgs = await prepareHandlerArgs(container, Object.getPrototypeOf(instance), methodName, contextOf, args)
+      // @Defer's second step, only once the call will run: a denied or invalid call never touches the message.
+      await response?.lock({ disable: defer!.disable })
       ran = true
       return callGuardedHandler(instance, methodName, handlerArgs)
     }
@@ -259,6 +275,8 @@ export async function runHandler(
   } catch (error) {
     await handleError(filters, container, contextOf(), error, options)
     return { ran, error }
+  } finally {
+    await response?.release()
   }
 }
 
