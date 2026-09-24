@@ -783,15 +783,16 @@ describe('respond(), call by call', () => {
       expect(modes).toEqual(['v2'])
     })
 
-    // followUp() alone would edit a private deferral into the error; a private error replaces it instead
-    it('replaces a private deferral with a private error: delete, then follow up', async () => {
+    // Already private, so one message: no delete and resend
+    it('edits a private deferral into a private error', async () => {
       const interaction = command()
       await respond(interaction).acknowledge({ ephemeral: true })
 
       await respond(interaction).error(new Error('x'), { visibility: 'private' })
 
-      expect(getResponse(interaction).calls.map(call => call.method)).toEqual(['deferReply', 'deleteReply', 'followUp'])
-      expect(interaction.editReply).not.toHaveBeenCalled()
+      expect(getResponse(interaction).calls.map(call => call.method)).toEqual(['deferReply', 'editReply'])
+      expect(interaction.deleteReply).not.toHaveBeenCalled()
+      expect(interaction.followUp).not.toHaveBeenCalled()
     })
 
     it('never deletes a reply the handler already sent, even for a private error', async () => {

@@ -247,8 +247,8 @@ export interface ResponseState {
    * logged at debug level.
    *
    * - Unanswered: a private reply.
-   * - A command whose reply is deferred: `'reply'` edits that reply into the error; `'private'`
-   *   deletes it, then follows up privately.
+   * - A command whose reply is deferred: `'reply'` edits that reply into the error; `'private'` edits a
+   *   private deferral into it, and deletes a public one, then follows up privately.
    * - A component on a private (ephemeral) message: the error is added to that message, where it fits.
    * - Otherwise: a private follow-up, never an edit of the message the user clicked.
    *
@@ -728,12 +728,7 @@ export class InteractionResponse implements ResponseState {
         await this.editMessage(this.render(this.view(error, message, this.v2), this.v2))
         return
       }
-      if (this.phase === 'deferred') {
-        // Delete first: a follow-up to a deferred, unsent reply would become a public edit of it.
-        this.record('deleteReply')
-        await this.interaction.deleteReply()
-        this.phase = 'replied'
-      }
+      // A private follow-up edits a private deferral into it, and replaces a public one
       await this.followUp(this.privateError(error, message))
       return
     }
