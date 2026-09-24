@@ -164,8 +164,9 @@ copies or substantial portions of the Software.
       })
 
     program
-      .command('create <app-name>')
+      .command('create')
       .description('Create a new MeoCord application')
+      .argument('<app-name>', 'Name of the application and of the directory it is created in, such as my-bot')
       .option('--use-npm', 'Use npm as the package manager')
       .option('--use-yarn', 'Use Yarn as the package manager')
       .option('--use-pnpm', 'Use pnpm as the package manager')
