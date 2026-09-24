@@ -27,6 +27,7 @@ import {
   countComponents,
   EMBED_LIMIT,
   lockComponents,
+  sameEmbed,
   sameJson,
   V2_COMPONENT_LIMIT,
   withoutRenderedViews,
@@ -294,7 +295,7 @@ export class ResponseState {
     const loadingEmbed = renderEmbed(view)
     this.snapshot = {
       components: withoutRenderedViews(message.components.map(component => component.toJSON() as unknown as Record<string, unknown>)),
-      embeds: message.embeds.map(embed => embed.toJSON()).filter(embed => !sameJson(embed, loadingEmbed)),
+      embeds: message.embeds.map(embed => embed.toJSON()).filter(embed => !sameEmbed(embed, loadingEmbed)),
     }
     const clickedId = 'customId' in this.interaction ? this.interaction.customId : undefined
     const locked = lockComponents(this.snapshot.components, { disable, clickedId, loadingEmoji: view.emoji })

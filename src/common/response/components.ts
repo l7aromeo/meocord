@@ -87,3 +87,11 @@ function canonical(value: unknown): unknown {
 export function sameJson(a: unknown, b: unknown): boolean {
   return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b))
 }
+
+const EMBED_CONTENT = ['title', 'description', 'url', 'timestamp', 'color', 'footer', 'image', 'thumbnail', 'video', 'provider', 'author', 'fields']
+
+/** Whether two embeds show the same content, ignoring what Discord adds to the embeds it returns, such as `type`. */
+export function sameEmbed(a: object, b: object): boolean {
+  const content = (embed: object) => Object.fromEntries(EMBED_CONTENT.map(key => [key, (embed as Json)[key]]))
+  return sameJson(content(a), content(b))
+}
