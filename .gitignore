@@ -33,6 +33,8 @@ dist/
 
 # Testing outputs
 coverage/
+reports/
+.stryker-tmp/
 .jest/
 
 # TypeScript build info
