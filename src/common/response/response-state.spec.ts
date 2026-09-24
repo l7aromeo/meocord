@@ -165,16 +165,39 @@ describe('respond()', () => {
       expect(interaction.update).not.toHaveBeenCalled()
     })
 
-    it("becomes the deferred reply of a command while nothing is sent, as Discord makes it", async () => {
-      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+    // Discord would make the follow-up the deferred reply, shown to everyone, ignoring its flags
+    it('keeps a private follow-up private on a public deferred reply: delete, then follow up', async () => {
       const interaction = command()
       await respond(interaction).acknowledge()
+      const steps: string[] = []
+      interaction.deleteReply.mockImplementation(async () => void steps.push('delete'))
+      interaction.followUp.mockImplementation(async () => {
+        steps.push('followUp')
+        return createMockMessage() as never
+      })
 
-      await respond(interaction).followUp({ content: 'hi', flags: Ephemeral })
+      await respond(interaction).followUp({ content: 'secret', flags: Ephemeral })
 
-      expect(interaction.followUp).not.toHaveBeenCalled()
-      expect(sent(interaction.editReply)).toMatchObject({ content: 'hi' })
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Ephemeral flag has no effect'))
+      expect(steps).toEqual(['delete', 'followUp'])
+      expect(sent(interaction.followUp)).toMatchObject({ content: 'secret', flags: Ephemeral })
+      expect(interaction.editReply).not.toHaveBeenCalled()
+    })
+
+    it('sends a follow-up as the edit of a deferred reply that is private, or when it asks for no privacy', async () => {
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      const secret = command()
+      await respond(secret).acknowledge({ ephemeral: true })
+      const plain = command()
+      await respond(plain).acknowledge()
+
+      await respond(secret).followUp({ content: 'secret', flags: Ephemeral })
+      await respond(plain).followUp({ content: 'hello' })
+
+      expect(sent(secret.editReply)).toMatchObject({ content: 'secret' })
+      expect(sent(plain.editReply)).toMatchObject({ content: 'hello' })
+      expect(secret.deleteReply).not.toHaveBeenCalled()
+      expect(plain.followUp).not.toHaveBeenCalled()
+      expect(warn).not.toHaveBeenCalled()
       warn.mockRestore()
     })
 

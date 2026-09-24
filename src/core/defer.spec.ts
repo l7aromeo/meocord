@@ -294,7 +294,8 @@ describe.each(contexts)('@Defer in %s', (_where, context, owners) => {
 
     await emit(interaction)
 
-    expect(calls(interaction)).toEqual(['deferReply', 'editReply'])
+    // The guard's private notice replaces the public deferral rather than becoming it
+    expect(calls(interaction)).toEqual(['deferReply', 'deleteReply', 'followUp'])
   })
 
   it('makes a command’s deferred reply private with ephemeral', async () => {
