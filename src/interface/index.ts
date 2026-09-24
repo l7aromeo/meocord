@@ -128,7 +128,7 @@ export interface OnReady {
  *
  * It runs only for a class whose `onReady` has finished, or that has none: a signal that arrives
  * while the ready hooks are running skips the class still starting and those not reached yet, and no
- * further `onReady` starts.
+ * further `onReady` starts. An `onReady` that threw counts as finished, so its partial setup is cleaned up.
  *
  * @example
  * ```ts
