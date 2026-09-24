@@ -40,12 +40,12 @@ function expect(condition: unknown, message: string): asserts condition {
 }
 
 /**
- * The smoke app's environment: the inherited one without any MEOCORD_E2E_ value or DISCORD_TOKEN, then
- * exactly what the app reads, so the bot's token is the one passed here and nothing else.
+ * The smoke app's environment: the inherited one, which cleanEnv strips of every MEOCORD_E2E_ value, without
+ * DISCORD_TOKEN, then exactly what the app reads, so the bot's token is the one passed here and nothing else.
  */
 function botEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const env = cleanEnv()
-  for (const key of Object.keys(env)) if (key.startsWith('MEOCORD_E2E_') || key === 'DISCORD_TOKEN') delete env[key]
+  delete env.DISCORD_TOKEN
   return { ...env, MEOCORD_E2E_BOT_TOKEN: botToken, MEOCORD_E2E_GUILD_ID: guildId, ...extra }
 }
 
@@ -327,7 +327,9 @@ async function automated(): Promise<void> {
 async function manualRun(): Promise<void> {
   const applicationId = await new DiscordApi(botToken).applicationId()
   console.log(`\nStarting the smoke app with the checklist's commands, registered globally.`)
-  console.log(`Install it on the test server and to your account: https://discord.com/oauth2/authorize?client_id=${applicationId}`)
+  const install = `https://discord.com/oauth2/authorize?client_id=${applicationId}`
+  console.log(`Add the bot to a server:  ${install}&scope=bot+applications.commands&permissions=117760&integration_type=0`)
+  console.log(`Install it to an account: ${install}&scope=applications.commands&integration_type=1`)
   console.log('Work through "Checking against real Discord" in CONTRIBUTING.md, then press Ctrl+C.\n')
   const bot = new Bot({ MEOCORD_E2E_MODE: 'manual' }, true)
   for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => bot.stop(signal))

@@ -21,12 +21,14 @@ export const installedCliOf = (appDir: string): string => path.join(appDir, 'nod
 /**
  * The environment commands run in. `NODE_ENV` is dropped because the CLI keeps an inherited one,
  * which would make `build --dev` build for production; so is what the package script running this
- * one exported, which the CLI reads to follow its launcher. Colour is off so output reads cleanly.
+ * one exported, which the CLI reads to follow its launcher, and the test:e2e values Bun loads from a
+ * .env file, tokens among them. Colour is off so output reads cleanly.
  */
 export function cleanEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: '1' }
   delete env.npm_config_user_agent
   delete env.npm_execpath
+  for (const key of Object.keys(env)) if (key.startsWith('MEOCORD_E2E_')) delete env[key]
   Object.assign(env, extra)
   delete env.FORCE_COLOR
   if (!('NODE_ENV' in extra)) delete env.NODE_ENV
