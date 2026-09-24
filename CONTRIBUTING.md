@@ -123,8 +123,19 @@ replaced.
    testing.
 2. On **Installation**, tick both **User Install** and **Guild Install**, choose the Discord-provided
    install link, give Guild Install the `applications.commands` and `bot` scopes with the **View
-   Channels**, **Send Messages** and **Read Message History** permissions, and User Install the
-   `applications.commands` scope.
+   Channels**, **Send Messages**, **Embed Links**, **Attach Files** and **Read Message History**
+   permissions, and User Install the `applications.commands` scope. Embed Links and Attach Files are
+   for the error and loading views and the attachments the bot sends through the channel once a token
+   has expired. Together those permissions are `117760`; **Add Reactions** and **Use External Emojis**,
+   which make `379968`, are not needed. With your application's id, the install links are:
+
+   ```text
+   https://discord.com/oauth2/authorize?client_id=<APPLICATION_ID>&scope=bot+applications.commands&permissions=117760&integration_type=0
+   https://discord.com/oauth2/authorize?client_id=<APPLICATION_ID>&scope=applications.commands&integration_type=1
+   ```
+
+   The first adds the bot to a server; the second installs the application to your account.
+
 3. On **Bot**, reset the token and keep it for `.env`. Turn on the **Message Content Intent**; the smoke
    app asks for it, and login fails without it.
 4. Create a server for testing and add the bot through the install link. In Discord's settings, turn on
@@ -134,7 +145,8 @@ replaced.
    **Add Reactions** and **Read Message History** in the channel it will use. It deletes its message
    when the check ends.
 6. Copy `.env.example` to `.env` at the repository root and fill it in. git ignores `.env`, and Bun loads
-   it when the script runs.
+   it into the environment of every `bun run` in the repository, the tests, lint and builds included, not
+   only `test:e2e`; nothing in the repository prints the environment as a whole.
 
 | Variable                       | Required | Value                                                     |
 | ------------------------------ | -------- | --------------------------------------------------------- |
