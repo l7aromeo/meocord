@@ -3,6 +3,8 @@ import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } 
 import { HandlerExecutionContext } from '@src/common/execution-context.js'
 import { type MetadataDecorator } from '@src/common/metadata.js'
 import { appStages, handlerStages } from '@src/core/handler-pipeline.js'
+import { handlerCooldowns } from '@src/core/cooldown-runner.js'
+import { type CooldownScope } from '@src/common/errors.js'
 
 /** A guard as `@UseGuard` declares it: the class, or the class with the params set on its instance. */
 export type InspectedGuard =
@@ -39,6 +41,9 @@ export interface HandlerInspection {
    */
   readonly filters: readonly InspectedFilter[]
 
+  /** The handler's cooldowns, the controller's first, with their defaults filled in. */
+  readonly cooldowns: readonly InspectedCooldown[]
+
   /**
    * Reads a metadata value as `ExecutionContext.get` does: the method's value, else the controller's.
    *
@@ -58,6 +63,15 @@ export interface HandlerInspection {
   getAll<T = unknown>(key: string | symbol): T[]
 }
 
+/** One `@Cooldown` on a handler, as {@link inspectHandler} reports it. */
+export interface InspectedCooldown {
+  readonly seconds: number
+  readonly uses: number
+  readonly per: CooldownScope
+  /** Whether it exempts some callers. */
+  readonly bypass: boolean
+}
+
 /** What {@link inspectHandler} includes besides the handler's own metadata. */
 export interface InspectHandlerOptions {
   /** The `@MeoCord` application class, whose global guards, interceptors and filters are included. */
@@ -72,8 +86,8 @@ export interface InspectHandlerOptions {
  * @param controller - The controller class declaring the handler.
  * @param methodName - The handler method's name.
  * @param options - `app` to include the global guards, interceptors and filters `@MeoCord` declares.
- * @returns The handler's guards, interceptors and filters, in the order they apply, and a reader for
- *   its metadata.
+ * @returns The handler's guards, interceptors, filters and cooldowns, in the order they apply, and a
+ *   reader for its metadata.
  *
  * @example
  * ```ts
@@ -100,6 +114,11 @@ export function inspectHandler<C extends new (...args: any[]) => unknown>(
     guards: Object.freeze([...guards]),
     interceptors: Object.freeze([...interceptors]),
     filters: Object.freeze(filters.flat()),
+    cooldowns: Object.freeze(
+      handlerCooldowns(controller.prototype as object, methodName).map(({ seconds, uses = 1, per = 'user', bypass }) =>
+        Object.freeze({ seconds, uses, per, bypass: bypass !== undefined }),
+      ),
+    ),
     get: (metadata: MetadataDecorator<unknown> | string | symbol) => context.get(metadata as string),
     getAll: (metadata: MetadataDecorator<unknown> | string | symbol) => context.getAll(metadata as string),
   } as HandlerInspection

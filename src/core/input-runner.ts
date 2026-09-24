@@ -6,6 +6,7 @@ import { ValidationError } from '@src/common/errors.js'
 import { type HandlerExecutionContext } from '@src/common/execution-context.js'
 import { prepareInterceptor } from '@src/core/interceptor-runner.js'
 import { sourcePrototype } from '@src/core/guard-runner.js'
+import { consumeCooldowns, handlerCooldowns } from '@src/core/cooldown-runner.js'
 
 export type PipeClass = new (...args: any[]) => PipeInterface
 
@@ -70,7 +71,14 @@ export async function prepareHandlerArgs(
   args: readonly unknown[],
 ): Promise<unknown[]> {
   const { schema, pipes } = handlerInputStages(prototype, methodName)
-  if (!schema && pipes.length === 0) return [...args]
+  // Counted last, so input that fails validation or a pipe never uses up a cooldown.
+  const cooldowns = handlerCooldowns(prototype, methodName)
+  const consume = () => consumeCooldowns(container, prototype.constructor, methodName, cooldowns, contextOf)
+
+  if (!schema && pipes.length === 0) {
+    await consume()
+    return [...args]
+  }
 
   let input = (args[1] ?? {}) as Record<string, unknown>
 
@@ -93,5 +101,6 @@ export async function prepareHandlerArgs(
     }
   }
 
+  await consume()
   return [args[0], input, ...args.slice(2)]
 }

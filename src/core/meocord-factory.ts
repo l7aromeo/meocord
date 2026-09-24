@@ -9,6 +9,9 @@ import { MetadataKey } from '@src/enum/index.js'
 import { isRegisterOnly } from '@src/util/registration-mode.util.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { missingTranslatorError, Translator } from '@src/common/translator.js'
+import { CooldownStore, MemoryCooldownStore } from '@src/common/cooldown-store.js'
+import { handlerCooldowns } from '@src/core/cooldown-runner.js'
+import { getCommandMap, getMessageHandlers } from '@src/decorator/controller.decorator.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import { appStages, bindGlobalStages, prepareHandlerStages } from '@src/core/handler-pipeline.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
@@ -41,6 +44,28 @@ function bindDependencies(container: Container, cls: any): void {
     if (dep === Translator && !container.isBound(Translator)) throw missingTranslatorError(cls)
     if (isAppClassToken(dep)) bindDependencies(container, dep)
   }
+}
+
+/**
+ * Tells a process-sharded app that its in-memory cooldowns count per shard: a user's calls, and all
+ * calls, reach different shards, so `'user'` and `'global'` limits are looser than they read.
+ */
+function warnPerShardCooldowns(controllers: readonly (new (...args: any[]) => unknown)[], logger: Logger): void {
+  const loose = controllers.flatMap(controller => {
+    const prototype = controller.prototype as object
+    const methods = Object.values(getCommandMap(prototype) ?? {})
+      .flat()
+      .map(command => command.methodName)
+    return [...new Set([...methods, ...getMessageHandlers(prototype).map(handler => handler.method)])]
+      .filter(method => handlerCooldowns(prototype, method).some(({ per = 'user' }) => per === 'user' || per === 'global'))
+      .map(method => `${controller.name}.${method}`)
+  })
+  if (loose.length === 0) return
+
+  logger.warn(
+    `Each shard counts 'user' and 'global' cooldowns in its own memory, so they allow more calls than they ` +
+      `say: ${loose.join(', ')}. Bind a shared store with @MeoCord({ cooldownStore }), such as one on Redis.`,
+  )
 }
 
 export class MeoCordFactory {
@@ -115,6 +140,14 @@ export class MeoCordFactory {
         ),
       )
 
+    // A store of the app's own is resolved like a service, so it can inject its client
+    if (options.cooldownStore) {
+      bindDependencies(container, options.cooldownStore)
+      container.bind(CooldownStore).toService(options.cooldownStore)
+    } else {
+      container.bind(CooldownStore).toConstantValue(new MemoryCooldownStore())
+    }
+
     // Bind all controllers and their transitive dependencies
     for (const ctrl of options.controllers as any[]) {
       bindDependencies(container, ctrl)
@@ -157,6 +190,9 @@ export class MeoCordFactory {
     }
 
     prepareHandlerStages(container, appClasses)
+    if (shardingRole(meocordConfig) === 'shard' && container.get(CooldownStore) instanceof MemoryCooldownStore) {
+      warnPerShardCooldowns(options.controllers, this.logger)
+    }
 
     return new MeoCordApp(
       options.controllers,

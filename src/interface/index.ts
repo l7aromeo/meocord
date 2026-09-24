@@ -435,6 +435,7 @@ export interface CommandBuilderOptions {
   guilds?: (string | undefined)[]
 }
 
+export type { CooldownOptions } from '@src/core/cooldown-runner.js'
 export type {
   InferSchemaOutput,
   Piped,

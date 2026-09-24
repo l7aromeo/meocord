@@ -24,6 +24,7 @@ import {
 } from '@src/core/filter-runner.js'
 import { type Fallback } from '@src/core/fallback.js'
 import { handlerInputStages, prepareHandlerArgs, preparePipe } from '@src/core/input-runner.js'
+import { methodCooldowns } from '@src/core/cooldown-runner.js'
 import { Logger } from '@src/common/logger.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
 import {
@@ -143,6 +144,13 @@ function assertInputStagesOnInteractions(controller: new (...args: any[]) => unk
       throw new Error(
         `${controller.name}.${method} is ${kind === 'autocomplete' || kind === 'event' ? 'an' : 'a'} ${kind} handler; @Validate and @UsePipe apply only to interaction ` +
           `handlers, whose options, customId params and modal fields they check.`,
+      )
+    }
+    // A controller's own @Cooldown skips these handlers; one on the method itself is a mistake.
+    if (kind !== 'message' && methodCooldowns(prototype, method).length > 0) {
+      throw new Error(
+        `${controller.name}.${method} is ${kind === 'autocomplete' || kind === 'event' ? 'an' : 'a'} ${kind} handler; @Cooldown applies only to ` +
+          `interaction and message handlers.`,
       )
     }
   }

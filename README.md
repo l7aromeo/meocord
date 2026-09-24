@@ -34,6 +34,7 @@
 - [Exception filters](#exception-filters)
 - [Validation and Pipes](#validation-and-pipes)
 - [Localisation](#localisation)
+- [Cooldowns](#cooldowns)
 - [Custom Decorators](#custom-decorators)
 - [Gateway Events](#gateway-events)
 - [Handler Discovery](#handler-discovery)
@@ -992,6 +993,57 @@ export class BanService {
 **Testing.** `expectCompleteCatalog(t)` from `meocord/testing` fails with every message a locale lacks, every message the default catalog does not have, and every plural form a language needs but lacks. A testing module created with `app` injects the app's translator; otherwise provide one with `{ provide: Translator, useValue: t }`.
 
 The built-in fallback's own texts — "Command not found!" and the generic error — stay in English. An [exception filter](#exception-filters) can answer in the user's language instead.
+
+## Cooldowns
+
+`@Cooldown` limits how often a handler runs: at most `uses` calls within `seconds`, counted per user by default. The window slides, so each use comes back `seconds` after it was spent. Stack several for layered limits:
+
+```typescript
+import { Cooldown } from 'meocord/decorator'
+
+@Command('daily', CommandType.SLASH)
+@Cooldown({ seconds: 3 }) // one call every 3 seconds
+@Cooldown({ uses: 5, seconds: 60 }) // and at most 5 a minute
+async daily(interaction: ChatInputCommandInteraction) {}
+```
+
+| Option    | Default  | Description                                                                                                                             |
+| --------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `seconds` | —        | The window's length.                                                                                                                    |
+| `uses`    | `1`      | Calls allowed within the window.                                                                                                        |
+| `per`     | `'user'` | Whose calls count together: `'user'`, `'guild'`, `'channel'` or `'global'`. Outside a server, `'guild'` and `'channel'` count per user. |
+| `bypass`  | —        | `(context) => boolean`: exempts a call without counting it, such as one from an owner.                                                  |
+
+A blocked call throws `CooldownError` (from `meocord/common`, with `retryAfterMs` and `per`), which the built-in fallback answers only to the caller: "Slow down: try again in 12s." `cooldownMessage(retryAfterMs)` builds that text; an [exception filter](#exception-filters) catching `CooldownError` can say it another way, or in the user's language.
+
+The cooldown is counted last, once guards, validation and pipes have let the call through, so a denied call or bad input spends nothing. On a controller, `@Cooldown` applies to each of its interaction and message handlers separately. It works on interaction and message handlers; the bot refuses to start with one on an autocomplete, reaction or event handler itself.
+
+For a reusable exemption, compose it: `const Limited = (seconds: number) => applyDecorators(Cooldown({ seconds, bypass: isOwner }))`.
+
+### Where calls are counted
+
+By default in this process's memory: one count per bot, which drops keys whose calls have all expired. With [process sharding](#sharding), each shard counts on its own, so `'user'` and `'global'` cooldowns allow more than they say — the bot warns at startup. `'guild'` and `'channel'` stay exact, since a server lives on one shard.
+
+To share one count, extend `CooldownStore` and pass it to `@MeoCord({ cooldownStore })`. It is resolved like a service, so it can inject its client, and its `consume` must check and record a call in one step, so two calls at the limit cannot both pass:
+
+```typescript
+import { CooldownStore, type CooldownLimit, type CooldownVerdict } from 'meocord/common'
+
+@Service()
+export class RedisCooldownStore extends CooldownStore {
+  constructor(private readonly redis: RedisService) {
+    super()
+  }
+
+  consume(key: string, { uses, windowMs }: CooldownLimit): Promise<CooldownVerdict> {
+    return this.redis.slidingWindow(key, uses, windowMs) // a sorted set trimmed and counted in one Lua script
+  }
+}
+
+@MeoCord({ controllers: [...], clientOptions: {...}, cooldownStore: RedisCooldownStore })
+```
+
+In tests, each `MeoCordTestingModule` counts in a fresh in-memory store; provide `{ provide: CooldownStore, useValue }` to use another. `inspectHandler(Controller, 'method').cooldowns` lists a handler's cooldowns with their defaults.
 
 ## Custom Decorators
 
