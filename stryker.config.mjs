@@ -4,8 +4,9 @@
  * not a CI check. Each module is mutated on its own, and every mutant faces the framework's whole
  * runtime suite (vitest.mutation.config.ts). Reports land in reports/mutation/.
  *
- * The command runner activates a mutant through the environment. The vitest runner would be faster,
- * but on Vitest 5 it reports covered mutants as survived: stryker-mutator/stryker-js#6210.
+ * The vitest runner runs only the tests that cover each mutant. On Vitest 5 it reports covered mutants
+ * as survived (stryker-mutator/stryker-js#6210), since Vitest 5 joins test names with ' > '.
+ * patches/ carries that fix from stryker-mutator/stryker-js#6220; drop the patch once #6220 or #6214 ships.
  */
 
 /** Each module: the files it mutates. */
@@ -48,10 +49,10 @@ if (!module) throw new Error(`Unknown mutation module "${name}"; one of: ${Objec
 
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
-  testRunner: 'command',
-  commandRunner: { command: 'node node_modules/vitest/vitest.mjs run --config vitest.mutation.config.ts' },
-  coverageAnalysis: 'off',
-  // Each run starts the whole suite with workers of its own; more at once only starves them into timeouts.
+  testRunner: 'vitest',
+  vitest: { configFile: 'vitest.mutation.config.ts' },
+  coverageAnalysis: 'perTest',
+  // Each runner keeps a Vitest with workers of its own; more at once only starves them into timeouts.
   concurrency: 4,
   timeoutMS: 30_000,
   mutate: module.mutate,
