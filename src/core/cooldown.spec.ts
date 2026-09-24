@@ -1,6 +1,7 @@
 import { ButtonInteraction, ChatInputCommandInteraction, Message, type MessageReaction } from 'discord.js'
 import { vi } from 'vitest'
-import { Command, Controller, Cooldown, MessageHandler, Once, Pipe, ReactionHandler, UsePipe, Validate } from '@src/decorator/index.js'
+import { Command, Controller, Cooldown, MessageHandler, On, Once, Pipe, ReactionHandler, UsePipe, Validate } from '@src/decorator/index.js'
+import { handlerCooldowns, methodCooldowns } from '@src/core/cooldown-runner.js'
 import { CommandType } from '@src/enum/index.js'
 import { type PipeInterface, type StandardSchemaV1 } from '@src/interface/index.js'
 import { CooldownError, cooldownMessage, CooldownStore, type CooldownLimit, MemoryCooldownStore } from '@src/common/index.js'
@@ -341,5 +342,125 @@ describe('classes that share a name', () => {
 
   it('start when neither has a cooldown or a @Once handler', () => {
     expect(() => MeoCordTestingModule.create({ controllers: [plainShop(), plainShop()] }).compile()).not.toThrow()
+  })
+})
+
+describe('@Cooldown, rule by rule', () => {
+  it('finds no cooldowns for a method a class does not have', () => {
+    expect(handlerCooldowns(DailyController.prototype, 'missing')).toEqual([])
+    expect(methodCooldowns(DailyController.prototype, 'missing')).toEqual([])
+  })
+
+  it("applies the class cooldowns from the bound class up to the one declaring the handler, and none above it", () => {
+    @Cooldown({ seconds: 1 })
+    class Root {
+      rooted() {}
+    }
+    @Cooldown({ seconds: 2 })
+    class Middle extends Root {
+      declared() {}
+    }
+    @Cooldown({ seconds: 3 })
+    class Leaf extends Middle {}
+
+    expect(handlerCooldowns(Leaf.prototype, 'declared').map(({ seconds }) => seconds)).toEqual([2, 3])
+    expect(handlerCooldowns(Leaf.prototype, 'rooted').map(({ seconds }) => seconds)).toEqual([1, 2, 3])
+  })
+
+  it('counts under the key of each scope, and a caller without a user as unknown', async () => {
+    const keys: string[] = []
+    const consume = vi.fn(async (key: string) => {
+      keys.push(key)
+      return { allowed: true, retryAfterMs: 0 }
+    })
+
+    @Controller()
+    class Scoped {
+      @Command('server', CommandType.SLASH)
+      @Cooldown({ seconds: 5, per: 'guild' })
+      async server(_interaction: ChatInputCommandInteraction) {}
+
+      @Command('everyone', CommandType.SLASH)
+      @Cooldown({ seconds: 5, per: 'global' })
+      async everyone(_interaction: ChatInputCommandInteraction) {}
+
+      @MessageHandler('!who')
+      @Cooldown({ seconds: 5 })
+      async who(_message: Message) {}
+    }
+    const scoped = MeoCordTestingModule.create({ controllers: [Scoped], providers: [{ provide: CooldownStore, useValue: { consume } }] }).compile()
+    const anonymous = Object.assign(Object.create(Message.prototype) as Message, { author: undefined, guildId: 'g', channelId: 'c', content: '!who' })
+
+    await scoped.invoke(Scoped, 'server', slash({ guild: 'g1' }))
+    await scoped.invoke(Scoped, 'everyone', slash())
+    await scoped.invoke(Scoped, 'who', anonymous)
+
+    expect(keys).toEqual(['Scoped.server#0:guild:guild:g1', 'Scoped.everyone#0:global:global', 'Scoped.who#0:user:user:unknown'])
+  })
+
+  it("counts each message author separately by default", async () => {
+    @Controller()
+    class Greeter {
+      @MessageHandler('!hello')
+      @Cooldown({ seconds: 10 })
+      async hello(_message: Message) {
+        ran.push('hello')
+      }
+    }
+    const greeter = MeoCordTestingModule.create({ controllers: [Greeter] }).compile()
+    const from = (id: string) => Object.assign(Object.create(Message.prototype) as Message, { author: { id }, guildId: 'g', channelId: 'c', content: '!hello' })
+
+    await greeter.invoke(Greeter, 'hello', from('ada'))
+    await greeter.invoke(Greeter, 'hello', from('bo'))
+
+    expect(ran).toEqual(['hello', 'hello'])
+  })
+
+  it("never counts a controller's cooldown against its event handlers", async () => {
+    @Controller()
+    @Cooldown({ seconds: 60 })
+    class Members {
+      @On('guildMemberAdd')
+      greet() {
+        ran.push('greet')
+      }
+    }
+    const members = MeoCordTestingModule.create({ controllers: [Members] }).compile()
+
+    await members.emit('guildMemberAdd', {} as never)
+    await members.emit('guildMemberAdd', {} as never)
+
+    expect(ran).toEqual(['greet', 'greet'])
+  })
+
+  it('refuses no uses, or fewer', () => {
+    expect(() => Cooldown({ seconds: 5, uses: 0 })).toThrow('whole number of uses of at least 1, not 0')
+    expect(() => Cooldown({ seconds: 5, uses: -2 })).toThrow('not -2')
+  })
+})
+
+describe('MemoryCooldownStore, sweeping', () => {
+  it('keeps a key while any of its calls is inside its window, and drops it the moment the last one leaves', async () => {
+    const store = new MemoryCooldownStore()
+    const start = Date.now()
+    await store.consume('k', { uses: 3, windowMs: 60_000 })
+    vi.advanceTimersByTime(50_000)
+    await store.consume('k', { uses: 3, windowMs: 60_000 })
+
+    store.sweep(start + 61_000)
+    expect(store.size).toBe(1)
+    store.sweep(start + 50_000 + 60_000 - 1)
+    expect(store.size).toBe(1)
+    store.sweep(start + 50_000 + 60_000)
+    expect(store.size).toBe(0)
+  })
+
+  it('runs one sweeper however many keys it counts', async () => {
+    const store = new MemoryCooldownStore()
+    const before = vi.getTimerCount()
+
+    for (const key of ['a', 'b', 'c']) await store.consume(key, { uses: 1, windowMs: 1_000 })
+
+    expect(vi.getTimerCount()).toBe(before + 1)
   })
 })
