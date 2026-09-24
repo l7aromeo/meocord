@@ -26,7 +26,7 @@ describe('attachmentFileName', () => {
 describe('keptAttachmentNames', () => {
   it('reads the names of files sent as paths, named files, and builders', () => {
     const names = keptAttachmentNames(
-      { files: ['/tmp/cards/a.png', { attachment: '/tmp/b.png' }, { attachment: Buffer.from(''), name: 'c.png' }, new AttachmentBuilder(Buffer.from(''), { name: 'd.png' }), { attachment: Buffer.from('') }, 7] },
+      { files: ['/tmp/cards/a.png', { attachment: '/tmp/b.png' }, { attachment: Buffer.from(''), name: 'c.png' }, new AttachmentBuilder(Buffer.from(''), { name: 'd.png' }), { attachment: Buffer.from('') }, 7, null] },
       [],
     )
 
@@ -50,7 +50,7 @@ describe('rewriteAttachmentUrls', () => {
             .setImage(cdn('card.png'))
             .setThumbnail(cdn('card.png'))
             .setAuthor({ name: 'a', iconURL: cdn('card.png') })
-            .setFooter({ text: 'f', iconURL: cdn('other.png') }),
+            .setFooter({ text: 'f', iconURL: cdn('card.png') }),
         ],
       },
       kept,
@@ -59,7 +59,7 @@ describe('rewriteAttachmentUrls', () => {
     expect(embed.image.url).toBe('attachment://card.png')
     expect(embed.thumbnail.url).toBe('attachment://card.png')
     expect(embed.author.icon_url).toBe('attachment://card.png')
-    expect(embed.footer.icon_url).toBe(cdn('other.png'))
+    expect(embed.footer.icon_url).toBe('attachment://card.png')
   })
 
   it('rewrites Components V2 thumbnails, files, and media inside sections and containers', () => {
@@ -105,7 +105,7 @@ describe('rewriteAttachmentUrls', () => {
   it('leaves a file not kept, and a component without media, as they are', () => {
     const payload = {
       embeds: [{ image: { url: cdn('gone.png') } }],
-      components: [{ type: ComponentType.Thumbnail }, { type: ComponentType.File, file: null }],
+      components: [{ type: ComponentType.Thumbnail }, { type: ComponentType.File, file: null }, { type: ComponentType.File, file: 'not an object' }],
     }
 
     expect(rewriteAttachmentUrls(payload, kept)).toEqual(payload)

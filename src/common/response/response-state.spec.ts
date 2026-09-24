@@ -599,10 +599,13 @@ describe('respond(), call by call', () => {
     })
 
     it('passes on a rejection that carries no code, as it came', async () => {
-      const interaction = command()
-      interaction.deferReply.mockRejectedValueOnce(null)
+      const nulled = command()
+      nulled.deferReply.mockRejectedValueOnce(null)
+      const empty = command()
+      empty.deferReply.mockRejectedValueOnce(undefined)
 
-      await expect(respond(interaction).acknowledge()).rejects.toBeNull()
+      await expect(respond(nulled).acknowledge()).rejects.toBeNull()
+      await expect(respond(empty).acknowledge()).rejects.toBeUndefined()
     })
   })
 
@@ -626,8 +629,19 @@ describe('respond(), call by call', () => {
       await respond(interaction).acknowledge()
 
       await respond(interaction).followUp({ content: 'secret', flags: Ephemeral })
+      // The deferral is gone: another follow-up is a message of its own, not an edit of it
+      await respond(interaction).followUp('another')
 
-      expect(getResponse(interaction).calls.map(call => call.method)).toEqual(['deferReply', 'deleteReply', 'followUp'])
+      expect(getResponse(interaction).calls.map(call => call.method)).toEqual(['deferReply', 'deleteReply', 'followUp', 'followUp'])
+    })
+
+    it('records a delete', async () => {
+      const interaction = command()
+      await respond(interaction).send('x')
+
+      await respond(interaction).delete()
+
+      expect(getResponse(interaction).calls.at(-1)).toEqual({ method: 'deleteReply', payload: undefined })
     })
   })
 
@@ -703,6 +717,15 @@ describe('respond(), call by call', () => {
       await respond(interaction).lock()
 
       expect(respond(interaction).original).toEqual({ components: [row('refresh')], embeds: [{ description: 'card' }] })
+    })
+
+    it('locks a message a raw deferred update acknowledged, since the message is still unanswered', async () => {
+      const interaction = button(messageWith({ components: [row('refresh')] }))
+      await interaction.deferUpdate()
+
+      await respond(interaction).lock()
+
+      expect(interaction.editReply).toHaveBeenCalled()
     })
 
     it('locks nothing on a message a raw update already answered', async () => {
@@ -904,6 +927,28 @@ describe("respond() under @Defer's timer and locks", () => {
       expect(interaction.deleteReply).toHaveBeenCalled()
     })
 
+    it('warns on release about a raw answer only, never about one made through it or no answer', async () => {
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      const raw = command()
+      await raw.reply('raw')
+      const through = command()
+      await respond(through).send('answered')
+      const none = command()
+
+      for (const interaction of [raw, through, none]) await responseOf(interaction).release()
+
+      expect(warn).toHaveBeenCalledTimes(1)
+    })
+
+    it("never deletes a component's message a raw acknowledgement deferred", async () => {
+      const interaction = button()
+      await interaction.deferUpdate()
+
+      await responseOf(interaction).abandon()
+
+      expect(interaction.deleteReply).not.toHaveBeenCalled()
+    })
+
     it("never deletes a component's message: its acknowledgement left nothing to undo", async () => {
       const interaction = button()
       await respond(interaction).acknowledge()
@@ -949,6 +994,23 @@ describe("respond() under @Defer's timer and locks", () => {
       await responseOf(second).release()
       expect(message.current()[0].components.map(({ label, disabled }) => [label, disabled])).toEqual([['A done', undefined], ['b', undefined]])
     })
+  })
+
+  it("settles the other call onto the embeds an answer sent", async () => {
+    const message = Object.assign(messageWith({ embeds: [{ description: 'card' }], components: [row('a', 'b')] }), { id: 'embeds-shared' })
+    const first = createMockInteraction(ButtonInteraction, { customId: 'a', message })
+    const second = createMockInteraction(ButtonInteraction, { customId: 'b', message })
+    for (const interaction of [first, second]) {
+      interaction.editReply.mockResolvedValue(createMockMessage() as never)
+      interaction.fetchReply.mockRejectedValue(new Error('not readable'))
+      await respond(interaction).acknowledge()
+      await respond(interaction).lock({ disable: 'clicked' })
+    }
+
+    await respond(first).send({ embeds: [{ description: 'A result' }] })
+    await responseOf(second).release()
+
+    expect(sent(second.editReply, 1).embeds).toEqual([{ description: 'A result' }])
   })
 
   describe('the lock registry', () => {

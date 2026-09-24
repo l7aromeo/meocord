@@ -45,6 +45,14 @@ describe('lockComponents', () => {
     expect((selectClicked[1].components as Json[])[0]).not.toHaveProperty('emoji')
   })
 
+  it('shows no loading emoji on a link button, which has no customId, when nothing was clicked', () => {
+    const link = { type: ComponentType.Button, style: 5, url: 'https://example.com', label: 'Docs' }
+
+    const [locked] = lockComponents([row(link)], { disable: 'all', loadingEmoji: '⏳' })
+
+    expect((locked.components as Json[])[0]).not.toHaveProperty('emoji')
+  })
+
   it("parses a custom loading emoji into Discord's id, name and animated", () => {
     const [locked] = lockComponents([row(button('go'))], { disable: 'all', clickedId: 'go', loadingEmoji: '<a:spin:123456789012345678>' })
 
@@ -94,6 +102,7 @@ describe('sameJson', () => {
     expect(sameJson({ a: [1, 2] }, { a: [2, 1] })).toBe(false)
     expect(sameJson('x', 'x')).toBe(true)
     expect(sameJson(null, {})).toBe(false)
+    expect(sameJson([1, 2], { 0: 1, 1: 2 })).toBe(false)
   })
 })
 
