@@ -15,6 +15,7 @@
     "test": "vitest run",
     "verify:generated": "bun scripts/verify-generated.ts",
     "cli:scenarios": "bun scripts/cli-scenarios.ts",
+    "test:e2e": "bun scripts/e2e.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:typecheck": "tsc --noEmit --project tsconfig.test.json",

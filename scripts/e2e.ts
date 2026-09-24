@@ -1,0 +1,387 @@
+/**
+ * Checks MeoCord against real Discord, with an application and a server kept for testing; see
+ * "Checking against real Discord" in CONTRIBUTING.md. Run after `bun run build`.
+ *
+ * It installs the smoke app in test/e2e/app from the packed build, runs it as the test bot and checks
+ * login and the onReady hooks, registration in the test server, clearOther, SIGINT and onShutdown,
+ * process sharding and, with a helper bot, a message and a reaction. Without MEOCORD_E2E_BOT_TOKEN and
+ * MEOCORD_E2E_GUILD_ID it skips and exits 0. `--manual` starts the smoke app with the checklist's
+ * commands registered globally and leaves it running until Ctrl+C.
+ */
+
+import { type ChildProcess, spawn, spawnSync } from 'child_process'
+import { cpSync, existsSync, mkdtempSync, realpathSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import path from 'path'
+import { isDeepStrictEqual } from 'util'
+import { DiscordApi, type RegisteredCommand } from './lib/discord-api.js'
+import { builtCli, cleanEnv, installedCliOf, mustRun, pack, renderApp, repoRoot } from './lib/packed-app.js'
+
+const botToken = process.env.MEOCORD_E2E_BOT_TOKEN?.trim() ?? ''
+const guildId = process.env.MEOCORD_E2E_GUILD_ID?.trim() ?? ''
+const channelId = process.env.MEOCORD_E2E_CHANNEL_ID?.trim() ?? ''
+const helperToken = process.env.MEOCORD_E2E_HELPER_BOT_TOKEN?.trim() ?? ''
+const manual = process.argv.includes('--manual')
+
+const overlayDir = path.join(repoRoot, 'test', 'e2e', 'app')
+// Resolved, because the check for processes left running matches the paths they were started with
+const workDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'meocord-e2e-')))
+const appDir = path.join(workDir, 'app')
+const installedCli = installedCliOf(appDir)
+
+/** Output with every token replaced, for anything printed. */
+const redact = (text: string) =>
+  [botToken, helperToken].filter(Boolean).reduce((out, secret) => out.replaceAll(secret, '[token]'), text)
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+function expect(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(message)
+}
+
+/**
+ * The smoke app's environment: the inherited one without any MEOCORD_E2E_ value or DISCORD_TOKEN, then
+ * exactly what the app reads, so the bot's token is the one passed here and nothing else.
+ */
+function botEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const env = cleanEnv()
+  for (const key of Object.keys(env)) if (key.startsWith('MEOCORD_E2E_') || key === 'DISCORD_TOKEN') delete env[key]
+  return { ...env, MEOCORD_E2E_BOT_TOKEN: botToken, MEOCORD_E2E_GUILD_ID: guildId, ...extra }
+}
+
+/** A line the smoke app writes through `report()`. */
+interface Marker {
+  event: string
+  pid: number
+  [key: string]: unknown
+}
+
+/** The smoke app started with `meocord start --prod`, and what it reported. */
+class Bot {
+  readonly markers: Marker[] = []
+  readonly exit: Promise<number | null>
+  private readonly child: ChildProcess
+  private output = ''
+
+  constructor(env: NodeJS.ProcessEnv, echo = false) {
+    this.child = spawn('node', [installedCli, 'start', '--prod'], { cwd: appDir, env: botEnv(env), stdio: ['ignore', 'pipe', 'pipe'] })
+    let pending = ''
+    const read = (chunk: string) => {
+      this.output += chunk
+      pending += chunk
+      const lines = pending.split('\n')
+      pending = lines.pop() ?? ''
+      for (const line of lines.map(text => text.replace(/\u001b\[[0-9;]*[A-Za-z]/g, ''))) {
+        const marker = /^E2E (\{.*\})$/.exec(line.trim())
+        if (marker) this.markers.push(JSON.parse(marker[1]) as Marker)
+        if (echo) console.log(redact(line))
+      }
+    }
+    this.child.stdout!.setEncoding('utf8').on('data', read)
+    this.child.stderr!.setEncoding('utf8').on('data', read)
+    this.exit = new Promise(resolve => this.child.on('exit', code => resolve(code)))
+  }
+
+  get running(): boolean {
+    return this.child.exitCode === null && this.child.signalCode === null
+  }
+
+  /** Waits until `found` returns something truthy, failing when the bot exits first or time runs out. */
+  async until<T>(what: string, found: () => T | undefined | false, timeoutMs: number): Promise<T> {
+    const deadline = Date.now() + timeoutMs
+    for (;;) {
+      const value = found()
+      if (value) return value
+      if (!this.running) throw new Error(`The bot exited (code ${this.child.exitCode}) before ${what}.\n${this.tail()}`)
+      if (Date.now() > deadline) throw new Error(`No ${what} within ${timeoutMs / 1000}s.\n${this.tail()}`)
+      await sleep(200)
+    }
+  }
+
+  waitFor(what: string, match: (marker: Marker) => boolean, timeoutMs = 30_000): Promise<Marker> {
+    return this.until(what, () => this.markers.find(match), timeoutMs)
+  }
+
+  waitForOutput(text: string, timeoutMs = 60_000): Promise<true> {
+    return this.until(`"${text}" in the output`, () => this.output.includes(text), timeoutMs)
+  }
+
+  count(text: string): number {
+    return this.output.split(text).length - 1
+  }
+
+  /** The last lines of output, with tokens replaced. */
+  tail(lines = 30): string {
+    const text = this.output.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '').trimEnd()
+    return redact(text.split('\n').slice(-lines).map(line => `        | ${line}`).join('\n'))
+  }
+
+  /** Sends a signal to the CLI alone, as Docker, pm2 and systemd do. */
+  stop(signal: NodeJS.Signals = 'SIGINT'): void {
+    this.child.kill(signal)
+  }
+
+  async stopped(timeoutMs: number): Promise<number | null> {
+    const timeout = sleep(timeoutMs).then(() => 'timeout' as const)
+    const code = await Promise.race([this.exit, timeout])
+    if (code === 'timeout') throw new Error(`The bot did not exit within ${timeoutMs / 1000}s of the signal.\n${this.tail()}`)
+    return code
+  }
+
+  kill(): void {
+    if (this.running) this.child.kill('SIGKILL')
+  }
+}
+
+type Outcome = 'ok' | 'FAIL' | 'skip' | 'human'
+const outcomes: Outcome[] = []
+
+function record(outcome: Outcome, name: string, detail?: string): void {
+  outcomes.push(outcome)
+  console.log(`  ${outcome.padEnd(5)} ${name}${detail ? `\n        ${detail}` : ''}`)
+}
+
+async function check(name: string, body: () => Promise<string | void>): Promise<boolean> {
+  try {
+    record('ok', name, (await body()) || undefined)
+    return true
+  } catch (error) {
+    record('FAIL', name, redact(error instanceof Error ? error.message : String(error)))
+    return false
+  }
+}
+
+/** The processes whose command line names a path inside the work directory; none on Windows, where it is not checked. */
+function processesLeft(): { pid: number; command: string }[] {
+  if (process.platform === 'win32') return []
+  const ps = spawnSync('ps', ['-A', '-o', 'pid=,args='], { encoding: 'utf8' })
+  return ps.stdout
+    .split('\n')
+    .filter(line => line.includes(workDir + path.sep))
+    .map(line => {
+      const [, pid, command] = /^\s*(\d+)\s+(.*)$/.exec(line) ?? []
+      return { pid: Number(pid), command }
+    })
+    .filter(({ pid }) => pid > 0 && pid !== process.pid)
+}
+
+async function checkNothingLeft(): Promise<void> {
+  await check('leaves no process running', async () => {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if (processesLeft().length === 0) return
+      await sleep(200)
+    }
+    const left = processesLeft()
+    for (const { pid } of left) process.kill(pid, 'SIGKILL')
+    throw new Error(`Still running, now killed:\n${left.map(({ command }) => `        ${command}`).join('\n')}`)
+  })
+}
+
+/** Renders a generated app from the packed build, replaces its code with the smoke app's, installs, typechecks and builds it. */
+function prepare(): void {
+  const started = performance.now()
+  renderApp(appDir, pack(workDir))
+  rmSync(path.join(appDir, 'src'), { recursive: true, force: true })
+  cpSync(overlayDir, appDir, { recursive: true })
+  mustRun('install the smoke app', process.execPath, ['install'], appDir)
+  mustRun('typecheck the smoke app', process.execPath, ['run', 'tsc', '-p', 'tsconfig.json'], appDir)
+  mustRun('build the smoke app', 'node', [installedCli, 'build', '--prod'], appDir, botEnv())
+  console.log(`  ok    install, typecheck and build the smoke app (${((performance.now() - started) / 1000).toFixed(0)}s)`)
+}
+
+const readyOf = (bot: Bot, cls: string) => bot.markers.filter(marker => marker.event === 'ready' && marker.cls === cls)
+const shutdownOrder = (bot: Bot, pid: number) =>
+  bot.markers.filter(marker => marker.event === 'shutdown' && marker.pid === pid).map(marker => String(marker.cls))
+
+/** The helper bot posts a message and reacts to it, and the smoke app must see both. */
+async function helperChecks(bot: Bot): Promise<void> {
+  if (!helperToken || !channelId) {
+    record('skip', 'a message and a reaction from the helper bot', 'set MEOCORD_E2E_CHANNEL_ID and MEOCORD_E2E_HELPER_BOT_TOKEN to run them')
+    return
+  }
+
+  const helper = new DiscordApi(helperToken)
+  let message: { id: string } | undefined
+  try {
+    await check("@On('messageCreate') receives the helper bot's message", async () => {
+      message = await helper.sendMessage(channelId, 'MeoCord e2e: a message and reaction check, deleted when it ends.')
+      await bot.waitFor('message event for the helper bot’s message', marker => marker.event === 'message-event' && marker.id === message!.id)
+    })
+    await check("@ReactionHandler receives the helper bot's reaction", async () => {
+      expect(message, 'There is no message to react to.')
+      await helper.react(channelId, message.id, '✅')
+      await bot.waitFor('reaction on the helper bot’s message', marker => marker.event === 'reaction' && marker.message === message!.id)
+    })
+  } finally {
+    if (message) {
+      await helper.deleteMessage(channelId, message.id).catch(error => console.log(`        could not delete the helper's message: ${redact(String(error))}`))
+    }
+  }
+}
+
+async function automated(): Promise<void> {
+  const api = new DiscordApi(botToken)
+  const applicationId = await api.applicationId()
+  let registered: RegisteredCommand[] = []
+
+  console.log('\nOne process')
+  const bot = new Bot({})
+  try {
+    const started = await check('logs in and runs onReady in dependency order', async () => {
+      const probe = await bot.waitFor('onReady in ProbeService', marker => marker.event === 'ready' && marker.cls === 'ProbeService', 90_000)
+      const order = bot.markers.filter(marker => marker.event === 'ready').map(marker => marker.cls)
+      expect(isDeepStrictEqual(order, ['ClockService', 'ProbeService']), `onReady ran in the order ${order.join(', ')}.`)
+      expect(probe.primary === true, 'onReady was told the process is not primary.')
+    })
+    if (!started) return
+
+    await check('ShardContext.call reaches the one process', async () => {
+      const call = await bot.waitFor('ShardContext.call result', marker => marker.event === 'shard-call')
+      expect(isDeepStrictEqual(call.results, [[0]]), `call returned ${JSON.stringify(call.results)}.`)
+    })
+
+    await check('registers exactly the smoke command in the test server', async () => {
+      await bot.waitForOutput('Registered ')
+      registered = await api.guildCommands(applicationId, guildId)
+      const names = registered.map(command => command.name).sort()
+      expect(isDeepStrictEqual(names, ['e2e-ping']), `The test server has ${JSON.stringify(names)}.`)
+    })
+
+    await check('clearOther leaves no global command', async () => {
+      let global: RegisteredCommand[] = []
+      for (let attempt = 0; attempt < 20; attempt++) {
+        global = await api.globalCommands(applicationId)
+        if (global.length === 0) return
+        await sleep(1_000)
+      }
+      throw new Error(`Global commands are still registered: ${global.map(command => command.name).join(', ')}.`)
+    })
+
+    await helperChecks(bot)
+    record('human', '@MessageHandler answers "e2e ping"', 'dispatch ignores messages from bots, so a person checks it; see the checklist')
+
+    await check('SIGINT to the CLI runs onShutdown in reverse dependency order and exits 0', async () => {
+      const pid = readyOf(bot, 'ProbeService')[0].pid
+      bot.stop('SIGINT')
+      const code = await bot.stopped(30_000)
+      expect(code === 0, `The CLI exited with code ${code}.\n${bot.tail()}`)
+      const order = shutdownOrder(bot, pid)
+      expect(isDeepStrictEqual(order, ['ProbeService', 'ClockService']), `onShutdown ran in the order ${order.join(', ') || '(none)'}.`)
+    })
+    await checkNothingLeft()
+  } finally {
+    bot.kill()
+  }
+
+  console.log('\nProcess sharding, two shards')
+  const sharded = new Bot({ MEOCORD_E2E_SHARDING: 'process' })
+  try {
+    const started = await check('starts a process per shard, primary only on shard 0', async () => {
+      const probes = await sharded.until('onReady in both shards', () => readyOf(sharded, 'ProbeService').length >= 2 && readyOf(sharded, 'ProbeService'), 180_000)
+      const shards = probes.map(probe => ({ shards: probe.shards, primary: probe.primary })).sort((a, b) => String(a.shards).localeCompare(String(b.shards)))
+      expect(
+        isDeepStrictEqual(shards, [
+          { shards: [0], primary: true },
+          { shards: [1], primary: false },
+        ]),
+        `The shards reported ${JSON.stringify(shards)}.`,
+      )
+      expect(new Set(probes.map(probe => probe.pid)).size === 2, 'Both shards ran in one process.')
+    })
+    if (!started) return
+
+    await check('ShardContext.call reaches both processes', async () => {
+      const call = await sharded.waitFor('ShardContext.call result', marker => marker.event === 'shard-call')
+      const results = (call.results as unknown[]).map(result => JSON.stringify(result)).sort()
+      expect(isDeepStrictEqual(results, ['[0]', '[1]']), `call returned ${JSON.stringify(call.results)}.`)
+    })
+
+    await check('registers once, leaving the registered commands as they were', async () => {
+      await sharded.waitForOutput('Registered ')
+      expect(sharded.count('Registered ') === 1, `Commands were registered ${sharded.count('Registered ')} times.`)
+      const now = await api.guildCommands(applicationId, guildId)
+      const identity = (commands: RegisteredCommand[]) => commands.map(({ id, name, version }) => ({ id, name, version })).sort((a, b) => a.name.localeCompare(b.name))
+      expect(
+        registered.length === 0 || isDeepStrictEqual(identity(now), identity(registered)),
+        `The commands changed: ${JSON.stringify(identity(registered))} became ${JSON.stringify(identity(now))}.`,
+      )
+    })
+
+    await check('SIGINT to the CLI shuts every shard down through onShutdown and exits 0', async () => {
+      const pids = readyOf(sharded, 'ProbeService').map(marker => marker.pid)
+      sharded.stop('SIGINT')
+      const code = await sharded.stopped(40_000)
+      expect(code === 0, `The CLI exited with code ${code}.\n${sharded.tail()}`)
+      for (const pid of pids) {
+        const order = shutdownOrder(sharded, pid)
+        expect(isDeepStrictEqual(order, ['ProbeService', 'ClockService']), `onShutdown in process ${pid} ran in the order ${order.join(', ') || '(none)'}.`)
+      }
+    })
+    await checkNothingLeft()
+  } finally {
+    sharded.kill()
+  }
+}
+
+/** Starts the smoke app with the checklist's commands and passes its output through until Ctrl+C. */
+async function manualRun(): Promise<void> {
+  const applicationId = await new DiscordApi(botToken).applicationId()
+  console.log(`\nStarting the smoke app with the checklist's commands, registered globally.`)
+  console.log(`Install it on the test server and to your account: https://discord.com/oauth2/authorize?client_id=${applicationId}`)
+  console.log('Work through "Checking against real Discord" in CONTRIBUTING.md, then press Ctrl+C.\n')
+  const bot = new Bot({ MEOCORD_E2E_MODE: 'manual' }, true)
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => bot.stop(signal))
+  const code = await bot.exit
+  if (code !== 0) process.exitCode = code ?? 1
+}
+
+async function main(): Promise<void> {
+  if (!botToken || !guildId) {
+    console.log(
+      'Skipping the real-Discord checks: MEOCORD_E2E_BOT_TOKEN and MEOCORD_E2E_GUILD_ID are not set. ' +
+        'See "Checking against real Discord" in CONTRIBUTING.md.',
+    )
+    rmSync(workDir, { recursive: true, force: true })
+    return
+  }
+  if (!existsSync(builtCli)) {
+    console.error(`Built CLI not found at ${path.relative(repoRoot, builtCli)}. Run "bun run build" first.`)
+    rmSync(workDir, { recursive: true, force: true })
+    process.exitCode = 1
+    return
+  }
+
+  if (!manual) {
+    // An interrupted run would otherwise leave a bot online and a full install in the temp directory
+    for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+      process.once(signal, () => {
+        for (const { pid } of processesLeft()) process.kill(pid, 'SIGKILL')
+        rmSync(workDir, { recursive: true, force: true })
+        process.exit(130)
+      })
+    }
+  }
+
+  const started = performance.now()
+  try {
+    console.log(`Checking against real Discord in ${workDir}\n`)
+    prepare()
+    if (manual) {
+      await manualRun()
+      return
+    }
+    await automated()
+    const failed = outcomes.filter(outcome => outcome === 'FAIL').length
+    const total = ((performance.now() - started) / 1000).toFixed(0)
+    console.log(failed === 0 ? `\nEvery check passed (${total}s).` : `\n${failed} check(s) failed (${total}s).`)
+    if (failed > 0) process.exitCode = 1
+  } catch (error) {
+    console.error(`\n${redact(error instanceof Error ? error.message : String(error))}`)
+    process.exitCode = 1
+  } finally {
+    for (const { pid } of processesLeft()) process.kill(pid, 'SIGKILL')
+    rmSync(workDir, { recursive: true, force: true })
+  }
+}
+
+await main()
