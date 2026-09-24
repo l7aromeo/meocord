@@ -5,6 +5,7 @@ import {
   assertNoBundledNativeAddons,
   bundledModuleFiles,
   copyPackagesInto,
+  installedPackages,
   createNativeExternals,
   findBundledNativeAddons,
   packageFromPath,
@@ -264,6 +265,32 @@ describe('createNativeExternals', () => {
     expect(decide(externals, 'bindings-lib')).toBe('bindings-lib')
     rmSync(path.join(root, 'node_modules', 'bindings-lib'), { recursive: true })
     expect(decide(externals, 'bindings-lib/sub.js')).toBe('bindings-lib/sub.js')
+  })
+})
+
+describe('installedPackages', () => {
+  it('returns only the listed packages that are installed, marking the one that carries a binary', () => {
+    install(path.join(root, 'node_modules', 'supports-color'), 'supports-color')
+    install(path.join(root, 'node_modules', 'bufferutil'), 'bufferutil', { binary: 'build/Release/bufferutil.node' })
+
+    const found = installedPackages(['supports-color', '@node-rs/xxhash', 'bufferutil'], root)
+
+    expect(found).toEqual([
+      { name: 'supports-color', dir: path.join(root, 'node_modules', 'supports-color'), native: false },
+      { name: 'bufferutil', dir: path.join(root, 'node_modules', 'bufferutil'), native: true },
+    ])
+  })
+
+  it('packs an installed optional package into dist/node_modules', () => {
+    install(path.join(root, 'node_modules', 'supports-color'), 'supports-color', { dependencies: ['has-flag'] })
+    install(path.join(root, 'node_modules', 'has-flag'), 'has-flag')
+    const out = path.join(root, 'dist')
+
+    const packages = new Map(installedPackages(['supports-color'], root).map(({ name, dir }) => [name, dir]))
+    copyPackagesInto(packages, root, out)
+
+    expect(existsSync(path.join(out, 'node_modules', 'supports-color', 'package.json'))).toBe(true)
+    expect(existsSync(path.join(out, 'node_modules', 'has-flag', 'package.json'))).toBe(true)
   })
 })
 

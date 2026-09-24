@@ -18,6 +18,27 @@ export const CONFIG_PRE_ENTRY = path.join(path.dirname(fileURLToPath(import.meta
 export const DISCORD_OPTIONAL_NATIVES: readonly string[] = ['zlib-sync', 'bufferutil', 'utf-8-validate']
 
 /**
+ * The packages kept as `require`s at their call sites and packed only when installed: discord.js's
+ * optional accelerators, then the application's `optionalExternals`.
+ */
+export function optionalExternalNames(optionalExternals: readonly string[] = []): string[] {
+  return [...new Set([...DISCORD_OPTIONAL_NATIVES, ...optionalExternals])]
+}
+
+/**
+ * The `optionalExternals` also listed in `externals`, where each becomes a hoisted import that throws
+ * at startup when the package is missing, defeating the point of listing it as optional.
+ */
+export function optionalExternalConflicts(
+  optionalExternals: readonly string[] = [],
+  externals: readonly (string | RegExp)[] = [],
+): string[] {
+  return optionalExternals.filter(name =>
+    externals.some(external => (typeof external === 'string' ? external === name : external.test(name))),
+  )
+}
+
+/**
  * The prefix an asset import is joined to at runtime: the output directory, with forward slashes.
  * Rspack writes it into the bundle unescaped, so a Windows backslash would corrupt every asset path.
  */
@@ -46,6 +67,8 @@ export interface RsbuildConfigOptions {
    * listed -- see createNativeExternals -- so this is for anything kept out for another reason.
    */
   externals?: (string | RegExp)[]
+  /** Packages a dependency tries to load and runs without; see {@link optionalExternalNames}. */
+  optionalExternals?: string[]
 }
 
 /**
@@ -55,7 +78,7 @@ export interface RsbuildConfigOptions {
  * something a consumer can edit by accident.
  */
 export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfig {
-  const { mode, bundleDependencies = false, externals = [] } = options
+  const { mode, bundleDependencies = false, externals = [], optionalExternals } = options
   const cwd = process.cwd()
   const entry = options.entry ?? path.resolve(cwd, 'src', 'main.ts')
   const assetPrefix = assetPrefixFor(path.resolve(cwd, 'dist'))
@@ -111,7 +134,10 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
       // Inverted deliberately: autoExternal leaves dependencies as runtime imports, so
       // bundling them means turning it off.
       autoExternal: !bundleDependencies,
-      externals: [Object.fromEntries(DISCORD_OPTIONAL_NATIVES.map(name => [name, `node-commonjs ${name}`])), ...externals],
+      externals: [
+        Object.fromEntries(optionalExternalNames(optionalExternals).map(name => [name, `node-commonjs ${name}`])),
+        ...externals,
+      ],
       // Rsbuild would put the bundle in dist/static/js and assets in dist/static/*. The
       // application's entry is dist/main.js, which is what `meocord start` runs.
       distPath: { root: path.resolve(cwd, 'dist'), js: '', image: 'assets', svg: 'assets', font: 'assets', media: 'assets' },

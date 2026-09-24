@@ -6,8 +6,14 @@ vi.mock('@src/util/tsconfig.util.js', () => ({
   prepareModifiedTsConfig: vi.fn().mockReturnValue('/tmp/modified-tsconfig.json'),
 }))
 
-const { assertNoWebpackHook, assetPrefixFor, CONFIG_PRE_ENTRY, createRsbuildConfig, DISCORD_OPTIONAL_NATIVES } =
-  await import('@src/build/rsbuild-config.js')
+const {
+  assertNoWebpackHook,
+  assetPrefixFor,
+  CONFIG_PRE_ENTRY,
+  createRsbuildConfig,
+  DISCORD_OPTIONAL_NATIVES,
+  optionalExternalConflicts,
+} = await import('@src/build/rsbuild-config.js')
 
 const dist = path.resolve(process.cwd(), 'dist')
 
@@ -196,5 +202,36 @@ describe('assertNoWebpackHook', () => {
 
     expect('webpack' in proxied).toBe(false)
     expect(() => assertNoWebpackHook(proxied)).toThrow(/still declares a `webpack` hook/)
+  })
+})
+
+describe('optional externals', () => {
+  const externalsOf = (config: ReturnType<typeof createRsbuildConfig>) =>
+    (config.output?.externals as Record<string, string>[])[0]
+
+  it('keeps each name a require at its call site, after discord.js\'s own, once each', () => {
+    const optional = externalsOf(
+      createRsbuildConfig({ mode: 'production', optionalExternals: ['supports-color', 'bufferutil', '@node-rs/xxhash'] }),
+    )
+
+    expect(optional).toEqual({
+      'zlib-sync': 'node-commonjs zlib-sync',
+      bufferutil: 'node-commonjs bufferutil',
+      'utf-8-validate': 'node-commonjs utf-8-validate',
+      'supports-color': 'node-commonjs supports-color',
+      '@node-rs/xxhash': 'node-commonjs @node-rs/xxhash',
+    })
+  })
+
+  it('keeps discord.js\'s own without any listed', () => {
+    expect(Object.keys(externalsOf(createRsbuildConfig({ mode: 'production' })))).toEqual([...DISCORD_OPTIONAL_NATIVES])
+  })
+
+  it('names the optional externals also listed in externals, by name or pattern', () => {
+    expect(optionalExternalConflicts(['supports-color', '@node-rs/xxhash', 'x'], ['supports-color', /^@node-rs\//])).toEqual([
+      'supports-color',
+      '@node-rs/xxhash',
+    ])
+    expect(optionalExternalConflicts(['supports-color'], ['@opentelemetry/api'])).toEqual([])
   })
 })

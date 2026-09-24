@@ -294,6 +294,21 @@ export interface MeoCordConfig {
    */
   externals?: (string | RegExp)[]
   /**
+   * Packages a dependency tries to load and runs without, such as `supports-color`, which `debug`
+   * probes for inside a `try`. Each stays a `require` where the dependency calls it, inside the
+   * dependency's own `try`, so a missing package is caught there rather than failing the bot at
+   * startup. With {@link bundleDependencies}, an installed one is copied into `dist/node_modules`.
+   *
+   * Package names only. Do not also list a name in {@link externals}, which would turn it into an
+   * import that runs, and fails, before the bot's code.
+   *
+   * @example
+   * ```ts
+   * optionalExternals: ['supports-color', '@node-rs/xxhash']
+   * ```
+   */
+  optionalExternals?: string[]
+  /**
    * Customises the Rsbuild configuration the bot is built with.
    *
    * Images, fonts, svg and media need no rules. Raw bundler rules go through `tools.rspack`.

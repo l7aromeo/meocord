@@ -108,6 +108,19 @@ function readDependencies(dir: string): { dependencies: string[]; optional: stri
 }
 
 /**
+ * The packages among `names` that are installed in the project, each with its directory and whether it
+ * carries a native binary. A name that is not installed is left out, which is how an optional package
+ * is packed only when present.
+ */
+export function installedPackages(names: readonly string[], root: string): { name: string; dir: string; native: boolean }[] {
+  return names.flatMap(name => {
+    const dir = path.join(root, 'node_modules', name)
+    if (!existsSync(path.join(dir, 'package.json'))) return []
+    return [{ name, dir, native: nativeCarrier(dir, name, root) !== undefined }]
+  })
+}
+
+/**
  * The package holding the compiled addon an installed package loads, or undefined for plain
  * JavaScript. node-gyp packages keep the binary under their own `build/Release`; napi-rs packages
  * and sharp publish it as a per-platform optional dependency.
