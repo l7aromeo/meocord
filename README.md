@@ -584,6 +584,8 @@ If no handler claims an option, MeoCord answers with an empty list and logs whic
 
 Guards run before the handler method. Each guard implements `canActivate` — return `true` to allow, `false` to block.
 
+A new guard instance is created for every call, so keep state that must outlast one call — such as rate-limit counts — outside the guard: at module level, or in a service registered in `@MeoCord({ services })`, which makes it a singleton.
+
 ```typescript
 import { Guard } from 'meocord/decorator'
 import { type GuardInterface } from 'meocord/interface'
@@ -592,6 +594,7 @@ import { RedisService } from '@src/services/redis.service.js'
 
 @Guard()
 export class RateLimiterGuard implements GuardInterface {
+  // RedisService is listed in @MeoCord({ services }), so every guard instance shares one client
   constructor(private readonly redis: RedisService) {}
 
   // limit and window are injected via @UseGuard params
@@ -641,6 +644,34 @@ export const Protected = (limit = 5) =>
 @Command('profile', CommandType.SLASH)
 @Protected(3)
 async profile(interaction: ChatInputCommandInteraction) { ... }
+```
+
+### Passing options to a guard
+
+Use params when a value configures one use of a guard, such as a limit or the channels a command is allowed in. `@UseGuard({ provide, params })` sets them as properties on the guard instance before `canActivate` runs, and a decorator of your own can wrap it. For facts about the handler itself that any guard can read, use metadata instead (below).
+
+```typescript
+import { Guard, UseGuard } from 'meocord/decorator'
+import { type GuardInterface } from 'meocord/interface'
+import { type ChatInputCommandInteraction } from 'discord.js'
+
+@Guard()
+export class ChannelGuard implements GuardInterface {
+  // Set per use with @UseGuard({ provide: ChannelGuard, params: { channelIds } })
+  channelIds: string[] = []
+
+  canActivate(interaction: ChatInputCommandInteraction): boolean {
+    return this.channelIds.length === 0 || this.channelIds.includes(interaction.channelId)
+  }
+}
+
+export const OnlyInChannels = (...channelIds: string[]) => UseGuard({ provide: ChannelGuard, params: { channelIds } })
+```
+
+```typescript
+@Command('trade', CommandType.SLASH)
+@OnlyInChannels('123456789012345678')
+async trade(interaction: ChatInputCommandInteraction) { ... }
 ```
 
 ### Attaching metadata for guards to read

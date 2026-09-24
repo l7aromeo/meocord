@@ -3,26 +3,17 @@ import { type GuardInterface } from 'meocord/interface'
 import { BaseInteraction } from 'discord.js'
 import { Logger } from 'meocord/common'
 
-class RateLimiterGuardOptions {
-  limit?: number
-  windowInSeconds?: number
-}
+// A new guard instance is created for every call, so the counts live at module level to be shared between them.
+// In production, consider Redis or another store shared across processes.
+export const requestTimes = new Map<string, { times: number[]; expiresAt: number }>()
 
 @Guard()
 export class RateLimitGuard implements GuardInterface {
-  // ==============================
-  // NOTE: Consider using Redis or another distributed store for rate limits in production
-  // ==============================
   private logger = new Logger(RateLimitGuard.name)
 
-  private rateLimits = new Map<string, number[]>()
-  private readonly limit: number
-  private readonly windowInSeconds: number
-
-  constructor(options: RateLimiterGuardOptions = {}) {
-    this.limit = options.limit || 5
-    this.windowInSeconds = options.windowInSeconds || 60
-  }
+  // Set per use with @UseGuard({ provide: RateLimitGuard, params: { limit, windowInSeconds } })
+  limit = 5
+  windowInSeconds = 60
 
   async canActivate(interaction: BaseInteraction): Promise<boolean> {
     const userId = interaction.user.id
@@ -39,11 +30,17 @@ export class RateLimitGuard implements GuardInterface {
     }
 
     const currentTime = Math.floor(Date.now() / 1000)
-    const timestamps = this.rateLimits.get(key) || []
+
+    // Drop keys whose window has passed, so the map does not grow with every user it has seen
+    for (const [storedKey, entry] of requestTimes) {
+      if (entry.expiresAt <= currentTime) requestTimes.delete(storedKey)
+    }
+
+    const timestamps = requestTimes.get(key)?.times || []
 
     const filteredTimestamps = timestamps.filter(time => currentTime - time < this.windowInSeconds)
     filteredTimestamps.push(currentTime)
-    this.rateLimits.set(key, filteredTimestamps)
+    requestTimes.set(key, { times: filteredTimestamps, expiresAt: currentTime + this.windowInSeconds })
 
     this.logger.debug(key, filteredTimestamps.length, this.limit, this.windowInSeconds)
 
