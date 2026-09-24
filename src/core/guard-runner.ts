@@ -167,13 +167,18 @@ function wrapperCount(prototype: object, methodName: string): number {
  * Calls dispatch has already guarded, keyed by first argument and method, counting the wrappers still
  * to pass. A user decorator that awaits between two wrappers leaves a pass pending during that await,
  * which a concurrent direct call with the same object and method could take; other overlaps fail closed.
+ * An event whose first argument is not an object, such as `debug`'s string, is keyed by the instance.
  */
 const dispatched = new WeakMap<object, Map<string, number>>()
 
+/** The object a call's dispatch mark is kept on: its first argument, or the instance when that is not an object. */
+function markKey(first: unknown, instance: object): object {
+  return typeof first === 'object' && first !== null ? first : instance
+}
+
 /** Takes one pass for the wrapper being entered, if dispatch left one for this call. */
-export function consumeDispatchMark(first: unknown, methodName: string): boolean {
-  if (typeof first !== 'object' || first === null) return false
-  const marks = dispatched.get(first)
+export function consumeDispatchMark(first: unknown, instance: object, methodName: string): boolean {
+  const marks = dispatched.get(markKey(first, instance))
   const remaining = marks?.get(methodName)
   if (!marks || !remaining) return false
 
@@ -191,12 +196,12 @@ export async function callGuardedHandler(
   methodName: string,
   args: unknown[],
 ): Promise<unknown> {
-  const [first] = args
   const count = wrapperCount(Object.getPrototypeOf(instance), methodName)
-  if (count === 0 || typeof first !== 'object' || first === null) return instance[methodName](...args)
+  if (count === 0) return instance[methodName](...args)
 
-  let marks = dispatched.get(first)
-  if (!marks) dispatched.set(first, (marks = new Map()))
+  const key = markKey(args[0], instance)
+  let marks = dispatched.get(key)
+  if (!marks) dispatched.set(key, (marks = new Map()))
   marks.set(methodName, count)
   try {
     return await instance[methodName](...args)

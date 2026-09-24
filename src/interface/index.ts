@@ -16,6 +16,9 @@ import { type ExecutionContext } from '@src/common/execution-context.js'
  * `AutocompleteInteraction` and `ExecutionContext.getType()` is `'autocomplete'`. A guard must not
  * reply there: returning `false` denies, and the menu is closed with an empty list.
  *
+ * Before an `@On` or `@Once` handler, a guard receives the event's arguments, such as a `GuildMember`
+ * for `guildMemberAdd`, and `ExecutionContext.getType()` is `'event'`.
+ *
  * @example
  * ```ts
  * @Guard()
@@ -30,11 +33,11 @@ export interface GuardInterface {
   /**
    * Decides whether the guarded handler runs.
    *
-   * @param context - The interaction, message or reaction being handled.
+   * @param context - The interaction, message or reaction being handled, or an event's first argument.
    * @param args - The handler's remaining arguments, such as the params parsed from a customId.
    * @returns `true` to run the handler, `false` to skip it.
    */
-  canActivate(context: BaseInteraction | Message | MessageReaction, ...args: any[]): Promise<boolean> | boolean
+  canActivate(context: BaseInteraction | Message | MessageReaction | unknown, ...args: any[]): Promise<boolean> | boolean
 }
 
 /** The second argument `onReady` receives. */

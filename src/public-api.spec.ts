@@ -7,7 +7,7 @@ import * as testing from '@src/testing/index.js'
 // The runtime exports of each entry point. A new name here is a public API addition, and removing
 // one breaks applications importing it, so either change is made here on purpose.
 const PUBLIC_API: Record<string, string[]> = {
-  'meocord/core': ['MeoCordFactory'],
+  'meocord/core': ['HandlerRegistry', 'MeoCordFactory'],
   'meocord/decorator': [
     'Autocomplete',
     'Catch',
@@ -18,6 +18,8 @@ const PUBLIC_API: Record<string, string[]> = {
     'Interceptor',
     'MeoCord',
     'MessageHandler',
+    'On',
+    'Once',
     'ReactionHandler',
     'Service',
     'UseFilter',

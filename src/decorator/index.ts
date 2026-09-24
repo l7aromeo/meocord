@@ -1,6 +1,7 @@
 export { Service } from './service.decorator.js'
 export { CommandBuilder } from './command-builder.decorator.js'
 export { Autocomplete, Command, Controller, MessageHandler, ReactionHandler } from './controller.decorator.js'
+export { On, Once } from './event.decorator.js'
 export { Guard, UseGuard } from './guard.decorator.js'
 export { Interceptor, UseInterceptor } from './interceptor.decorator.js'
 export { Catch, UseFilter } from './filter.decorator.js'

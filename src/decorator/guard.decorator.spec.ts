@@ -108,22 +108,31 @@ describe('@UseGuard (method decorator)', () => {
     expect(ctrl.result).toBe(true)
   })
 
-  it('throws when context is not a valid Discord context', async () => {
+  // An event handler's first argument can be anything the event carries, such as debug's string
+  it('guards a call whose first argument is not a Discord object', async () => {
+    const seen: unknown[] = []
+
     @Guard()
     class TestGuard implements GuardInterface {
-      canActivate() {
-        return true
+      canActivate(first: unknown) {
+        seen.push(first)
+        return false
       }
     }
 
+    const ran = vi.fn()
     class TestController {
       @UseGuard(TestGuard)
-      async handle(_ctx: any) {}
+      async handle(_info: string) {
+        ran()
+      }
     }
 
     attachContainer(TestController, TestGuard)
-    const ctrl = new TestController()
-    await expect(ctrl.handle('invalid-context')).rejects.toThrow()
+    await new TestController().handle('heartbeat acknowledged')
+
+    expect(seen).toEqual(['heartbeat acknowledged'])
+    expect(ran).not.toHaveBeenCalled()
   })
 
   it('injects params into guard when using GuardWithParams', async () => {

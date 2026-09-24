@@ -12,6 +12,7 @@ import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js
 import { appStages, bindGlobalStages, prepareHandlerStages } from '@src/core/handler-pipeline.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { dependencyOrder, isAppClassToken } from '@src/core/lifecycle-order.js'
+import { HandlerRegistry } from '@src/core/handler-registry.js'
 
 /**
  * Recursively binds a class and all its constructor dependencies to the container in singleton scope.
@@ -67,24 +68,32 @@ export class MeoCordFactory {
     const discordClient = new Client(options.clientOptions)
     container.bind(Client).toConstantValue(discordClient)
 
+    // Bound before the app's classes, so a class that injects it gets this instance; filled once they are bound
+    const appClasses: (new (...args: any[]) => unknown)[] = []
+    container.bind(HandlerRegistry).toConstantValue(new HandlerRegistry(appClasses))
+
     // Bind all controllers and their transitive dependencies
     for (const ctrl of options.controllers as any[]) {
       bindDependencies(container, ctrl)
     }
+    for (const svc of (options.services ?? []) as any[]) {
+      bindDependencies(container, svc)
+    }
+    appClasses.push(...dependencyOrder(container, [...(options.services ?? []), ...options.controllers]))
 
-    // Bind and eagerly instantiate standalone services so their constructors run.
+    // Stamp each class with the container so @UseGuard can resolve guards on a direct call
+    for (const cls of appClasses) {
+      Reflect.defineMetadata(MetadataKey.Container, container, cls)
+    }
+
+    // Eagerly instantiate standalone services so their constructors run.
     // This is critical for event-driven services that register Discord event
     // listeners (or connect to external systems) inside their constructor.
     for (const svc of (options.services ?? []) as any[]) {
-      bindDependencies(container, svc)
       container.get(svc)
     }
 
-    // Stamp each controller class with the container so @UseGuard can resolve guards
-    for (const ctrl of options.controllers as any[]) {
-      Reflect.defineMetadata(MetadataKey.Container, container, ctrl)
-    }
-    prepareHandlerStages(container, options.controllers)
+    prepareHandlerStages(container, appClasses)
 
     return new MeoCordApp(
       options.controllers,
@@ -92,7 +101,7 @@ export class MeoCordFactory {
       discordClient,
       meocordConfig.discordToken,
       options.activities,
-      dependencyOrder(container, [...(options.services ?? []), ...options.controllers]),
+      appClasses,
       meocordConfig.shutdownTimeout,
     )
   }

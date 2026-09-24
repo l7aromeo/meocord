@@ -1,11 +1,15 @@
 import 'reflect-metadata'
 import { Container, type ServiceIdentifier } from 'inversify'
+import { type ClientEvents } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import { appStages, bindGlobalStages, prepareHandlerStages, runHandler } from '@src/core/handler-pipeline.js'
 import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
+import { HandlerRegistry } from '@src/core/handler-registry.js'
+import { dependencyOrder, isAppClassToken } from '@src/core/lifecycle-order.js'
+import { getEventHandlers } from '@src/decorator/event.decorator.js'
 
 export interface ValueProvider<T = any> {
   provide: ServiceIdentifier<T>
@@ -52,6 +56,12 @@ export interface InvocationResult {
   error?: unknown
 }
 
+/** How an event sent with `TestingModule.emit` was handled. */
+export interface EmitResult {
+  /** How many `@On` and `@Once` handlers ran; a handler a guard denied is not counted. */
+  ran: number
+}
+
 /**
  * Resolved test module. Retrieve instances via `.get()`.
  */
@@ -59,7 +69,11 @@ export class TestingModule {
   constructor(
     private readonly container: Container,
     private readonly controllers: readonly (new (...args: any[]) => unknown)[] = [],
+    private readonly eventClasses: readonly (new (...args: any[]) => unknown)[] = [],
   ) {}
+
+  /** The `@Once` handlers that have already handled their event, as a client forgets its once listeners. */
+  private readonly firedOnce = new Set<string>()
 
   get<T>(token: ServiceIdentifier<T>): T {
     return this.container.get<T>(token)
@@ -106,6 +120,49 @@ export class TestingModule {
     const instance = this.container.get(controller) as Record<string, (...args: unknown[]) => unknown>
     const { ran, error } = await runHandler(this.container, instance, methodName, args)
     return error === undefined ? { ran } : { ran, error }
+  }
+
+  /**
+   * Emits a client event to the module's `@On` and `@Once` handlers, through the same pipeline the app
+   * runs them in: the global guards of the module's `app`, then each handler's own. Handlers on the
+   * module's controllers, class providers and their dependencies all receive it. A `@Once` handler
+   * handles only the first event, as it would on a client.
+   *
+   * @param event - The client event, such as `'guildMemberAdd'`.
+   * @param args - The event's arguments, typed from discord.js's `ClientEvents`.
+   * @returns How many handlers ran. Rejects once every handler has settled if any threw: with that
+   *   error when one handler failed, or an `AggregateError` of them when several did.
+   *
+   * @example
+   * ```ts
+   * const module = MeoCordTestingModule.create({ controllers: [WelcomeController] }).compile()
+   * const member = createMock<GuildMember>()
+   *
+   * const { ran } = await module.emit('guildMemberAdd', member)
+   *
+   * expect(ran).toBe(1)
+   * ```
+   */
+  async emit<E extends keyof ClientEvents>(event: E, ...args: ClientEvents[E]): Promise<EmitResult> {
+    const calls: Promise<boolean>[] = []
+    for (const cls of this.eventClasses) {
+      for (const handler of getEventHandlers(cls.prototype)) {
+        if (handler.event !== event) continue
+        if (handler.once) {
+          const key = `${cls.name}.${handler.method}:${event}`
+          if (this.firedOnce.has(key)) continue
+          this.firedOnce.add(key)
+        }
+        const instance = this.container.get(cls) as Record<string, (...args: unknown[]) => unknown>
+        calls.push(runHandler(this.container, instance, handler.method, args, { type: 'event' }).then(({ ran }) => ran))
+      }
+    }
+
+    const results = await Promise.allSettled(calls)
+    const errors = results.flatMap(result => (result.status === 'rejected' ? [result.reason as unknown] : []))
+    if (errors.length === 1) throw errors[0]
+    if (errors.length > 1) throw new AggregateError(errors, `${errors.length} handlers of "${event}" threw.`)
+    return { ran: results.filter(result => result.status === 'fulfilled' && result.value).length }
   }
 }
 
@@ -201,6 +258,10 @@ export class TestingModuleBuilder {
     const container = new Container()
     if (this.options.app) bindGlobalStages(container, appStages(this.options.app))
 
+    // Bound first, as in the app, so a class that injects it gets this instance
+    const appClasses: (new (...args: any[]) => unknown)[] = []
+    container.bind(HandlerRegistry).toConstantValue(new HandlerRegistry(appClasses))
+
     // Merge explicit providers with overrides (overrides win)
     const providers = new Map<ServiceIdentifier, Provider>()
     for (const p of this.options.providers ?? []) {
@@ -243,9 +304,9 @@ export class TestingModuleBuilder {
       makeInjectable(cls)
       container.bind(cls).toSelf().inSingletonScope()
 
-      const deps: any[] = Reflect.getMetadata(MetadataKey.ParamTypes, cls) || []
-      for (const dep of deps) {
-        bindClass(dep)
+      // By constructor type or @inject token, as the app binds them
+      for (const dep of injectedTokens(cls)) {
+        if (isAppClassToken(dep)) bindClass(dep)
       }
     }
 
@@ -256,7 +317,15 @@ export class TestingModuleBuilder {
     }
     prepareHandlerStages(container, this.options.controllers ?? [])
 
-    return new TestingModule(container, [...(this.options.controllers ?? [])])
+    // The classes whose @On and @Once handlers emit reaches: class providers bound as themselves, the
+    // controllers, and what they inject
+    const selfProviders = [...providers.values()].flatMap(provider =>
+      !isValueProvider(provider) && provider.useClass === provider.provide ? [provider.useClass] : [],
+    )
+    appClasses.push(...dependencyOrder(container, [...selfProviders, ...(this.options.controllers ?? [])]))
+    for (const cls of appClasses) Reflect.defineMetadata(MetadataKey.Container, container, cls)
+
+    return new TestingModule(container, [...(this.options.controllers ?? [])], appClasses)
   }
 }
 

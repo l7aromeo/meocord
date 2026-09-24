@@ -1,6 +1,5 @@
 import 'reflect-metadata'
 import { type Container } from 'inversify'
-import { BaseInteraction, Message, MessageReaction, type Interaction } from 'discord.js'
 import { type GuardInterface } from '@src/interface/index.js'
 import {
   getAutocompleteHandlers,
@@ -19,6 +18,7 @@ import {
   runGuards,
 } from '@src/core/guard-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
+import { getEventHandlers } from '@src/decorator/event.decorator.js'
 
 /** The guards a class-level `@UseGuard` applies to one method, in the order they run. */
 const CLASS_GUARDS = Symbol('class_guards')
@@ -39,10 +39,6 @@ function recordGuards(key: symbol, guards: GuardEntry[], prototype: object, meth
   Reflect.defineMetadata(MetadataKey.Guards, [...classGuards, ...methodGuards], prototype, methodName)
 }
 
-function isValidContext(context: unknown): context is BaseInteraction | Message | MessageReaction {
-  return context instanceof BaseInteraction || context instanceof Message || context instanceof MessageReaction
-}
-
 /**
  * Wraps a method so a direct call runs `guards` first. A call from dispatch, which has already run
  * the method's guards, passes through.
@@ -50,16 +46,8 @@ function isValidContext(context: unknown): context is BaseInteraction | Message 
 function applyGuards(descriptor: PropertyDescriptor, guards: GuardEntry[], prototype: object, propertyKey: string) {
   const originalMethod = descriptor.value
 
-  descriptor.value = async function (...args: [Interaction | Message | MessageReaction, ...any[]]) {
-    const [context] = args
-
-    if (!isValidContext(context)) {
-      throw new Error(
-        `The first argument of ${String(propertyKey)} must be an instance of Interaction, Message, or MessageReaction.`,
-      )
-    }
-
-    if (!consumeDispatchMark(context, propertyKey)) {
+  descriptor.value = async function (...args: unknown[]) {
+    if (!consumeDispatchMark(args[0], this, propertyKey)) {
       const container: Container = Reflect.getMetadata(MetadataKey.Container, this.constructor)
       const controller = this.constructor as new (...args: any[]) => unknown
       const allowed = await runGuards(guards, { container, controller, methodName: propertyKey, args })
@@ -152,6 +140,8 @@ export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | 
       reactionHandlers.forEach(handler => methods.add(handler.method))
 
       getAutocompleteHandlers(prototype).forEach(handler => methods.add(handler.methodName))
+
+      getEventHandlers(prototype).forEach(handler => methods.add(handler.method))
 
       for (const methodName of methods) {
         const methodDescriptor = ownHandlerDescriptor(prototype, methodName)
