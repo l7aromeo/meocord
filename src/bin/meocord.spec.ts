@@ -35,7 +35,8 @@ const createChild = () => ({
   once: vi.fn().mockReturnThis(),
   removeAllListeners: vi.fn().mockReturnThis(),
   kill: vi.fn(),
-  killed: false,
+  exitCode: null as number | null,
+  signalCode: null as NodeJS.Signals | null,
 })
 
 const spawnMock = vi.mocked(spawn)
@@ -277,6 +278,20 @@ describe('spawning the application', () => {
       const onExit = first.once.mock.calls.find(([event]) => event === 'exit')?.[1] as () => void
       onExit()
 
+      expect(spawnMock).toHaveBeenCalledTimes(1)
+    })
+
+    // A child that exits on its own never emits `exit` again, so waiting for one would never restart it
+    it('replaces an application that already exited on its own at once', () => {
+      const cli = watcher()
+      cli.restartApp()
+      const crashed = spawnMock.mock.results.at(-1)?.value as ReturnType<typeof createChild>
+      crashed.exitCode = 1
+      spawnMock.mockClear()
+
+      cli.restartApp()
+
+      expect(crashed.kill).not.toHaveBeenCalled()
       expect(spawnMock).toHaveBeenCalledTimes(1)
     })
 

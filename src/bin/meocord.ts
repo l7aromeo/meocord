@@ -86,6 +86,14 @@ function installFailure(error: unknown): Error {
   return new Error(reported || message || String(error))
 }
 
+/**
+ * Whether a child is still running. `killed` says only that a signal was sent, and stays false for a
+ * child that exited on its own, such as an application that failed at startup.
+ */
+export function stillRunning(child: ChildProcess | null): child is ChildProcess {
+  return child !== null && child.exitCode === null && child.signalCode === null
+}
+
 export class MeoCordCLI {
   private readonly appName = 'MeoCord'
   readonly logger = new Logger(this.appName)
@@ -554,7 +562,7 @@ copies or substantial portions of the Software.
     const previous = this.appProcess
     this.appProcess = null
 
-    if (!previous || previous.killed) {
+    if (!stillRunning(previous)) {
       this.appProcess = this.spawnApp()
       return
     }
@@ -611,7 +619,7 @@ copies or substantial portions of the Software.
           if (isRunning && this.appProcess) {
             isRunning = false
             this.logger.log('MeoCord config change detected, reloading config...')
-            if (this.appProcess && !this.appProcess.killed) {
+            if (stillRunning(this.appProcess)) {
               this.appProcess.kill()
               this.appProcess = null
             }
@@ -625,14 +633,14 @@ copies or substantial portions of the Software.
       process.on('SIGINT', async () => {
         if (sigintReceived) {
           // Second Ctrl+C — force kill and exit immediately
-          if (this.appProcess && !this.appProcess.killed) this.appProcess.kill('SIGKILL')
+          if (stillRunning(this.appProcess)) this.appProcess.kill('SIGKILL')
           process.exit(1)
         }
         sigintReceived = true
         // The application already received SIGINT from the process group. Clean up
         // parent-owned resources and wait for it to exit on its own terms.
         fsWatcher.close()
-        if (this.appProcess && !this.appProcess.killed) {
+        if (stillRunning(this.appProcess)) {
           this.appProcess.on('exit', async () => {
             await watching?.close()
             process.exit(0)
@@ -674,7 +682,7 @@ copies or substantial portions of the Software.
       process.on('SIGINT', () => {
         if (sigintReceived) {
           // Second Ctrl+C — force kill child and exit immediately
-          if (!start.killed) start.kill('SIGKILL')
+          if (stillRunning(start)) start.kill('SIGKILL')
           process.exit(1)
         }
         sigintReceived = true
