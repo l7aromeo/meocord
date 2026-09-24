@@ -312,7 +312,7 @@ what a bot does at runtime; each says what to check. Everything else in 4.1 is n
 - [ ] Check class guards on controllers with `@Autocomplete` handlers
 - [ ] Check what users see when a command throws after it replied or deferred
 - [ ] Fix any command builder that throws, since it now stops registration
-- [ ] Replace the generated `src/guards/rate-limit.guard.ts`, if your app still has it
+- [ ] Fix or replace the generated `src/guards/rate-limit.guard.ts`, if your app still has it
 - [ ] Rebuild
 
 ### Class guards now cover inherited handlers
@@ -385,9 +385,9 @@ it from Discord. Fix the builder; the next start registers everything.
 
 The `RateLimitGuard` that `meocord create` copied into 4.0 applications never limited anything: a new
 guard instance is created for every call, so the counts it kept on the instance started empty each time.
-Upgrading `meocord` does not change your copy. Replace `src/guards/rate-limit.guard.ts` with the one a
-new application gets, or move its `rateLimits` map out of the class to module level. Or drop the guard
-for [`@Cooldown`](#adopting-41-patterns), which does the same job without code of your own.
+Upgrading `meocord` does not change your copy. Move its `rateLimits` map out of the class to module
+level, so every instance shares it, or drop the guard for [`@Cooldown`](#adopting-41-patterns), which
+does the same job without code of your own and is what new applications use.
 
 ### Smaller changes
 
@@ -444,6 +444,27 @@ else await interaction.reply(payload)
 
 // 4.1
 await respond(interaction).send(payload)
+```
+
+**Deferring and locking: `@Defer`.** A handler that called `deferReply()` or `deferUpdate()` first, then
+disabled its message's buttons and put them back when done, can take `@Defer()` instead. It acknowledges
+before guards run, locks a component's message with a loading view once the call is allowed, and
+`respond(interaction).send()` without `components` puts the buttons back as they were — including ones
+disabled on purpose.
+
+```typescript
+// 4.0
+await interaction.deferUpdate()
+await interaction.message.edit({ components: disabledCopyOf(interaction.message.components) })
+// ...work...
+await interaction.editReply({ embeds: [card], components: interaction.message.components })
+
+// 4.1
+@Defer()
+async refresh(interaction: ButtonInteraction) {
+  // ...work...
+  await respond(interaction).send({ embeds: [card] })
+}
 ```
 
 **Denying with a message: `GuardDeniedError`.** Instead of replying from the guard and returning

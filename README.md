@@ -107,7 +107,9 @@ npx meocord create <your-app-name> --use-yarn
 
 The generated project is named after what you passed, pins the framework version that
 created it, and comes with a working slash command, button, select menu, modal, context
-menu, message and reaction controller, plus a guard, a service and a spec for each.
+menu, message and reaction controller, plus a guard, a presenter, a service and a spec for
+each. The samples answer through `respond()`, defer slow work with `@Defer`, and limit how
+often each command runs with `@Cooldown`.
 
 Add your bot token and start:
 
@@ -144,10 +146,10 @@ export class GreetingCommandBuilder {
 ```
 
 ```typescript
-import { Controller, Command, UseGuard } from 'meocord/decorator'
+import { respond } from 'meocord/common'
+import { Controller, Command, Cooldown } from 'meocord/decorator'
 import { type ChatInputCommandInteraction } from 'discord.js'
 import { GreetingCommandBuilder } from '@src/controllers/slash/builders/greeting.builder.js'
-import { RateLimitGuard } from '@src/guards/rate-limit.guard.js'
 import { GreetingService } from '@src/services/greeting.service.js'
 
 @Controller()
@@ -155,11 +157,11 @@ export class GreetingSlashController {
   constructor(private readonly greetingService: GreetingService) {}
 
   @Command('greet', GreetingCommandBuilder)
-  @UseGuard({ provide: RateLimitGuard, params: { limit: 3, windowInSeconds: 10 } })
+  @Cooldown({ uses: 3, seconds: 10 })
   async greet(interaction: ChatInputCommandInteraction) {
     const name = interaction.options.getString('name', true)
     const message = await this.greetingService.buildGreeting(name)
-    await interaction.reply({ content: message })
+    await respond(interaction).send({ content: message })
   }
 }
 ```
@@ -241,8 +243,11 @@ export default class App {}
     │       ├── sample.reaction.controller.ts
     │       └── sample.reaction.controller.spec.ts
     ├── guards
-    │   ├── rate-limit.guard.ts
-    │   └── rate-limit.guard.spec.ts
+    │   ├── owner.guard.ts
+    │   └── owner.guard.spec.ts
+    ├── presenters
+    │   ├── app.presenter.ts
+    │   └── app.presenter.spec.ts
     └── services
         ├── sample.service.ts
         └── sample.service.spec.ts
@@ -1839,29 +1844,25 @@ import {
   createMockFn,
   createMockInteraction,
   createChatInputOptions,
+  getResponse,
   type MockedFunction,
+  type TestingModule,
 } from 'meocord/testing'
 import { ChatInputCommandInteraction } from 'discord.js'
 import { GreetingSlashController } from '@src/controllers/slash/greeting.slash.controller.js'
 import { GreetingService } from '@src/services/greeting.service.js'
-import { RateLimitGuard } from '@src/guards/rate-limit.guard.js'
 
 describe('GreetingSlashController', () => {
-  let controller: GreetingSlashController
+  let module: TestingModule
   let greetingService: { buildGreeting: MockedFunction<GreetingService['buildGreeting']> }
 
   beforeEach(() => {
     greetingService = { buildGreeting: createMockFn() }
 
-    const module = MeoCordTestingModule.create({
+    module = MeoCordTestingModule.create({
       controllers: [GreetingSlashController],
       providers: [{ provide: GreetingService, useValue: greetingService }],
-    })
-      .overrideGuard(RateLimitGuard)
-      .useValue({ canActivate: () => true })
-      .compile()
-
-    controller = module.get(GreetingSlashController)
+    }).compile()
   })
 
   it('replies with a greeting for the provided name', async () => {
@@ -1870,10 +1871,13 @@ describe('GreetingSlashController', () => {
     const interaction = createMockInteraction(ChatInputCommandInteraction)
     interaction.options = createChatInputOptions({ name: 'Alice' })
 
-    await controller.greet(interaction)
+    // Runs the handler as the bot does: guards, interceptors, validation, cooldowns and filters
+    await module.invoke(GreetingSlashController, 'greet', interaction)
 
     expect(greetingService.buildGreeting).toHaveBeenCalledWith('Alice')
-    expect(interaction.reply).toHaveBeenCalledWith({ content: 'Hello, Alice!' })
+    expect(getResponse(interaction).calls).toEqual([
+      { method: 'reply', payload: expect.objectContaining({ content: 'Hello, Alice!' }) },
+    ])
   })
 })
 ```

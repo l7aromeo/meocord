@@ -1,17 +1,15 @@
-import { MeoCordTestingModule } from 'meocord/testing'
+import { UserContextMenuCommandInteraction } from 'discord.js'
+import { createMockInteraction, getResponse, MeoCordTestingModule } from 'meocord/testing'
 import { SampleContextMenuController } from '@src/controllers/context-menu/sample.context-menu.controller.js'
 
 describe('SampleContextMenuController', () => {
-  let controller: SampleContextMenuController
+  const module = MeoCordTestingModule.create({ controllers: [SampleContextMenuController] }).compile()
 
-  beforeEach(() => {
-    const module = MeoCordTestingModule.create({
-      controllers: [SampleContextMenuController],
-    }).compile()
-    controller = module.get(SampleContextMenuController)
-  })
+  it('replies', async () => {
+    const interaction = createMockInteraction(UserContextMenuCommandInteraction, { commandName: 'sample-context-menu' })
 
-  it('should be defined', () => {
-    expect(controller).toBeDefined()
+    await module.invoke(SampleContextMenuController, 'handleContextMenu', interaction)
+
+    expect(getResponse(interaction).calls.map(call => call.method)).toEqual(['reply'])
   })
 })

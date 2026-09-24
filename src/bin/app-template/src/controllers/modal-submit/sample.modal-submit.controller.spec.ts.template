@@ -1,17 +1,15 @@
-import { MeoCordTestingModule } from 'meocord/testing'
+import { ModalSubmitInteraction } from 'discord.js'
+import { createMockInteraction, getResponse, MeoCordTestingModule } from 'meocord/testing'
 import { SampleModalSubmitController } from '@src/controllers/modal-submit/sample.modal-submit.controller.js'
 
 describe('SampleModalSubmitController', () => {
-  let controller: SampleModalSubmitController
+  const module = MeoCordTestingModule.create({ controllers: [SampleModalSubmitController] }).compile()
 
-  beforeEach(() => {
-    const module = MeoCordTestingModule.create({
-      controllers: [SampleModalSubmitController],
-    }).compile()
-    controller = module.get(SampleModalSubmitController)
-  })
+  it('defers privately, then answers the submission', async () => {
+    const interaction = createMockInteraction(ModalSubmitInteraction, { customId: 'submit-modal' })
 
-  it('should be defined', () => {
-    expect(controller).toBeDefined()
+    await module.invoke(SampleModalSubmitController, 'handleModal', interaction)
+
+    expect(getResponse(interaction)).toMatchObject({ state: 'replied', sent: true })
   })
 })
