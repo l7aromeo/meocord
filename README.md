@@ -775,13 +775,13 @@ async refresh(interaction: ButtonInteraction, { uid }: { uid: string }) {
 
 `send()` without `components` puts the message's components back as they were before the lock — a button disabled on purpose stays disabled — and drops the loading view; `components: []` clears them. A handler that returns without answering has its message put back too, unless something else edited it meanwhile. When the handler throws, the error is shown privately and the message restored.
 
-| Option                  | Default   | Effect                                                                                                               |
-| ----------------------- | --------- | -------------------------------------------------------------------------------------------------------------------- |
-| `ephemeral`             | `false`   | A command's deferred reply is private.                                                                               |
-| `disable`               | `'all'`   | `'clicked'` disables only the control used; `'none'` skips step 2.                                                   |
-| `mode`                  | `'eager'` | `'auto'` acknowledges only if nothing answered after `after` ms, so a fast handler answers with one reply or update. |
-| `after`                 | `1500`    | For `'auto'`; never later than 2.5 s after the interaction was created.                                              |
-| `suppressNotifications` | `false`   | New messages (a first reply after `'auto'` waited, and follow-ups) do not notify.                                    |
+| Option                  | Default   | Effect                                                                                                                                                    |
+| ----------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ephemeral`             | `false`   | A command's deferred reply is private.                                                                                                                    |
+| `disable`               | `'all'`   | `'clicked'` disables only the control used, so others stay usable: each click puts back its own control, whichever finishes first; `'none'` skips step 2. |
+| `mode`                  | `'eager'` | `'auto'` acknowledges only if nothing answered after `after` ms, so a fast handler answers with one reply or update.                                      |
+| `after`                 | `1500`    | For `'auto'`; never later than 2.5 s after the interaction was created.                                                                                   |
+| `suppressNotifications` | `false`   | New messages (a first reply after `'auto'` waited, and follow-ups) do not notify.                                                                         |
 
 A guard that returns `false` under `@Defer` leaves nothing behind: a command's deferred reply is deleted, and a component's message was never touched. To tell the user why, throw `GuardDeniedError`; it is answered privately. Answer through `respond()`, not `interaction.reply()`, which fails after the acknowledgement. `@Defer` is for interaction handlers: on a message, reaction, event or autocomplete handler it throws. A handler that shows a modal cannot use it, since a modal must be the first response.
 

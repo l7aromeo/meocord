@@ -28,6 +28,7 @@ import {
   countComponents,
   EMBED_LIMIT,
   lockComponents,
+  type LockOptions,
   sameEmbed,
   sameJson,
   V2_COMPONENT_LIMIT,
@@ -130,6 +131,35 @@ function forMode(body: Body, v2: boolean): Body {
   if (!v2) return body
   const { content: _content, embeds: _embeds, ...rest } = body
   return rest
+}
+
+interface Snapshot { components: Record<string, unknown>[]; embeds: APIEmbed[] }
+
+/** A message `@Defer` locked, shared by the calls holding it, so concurrent clicks each put back their own control. */
+interface MessageLock {
+  /** The message with no call holding it: before the first lock, then as the last settled call left it. */
+  original: Snapshot
+  /** The calls holding it, with the control each disabled. */
+  holders: Map<InteractionResponse, LockOptions>
+  /** The components MeoCord last wrote to it, to tell whether something else changed it since. */
+  written?: unknown[]
+  forget?: ReturnType<typeof setTimeout>
+}
+
+const messageLocks = new Map<unknown, MessageLock>()
+
+/** How long a locked message is remembered once no call holds it. */
+export const LOCK_MEMORY_MS = 60_000
+
+/** How many locked messages are remembered, for tests. */
+export function lockedMessageCount(): number {
+  return messageLocks.size
+}
+
+function toJson(value: unknown): Record<string, unknown> {
+  return typeof (value as { toJSON?: unknown })?.toJSON === 'function'
+    ? ((value as { toJSON(): Record<string, unknown> }).toJSON())
+    : (value as Record<string, unknown>)
 }
 
 /**
@@ -238,9 +268,12 @@ export class InteractionResponse implements ResponseState {
   private lastMessage?: Message
   private readonly calls: ResponseCall[] = []
 
-  private snapshot?: { components: Record<string, unknown>[]; embeds: APIEmbed[] }
-  /** The components the lock wrote, to tell whether the message changed since. */
-  private lockedComponents?: unknown[]
+  private snapshot?: Snapshot
+  /** The message this call locked, shared with other calls holding it, while this one holds it. */
+  private held?: { key: unknown; entry: MessageLock }
+  /** The message this call locked, kept after it settles so its edits are still recorded there. */
+  private lockEntry?: MessageLock
+  private loadingView?: ResponseView
   /** Whether the locked message was answered, so nothing restores it again. */
   private settled = false
   private suppressNotifications = false
@@ -378,24 +411,65 @@ export class InteractionResponse implements ResponseState {
 
     const view = presenterFor(this.interaction.client).loading(this.presenterContext(this.v2))
     const loadingEmbed = renderEmbed(view)
-    this.snapshot = {
-      components: withoutRenderedViews(message.components.map(component => component.toJSON() as unknown as Record<string, unknown>)),
-      embeds: message.embeds.map(embed => embed.toJSON()).filter(embed => !sameEmbed(embed, loadingEmbed)),
+    const key = typeof message.id === 'string' ? message.id : message
+    // A message another call holds is snapshotted as it was before any lock, not as that call's lock shows it
+    let entry = messageLocks.get(key)
+    if (!entry) {
+      entry = {
+        original: {
+          components: withoutRenderedViews(message.components.map(component => component.toJSON() as unknown as Record<string, unknown>)),
+          embeds: message.embeds.map(embed => embed.toJSON()).filter(embed => !sameEmbed(embed, loadingEmbed)),
+        },
+        holders: new Map(),
+      }
+      messageLocks.set(key, entry)
     }
+    clearTimeout(entry.forget)
     const clickedId = 'customId' in this.interaction ? this.interaction.customId : undefined
-    const locked = lockComponents(this.snapshot.components, { disable, clickedId, loadingEmoji: view.emoji })
+    entry.holders.set(this, { disable, clickedId, loadingEmoji: view.emoji })
+    this.snapshot = entry.original
+    this.held = { key, entry }
+    this.lockEntry = entry
+    this.loadingView = view
+    await this.editMessage(this.heldBody(entry, entry.original, view), { restoring: true })
+    this.settled = false
+  }
 
-    let body: Body
+  /** A message as `base` shows it, with every control a call still holding it disabled, and the loading view. */
+  private heldBody(entry: MessageLock, base: Snapshot, view: ResponseView | undefined): Body {
+    const locked = [...entry.holders.values()].reduce<Record<string, unknown>[]>(
+      (components, options) => lockComponents(components, options),
+      base.components,
+    )
+    if (!view || entry.holders.size === 0) return this.v2 ? { components: locked } : { components: locked, embeds: base.embeds }
     if (this.v2) {
       const withView = [...locked, renderContainer(view) as unknown as Record<string, unknown>]
-      body = { components: countComponents(withView) <= V2_COMPONENT_LIMIT ? withView : locked }
-    } else {
-      const embeds = this.snapshot.embeds.length < EMBED_LIMIT ? [...this.snapshot.embeds, loadingEmbed] : this.snapshot.embeds
-      body = { components: locked, embeds }
+      return { components: countComponents(withView) <= V2_COMPONENT_LIMIT ? withView : locked }
     }
-    const written = await this.editMessage(body, { restoring: true })
-    this.lockedComponents = written?.components?.map(component => component.toJSON()) ?? body.components
-    this.settled = false
+    const loadingEmbed = renderEmbed(view)
+    return { components: locked, embeds: base.embeds.length < EMBED_LIMIT ? [...base.embeds, loadingEmbed] : base.embeds }
+  }
+
+  /**
+   * Stops holding the locked message. `left` is the message as this call leaves it, for calls that lock
+   * it later; a message changed outside MeoCord is forgotten. Once no call holds it, it is forgotten
+   * after `LOCK_MEMORY_MS`, which covers a click made on the lock and snapshotted after it settled.
+   */
+  private leave({ left, changedOutside = false }: { left?: Snapshot; changedOutside?: boolean } = {}): void {
+    if (!this.held) return
+    const { key, entry } = this.held
+    this.held = undefined
+    entry.holders.delete(this)
+    if (left) entry.original = left
+    if (entry.holders.size > 0) return
+    if (changedOutside) {
+      messageLocks.delete(key)
+      return
+    }
+    entry.forget = setTimeout(() => {
+      if (messageLocks.get(key) === entry && entry.holders.size === 0) messageLocks.delete(key)
+    }, LOCK_MEMORY_MS)
+    entry.forget.unref?.()
   }
 
   /**
@@ -419,14 +493,21 @@ export class InteractionResponse implements ResponseState {
   private async restore(): Promise<void> {
     if (!this.snapshot || this.settled) return
     this.settled = true
+    const entry = this.held?.entry
     try {
       const current = await this.interaction.fetchReply()
       const components = current?.components?.map(component => component.toJSON())
-      if (components && !sameJson(components, this.lockedComponents)) return
+      if (components && !sameJson(components, entry?.written)) {
+        this.leave({ changedOutside: true })
+        return
+      }
     } catch {
       // The message cannot be read here, as in a direct message the bot is not in: restore anyway.
     }
-    await this.editMessage(this.restoredBody(), { restoring: true })
+    this.leave()
+    // Calls still holding the message keep their controls disabled
+    const body = entry ? this.heldBody(entry, entry.original, this.loadingView) : this.restoredBody()
+    await this.editMessage(body, { restoring: true })
   }
 
   private restoredBody(): Body {
@@ -516,11 +597,19 @@ export class InteractionResponse implements ResponseState {
   /** Omitted components and embeds put back the message as it was before the lock. */
   private withRestore(body: Body): Body {
     if (!this.snapshot || this.settled) return body
-    const restored = this.restoredBody()
+    const entry = this.held?.entry
+    const base = entry?.original ?? this.snapshot
+    const left: Snapshot = {
+      components: body.components === undefined ? base.components : body.components.map(toJson),
+      embeds: body.embeds === undefined ? base.embeds : (body.embeds.map(toJson) as APIEmbed[]),
+    }
+    this.leave({ left })
+    // Calls still holding the message keep their controls disabled
+    const components = entry && entry.holders.size > 0 ? this.heldBody(entry, left, undefined).components : body.components
     return {
       ...body,
-      ...(body.components === undefined ? { components: restored.components } : {}),
-      ...(body.embeds === undefined && restored.embeds && !this.v2 ? { embeds: restored.embeds } : {}),
+      components: components ?? base.components,
+      ...(body.embeds === undefined && !this.v2 ? { embeds: base.embeds } : {}),
     }
   }
 
@@ -569,7 +658,10 @@ export class InteractionResponse implements ResponseState {
 
   /** Edits the answer through the interaction, and through the channel only once its token has expired. */
   private async editMessage(body: Body, { restoring = false } = {}): Promise<Message | undefined> {
-    if (!restoring) this.settled = true
+    if (!restoring) {
+      this.settled = true
+      this.leave()
+    }
     const flags = this.flagsFor('edit', body.flags) | this.keptFlags(body)
     this.v2 ||= hasComponentsV2(flags)
     const sent = { ...this.withAttachments(forMode(body, this.v2)), flags }
@@ -584,6 +676,10 @@ export class InteractionResponse implements ResponseState {
       this.lastMessage = await message.edit(sent as never)
     }
     this.phase = 'replied'
+    // What is on the locked message now, for a restore to tell whether something else changed it since
+    if (this.lockEntry && !answersWithOwnMessage(this.interaction)) {
+      this.lockEntry.written = this.lastMessage?.components?.map(component => component.toJSON()) ?? (sent.components as unknown[])
+    }
     return this.lastMessage
   }
 
@@ -721,3 +817,4 @@ export function respond(interaction: Interaction): ResponseState {
 export function existingResponse(interaction: object): InteractionResponse | undefined {
   return states.get(interaction)
 }
+

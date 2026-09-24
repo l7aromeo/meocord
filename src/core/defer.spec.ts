@@ -18,7 +18,7 @@ import { Command, Controller, Defer, Guard, MessageHandler, UseGuard } from '@sr
 import { CommandType, MetadataKey } from '@src/enum/index.js'
 import { type GuardInterface } from '@src/interface/index.js'
 import { GuardDeniedError } from '@src/common/errors.js'
-import { respond } from '@src/common/response/response-state.js'
+import { LOCK_MEMORY_MS, lockedMessageCount, respond } from '@src/common/response/response-state.js'
 import { defaultPresenter, renderContainer, renderEmbed, RENDERED_CONTAINER_ID } from '@src/common/response/presenter.js'
 import { MeoCordApp } from '@src/core/meocord.app.js'
 import { createChatInputOptions, createMockInteraction, createMockMessage, getResponse } from '@src/testing/index.js'
@@ -362,6 +362,99 @@ describe('@Defer', () => {
     await emit(interaction)
 
     expect(buttonsOf(payloads(interaction)[1]).map(button => button.disabled)).toEqual([true, undefined])
+  })
+
+  describe("two clicks on one message with disable: 'clicked'", () => {
+    const button = (id: string) => ({ type: ComponentType.Button, style: 1, custom_id: `clicked/${id}`, label: id })
+    const original: Json[] = [{ type: ComponentType.ActionRow, components: [button('a'), button('b')] }]
+
+    /** One Discord message both clicks edit: each edit replaces it, and fetchReply() reads it back. */
+    let messages = 0
+    function sharedMessage() {
+      let current: Json[] = original
+      const id = `card-${++messages}`
+      const read = () => Object.assign(messageWith({ components: current, embeds: [] }), { id })
+      const clickOn = (id: string) => {
+        const interaction = click(`clicked/${id}`, read())
+        interaction.editReply.mockImplementation(async payload => {
+          current = ((payload as Payload).components ?? current) as Json[]
+          return read() as never
+        })
+        interaction.fetchReply.mockImplementation(async () => read() as never)
+        return interaction
+      }
+      return { clickOn, current: () => current }
+    }
+
+    function holdHandlers() {
+      const gates = new Map<string, () => void>()
+      handlerBody = interaction => new Promise<void>(resolve => gates.set((interaction as ButtonInteraction).customId, resolve))
+      return (customId: string) => gates.get(customId)!()
+    }
+
+    const buttons = (components: Json[]) => (components[0].components as Json[]).map(({ disabled, emoji }) => ({ disabled, emoji }))
+    const spinner = { name: '⏳' }
+
+    it("puts back each click's own control, whichever finishes first", async () => {
+      const emit = await startApp()
+      const finish = holdHandlers()
+      const message = sharedMessage()
+
+      const first = message.clickOn('a')
+      const firstDone = emit(first)
+      await vi.waitFor(() => expect(calls(first)).toContain('editReply'))
+      // The second click is on the message as the first one's lock left it
+      const second = message.clickOn('b')
+      const secondDone = emit(second)
+      await vi.waitFor(() => expect(calls(second)).toContain('editReply'))
+      expect(buttons(message.current())).toEqual([{ disabled: true, emoji: spinner }, { disabled: true, emoji: spinner }])
+
+      finish('clicked/a')
+      await firstDone
+      expect(buttons(message.current())).toEqual([{ disabled: undefined, emoji: undefined }, { disabled: true, emoji: spinner }])
+
+      finish('clicked/b')
+      await secondDone
+      expect(message.current()).toEqual(original)
+    })
+
+    it("never writes back the first click's spinner once it finished before the second locked", async () => {
+      const emit = await startApp()
+      const finish = holdHandlers()
+      const message = sharedMessage()
+
+      const first = message.clickOn('a')
+      const firstDone = emit(first)
+      await vi.waitFor(() => expect(calls(first)).toContain('editReply'))
+      const second = message.clickOn('b')
+      finish('clicked/a')
+      await firstDone
+
+      const secondDone = emit(second)
+      await vi.waitFor(() => expect(calls(second)).toContain('editReply'))
+      finish('clicked/b')
+      await secondDone
+
+      expect(message.current()).toEqual(original)
+    })
+
+    it('forgets the message once every click settled, on success and on error', async () => {
+      vi.useFakeTimers({ now: Date.now(), toFake: ['setTimeout', 'clearTimeout'] })
+      const emit = await startApp()
+      const message = sharedMessage()
+      const before = lockedMessageCount()
+      handlerBody = async () => {}
+      await emit(message.clickOn('a'))
+      handlerBody = async () => {
+        throw new Error('failed')
+      }
+      await emit(message.clickOn('b'))
+
+      expect(lockedMessageCount()).toBe(before + 1)
+      await vi.advanceTimersByTimeAsync(LOCK_MEMORY_MS)
+      expect(lockedMessageCount()).toBe(before)
+      vi.useRealTimers()
+    })
   })
 
   it('drops a loading view left behind by a crash before snapshotting', async () => {
