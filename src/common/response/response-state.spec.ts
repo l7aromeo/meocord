@@ -396,6 +396,22 @@ describe('respond()', () => {
       expect(interaction.followUp).not.toHaveBeenCalled()
     })
 
+    // Discord refuses an eleventh embed, which would leave the card locked and the error unseen
+    it('restores a full private card and follows up privately, where the error would not fit', async () => {
+      const embeds = Array.from({ length: 10 }, (_, index) => ({ description: `page ${index}` }))
+      const row = { type: ComponentType.ActionRow, components: [{ type: ComponentType.Button, style: 1, custom_id: 'refresh', label: 'Refresh' }] }
+      const interaction = button(messageWith({ flags: Ephemeral, embeds, components: [row] }))
+      vi.mocked(interaction.fetchReply).mockRejectedValue(new Error('not readable'))
+      await respond(interaction).lock()
+
+      await respond(interaction).error(new Error('x'))
+
+      const edits = vi.mocked(interaction.editReply).mock.calls.map(([payload]) => payload as Payload)
+      for (const edit of edits) expect(edit.embeds?.length ?? 0).toBeLessThanOrEqual(10)
+      expect(edits.at(-1)).toMatchObject({ components: [row], embeds })
+      expect(sent(interaction.followUp).flags).toBe(Ephemeral)
+    })
+
     it('follows up privately on a public component, never editing the clicked message', async () => {
       const interaction = button()
       await respond(interaction).acknowledge()
