@@ -259,6 +259,13 @@ describe('collectCommands', () => {
       expect(message).toContain('"ban" options.user.choices.a.name_localizations.ja: 101 characters (1 to 100)')
     })
 
+    it('names a locale key that is not a language tag, rather than throwing on it', () => {
+      const { commands, logger } = collectBody({ name: 'ban', type: 1, description: 'Ban', name_localizations: { en_US: 'ban' } })
+
+      expect(commands).toBeUndefined()
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('"ban" name_localizations.en_US: "en_US" is not a Discord locale'))
+    })
+
     it('allows capitals and spaces in a context menu name', () => {
       const { commands } = collectBody({ name: 'Report', type: 2, name_localizations: { ja: 'ユーザーを報告', de: 'Nutzer Melden' } })
 

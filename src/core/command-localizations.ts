@@ -32,7 +32,11 @@ export function localizationProblems(commandName: string, body: LocalizedNode): 
   const check = (path: string, node: LocalizedNode, rules: { chatInputName: boolean; descriptions: boolean }) => {
     for (const [locale, value] of entriesOf(node.name_localizations)) {
       const field = `${path}name_localizations.${locale}`
-      if (!DISCORD_LOCALES.has(locale)) problems.push(`"${commandName}" ${field}: "${locale}" is not a Discord locale`)
+      // An unknown locale is the problem to report; lowercasing for it could throw on a malformed tag.
+      if (!DISCORD_LOCALES.has(locale)) {
+        problems.push(`"${commandName}" ${field}: "${locale}" is not a Discord locale`)
+        continue
+      }
       if (value === null) continue
       if (typeof value !== 'string' || value.length < 1 || value.length > (rules.chatInputName ? 32 : 100)) {
         problems.push(`"${commandName}" ${field}: ${describeLength(value)} (1 to ${rules.chatInputName ? 32 : 100})`)
