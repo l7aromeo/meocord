@@ -7,8 +7,12 @@ import { assertStageEntries } from '@src/core/stage-scope.js'
 
 type Handler = (interaction: any, params: any, ...rest: any[]) => unknown
 
-/** A handler's second parameter. */
-type ParamsOf<M extends Handler> = Parameters<M>[1]
+/** Stands for the input parameter of a handler that declares none, which accepts any input. */
+declare const _noInput: unique symbol
+type NoInput = typeof _noInput
+
+/** A handler's second parameter, or `NoInput` when it takes fewer than two. */
+type ParamsOf<M extends Handler> = Parameters<M> extends [unknown, ...infer Rest] ? (Rest extends [] ? NoInput : Parameters<M>[1]) : NoInput
 
 type PipeClassOf<E> = E extends { provide: infer C } ? C : E
 type PipeOutput<E> = PipeClassOf<E> extends new (...args: any[]) => PipeInterface<any, infer O> ? Awaited<O> : never
@@ -30,7 +34,9 @@ type IsPiped<T> = typeof PIPED_BRAND extends keyof T ? true : false
 type Unpiped<P> = { [K in keyof P]: IsPiped<P[K]> extends true ? unknown : P[K] }
 
 /** Allows the descriptor when the validated input fits the handler's params; otherwise names the problem. */
-type AcceptsInput<P, Input> = [Input] extends [Unpiped<P>]
+type AcceptsInput<P, Input> = [P] extends [NoInput]
+  ? unknown
+  : [Input] extends [Unpiped<P>]
   ? unknown
   : { 'The handler params do not match the validated input; mark keys a separate @UsePipe produces Piped<T>': Input }
 
@@ -87,7 +93,9 @@ export function Validate<S extends StandardSchemaV1, const Pipes extends SchemaP
 }
 
 /** Allows the descriptor when the handler's params take the pipe's output at `key`. */
-type AcceptsPiped<P, K extends string, Out> = K extends keyof P
+type AcceptsPiped<P, K extends string, Out> = [P] extends [NoInput]
+  ? unknown
+  : K extends keyof P
   ? [Out] extends [P[K]]
     ? unknown
     : Record<`The pipe's output does not fit the handler param "${K}"`, Out>

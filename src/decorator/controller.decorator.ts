@@ -63,7 +63,12 @@ function ownCommandMap(target: object): Record<string, CommandMetadata[]> {
 export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boolean>>, R extends void | Promise<void>>(
   keyword?: string,
 ) {
-  return function (target: object, propertyKey: string, _descriptor: TypedPropertyDescriptor<(message: T) => R>) {
+  // A handler may take fewer parameters than dispatch passes; the descriptor type is invariant, so each arity is listed.
+  return function (
+    target: object,
+    propertyKey: string,
+    _descriptor: TypedPropertyDescriptor<(message: T) => R> | TypedPropertyDescriptor<() => R>,
+  ) {
     const handlers = ownHandlerList(MESSAGE_HANDLER_METADATA_KEY, target)
     handlers.push({ keyword, method: propertyKey.toString() })
     Reflect.defineMetadata(MESSAGE_HANDLER_METADATA_KEY, handlers, target)
@@ -96,7 +101,8 @@ export function ReactionHandler<T extends MessageReaction | PartialMessageReacti
     propertyKey: string,
     _descriptor:
       | TypedPropertyDescriptor<(reaction: T, options: ReactionHandlerOptions) => R>
-      | TypedPropertyDescriptor<(reaction: T) => R>,
+      | TypedPropertyDescriptor<(reaction: T) => R>
+      | TypedPropertyDescriptor<() => R>,
   ) {
     const handlers = ownHandlerList(REACTION_HANDLER_METADATA_KEY, target)
     handlers.push({ emoji, method: propertyKey.toString() })
@@ -226,7 +232,8 @@ export function Command<CBC extends BuildableCommandType, T extends CommandBuild
     propertyKey: string,
     _descriptor:
       | TypedPropertyDescriptor<(interaction: CommandInteractionType<CBC, T>, params: P) => R>
-      | TypedPropertyDescriptor<(interaction: CommandInteractionType<CBC, T>) => R>,
+      | TypedPropertyDescriptor<(interaction: CommandInteractionType<CBC, T>) => R>
+      | TypedPropertyDescriptor<() => R>,
   ) {
     const originalMethod = _descriptor.value
     if (!originalMethod) {
@@ -335,7 +342,8 @@ export function Autocomplete<R extends void | Promise<void>>(commandPath: string
     propertyKey: string,
     _descriptor:
       | TypedPropertyDescriptor<(interaction: AutocompleteInteraction, params: P) => R>
-      | TypedPropertyDescriptor<(interaction: AutocompleteInteraction) => R>,
+      | TypedPropertyDescriptor<(interaction: AutocompleteInteraction) => R>
+      | TypedPropertyDescriptor<() => R>,
   ) {
     const handlers = ownHandlerList<AutocompleteMetadata>(AUTOCOMPLETE_METADATA_KEY, target)
     handlers.push({ commandPath, optionName, methodName: propertyKey.toString() })
