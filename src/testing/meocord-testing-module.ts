@@ -1,5 +1,6 @@
 import 'reflect-metadata'
-import { Container, injectable, type ServiceIdentifier } from 'inversify'
+import { makeInjectable } from '@src/util/injectable.util.js'
+import { Container, type ServiceIdentifier } from 'inversify'
 import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
@@ -155,9 +156,7 @@ export class TestingModuleBuilder {
       } else {
         const cls = provider.useClass
         if (injectedTokens(cls).includes(ExecutionContext)) throw singletonContextError(cls)
-        if (!Reflect.hasMetadata(MetadataKey.Injectable, cls)) {
-          injectable()(cls)
-        }
+        makeInjectable(cls)
         container.bind(provider.provide).to(cls).inSingletonScope()
       }
     }
@@ -172,9 +171,7 @@ export class TestingModuleBuilder {
       if (container.isBound(cls)) return
       if (injectedTokens(cls).includes(ExecutionContext)) throw singletonContextError(cls)
 
-      if (!Reflect.hasMetadata(MetadataKey.Injectable, cls)) {
-        injectable()(cls)
-      }
+      makeInjectable(cls)
       container.bind(cls).toSelf().inSingletonScope()
 
       const deps: any[] = Reflect.getMetadata(MetadataKey.ParamTypes, cls) || []

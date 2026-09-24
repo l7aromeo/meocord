@@ -1,6 +1,5 @@
 import 'reflect-metadata'
-import { injectable } from 'inversify'
-import { MetadataKey } from '@src/enum/index.js'
+import { makeInjectable } from '@src/util/injectable.util.js'
 
 /**
  * Marks a class as a service, injectable into controllers and other services.
@@ -17,8 +16,6 @@ import { MetadataKey } from '@src/enum/index.js'
  */
 export function Service<T>() {
   return function (target: new (...args: any[]) => T) {
-    if (!Reflect.hasMetadata(MetadataKey.Injectable, target)) {
-      injectable()(target)
-    }
+    makeInjectable(target)
   }
 }
