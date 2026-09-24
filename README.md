@@ -5,9 +5,9 @@
 [![node](https://img.shields.io/node/v/meocord)](https://www.npmjs.com/package/meocord)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-**MeoCord** is a decorator-based Discord bot framework built on top of discord.js. It brings a NestJS-style architecture — controllers, services, guards, interceptors, and dependency injection — to bot development, with a full CLI, TypeScript-first design, and testing utilities included out of the box.
+**MeoCord** is a decorator-based Discord bot framework built on top of discord.js. It brings a NestJS-style architecture — controllers, services, guards, interceptors, exception filters and dependency injection — to bot development, with a full CLI, TypeScript-first design, and testing utilities included out of the box.
 
-> **Upgrading from 3.x?** Follow the [migration guide](https://github.com/l7aromeo/meocord/blob/main/docs/MIGRATING.md).
+> **Upgrading from 3.x or 4.0?** Follow the [migration guide](https://github.com/l7aromeo/meocord/blob/main/docs/MIGRATING.md).
 
 ---
 
@@ -29,19 +29,29 @@
 - [Command Parameters](#command-parameters)
 - [Subcommands](#subcommands)
 - [Autocomplete](#autocomplete)
+- [How a handler runs](#how-a-handler-runs)
 - [Guards](#guards)
+  - [Passing options to a guard](#passing-options-to-a-guard)
+  - [Reading handler metadata](#reading-handler-metadata)
+  - [Guards on autocomplete, and denying with a reason](#guards-on-autocomplete-and-denying-with-a-reason)
 - [Interceptors](#interceptors)
 - [Exception filters](#exception-filters)
 - [Interaction responses](#interaction-responses)
 - [Validation and Pipes](#validation-and-pipes)
-- [Localisation](#localisation)
 - [Cooldowns](#cooldowns)
+  - [Where calls are counted](#where-calls-are-counted)
 - [Custom Decorators](#custom-decorators)
 - [Gateway Events](#gateway-events)
 - [Handler Discovery](#handler-discovery)
 - [Lifecycle Hooks](#lifecycle-hooks)
+- [Localisation](#localisation)
 - [Testing](#testing)
+  - [Running tests](#running-tests)
+  - [MeoCordTestingModule](#meocordtestingmodule)
+  - [Running a handler with invoke](#running-a-handler-with-invoke)
 - [Deployment](#deployment)
+  - [Self-contained builds](#self-contained-builds)
+  - [Which runtime the bot runs on](#which-runtime-the-bot-runs-on)
   - [Sharding](#sharding)
 - [Contributing](#contributing)
 - [Release Notes](#release-notes)
@@ -51,15 +61,17 @@
 
 ## Features
 
-- **Decorator-based controllers** — Handle every Discord interaction type — slash commands and their subcommands, autocomplete, buttons, modals, all five select menus, context menus, activity entry points, messages, and reactions — with `@Command`, `@Autocomplete`, `@Controller`, and `@UseGuard` decorators. No routing boilerplate.
+- **Decorator-based controllers** — Handle every Discord interaction type — slash commands and their subcommands, autocomplete, buttons, modals, all five select menus, context menus, activity entry points, messages, and reactions — with `@Command`, `@Autocomplete`, `@MessageHandler` and `@ReactionHandler`. No routing boilerplate.
 - **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators.
-- **Guard system** — Pre-execution hooks for auth, rate limiting, metrics, and anything else. Apply per-method or per-class with `@UseGuard`. Guards receive the full interaction context.
-- **Gateway events** — `@On` and `@Once` handle any discord.js client event on a controller or service, with typed arguments, guards and isolated errors. `HandlerRegistry` lists every handler for a `/help` command or generated docs.
-- **Lifecycle hooks** — `onReady` and `onShutdown` on any controller or service, for schedulers, cache warm-up and clean shutdown.
-- **Full CLI** — `meocord create`, `build`, `start`, `generate`. Scaffolds controllers, services, guards, interceptors and filters; builds with Rsbuild for both development and production.
-- **Testing utilities** — `MeoCordTestingModule` with `invoke` to run a handler through its guards, `inspectHandler`, `createMockInteraction`, `createMockMessage`, `createMockUser`, `createMockClient`, `createMockGuild`, `createMockChannel`, `createChatInputOptions`, `overrideGuard`, `overrideInterceptor` and `overrideFilter` let you test controllers against real guard logic without a Discord connection. Type guards and reply state machines work out of the box.
-- **TypeScript-first** — Strict types throughout. Decorator metadata, `DeepMocked<T>` for test mocks, and typed config interfaces included.
-- **Extensible build** — An Rsbuild config hook in `meocord.config.ts` to adjust the build without ejecting, and an option to bundle dependencies so production runs without `node_modules`.
+- **A request pipeline** — [Guards](#guards) decide whether a handler runs, [interceptors](#interceptors) wrap it, [validation and pipes](#validation-and-pipes) check and transform its input, [cooldowns](#cooldowns) limit how often it runs, and [exception filters](#exception-filters) decide what the user is told when something throws. Each applies to a method, a controller, or the whole bot.
+- **Gateway events** — `@On` and `@Once` handle any discord.js client event on a controller or service, with typed arguments and the same pipeline. `HandlerRegistry` lists every handler for a `/help` command or generated docs.
+- **Lifecycle hooks** — `onReady` and `onShutdown` on any controller or service, in dependency order, for schedulers, cache warm-up and clean shutdown.
+- **Localisation** — One typed catalog per locale for command names, descriptions and replies, checked at compile time.
+- **Command registration and sharding** — Register globally, to guilds or to a development guild, from startup or CI; shard in one process or across processes with one setting.
+- **Full CLI** — `meocord create`, `build`, `start`, `register` and `generate`, which scaffolds controllers, services, guards, interceptors, filters and pipes, each with a spec. Builds with Rsbuild for development and production.
+- **Testing utilities** — `MeoCordTestingModule` runs a handler through its whole pipeline with `invoke` and sends events with `emit`; `inspectHandler`, `createMockInteraction`, `createMock` and the other mocks test controllers without a Discord connection. Type guards and reply state machines work out of the box.
+- **TypeScript-first** — Strict types throughout: handler parameters checked against validation schemas and event types, typed metadata and catalogs, and typed config.
+- **Extensible build** — An Rsbuild hook in `meocord.config.ts` to adjust the build without ejecting, and a self-contained build that runs without `node_modules`.
 
 ---
 
@@ -148,27 +160,34 @@ export class GreetingSlashController {
 }
 ```
 
-Register it in `src/app.ts`:
+The service it injects is a plain class:
+
+```typescript
+import { Service } from 'meocord/decorator'
+
+@Service()
+export class GreetingService {
+  async buildGreeting(name: string): Promise<string> {
+    return `Hello, ${name}!`
+  }
+}
+```
+
+Register the controller in `src/app.ts`:
 
 ```typescript
 import { MeoCord } from 'meocord/decorator'
-import { GatewayIntentBits, Partials } from 'discord.js'
+import { GatewayIntentBits } from 'discord.js'
 import { GreetingSlashController } from '@src/controllers/slash/greeting.slash.controller.js'
-import { GreetingService } from '@src/services/greeting.service.js'
 
 @MeoCord({
   controllers: [GreetingSlashController],
-  // `services` is for specialized, event-driven services (e.g. RabbitMQ consumers,
-  // schedulers). Regular business-logic services are injected via controller
-  // constructors — they don't belong here.
-  services: [RabbitMQService],
-  clientOptions: {
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
-    partials: [Partials.Message, Partials.Channel],
-  },
+  clientOptions: { intents: [GatewayIntentBits.Guilds] },
 })
-export class App {}
+export default class App {}
 ```
+
+`GreetingService` needs no listing: a controller that injects it is enough. `services` is for a service nothing injects that still has to exist, such as a scheduler or a queue consumer.
 
 ---
 
@@ -236,11 +255,12 @@ export class App {}
 The top-level config file. At minimum it needs `discordToken`. The `rsbuild` hook lets you adjust the build without ejecting.
 
 ```typescript
+import 'dotenv/config'
 import { type MeoCordConfig } from 'meocord/interface'
 
 export default {
   appName: 'MyBot',
-  discordToken: process.env.TOKEN!,
+  discordToken: process.env.DISCORD_TOKEN!,
   rsbuild: config => {
     // Import .md and .html files as their text.
     config.tools ??= {}
@@ -285,6 +305,7 @@ MeoCord builds with [Rsbuild](https://rsbuild.rs). The hook receives its configu
 | `optionalExternals`  | `[]`    | Packages a dependency tries to load and runs without, such as `supports-color`; see below.                 |
 | `shutdownTimeout`    | `10000` | Milliseconds shutdown waits for the [`onShutdown` hooks](#lifecycle-hooks), all of them together.          |
 | `commands`           | global  | Where commands are registered, and whether at startup — see [Command registration](#command-registration). |
+| `sharding`           | —       | Split the gateway connection into shards — see [Sharding](#sharding).                                      |
 
 See [Self-contained builds](#self-contained-builds) for when to turn on `bundleDependencies`.
 
@@ -414,14 +435,14 @@ export default [
 npx meocord --help
 ```
 
-| Command    | Alias | Description                                                   |
-| ---------- | ----- | ------------------------------------------------------------- |
-| `create`   | —     | Scaffold a new MeoCord application                            |
-| `build`    | —     | Compile the application via Rsbuild                           |
-| `start`    | —     | Start the application                                         |
-| `register` | —     | Register the commands, without starting the bot               |
-| `generate` | `g`   | Scaffold controllers, services, guards, interceptors, filters |
-| `show`     | —     | Display framework info                                        |
+| Command    | Alias | Description                                                          |
+| ---------- | ----- | -------------------------------------------------------------------- |
+| `create`   | —     | Scaffold a new MeoCord application                                   |
+| `build`    | —     | Compile the application via Rsbuild                                  |
+| `start`    | —     | Start the application                                                |
+| `register` | —     | Register the commands, without starting the bot                      |
+| `generate` | `g`   | Scaffold controllers, services, guards, interceptors, filters, pipes |
+| `show`     | —     | Display framework info                                               |
 
 Every command's own flags:
 
@@ -615,11 +636,11 @@ Where two patterns trade a literal for a parameter in opposite positions — `a/
 <details>
 <summary><b>When nothing matches</b></summary>
 
-An unroutable interaction replies "Command not found!" to the user and logs a warning naming the `customId` or command that failed to match. If a control appears dead, that log line is the first place to look.
+An unroutable interaction raises `CommandNotFoundError`, which the [built-in fallback](#the-built-in-fallback) answers with "Command not found!", and logs a warning naming the `customId` or command that failed to match. If a control appears dead, that log line is the first place to look.
 
 Autocomplete cannot be replied to, so an unclaimed option is answered with an empty list instead and the warning names the command and option.
 
-A handler that throws is logged and gets the same treatment — except when it had already replied or deferred, in which case MeoCord leaves the response alone rather than sending a second one Discord would reject.
+A handler that throws goes to its [exception filters](#exception-filters), then to the built-in fallback, which logs the error and answers the user in whatever way the interaction still allows — editing a deferred reply, or following up one already sent.
 
 </details>
 
@@ -628,7 +649,7 @@ A handler that throws is logged and gets the same treatment — except when it h
 
 discord.js calls event listeners without awaiting them, so anything that rejects out of one is an unhandled rejection — which terminates the process by default. MeoCord wraps every listener it registers, so one bad interaction, one unresolvable controller, or one reaction on a deleted message costs that event and nothing else. The error is logged against the event that produced it, so a genuine misconfiguration still shows up on the first interaction rather than staying hidden.
 
-Where the failure happened before the handler ran, the user is still told: a command interaction gets the error reply, an autocomplete gets its window closed. A reaction whose message can no longer be fetched — deleted, or in a channel the bot lost access to — is skipped quietly, since that is an ordinary outcome rather than a fault.
+Where the failure happened before the handler ran, the user is still told: an interaction gets the fallback's answer, an autocomplete gets its window closed. A reaction whose message can no longer be fetched — deleted, or in a channel the bot lost access to — is skipped quietly, since that is an ordinary outcome rather than a fault.
 
 </details>
 
@@ -694,9 +715,29 @@ If no handler claims an option, MeoCord answers with an empty list and logs whic
 
 ---
 
+## How a handler runs
+
+Every handler — a command, a component, an autocomplete, a message, a reaction or an [event](#gateway-events) — runs through the same stages, in this order:
+
+1. **Guards** decide whether the handler runs at all.
+2. **Interceptors** wrap everything after them: they can act before and after, skip the handler, or replace its error.
+3. **Validation** checks the handler's input against a schema, and **pipes** transform the valid values.
+4. **Cooldowns** count the call, and block it once the handler has run too often.
+5. **The handler** runs with what the stages produced.
+
+**Exception filters** surround all of it: an error from any stage or the handler reaches them, and one no filter handles goes to the built-in fallback.
+
+Validation and pipes apply to command, component and modal handlers, whose options, customId params and fields they check. Cooldowns apply to those and to message handlers. An autocomplete handler, which must answer within three seconds, runs its guards and filters but no interceptors.
+
+Guards, interceptors and filters apply at three levels, which run in this order: globally, from `@MeoCord({ guards, interceptors, filters })`; on a controller, for every handler it declares or inherits; and on a method. Cooldowns apply on a controller or a method. A stage also sees what it is running for through `ExecutionContext`, whose `getType()` is `'interaction'`, `'autocomplete'`, `'message'`, `'reaction'` or `'event'`; a guard or interceptor declared with `types` runs only for those.
+
+The stages run when MeoCord dispatches a handler, and when a test runs one with [`invoke`](#running-a-handler-with-invoke). A controller method called directly runs only its guards.
+
+---
+
 ## Guards
 
-Guards run before the handler method. Each guard implements `canActivate` — return `true` to allow, `false` to block.
+Guards run first, before anything else touches the handler. Each guard implements `canActivate` — return `true` to allow, `false` to block.
 
 A new guard instance is created for every call, so keep state that must outlast one call — such as rate-limit counts — outside the guard: at module level, or in a service registered in `@MeoCord({ services })`, which makes it a singleton.
 
@@ -760,6 +801,83 @@ class App {}
 
 Global guards run when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke). A controller method called directly runs only its own class and method guards.
 
+### Passing options to a guard
+
+Use params when a value configures one use of a guard, such as a limit or the channels a command is allowed in. `@UseGuard({ provide, params })` sets them as properties on the guard instance before `canActivate` runs, and a decorator of your own can wrap it. For facts about the handler itself that any guard can read, use [metadata](#reading-handler-metadata) instead.
+
+```typescript
+import { Guard, UseGuard } from 'meocord/decorator'
+import { type GuardInterface } from 'meocord/interface'
+import { type ChatInputCommandInteraction } from 'discord.js'
+
+@Guard()
+export class ChannelGuard implements GuardInterface {
+  // Set per use with @UseGuard({ provide: ChannelGuard, params: { channelIds } })
+  channelIds: string[] = []
+
+  canActivate(interaction: ChatInputCommandInteraction): boolean {
+    return this.channelIds.length === 0 || this.channelIds.includes(interaction.channelId)
+  }
+}
+
+export const OnlyInChannels = (...channelIds: string[]) => UseGuard({ provide: ChannelGuard, params: { channelIds } })
+```
+
+```typescript
+@Command('trade', CommandType.SLASH)
+@OnlyInChannels('123456789012345678')
+async trade(interaction: ChatInputCommandInteraction) { ... }
+```
+
+### Reading handler metadata
+
+`createMetadata` makes a typed decorator for handler metadata. Put it on a controller, a handler, or both; a guard reads it through `ExecutionContext`, which describes the handler being guarded. The handler's value wins over the controller's.
+
+```typescript
+import { type ChatInputCommandInteraction } from 'discord.js'
+import { applyDecorators, createMetadata, ExecutionContext } from 'meocord/common'
+import { Command, Guard, UseGuard } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+import { type GuardInterface } from 'meocord/interface'
+
+// Define the metadata decorator
+export const Roles = createMetadata<string[]>('roles')
+
+// Read it inside a guard
+@Guard()
+export class RolesGuard implements GuardInterface {
+  constructor(private readonly context: ExecutionContext) {}
+
+  canActivate(interaction: ChatInputCommandInteraction): boolean {
+    const required = this.context.get(Roles) ?? []
+    if (!required.length) return true
+    return interaction.inCachedGuild() && required.some(role => interaction.member.roles.cache.has(role))
+  }
+}
+
+// Compose into a single decorator
+export const RequireRoles = (...roles: string[]) => applyDecorators(Roles(roles), UseGuard(RolesGuard))
+
+// Apply
+@Command('ban', CommandType.SLASH)
+@RequireRoles('admin', 'moderator')
+async ban(interaction: ChatInputCommandInteraction) { ... }
+```
+
+Use params for configuring one guard (`{ provide, params }`, [above](#passing-options-to-a-guard)), and `createMetadata` for facts about a handler that any guard can read. `ExecutionContext` is injected only into guards: each call gets its own, so a controller or service, which is shared across calls, cannot inject it. The context also gives the handler's arguments (`getArgs()`, `getInteraction()`, `getMessage()`, `getReaction()`), what it is handling (`getType()`), the controller and method (`getController()`, `getHandlerName()`), and the guard's own params (`getParams()`). Values declared with `SetMetadata` are read with their key: `this.context.get<string[]>('roles')`.
+
+In a unit test, build the context with `createExecutionContext` from `meocord/testing`:
+
+```typescript
+const interaction = createMockInteraction(ChatInputCommandInteraction)
+const guard = new RolesGuard(createExecutionContext(ModerationController, 'ban', { args: [interaction] }))
+expect(guard.canActivate(interaction)).toBe(false)
+```
+
+To test the guard together with the handler it protects, run the handler with [`invoke`](#running-a-handler-with-invoke).
+
+### Guards on autocomplete, and denying with a reason
+
 Class-level and global guards also run before `@Autocomplete` handlers. There the guard receives an `AutocompleteInteraction`, which has no `reply()`, and `ExecutionContext.getType()` is `'autocomplete'`. A guard must not try to answer it: return `false` to deny, and MeoCord closes the menu with an empty list.
 
 Returning `false` denies silently. To tell the user why, throw `GuardDeniedError` from `meocord/common` with the message to show: it is answered only to the user who made the call, and an [exception filter](#exception-filters) can catch it to answer differently.
@@ -778,7 +896,7 @@ canActivate(interaction: ButtonInteraction, { ownerId }: { ownerId: string }): b
 Interceptors run around a handler once its guards allow the call: timing, logging, caching, mapping errors. An interceptor receives the call's `ExecutionContext` and continues with `next.handle()`, which resolves to what the handler returns. It can act before and after the handler, skip it by returning without calling `next.handle()`, or catch the error the handler throws and throw another. Call `next.handle()` at most once: each call runs the handler again.
 
 ```typescript
-import { Interceptor, UseInterceptor } from 'meocord/decorator'
+import { Controller, Interceptor, UseInterceptor } from 'meocord/decorator'
 import { type CallHandler, type InterceptorInterface } from 'meocord/interface'
 import { type ExecutionContext, Logger } from 'meocord/common'
 
@@ -818,7 +936,7 @@ Generate one with `npx meocord g i <name>`.
 An exception filter handles errors a handler, its interceptors or its guards throw, and decides what the user is told. `@Catch` names the error types it handles, matched with `instanceof`; with no types it handles everything.
 
 ```typescript
-import { Catch, UseFilter } from 'meocord/decorator'
+import { Catch, Controller, UseFilter } from 'meocord/decorator'
 import { type ExceptionFilter } from 'meocord/interface'
 import { type ExecutionContext } from 'meocord/common'
 import { MessageFlags } from 'discord.js'
@@ -864,7 +982,7 @@ An error no filter handles goes to the built-in fallback. It logs the error, the
 | Autocomplete                                                                    | closes the menu with an empty list                      |
 | Expired (Discord error 10062)                                                   | logs only                                               |
 
-It says "An error occurred while executing the command.", "Command not found!" for `CommandNotFoundError`, a `GuardDeniedError`'s own message, and a `ValidationError`'s list of issues — the last two kept private even on a deferred public command, by deleting the deferred reply and following up. Errors from message, reaction and event handlers are only logged, and the next handler still runs. The fallback never throws.
+It says "An error occurred while executing the command.", "Command not found!" for `CommandNotFoundError`, a `GuardDeniedError`'s own message, a `CooldownError`'s wait time, and a `ValidationError`'s list of issues — the last three kept private even on a deferred public command, by deleting the deferred reply and following up. Errors from message, reaction and event handlers are only logged, and the next handler still runs; a message blocked by a cooldown is ignored without an error log. The fallback never throws.
 
 Filters apply when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke); a controller method called directly throws as it would without them. Under `invoke` the fallback does not run: an error no filter handles rejects, so tests see it.
 
@@ -956,7 +1074,7 @@ The input is one object: a chat command's options, or a component's customId par
 
 Invalid input stops the call with a `ValidationError` (from `meocord/common`) whose `issues` list each problem and where it is. The user gets a private reply with them. Schema libraries write their messages in English; an exception filter that maps issues to your own words is the place to localise them.
 
-Validation runs after guards and inside interceptors, so a timing or logging interceptor sees a failure as the handler's error. It applies to interaction handlers only; the bot refuses to start with `@Validate` on a message, reaction or autocomplete handler.
+Validation runs after guards and inside interceptors, so a timing or logging interceptor sees a failure as the handler's error. It applies to command, component and modal handlers only; the bot refuses to start with `@Validate` or `@UsePipe` on a message, reaction, autocomplete or event handler.
 
 ### Pipes
 
@@ -990,78 +1108,7 @@ Both forms are checked: a pipe whose output does not fit the parameter fails to 
 
 A pipe is resolved from the container like a service, so it can inject one, and one instance serves every call. Per-use values go through `{ provide, params }` and `context.getParams()`, the second argument of `transform`. A pipe that throws stops the call, and the error reaches the filters. Generate one with `npx meocord g pi <name>`.
 
-## Localisation
-
-One catalog of messages per locale, typed from the default one, serves command names and descriptions and the bot's replies. Keys, the params each message takes and plural forms are all checked at compile time; nothing is added to your dependencies.
-
-```typescript
-// src/locales/en-US.ts — the default catalog, which every other locale is checked against
-import { defineCatalog } from 'meocord/common'
-
-export default defineCatalog({
-  ban: { name: 'ban', description: 'Ban a member', done: 'Banned {user}.' },
-  warnings: { one: '{user} has {count} warning', other: '{user} has {count} warnings' },
-})
-```
-
-```typescript
-// src/locales/id.ts — any part of the default catalog; what it leaves out falls back
-export default { ban: { name: 'blokir', description: 'Blokir anggota', done: '{user} diblokir.' } }
-```
-
-```typescript
-// src/i18n.ts — at module scope, because command builders run when their class is decorated
-import { createTranslator } from 'meocord/common'
-import enUS from '@src/locales/en-US'
-import id from '@src/locales/id'
-
-export const t = createTranslator({ default: 'en-US', locales: { 'en-US': enUS, id } })
-```
-
-Locales are discord.js `Locale` values: `en-GB`, `es-419`, `zh-TW`, and so on; a bare `en` is refused.
-
-**Commands.** A builder uses the translator directly. `t.localizations(key)` returns only the locales whose catalog has the message, so Discord's own fallback still applies to the rest:
-
-```typescript
-@CommandBuilder(CommandType.SLASH)
-export class BanCommandBuilder implements CommandBuilderBase {
-  build() {
-    return new SlashCommandBuilder()
-      .setName(t.default('ban.name'))
-      .setNameLocalizations(t.localizations('ban.name'))
-      .setDescription(t.default('ban.description'))
-      .setDescriptionLocalizations(t.localizations('ban.description'))
-  }
-}
-```
-
-Interactions still report the default name, so routing is unchanged. Discord limits names to 32 lowercase characters and descriptions to 100: a builder that is handed a longer one fails when its class is decorated, with an error naming the builder and the command, and a raw command body that breaks the rules stops registration with one error listing every field, instead of Discord's opaque rejection.
-
-**Replies.** `t.for(interaction)` translates into the user's language; `{ public: true }` into the server's, for a reply everyone there sees. `t.forGuild(guild)` uses the server's preferred language, for events and messages, which have no user locale. `t.locale('ja')` takes any locale.
-
-```typescript
-await interaction.reply(t.for(interaction)('ban.done', { user: target.toString() }))
-await channel.send(t.forGuild(member.guild)('warnings', { user: member.displayName, count: 3 }))
-```
-
-A locale resolves to its own catalog, then to another of the same language (`es-419` to `es-ES`, `en-GB` to the `en-US` default), then to the default, message by message.
-
-**Params and plurals.** `'Banned {user}.'` requires `{ user }`; a misspelled or missing param fails to compile. A plural is an object whose keys are plural categories — `zero`, `one`, `two`, `few`, `many` and the required `other` — and takes a numeric `count`, which picks the form through `Intl.PluralRules` for the locale, so Russian's `few` and `many` work without extra code. An object whose keys are all category names is always read as a plural. Params take strings and numbers; format numbers and dates yourself, with `Intl.NumberFormat` for instance.
-
-**The default catalog must be TypeScript.** Params are typed from the message text, which TypeScript keeps only for a literal: wrap the catalog in `defineCatalog(...)`, or add `as const`. A catalog that has lost its text types is refused with a compile error saying so. Other locales may be plain objects or JSON: they are checked against the default's keys, and fall back at runtime.
-
-**In services.** Pass the translator to `@MeoCord({ i18n: t })` and inject it as `Translator`, typed by the default catalog; importing `t` works too. A class that injects `Translator` in an app without `i18n` stops the bot at startup with a message saying what to pass.
-
-```typescript
-@Service()
-export class BanService {
-  constructor(private readonly t: Translator<typeof enUS>) {}
-}
-```
-
-**Testing.** `expectCompleteCatalog(t)` from `meocord/testing` fails with every message a locale lacks, every message the default catalog does not have, and every plural form a language needs but lacks. A testing module created with `app` injects the app's translator; otherwise provide one with `{ provide: Translator, useValue: t }`.
-
-The built-in fallback's own texts — "Command not found!" and the generic error — stay in English. An [exception filter](#exception-filters) can answer in the user's language instead.
+---
 
 ## Cooldowns
 
@@ -1085,7 +1132,7 @@ async daily(interaction: ChatInputCommandInteraction) {}
 
 A blocked call throws `CooldownError` (from `meocord/common`, with `retryAfterMs` and `per`), which the built-in fallback answers only to the caller: "Slow down: try again in 12s." `cooldownMessage(retryAfterMs)` builds that text; an [exception filter](#exception-filters) catching `CooldownError` can say it another way, or in the user's language.
 
-The cooldown is counted last, once guards, validation and pipes have let the call through, so a denied call or bad input spends nothing. On a controller, `@Cooldown` applies to each of its interaction and message handlers separately. It works on interaction and message handlers; the bot refuses to start with one on an autocomplete, reaction or event handler itself.
+The cooldown is the [last stage](#how-a-handler-runs) before the handler: guards, validation and pipes have let the call through, so a denied call or bad input spends nothing. It applies to interaction and message handlers. On a controller, `@Cooldown` applies to each of those handlers separately and skips the controller's autocomplete, reaction and event handlers; on one of those handlers itself, the bot refuses to start.
 
 For a reusable exemption, compose it: `const Limited = (seconds: number) => applyDecorators(Cooldown({ seconds, bypass: isOwner }))`.
 
@@ -1114,9 +1161,11 @@ export class RedisCooldownStore extends CooldownStore {
 
 In tests, each `MeoCordTestingModule` counts in a fresh in-memory store; provide `{ provide: CooldownStore, useValue }` to use another. `inspectHandler(Controller, 'method').cooldowns` lists a handler's cooldowns with their defaults.
 
+---
+
 ## Custom Decorators
 
-MeoCord exports `applyDecorators`, `createMetadata` and `SetMetadata` from `meocord/common` for composing reusable decorators.
+MeoCord exports `applyDecorators` from `meocord/common` to combine decorators into one of your own, and `createMetadata` for a typed decorator that stores a value on a handler — see [Reading handler metadata](#reading-handler-metadata). `SetMetadata(key, value)` stores a value under a key of your choosing; prefer `createMetadata`, whose values are typed.
 
 ### Composing guards into a reusable decorator
 
@@ -1135,78 +1184,7 @@ export const Protected = (limit = 5) =>
 async profile(interaction: ChatInputCommandInteraction) { ... }
 ```
 
-### Passing options to a guard
-
-Use params when a value configures one use of a guard, such as a limit or the channels a command is allowed in. `@UseGuard({ provide, params })` sets them as properties on the guard instance before `canActivate` runs, and a decorator of your own can wrap it. For facts about the handler itself that any guard can read, use metadata instead (below).
-
-```typescript
-import { Guard, UseGuard } from 'meocord/decorator'
-import { type GuardInterface } from 'meocord/interface'
-import { type ChatInputCommandInteraction } from 'discord.js'
-
-@Guard()
-export class ChannelGuard implements GuardInterface {
-  // Set per use with @UseGuard({ provide: ChannelGuard, params: { channelIds } })
-  channelIds: string[] = []
-
-  canActivate(interaction: ChatInputCommandInteraction): boolean {
-    return this.channelIds.length === 0 || this.channelIds.includes(interaction.channelId)
-  }
-}
-
-export const OnlyInChannels = (...channelIds: string[]) => UseGuard({ provide: ChannelGuard, params: { channelIds } })
-```
-
-```typescript
-@Command('trade', CommandType.SLASH)
-@OnlyInChannels('123456789012345678')
-async trade(interaction: ChatInputCommandInteraction) { ... }
-```
-
-### Attaching metadata for guards to read
-
-`createMetadata` makes a typed decorator for handler metadata. Put it on a controller, a handler, or both; a guard reads it through `ExecutionContext`, which describes the handler being guarded. The handler's value wins over the controller's.
-
-```typescript
-import { applyDecorators, createMetadata, ExecutionContext } from 'meocord/common'
-import { Guard, UseGuard } from 'meocord/decorator'
-import { type GuardInterface } from 'meocord/interface'
-
-// Define the metadata decorator
-export const Roles = createMetadata<string[]>('roles')
-
-// Read it inside a guard
-@Guard()
-export class RolesGuard implements GuardInterface {
-  constructor(private readonly context: ExecutionContext) {}
-
-  canActivate(interaction: ChatInputCommandInteraction): boolean {
-    const required = this.context.get(Roles) ?? []
-    if (!required.length) return true
-    return interaction.inCachedGuild() && required.some(role => interaction.member.roles.cache.has(role))
-  }
-}
-
-// Compose into a single decorator
-export const RequireRoles = (...roles: string[]) => applyDecorators(Roles(roles), UseGuard(RolesGuard))
-
-// Apply
-@Command('ban', CommandType.SLASH)
-@RequireRoles('admin', 'moderator')
-async ban(interaction: ChatInputCommandInteraction) { ... }
-```
-
-Use params for configuring one guard (`{ provide, params }`, above), and `createMetadata` for facts about a handler that any guard can read. `ExecutionContext` is injected only into guards: each call gets its own, so a controller or service, which is shared across calls, cannot inject it. The context also gives the handler's arguments (`getArgs()`, `getInteraction()`, `getMessage()`, `getReaction()`), what it is handling (`getType()`), the controller and method (`getController()`, `getHandlerName()`), and the guard's own params (`getParams()`). Values declared with `SetMetadata` are read with their key: `this.context.get<string[]>('roles')`.
-
-In a unit test, build the context with `createExecutionContext` from `meocord/testing`:
-
-```typescript
-const interaction = createMockInteraction(ChatInputCommandInteraction)
-const guard = new RolesGuard(createExecutionContext(ModerationController, 'ban', { args: [interaction] }))
-expect(guard.canActivate(interaction)).toBe(false)
-```
-
-To test the guard together with the handler it protects, run the handler with [`invoke`](#running-a-handler-with-invoke).
+The [guard options](#passing-options-to-a-guard) and [metadata](#reading-handler-metadata) examples under Guards compose the same way.
 
 ---
 
@@ -1328,23 +1306,96 @@ export class ReminderScheduler implements OnReady, OnShutdown {
 
 ---
 
+## Localisation
+
+One catalog of messages per locale, typed from the default one, serves command names and descriptions and the bot's replies. Keys, the params each message takes and plural forms are all checked at compile time; nothing is added to your dependencies.
+
+```typescript
+// src/locales/en-US.ts — the default catalog, which every other locale is checked against
+import { defineCatalog } from 'meocord/common'
+
+export default defineCatalog({
+  ban: { name: 'ban', description: 'Ban a member', done: 'Banned {user}.' },
+  warnings: { one: '{user} has {count} warning', other: '{user} has {count} warnings' },
+})
+```
+
+```typescript
+// src/locales/id.ts — any part of the default catalog; what it leaves out falls back
+export default { ban: { name: 'blokir', description: 'Blokir anggota', done: '{user} diblokir.' } }
+```
+
+```typescript
+// src/i18n.ts — at module scope, because command builders run when their class is decorated
+import { createTranslator } from 'meocord/common'
+import enUS from '@src/locales/en-US'
+import id from '@src/locales/id'
+
+export const t = createTranslator({ default: 'en-US', locales: { 'en-US': enUS, id } })
+```
+
+Locales are discord.js `Locale` values: `en-GB`, `es-419`, `zh-TW`, and so on; a bare `en` is refused.
+
+**Commands.** A builder uses the translator directly. `t.localizations(key)` returns only the locales whose catalog has the message, so Discord's own fallback still applies to the rest:
+
+```typescript
+@CommandBuilder(CommandType.SLASH)
+export class BanCommandBuilder implements CommandBuilderBase {
+  build() {
+    return new SlashCommandBuilder()
+      .setName(t.default('ban.name'))
+      .setNameLocalizations(t.localizations('ban.name'))
+      .setDescription(t.default('ban.description'))
+      .setDescriptionLocalizations(t.localizations('ban.description'))
+  }
+}
+```
+
+Interactions still report the default name, so routing is unchanged. Discord limits names to 32 lowercase characters and descriptions to 100: a builder that is handed a longer one fails when its class is decorated, with an error naming the builder and the command, and a raw command body that breaks the rules stops registration with one error listing every field, instead of Discord's opaque rejection.
+
+**Replies.** `t.for(interaction)` translates into the user's language; `{ public: true }` into the server's, for a reply everyone there sees. `t.forGuild(guild)` uses the server's preferred language, for events and messages, which have no user locale. `t.locale('ja')` takes any locale.
+
+```typescript
+await interaction.reply(t.for(interaction)('ban.done', { user: target.toString() }))
+await channel.send(t.forGuild(member.guild)('warnings', { user: member.displayName, count: 3 }))
+```
+
+A locale resolves to its own catalog, then to another of the same language (`es-419` to `es-ES`, `en-GB` to the `en-US` default), then to the default, message by message.
+
+**Params and plurals.** `'Banned {user}.'` requires `{ user }`; a misspelled or missing param fails to compile. A plural is an object whose keys are plural categories — `zero`, `one`, `two`, `few`, `many` and the required `other` — and takes a numeric `count`, which picks the form through `Intl.PluralRules` for the locale, so Russian's `few` and `many` work without extra code. An object whose keys are all category names is always read as a plural. Params take strings and numbers; format numbers and dates yourself, with `Intl.NumberFormat` for instance.
+
+**The default catalog must be TypeScript.** Params are typed from the message text, which TypeScript keeps only for a literal: wrap the catalog in `defineCatalog(...)`, or add `as const`. A catalog that has lost its text types is refused with a compile error saying so. Other locales may be plain objects or JSON: they are checked against the default's keys, and fall back at runtime.
+
+**In services.** Pass the translator to `@MeoCord({ i18n: t })` and inject it as `Translator`, typed by the default catalog; importing `t` works too. A class that injects `Translator` in an app without `i18n` stops the bot at startup with a message saying what to pass.
+
+```typescript
+@Service()
+export class BanService {
+  constructor(private readonly t: Translator<typeof enUS>) {}
+}
+```
+
+**Testing.** `expectCompleteCatalog(t)` from `meocord/testing` fails with every message a locale lacks, every message the default catalog does not have, and every plural form a language needs but lacks. A testing module created with `app` injects the app's translator; otherwise provide one with `{ provide: Translator, useValue: t }`.
+
+The built-in fallback's own texts — "Command not found!" and the generic error — stay in English. An [exception filter](#exception-filters) can answer in the user's language instead.
+
+---
+
 ## Testing
 
-MeoCord ships a `meocord/testing` entry point with utilities for testing controllers in isolation — no real Discord connection required. The framework repo runs tests with [Vitest](https://vitest.dev/); the mocks themselves are **framework-agnostic** and work with Vitest or Jest assertions (see below).
+MeoCord ships a `meocord/testing` entry point with utilities for testing controllers in isolation — no real Discord connection required. The mocks are **framework-agnostic** and work with Vitest or Jest assertions (see below).
 
 ### Running tests
 
-From the MeoCord repo root:
+Generated apps come with Vitest set up — `vitest.config.ts` with SWC for decorator metadata — plus a spec beside every generated component:
 
 ```shell
-bun run test              # run once
-bun run test:watch        # watch mode
-bun run test:coverage     # coverage report
-bun run test:typecheck    # tsc -p tsconfig.test.json
-bun run lint              # eslint --fix + tsc
+npm test                  # run once
+npm run test:watch        # watch mode
+npm run test:coverage     # coverage report
 ```
 
-Generated apps come with Vitest set up — `vitest.config.ts` with SWC for decorator metadata, and `test`, `test:watch` and `test:coverage` scripts — plus a spec beside every generated component. In an older project, add Vitest (or keep Jest) with the same SWC setup; `meocord/testing` works with either.
+In an older project, add Vitest (or keep Jest) with the same SWC setup; `meocord/testing` works with either.
 
 ### `MeoCordTestingModule`
 
@@ -1390,10 +1441,11 @@ const module = MeoCordTestingModule.create({ app: App, controllers: [ProfileCont
 await module.invoke(ProfileController, 'showProfile', interaction, { ownerId: '111', uid: '8000' }) // global guards run first
 ```
 
-`invoke` resolves to `{ ran }`, which is `false` when a guard denied the call or an interceptor skipped the handler, with `error` set when a filter handled one, and rejects with an error no filter handles, since the built-in fallback does not run in tests. The method name and arguments are type-checked against the handler. Calling the controller method directly still runs its guards, as in earlier versions, but no interceptors or filters; `invoke` is the way to test everything dispatch runs around a handler.
+`invoke` resolves to `{ ran }`, which is `false` when a guard denied the call or an interceptor skipped the handler, with `error` set when a filter handled one. An error no filter handles rejects the call, since the built-in fallback does not run in tests. The method name and arguments are type-checked against the handler. Calling the controller method directly runs its guards but no interceptors, validation or filters; `invoke` is the way to test everything dispatch runs around a handler.
+
 Pass the interaction alone and `invoke` builds the params as dispatch does: a command's options, or the handler's customId params and a modal's fields. `createModalFields({ body: 'It crashed' })` gives a mock `ModalSubmitInteraction` its submitted fields, which discord.js does not let a test construct.
 
-`invoke` resolves to `{ ran }`, which is `false` when a guard denied the call or an interceptor skipped the handler, and rejects with any error the handler or a guard throws. The method name and arguments are type-checked against the handler. Calling the controller method directly still runs its guards, as in earlier versions, but no interceptors; `invoke` is the way to test everything dispatch runs around a handler.
+To send a client event to the module's `@On` and `@Once` handlers, use [`emit`](#gateway-events).
 
 To check what a handler is set up with, without running it, use `inspectHandler`. It lists the guards, interceptors and filters dispatch applies, in order, and reads the handler's metadata as `ExecutionContext` does:
 
@@ -1831,7 +1883,7 @@ By default `dist/main.js` imports its dependencies at runtime, which is why the 
 import { type MeoCordConfig } from 'meocord/interface'
 
 export default {
-  discordToken: process.env.TOKEN!,
+  discordToken: process.env.DISCORD_TOKEN!,
   bundleDependencies: true,
 } satisfies MeoCordConfig
 ```
@@ -1856,7 +1908,7 @@ dist/node_modules holds 7 packages; nothing else to install.
 
 **Build on the platform you deploy to.** A compiled binary only loads on the operating system, CPU and C library it was built for — a build made on a Mac carries macOS binaries, and a Debian (glibc) binary does not load on Alpine (musl). For a container, run `meocord build` inside the image. The build records its platform in `meocord.platform.json`, and a bot started somewhere else stops before going online with a message naming both, instead of failing on the first command that renders an image.
 
-Use `externals` for anything you want kept out of the bundle for another reason; those are copied into `dist/node_modules` too. discord.js's optional accelerators — `zlib-sync`, `bufferutil`, `utf-8-validate` — are never bundled, are packed if you installed them, and are simply skipped by discord.js if you did not.
+Use `externals` for anything you want kept out of the bundle for another reason; those are copied into `dist/node_modules` too. A package a dependency only tries to load, such as `supports-color`, belongs in [`optionalExternals`](#meocordconfigts) instead: it is packed if you installed it and skipped by the dependency if you did not, as discord.js's own optional accelerators — `zlib-sync`, `bufferutil`, `utf-8-validate` — always are.
 
 **On bun, keep it from installing at runtime.** With no `node_modules` in reach, bun downloads any package the moment something imports it. `meocord start` passes `--no-install` for you. If you launch the bundle yourself, pass it too:
 
@@ -1926,13 +1978,13 @@ MEOCORD_RUNTIME=/usr/local/bin/bun npm run start
 
 </details>
 
----
-
 ### Sharding
 
 Discord requires a bot in more than about 2,500 servers to split its gateway connection into shards. Turn it on in `meocord.config.ts`:
 
 ```typescript
+import { type MeoCordConfig } from 'meocord/interface'
+
 export default {
   discordToken: process.env.DISCORD_TOKEN!,
   sharding: { shards: 'auto' }, // or a number
@@ -1977,6 +2029,8 @@ export class StatsService {
 
 `call(Service, 'method', ...args)` runs the method in every process, each resolving the service from its own container, and resolves to one `{ shardIds, ok, value | error }` per process: one per shard with process sharding, one in all otherwise. Arguments and results cross processes as JSON. A process that throws, lacks the service or takes more than 10 seconds gives an error result instead of failing the others. `ids`, `count` and `isPrimary` describe the shards of this process. `broadcastEval` is there as well, but it turns its function into a string, which a minified bundle can break; prefer `call`.
 
+---
+
 ## Contributing
 
 Issues, questions, and pull requests are welcome. [CONTRIBUTING.md](./CONTRIBUTING.md) covers getting set up, what each check exists to catch, and how releases work — a change that reaches the published package carries a [changeset](https://github.com/changesets/changesets), and merging the release pull request is what publishes it.
@@ -1987,7 +2041,7 @@ Participation is governed by the [Code of Conduct](./CODE_OF_CONDUCT.md). For vu
 
 ## Release Notes
 
-Every release is recorded in [CHANGELOG.md](./CHANGELOG.md) and on the [GitHub Releases](https://github.com/l7aromeo/meocord/releases) page. Moving between major versions: the [migration guide](https://github.com/l7aromeo/meocord/blob/main/docs/MIGRATING.md).
+Every release is recorded in [CHANGELOG.md](./CHANGELOG.md) and on the [GitHub Releases](https://github.com/l7aromeo/meocord/releases) page. Upgrading: the [migration guide](https://github.com/l7aromeo/meocord/blob/main/docs/MIGRATING.md).
 
 ---
 
