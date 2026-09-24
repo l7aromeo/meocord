@@ -6,6 +6,7 @@ Thanks for taking the time. Issues, questions, and pull requests are all welcome
 
 - [Getting set up](#getting-set-up)
 - [Making a change](#making-a-change)
+- [AI-assisted contributions](#ai-assisted-contributions)
 - [What the checks do](#what-the-checks-do)
 - [Changesets and releases](#changesets-and-releases)
 - [Reporting bugs](#reporting-bugs)
@@ -51,6 +52,19 @@ Include a description of what changed and why, and add tests for any new behavio
 above, so nothing is lost if you forget a step — running it locally is just faster than waiting.
 
 Files carry no license header: the [LICENSE](./LICENSE) at the root covers the whole repository.
+
+## AI-assisted contributions
+
+Using AI tools is welcome. Whoever submits a change is its author and is responsible for it — for
+its correctness, its tests and everything it ships — exactly as for code written by hand, so
+commits carry only the submitter's authorship.
+
+Keep the repository to what the project maintains. Plans, specs, design notes, task lists and other
+output a tool produces for its own process stay outside it; they go stale as soon as the work lands.
+
+Agents working on the repository follow [AGENTS.md](AGENTS.md). It changes only with the
+maintainer's approval: a pull request that edits it fails CI until the maintainer adds the
+`agents-md-approved` label.
 
 ## What the checks do
 

@@ -24,3 +24,4 @@ which file you edited — JSDoc compiles into the shipped .d.ts, so fixing a wro
 - [ ] If `src/bin/` was touched: `bun run build && bun run verify:generated` passes
 - [ ] A changeset is committed, or this reaches nothing a consumer installs
 - [ ] Public API changes are reflected in the README and in the JSDoc a user reads in their editor
+- [ ] No plans, specs or other process files are committed
