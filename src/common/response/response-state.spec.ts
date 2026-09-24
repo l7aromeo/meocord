@@ -1040,3 +1040,60 @@ describe("respond() under @Defer's timer and locks", () => {
     })
   })
 })
+
+describe('respond() when Discord refuses what @Defer does on its own', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  const row = { type: ComponentType.ActionRow, components: [{ type: ComponentType.Button, style: 1, custom_id: 'refresh', label: 'r' }] }
+
+  it('logs a failed acknowledgement when the timer fires, without an unhandled rejection', async () => {
+    vi.useFakeTimers()
+    const debug = vi.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined)
+    const interaction = button()
+    interaction.deferUpdate.mockRejectedValueOnce(createDiscordError(10062))
+    responseOf(interaction).scheduleAcknowledge(1000)
+
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(debug).toHaveBeenCalledWith(expect.stringMatching(/^Could not acknowledge in time: DiscordAPIError.*10062/))
+  })
+
+  it("logs a failed acknowledgement when the call ends before the timer, and never throws", async () => {
+    vi.useFakeTimers()
+    const debug = vi.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined)
+    const interaction = button()
+    interaction.deferUpdate.mockRejectedValueOnce(createDiscordError(10062))
+    responseOf(interaction).scheduleAcknowledge(1000)
+
+    await expect(responseOf(interaction).release()).resolves.toBeUndefined()
+
+    expect(debug).toHaveBeenCalledWith(expect.stringMatching(/^Could not acknowledge: DiscordAPIError.*10062/))
+    expect(respond(interaction).state).toBe('unanswered')
+  })
+
+  it('logs a restore Discord refuses, and never throws', async () => {
+    const debug = vi.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined)
+    const interaction = button(messageWith({ components: [row] }))
+    interaction.fetchReply.mockRejectedValue(new Error('not readable'))
+    await respond(interaction).lock()
+    interaction.editReply.mockRejectedValueOnce(createDiscordError(10008))
+
+    await expect(responseOf(interaction).release()).resolves.toBeUndefined()
+
+    expect(debug).toHaveBeenCalledWith(expect.stringMatching(/^Could not restore the message: DiscordAPIError.*10008/))
+  })
+
+  it("logs a deferred reply Discord will not delete after a silent denial, and never throws", async () => {
+    const debug = vi.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined)
+    const interaction = command()
+    await respond(interaction).acknowledge()
+    interaction.deleteReply.mockRejectedValueOnce(createDiscordError(10008))
+
+    await expect(responseOf(interaction).abandon()).resolves.toBeUndefined()
+
+    expect(debug).toHaveBeenCalledWith(expect.stringMatching(/^Could not delete the deferred reply: DiscordAPIError.*10008/))
+  })
+})
