@@ -33,4 +33,5 @@ export type {
   ResponseState,
 } from '@src/common/response/response-state.js'
 export { getInstallContext } from '@src/common/response/install-context.js'
+export { isExplainedError } from '@src/common/explained-error.js'
 export type { InstallContext } from '@src/common/response/install-context.js'
