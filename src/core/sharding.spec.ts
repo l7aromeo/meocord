@@ -1,0 +1,300 @@
+import { vi } from 'vitest'
+import { type Client } from 'discord.js'
+import type * as AppModule from '@src/core/meocord.app.js'
+import type * as FactoryModule from '@src/core/meocord-factory.js'
+import type * as DecoratorModule from '@src/decorator/index.js'
+import type * as ShardManagerModule from '@src/core/shard-manager.js'
+import type * as ShardContextModule from '@src/core/shard-context.js'
+import { type MeoCordConfig, type OnReady, type ReadyInfo } from '@src/interface/index.js'
+
+const { logged, config, platformChecked } = vi.hoisted(() => ({
+  logged: { info: [] as string[], error: [] as string[] },
+  config: { current: { discordToken: 'token' } as MeoCordConfig },
+  platformChecked: { count: 0 },
+}))
+
+vi.mock('@src/common/index.js', async importOriginal => ({
+  ...(await importOriginal<object>()),
+  Logger: class {
+    log = vi.fn()
+    debug = vi.fn()
+    warn = vi.fn()
+    verbose = vi.fn()
+    info = (...args: unknown[]) => logged.info.push(args.map(String).join(' '))
+    error = (...args: unknown[]) => logged.error.push(args.map(String).join(' '))
+  },
+}))
+vi.mock('@src/util/meocord-config-loader.util.js', () => ({ loadMeoCordConfig: () => config.current }))
+vi.mock('@src/util/platform.util.js', () => ({
+  assertBuiltForThisPlatform: () => {
+    platformChecked.count++
+  },
+}))
+
+/** Fresh modules per test, as shutdown state and signal listeners live at module level. */
+async function load() {
+  vi.resetModules()
+  const discord = await import('discord.js')
+  const app: typeof AppModule = await import('@src/core/meocord.app.js')
+  const factory: typeof FactoryModule = await import('@src/core/meocord-factory.js')
+  const decorators: typeof DecoratorModule = await import('@src/decorator/index.js')
+  const manager: typeof ShardManagerModule = await import('@src/core/shard-manager.js')
+  const context: typeof ShardContextModule = await import('@src/core/shard-context.js')
+  return { discord, ...app, ...factory, ...decorators, ...manager, ...context }
+}
+type Loaded = Awaited<ReturnType<typeof load>>
+
+function appClass(loaded: Loaded, options: { controllers?: any[]; services?: any[] } = {}) {
+  @loaded.MeoCord({ controllers: options.controllers ?? [], services: options.services, clientOptions: { intents: [] } })
+  class App {}
+  return App
+}
+
+/** Creates and starts the app with a client that logs in without a network. */
+async function startApp(loaded: Loaded, options: { controllers?: any[]; services?: any[] } = {}) {
+  const clients: Client[] = []
+  vi.spyOn(loaded.discord.Client.prototype, 'login').mockImplementation(function (this: Client) {
+    clients.push(this)
+    return Promise.resolve('token')
+  })
+  vi.spyOn(loaded.discord.Client.prototype, 'destroy').mockResolvedValue(undefined)
+  const app = loaded.MeoCordFactory.create(appClass(loaded, options))
+  await app.start()
+  return { app, client: clients[0] }
+}
+
+describe('sharding', () => {
+  let exit: ReturnType<typeof vi.spyOn>
+  let signals: Record<'SIGINT' | 'SIGTERM', NodeJS.SignalsListener[]>
+  let ipc: { message: NodeJS.MessageListener[]; disconnect: (() => void)[] }
+
+  beforeEach(() => {
+    logged.info.length = 0
+    logged.error.length = 0
+    platformChecked.count = 0
+    config.current = { discordToken: 'token' }
+    exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never)
+    signals = {
+      SIGINT: process.listeners('SIGINT') as NodeJS.SignalsListener[],
+      SIGTERM: process.listeners('SIGTERM') as NodeJS.SignalsListener[],
+    }
+    ipc = {
+      message: process.listeners('message') as NodeJS.MessageListener[],
+      disconnect: process.listeners('disconnect') as (() => void)[],
+    }
+  })
+
+  afterEach(() => {
+    for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+      for (const listener of process.listeners(signal)) {
+        if (!signals[signal].includes(listener as NodeJS.SignalsListener)) process.off(signal, listener)
+      }
+    }
+    for (const listener of process.listeners('message')) {
+      if (!ipc.message.includes(listener as NodeJS.MessageListener)) process.off('message', listener)
+    }
+    for (const listener of process.listeners('disconnect')) {
+      if (!ipc.disconnect.includes(listener as () => void)) process.off('disconnect', listener)
+    }
+    Reflect.deleteProperty(process, 'send')
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  describe('entry modes', () => {
+    it('returns the shard manager for process sharding, before checking the platform or binding anything', async () => {
+      const loaded = await load()
+      config.current = { discordToken: 'token', sharding: { mode: 'process' } }
+      const constructed = vi.fn()
+
+      @loaded.Service()
+      class Eager {
+        constructor() {
+          constructed()
+        }
+      }
+
+      const app = loaded.MeoCordFactory.create(appClass(loaded, { services: [Eager] }))
+
+      expect(app).toBeInstanceOf(loaded.ShardManager)
+      expect(platformChecked.count).toBe(0)
+      expect(constructed).not.toHaveBeenCalled()
+    })
+
+    it('runs a spawned shard as a bot, whatever the config says', async () => {
+      const loaded = await load()
+      vi.stubEnv('SHARDING_MANAGER', 'true')
+      config.current = { discordToken: 'token', sharding: { mode: 'process' } }
+
+      expect(loaded.MeoCordFactory.create(appClass(loaded))).toBeInstanceOf(loaded.MeoCordApp)
+    })
+
+    it('runs every shard in this process under development, and says so', async () => {
+      const loaded = await load()
+      vi.stubEnv('NODE_ENV', 'development')
+      config.current = { discordToken: 'token', sharding: { mode: 'process', shards: 2 } }
+
+      const { client } = await startApp(loaded)
+
+      expect(client.options.shards).toEqual([0, 1])
+      expect(logged.info.join('\n')).toContain("sharding.mode 'process' is off in development")
+    })
+
+    it('gives the client the shards of internal sharding', async () => {
+      const loaded = await load()
+      config.current = { discordToken: 'token', sharding: { shards: 3 } }
+
+      const { client } = await startApp(loaded)
+
+      expect(client.options.shards).toEqual([0, 1, 2])
+      expect(client.options.shardCount).toBe(3)
+    })
+
+    it('refuses two classes with one name in a shard, since calls between shards find them by name', async () => {
+      const loaded = await load()
+      vi.stubEnv('SHARDING_MANAGER', 'true')
+      config.current = { discordToken: 'token', sharding: { mode: 'process' } }
+
+      const first = (() => {
+        @loaded.Service()
+        class Stats {}
+        return Stats
+      })()
+      const second = (() => {
+        @loaded.Service()
+        class Stats {}
+        return Stats
+      })()
+
+      expect(() => loaded.MeoCordFactory.create(appClass(loaded, { services: [first, second] }))).toThrow(
+        'Two classes are named Stats',
+      )
+    })
+  })
+
+  describe('in a shard', () => {
+    beforeEach(() => {
+      vi.stubEnv('SHARDING_MANAGER', 'true')
+      config.current = { discordToken: 'token', sharding: { mode: 'process' } }
+    })
+
+    it('tells the manager, before failing, that its token is invalid', async () => {
+      const loaded = await load()
+      const sent: unknown[] = []
+      Reflect.set(process, 'send', (message: unknown, _handle: unknown, _options: unknown, callback: () => void) => {
+        sent.push(message)
+        callback()
+        return true
+      })
+      const invalid = Object.assign(new Error('An invalid token was provided.'), { code: 'TokenInvalid' })
+      vi.spyOn(loaded.discord.Client.prototype, 'login').mockRejectedValue(invalid)
+      const exitCode = process.exitCode
+
+      try {
+        await expect(loaded.MeoCordFactory.create(appClass(loaded)).start()).rejects.toBe(invalid)
+      } finally {
+        process.exitCode = exitCode
+      }
+      expect(sent).toEqual([{ meocord: 'fatal', code: 'TokenInvalid', message: 'An invalid token was provided.' }])
+    })
+
+    it('reports nothing for a login error a restart can fix', async () => {
+      const loaded = await load()
+      const send = vi.fn()
+      Reflect.set(process, 'send', send)
+      vi.spyOn(loaded.discord.Client.prototype, 'login').mockRejectedValue(new Error('getaddrinfo ENOTFOUND'))
+      const exitCode = process.exitCode
+
+      try {
+        await expect(loaded.MeoCordFactory.create(appClass(loaded)).start()).rejects.toThrow('ENOTFOUND')
+      } finally {
+        process.exitCode = exitCode
+      }
+      expect(send).not.toHaveBeenCalled()
+    })
+
+    it('leaves command registration to the manager', async () => {
+      const loaded = await load()
+      const register = vi.spyOn(loaded.MeoCordApp.prototype, 'registerCommands')
+      const { client } = await startApp(loaded)
+
+      const [listener] = client.listeners('clientReady')
+      await listener(client)
+
+      expect(register).not.toHaveBeenCalled()
+    })
+
+    it('marks primary only the shard holding shard 0', async () => {
+      const loaded = await load()
+      const seen: boolean[] = []
+
+      @loaded.Service()
+      class Scheduler implements OnReady {
+        onReady(_client: Client<true>, { primary }: ReadyInfo) {
+          seen.push(primary)
+        }
+      }
+
+      const { client } = await startApp(loaded, { services: [Scheduler] })
+      const [listener] = client.listeners('clientReady')
+      Object.defineProperty(client, 'shard', { value: { ids: [1], count: 2 }, configurable: true })
+      await listener(client)
+      Object.defineProperty(client, 'shard', { value: { ids: [0], count: 2 }, configurable: true })
+      await listener(client)
+
+      expect(seen).toEqual([false, true])
+    })
+
+    it('shuts down when the manager asks, and treats a second request as a no-op', async () => {
+      const loaded = await load()
+      const { client } = await startApp(loaded)
+
+      process.emit('message', { meocord: 'shutdown' }, undefined)
+      process.emit('SIGINT')
+      await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0))
+
+      expect(client.destroy).toHaveBeenCalledTimes(1)
+      expect(exit).not.toHaveBeenCalledWith(1)
+    })
+
+    it('shuts down when the manager goes away', async () => {
+      const loaded = await load()
+      await startApp(loaded)
+
+      process.emit('disconnect')
+
+      await vi.waitFor(() => expect(exit).toHaveBeenCalledWith(0))
+    })
+
+    it('ignores IPC messages that are not its own', async () => {
+      const loaded = await load()
+      await startApp(loaded)
+
+      process.emit('message', { _eval: 'this.guilds.cache.size' }, undefined)
+      await new Promise(resolve => setTimeout(resolve, 10))
+
+      expect(exit).not.toHaveBeenCalled()
+    })
+  })
+
+  it('reaches a service through the ShardContext the factory binds', async () => {
+    const loaded = await load()
+    let shards: InstanceType<typeof loaded.ShardContext> | undefined
+
+    const { inject } = await import('inversify')
+
+    @loaded.Service()
+    class Stats {
+      constructor(@inject(loaded.ShardContext) context: InstanceType<typeof loaded.ShardContext>) {
+        shards = context
+      }
+      count() {
+        return 42
+      }
+    }
+
+    await startApp(loaded, { services: [Stats] })
+
+    expect(await shards!.call(Stats, 'count')).toEqual([{ shardIds: [0], ok: true, value: 42 }])
+  })
+})

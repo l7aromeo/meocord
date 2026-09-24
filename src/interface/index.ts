@@ -41,11 +41,38 @@ export interface GuardInterface {
   canActivate(context: BaseInteraction | Message | MessageReaction | unknown, ...args: any[]): Promise<boolean> | boolean
 }
 
+/**
+ * The application `MeoCordFactory.create` returns: a bot in one process, or, with process sharding,
+ * the manager that runs one process per shard.
+ *
+ * @example
+ * ```typescript
+ * const app = MeoCordFactory.create(App)
+ * await app.start()
+ * ```
+ */
+export interface MeoCordApplication {
+  /**
+   * Starts the bot: logs in, or with process sharding, spawns the shards.
+   *
+   * @returns A promise that resolves once the bot is logged in, or every shard has been spawned.
+   * @throws The login error, such as an invalid token, for a bot in one process.
+   */
+  start(): Promise<void>
+
+  /**
+   * Registers the application's commands with Discord, where `meocord.config.ts`'s `commands` says.
+   * A failure is logged rather than thrown.
+   */
+  registerCommands(): Promise<void>
+}
+
 /** The second argument `onReady` receives. */
 export interface ReadyInfo {
   /**
    * Whether this process should do one-off work, such as starting a scheduler that must run once.
-   * `true` for a bot running in one process.
+   * `true` for a bot running in one process, and in process sharding for the process holding shard 0
+   * only.
    */
   primary: boolean
 }
@@ -289,6 +316,48 @@ export interface MeoCordConfig {
    * @defaultValue Every command registered globally, each time the bot starts.
    */
   commands?: CommandRegistrationConfig
+
+  /**
+   * Splits the bot's gateway connection into shards, which Discord requires from about 2,500 servers.
+   *
+   * @defaultValue One connection, or whatever `clientOptions.shards` says.
+   */
+  sharding?: ShardingConfig
+}
+
+/**
+ * How the bot shards its gateway connection.
+ *
+ * By default every shard runs in one process, in one client: one container, one set of services, and
+ * `onReady` once. `mode: 'process'` runs each shard in a process of its own instead, for a bot that
+ * needs more than one CPU core; `meocord start`, `node dist/main.js` and bun then start a manager that
+ * spawns the shards, registers the commands once, and restarts a shard that exits.
+ *
+ * @example
+ * ```ts
+ * sharding: { shards: 'auto' },
+ * ```
+ */
+export interface ShardingConfig {
+  /**
+   * How many shards to run: a number, or `'auto'` for the count Discord recommends.
+   *
+   * @defaultValue `'auto'`
+   */
+  shards?: number | 'auto'
+  /**
+   * `'internal'` runs every shard in one process; `'process'` runs each shard in a process of its own.
+   *
+   * @defaultValue `'internal'`
+   */
+  mode?: 'internal' | 'process'
+  /**
+   * Whether `mode: 'process'` also applies under `meocord start --dev`. Off by default, so the
+   * development watcher restarts one process and never leaves shards behind.
+   *
+   * @defaultValue `false`
+   */
+  development?: boolean
 }
 
 /**

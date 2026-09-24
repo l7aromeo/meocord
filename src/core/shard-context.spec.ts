@@ -1,0 +1,131 @@
+import { vi } from 'vitest'
+import { type Client } from 'discord.js'
+import { Controller, Service } from '@src/decorator/index.js'
+import { SHARD_CALL_TIMEOUT_MS, ShardContext } from '@src/core/shard-context.js'
+import { MeoCordTestingModule } from '@src/testing/index.js'
+
+@Service()
+class StatsService {
+  guilds = 7
+  guildCount() {
+    return this.guilds
+  }
+  fail(): number {
+    throw new Error('stats unavailable')
+  }
+}
+
+/** A client whose `shard` is a process-sharding ShardClientUtil over `count` fake shards. */
+function shardedClient(ownId: number, count: number, answer: (id: number) => Promise<unknown>): Client {
+  return {
+    shard: {
+      ids: [ownId],
+      count,
+      broadcastEval: vi.fn((_fn: unknown, { shard }: { shard: number }) => answer(shard)),
+    },
+    options: {},
+  } as unknown as Client
+}
+
+describe('ShardContext', () => {
+  describe('in one process', () => {
+    @Controller()
+    class Stats {
+      constructor(readonly stats: StatsService) {}
+    }
+
+    const shardsOf = () =>
+      MeoCordTestingModule.create({ controllers: [Stats], providers: [{ provide: StatsService, useClass: StatsService }] })
+        .compile()
+        .get(ShardContext)
+
+    it('is primary, runs one shard, and answers a call once, here', async () => {
+      const shards = shardsOf()
+
+      expect(shards.isPrimary).toBe(true)
+      expect(shards.count).toBe(1)
+      expect(await shards.call(StatsService, 'guildCount')).toEqual([{ shardIds: [0], ok: true, value: 7 }])
+    })
+
+    it('turns a throwing method into an error result', async () => {
+      expect(await shardsOf().call(StatsService, 'fail')).toEqual([
+        { shardIds: [0], ok: false, error: 'stats unavailable' },
+      ])
+    })
+
+    it('runs broadcastEval here, warning once that it stringifies its function', async () => {
+      const client = { options: {}, ws: { shards: new Map([[0, {}]]) } } as unknown as Client
+      const shards = new ShardContext(client, async () => undefined)
+      const warn = vi.spyOn(Reflect.get(shards, 'logger') as { warn: () => void }, 'warn').mockImplementation(() => {})
+
+      expect(await shards.broadcastEval(c => c === client)).toEqual([true])
+      await shards.broadcastEval(() => 1)
+      expect(warn).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('with process sharding', () => {
+    it('is primary only in the process running shard 0', () => {
+      expect(new ShardContext(shardedClient(0, 3, async () => 0), async () => 0).isPrimary).toBe(true)
+      expect(new ShardContext(shardedClient(2, 3, async () => 0), async () => 0).isPrimary).toBe(false)
+      expect(new ShardContext(shardedClient(2, 3, async () => 0), async () => 0).ids).toEqual([2])
+    })
+
+    it('calls every shard and gives one result per shard, a failing one included', async () => {
+      const client = shardedClient(0, 3, async id => {
+        if (id === 1) throw new Error('StatsService is not a controller or service of this app.')
+        return id * 10
+      })
+      const shards = new ShardContext(client, async () => 0)
+
+      expect(await shards.call(StatsService, 'guildCount')).toEqual([
+        { shardIds: [0], ok: true, value: 0 },
+        { shardIds: [1], ok: false, error: 'StatsService is not a controller or service of this app.' },
+        { shardIds: [2], ok: true, value: 20 },
+      ])
+      expect(client.shard!.broadcastEval).toHaveBeenCalledWith(expect.any(Function), {
+        shard: 2,
+        context: { service: 'StatsService', method: 'guildCount', args: [] },
+      })
+    })
+
+    it('gives an error for a shard that does not answer in time, without holding up the others', async () => {
+      vi.useFakeTimers()
+      try {
+        const client = shardedClient(0, 2, id => (id === 1 ? new Promise(() => {}) : Promise.resolve(5)))
+        const results = new ShardContext(client, async () => 0).call(StatsService, 'guildCount')
+
+        await vi.advanceTimersByTimeAsync(SHARD_CALL_TIMEOUT_MS)
+        expect(await results).toEqual([
+          { shardIds: [0], ok: true, value: 5 },
+          { shardIds: [1], ok: false, error: `Shard 1 did not answer within ${SHARD_CALL_TIMEOUT_MS} ms.` },
+        ])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('sends a function that reads only its arguments, so it survives being stringified', async () => {
+      let sent: ((client: Client, ctx: unknown) => unknown) | undefined
+      const client = {
+        shard: {
+          ids: [0],
+          count: 1,
+          broadcastEval: (fn: typeof sent) => {
+            sent = fn
+            return Promise.resolve(1)
+          },
+        },
+        options: {},
+      } as unknown as Client
+      await new ShardContext(client, async () => 0).call(StatsService, 'guildCount')
+
+      // Rebuilt from its source, as discord.js does in the target shard
+      const rebuilt = new Function(`return (${sent!.toString()})`)() as typeof sent
+      const target = { [Symbol.for('meocord.shardCall')]: async (s: string, m: string) => `${s}.${m}` }
+      expect(await rebuilt!(target as unknown as Client, { service: 'StatsService', method: 'guildCount', args: [] })).toBe(
+        'StatsService.guildCount',
+      )
+    })
+  })
+})
