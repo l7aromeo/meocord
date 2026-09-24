@@ -138,7 +138,7 @@ beforeEach(() => {
 })
 
 describe.each(contexts)('@Defer in %s', (_where, context, owners) => {
-  const where = { context, authorizingIntegrationOwners: owners as never }
+  const where = { context, authorizingIntegrationOwners: owners }
   const slash = (commandName = 'card') => {
     const interaction = createMockInteraction(ChatInputCommandInteraction, { commandName, ...where })
     interaction.options = createChatInputOptions({})

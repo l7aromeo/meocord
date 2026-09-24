@@ -1,15 +1,20 @@
-import { ApplicationIntegrationType, ChatInputCommandInteraction, InteractionContextType } from 'discord.js'
+import {
+  type APIAuthorizingIntegrationOwnersMap,
+  ApplicationIntegrationType,
+  ChatInputCommandInteraction,
+  InteractionContextType,
+} from 'discord.js'
 import { getInstallContext } from '@src/common/response/install-context.js'
 import { createMockInteraction } from '@src/testing/index.js'
 
 const { GuildInstall, UserInstall } = ApplicationIntegrationType
 
-function interactionIn(context: InteractionContextType | undefined, owners: Record<string, string>, guildId: string | null = null) {
-  return createMockInteraction(ChatInputCommandInteraction, {
-    context,
-    authorizingIntegrationOwners: owners as never,
-    guildId,
-  } as never)
+function interactionIn(
+  context: InteractionContextType | null,
+  owners: APIAuthorizingIntegrationOwnersMap,
+  guildId?: string,
+) {
+  return createMockInteraction(ChatInputCommandInteraction, { context, authorizingIntegrationOwners: owners, guildId })
 }
 
 describe('getInstallContext', () => {
@@ -34,7 +39,7 @@ describe('getInstallContext', () => {
   })
 
   it('treats an interaction without a context as reaching the bot, in a server or a DM', () => {
-    expect(getInstallContext(interactionIn(undefined, {}, 'guild'))).toEqual({ where: 'guild', botInstalled: true })
-    expect(getInstallContext(interactionIn(undefined, {}))).toEqual({ where: 'bot-dm', botInstalled: true })
+    expect(getInstallContext(interactionIn(null, {}, 'guild'))).toEqual({ where: 'guild', botInstalled: true })
+    expect(getInstallContext(interactionIn(null, {}))).toEqual({ where: 'bot-dm', botInstalled: true })
   })
 })

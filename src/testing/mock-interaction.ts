@@ -1,10 +1,12 @@
 import 'reflect-metadata'
 import { createMockFn, type MockedFunction, type Mock } from './mock-fn.js'
 import {
+  type APIAuthorizingIntegrationOwnersMap,
   ApplicationCommandManager,
   ApplicationCommandOptionType,
   ApplicationCommandType,
   Attachment,
+  AuthorizingIntegrationOwners,
   BaseChannel,
   ChannelManager,
   Client,
@@ -65,6 +67,10 @@ export type DeepMocked<T, Depth extends number[] = []> = Depth['length'] extends
  * `ModalSubmitInteraction#customId` or `MessageComponentInteraction#message`, which the returned
  * mock does not let you assign afterwards.
  *
+ * `authorizingIntegrationOwners` also takes the plain map Discord sends, such as
+ * `{ [ApplicationIntegrationType.UserInstall]: userId }`, and becomes the object discord.js builds
+ * from it.
+ *
  * @example
  * ```ts
  * const modal = createMockInteraction(ModalSubmitInteraction, { customId: 'feedback' })
@@ -73,7 +79,11 @@ export type DeepMocked<T, Depth extends number[] = []> = Depth['length'] extends
 export type MockProps<T> = {
   // Methods stay loosely typed: every literal carries `Object.prototype.valueOf`, which clashes with
   // discord.js `Base#valueOf(): string`. Objects take `T[K]` alone, since `DeepMocked<X> | X` is X.
-  -readonly [K in keyof T]?: T[K] extends (...args: any[]) => any ? (...args: any[]) => any : T[K]
+  -readonly [K in keyof T]?: K extends 'authorizingIntegrationOwners'
+    ? T[K] | APIAuthorizingIntegrationOwnersMap
+    : T[K] extends (...args: any[]) => any
+      ? (...args: any[]) => any
+      : T[K]
 }
 
 // ---------------------------------------------------------------------------
@@ -379,7 +389,15 @@ export function createMockInteraction<T extends object>(
   // state machine. defineProperty rather than assignment for the same reason the
   // Proxy uses it: several of these shadow a getter-only prototype accessor.
   if (props !== undefined) {
-    for (const [key, value] of Object.entries(props)) {
+    for (const [key, given] of Object.entries(props)) {
+      // A plain `{ [ApplicationIntegrationType.UserInstall]: userId }` becomes the object discord.js builds from it
+      const value =
+        key === 'authorizingIntegrationOwners' && given && !(given instanceof AuthorizingIntegrationOwners)
+          ? new (AuthorizingIntegrationOwners as unknown as new (client: unknown, data: unknown) => AuthorizingIntegrationOwners)(
+              instance.client,
+              given,
+            )
+          : given
       Object.defineProperty(instance, key, { value, writable: true, enumerable: true, configurable: true })
     }
   }

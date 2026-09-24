@@ -1806,7 +1806,7 @@ expect(response.calls.map(call => call.method)).toEqual(['deferUpdate', 'editRep
 const interaction = createMockInteraction(ButtonInteraction, {
   context: InteractionContextType.PrivateChannel,
   // discord.js gives AuthorizingIntegrationOwners a private constructor; a plain map stands in for it
-  authorizingIntegrationOwners: { [ApplicationIntegrationType.UserInstall]: '123456789012345678' } as never,
+  authorizingIntegrationOwners: { [ApplicationIntegrationType.UserInstall]: '123456789012345678' },
 })
 interaction.editReply.mockRejectedValueOnce(createDiscordError(50027))
 ```

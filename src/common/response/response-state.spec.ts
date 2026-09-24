@@ -303,7 +303,7 @@ describe('respond()', () => {
       const interaction = createMockInteraction(ButtonInteraction, {
         message,
         context: InteractionContextType.Guild,
-        authorizingIntegrationOwners: { [ApplicationIntegrationType.UserInstall]: 'user' } as never,
+        authorizingIntegrationOwners: { [ApplicationIntegrationType.UserInstall]: 'user' },
       })
       Object.assign(interaction, { createdTimestamp: fifteenMinutesAgo })
       await respond(interaction).acknowledge()

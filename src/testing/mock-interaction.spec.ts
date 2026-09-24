@@ -1,6 +1,8 @@
 import 'reflect-metadata'
 import { vi } from 'vitest'
 import {
+  ApplicationIntegrationType,
+  AuthorizingIntegrationOwners,
   BaseInteraction,
   ButtonInteraction,
   ChatInputCommandInteraction,
@@ -270,6 +272,19 @@ describe('createMockInteraction', () => {
       const modal = createMockInteraction(ModalSubmitInteraction, { message: createMockMessage() as never })
       await modal.deferUpdate()
       expect(modal.deferred).toBe(true)
+    })
+  })
+
+  describe('authorizingIntegrationOwners', () => {
+    it('builds the discord.js object from the plain map Discord sends', () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction, {
+        authorizingIntegrationOwners: { [ApplicationIntegrationType.UserInstall]: 'user-1' },
+      })
+
+      expect(interaction.authorizingIntegrationOwners).toBeInstanceOf(AuthorizingIntegrationOwners)
+      expect(interaction.authorizingIntegrationOwners.userId).toBe('user-1')
+      expect(interaction.authorizingIntegrationOwners.guildId).toBeNull()
+      expect(interaction.authorizingIntegrationOwners[ApplicationIntegrationType.UserInstall]).toBe('user-1')
     })
   })
 
