@@ -30,7 +30,7 @@ import {
   resolveCommandPaths,
   resolveOptionParams,
 } from '@src/util/interaction.util.js'
-import { CommandType, MetadataKey } from '@src/enum/index.js'
+import { CommandType } from '@src/enum/index.js'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 import { type OnReady, type OnShutdown, type ReactionHandlerOptions } from '@src/interface/index.js'
 import { type AutocompleteMetadata, type CommandMetadata } from '@src/interface/command-decorator.interface.js'
@@ -42,6 +42,7 @@ import {
   matchComponentRoute,
 } from '@src/core/component-routes.js'
 import { runHandler } from '@src/core/handler-pipeline.js'
+import { lifecycleDependencies } from '@src/core/lifecycle-order.js'
 
 interface AutocompleteRoute {
   controllerClass: new (...args: any[]) => any
@@ -688,7 +689,7 @@ export class MeoCordApp {
 
     for (const lifecycleClass of this.lifecycleClasses) {
       const upstream = new Set<LifecycleClass>()
-      for (const dependency of Reflect.getMetadata(MetadataKey.ParamTypes, lifecycleClass) ?? []) {
+      for (const dependency of lifecycleDependencies(this.container, lifecycleClass)) {
         if (failed.has(dependency)) upstream.add(dependency)
         failedUpstream.get(dependency)?.forEach(cls => upstream.add(cls))
       }

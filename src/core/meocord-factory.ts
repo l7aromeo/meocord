@@ -10,6 +10,7 @@ import { ExecutionContext } from '@src/common/execution-context.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import { appStages, bindGlobalStages } from '@src/core/handler-pipeline.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
+import { dependencyOrder, isAppClassToken } from '@src/core/lifecycle-order.js'
 
 /**
  * Recursively binds a class and all its constructor dependencies to the container in singleton scope.
@@ -22,29 +23,10 @@ function bindDependencies(container: Container, cls: any): void {
 
   container.bind(cls).toSelf().inSingletonScope()
 
-  const deps: any[] = Reflect.getMetadata(MetadataKey.ParamTypes, cls) || []
-  for (const dep of deps) {
-    if (dep === Client) continue
-    bindDependencies(container, dep)
+  // By constructor type or @inject token; an interface-typed parameter records Object, which is skipped
+  for (const dep of injectedTokens(cls)) {
+    if (isAppClassToken(dep)) bindDependencies(container, dep)
   }
-}
-
-/**
- * The classes reachable from `roots`, each after everything it injects: the order lifecycle hooks run
- * in. Roots are the listed services, then the controllers, so classes with no dependency between them
- * keep that declaration order.
- */
-function dependencyOrder(roots: any[]): any[] {
-  const ordered: any[] = []
-  const seen = new Set<any>()
-  const visit = (cls: any) => {
-    if (cls === Client || seen.has(cls)) return
-    seen.add(cls)
-    for (const dep of Reflect.getMetadata(MetadataKey.ParamTypes, cls) || []) visit(dep)
-    ordered.push(cls)
-  }
-  roots.forEach(visit)
-  return ordered
 }
 
 export class MeoCordFactory {
@@ -102,7 +84,7 @@ export class MeoCordFactory {
       discordClient,
       meocordConfig.discordToken,
       options.activities,
-      dependencyOrder([...(options.services ?? []), ...options.controllers]),
+      dependencyOrder(container, [...(options.services ?? []), ...options.controllers]),
       meocordConfig.shutdownTimeout,
     )
   }
