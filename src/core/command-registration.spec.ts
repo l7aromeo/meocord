@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
-import { ApplicationCommandType, EntryPointCommandHandlerType, type PrimaryEntryPointCommandInteraction } from 'discord.js'
+import { ApplicationCommandType, EntryPointCommandHandlerType, type PrimaryEntryPointCommandInteraction, SlashCommandBuilder } from 'discord.js'
+import { createTranslator } from '@src/common/index.js'
 import { vi } from 'vitest'
 import { Command, CommandBuilder, Controller } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
@@ -192,6 +193,76 @@ describe('collectCommands', () => {
     const logger = createLogger()
     expect(collectCommands([SettingsController], logger)).toHaveLength(1)
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('is built more than once'))
+  })
+
+  describe('localizations', () => {
+    const collectBody = (body: object) => {
+      class RawBuilder {
+        build = () => body as any
+      }
+      Reflect.defineMetadata('commandType', CommandType.SLASH, RawBuilder)
+
+      @Controller()
+      class RawController {
+        @Command('ban', RawBuilder as any)
+        async ban(..._args: any[]) {}
+      }
+
+      const logger = createLogger()
+      return { commands: collectCommands([RawController], logger), logger }
+    }
+
+    it("collects a command whose localizations Discord accepts, the translator's included", () => {
+      const t = createTranslator({
+        default: 'en-US',
+        locales: { 'en-US': { ban: { name: 'ban', description: 'Ban a member' } }, id: { ban: { name: 'blokir', description: 'Blokir anggota' } } },
+      })
+      const { commands, logger } = collectBody(
+        new SlashCommandBuilder()
+          .setName(t.default('ban.name'))
+          .setNameLocalizations(t.localizations('ban.name'))
+          .setDescription(t.default('ban.description'))
+          .setDescriptionLocalizations(t.localizations('ban.description')),
+      )
+
+      expect(commands).toHaveLength(1)
+      expect(logger.error).not.toHaveBeenCalled()
+    })
+
+    // A raw body skips discord.js's builders, which would have refused these while being set.
+    it('collects nothing, naming every field Discord would reject, for bad localizations', () => {
+      const { commands, logger } = collectBody({
+        name: 'ban',
+        type: 1,
+        description: 'Ban a member',
+        name_localizations: { ja: 'Ban Member', xx: 'ban' },
+        description_localizations: { id: 'x'.repeat(104), 'es-ES': null },
+        options: [
+          {
+            name: 'user',
+            type: 6,
+            description: 'Who',
+            description_localizations: { ja: '' },
+            choices: [{ name: 'a', value: 'a', name_localizations: { ja: 'y'.repeat(101) } }],
+          },
+        ],
+      })
+
+      expect(commands).toBeUndefined()
+      const [message] = logger.error.mock.calls[0] as [string]
+      expect(message).toContain('Discord would reject 5 localization(s)')
+      expect(message).toContain('"ban" name_localizations.ja: "Ban Member" must be lowercase')
+      expect(message).toContain('"ban" name_localizations.xx: "xx" is not a Discord locale')
+      expect(message).toContain('"ban" description_localizations.id: 104 characters (1 to 100)')
+      expect(message).toContain('"ban" options.user.description_localizations.ja: 0 characters (1 to 100)')
+      expect(message).toContain('"ban" options.user.choices.a.name_localizations.ja: 101 characters (1 to 100)')
+    })
+
+    it('allows capitals and spaces in a context menu name', () => {
+      const { commands } = collectBody({ name: 'Report', type: 2, name_localizations: { ja: 'ユーザーを報告', de: 'Nutzer Melden' } })
+
+      expect(commands).toHaveLength(1)
+    })
   })
 
   it("carries a builder's guilds", () => {

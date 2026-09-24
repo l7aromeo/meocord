@@ -8,6 +8,7 @@ import { assertBuiltForThisPlatform } from '@src/util/platform.util.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { isRegisterOnly } from '@src/util/registration-mode.util.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
+import { missingTranslatorError, Translator } from '@src/common/translator.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import { appStages, bindGlobalStages, prepareHandlerStages } from '@src/core/handler-pipeline.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
@@ -37,6 +38,7 @@ function bindDependencies(container: Container, cls: any): void {
 
   // By constructor type or @inject token; an interface-typed parameter records Object, which is skipped
   for (const dep of injectedTokens(cls)) {
+    if (dep === Translator && !container.isBound(Translator)) throw missingTranslatorError(cls)
     if (isAppClassToken(dep)) bindDependencies(container, dep)
   }
 }
@@ -100,6 +102,7 @@ export class MeoCordFactory {
     // Bind the Discord client as a constant value
     const discordClient = new Client(clientOptionsWithSharding(this.effectiveConfig(meocordConfig), options.clientOptions))
     container.bind(Client).toConstantValue(discordClient)
+    if (options.i18n) container.bind(Translator).toConstantValue(options.i18n)
 
     // Bound before the app's classes, so a class that injects it gets this instance; filled once they are bound
     const appClasses: (new (...args: any[]) => unknown)[] = []

@@ -3,6 +3,7 @@ import { Container, type ServiceIdentifier } from 'inversify'
 import { BaseInteraction, type ClientEvents, type Interaction } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
+import { missingTranslatorError, Translator } from '@src/common/translator.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import { appStages, bindGlobalStages, prepareHandlerStages, runHandler } from '@src/core/handler-pipeline.js'
 import { handlerInput, routeParamsFor } from '@src/core/handler-input.js'
@@ -31,7 +32,8 @@ export interface TestingModuleOptions {
 
   /**
    * The `@MeoCord` application class, whose global `guards`, `interceptors` and `filters` `invoke`
-   * applies with each handler's own. Its controllers and services are not registered; list them here.
+   * applies with each handler's own, and whose `i18n` translator is injected as `Translator`. Its
+   * controllers and services are not registered; list them here.
    */
   app?: new (...args: any[]) => unknown
 }
@@ -313,6 +315,10 @@ export class TestingModuleBuilder {
       container.bind(interceptorClass).toConstantValue(stub as InterceptorInterface)
     }
 
+    // The app's translator, unless a provider already stands in for it
+    const i18n = this.options.app && (Reflect.getMetadata(MetadataKey.AppOptions, this.options.app) as { i18n?: Translator })?.i18n
+    if (i18n && !container.isBound(Translator)) container.bind(Translator).toConstantValue(i18n)
+
     // Recursively bind controllers and their dependencies, skipping already-bound tokens
     const bindClass = (cls: new (...args: any[]) => any) => {
       if (container.isBound(cls)) return
@@ -323,6 +329,7 @@ export class TestingModuleBuilder {
 
       // By constructor type or @inject token, as the app binds them
       for (const dep of injectedTokens(cls)) {
+        if (dep === Translator && !container.isBound(Translator)) throw missingTranslatorError(cls)
         if (isAppClassToken(dep)) bindClass(dep)
       }
     }

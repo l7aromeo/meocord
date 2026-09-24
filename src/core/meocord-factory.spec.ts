@@ -25,6 +25,7 @@ const { MeoCordApp } = await import('@src/core/meocord.app.js')
 const { MetadataKey } = await import('@src/enum/index.js')
 const { ExecutionContext } = await import('@src/common/execution-context.js')
 const { injectable } = await import('inversify')
+const { createTranslator, Translator } = await import('@src/common/translator.js')
 const { runHandler } = await import('@src/core/handler-pipeline.js')
 
 describe('MeoCordFactory.create()', () => {
@@ -159,6 +160,36 @@ describe('MeoCordFactory.create()', () => {
 
       expect(MeoCordFactory.create(MyApp)).toBeInstanceOf(MeoCordApp)
       expect(constructed).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('i18n', () => {
+    const t = () => createTranslator({ default: 'en-US', locales: { 'en-US': { ping: 'Pong!' } } })
+
+    class PingService {
+      constructor(readonly translator: InstanceType<typeof Translator>) {}
+    }
+    Reflect.defineMetadata(MetadataKey.ParamTypes, [Translator], PingService)
+
+    const appWith = (i18n?: unknown) => {
+      class MyApp {}
+      Reflect.defineMetadata(MetadataKey.AppOptions, { controllers: [], services: [PingService], clientOptions: { intents: [] }, i18n }, MyApp)
+      return MyApp
+    }
+
+    it('injects the translator given to @MeoCord as Translator', () => {
+      mockLoadConfig.mockReturnValue({ discordToken: 'test-token' })
+      const translator = t()
+
+      const app = MeoCordFactory.create(appWith(translator))
+
+      expect((app as unknown as { container: { get(token: unknown): PingService } }).container.get(PingService).translator).toBe(translator)
+    })
+
+    it('says what to pass when a class injects Translator without one', () => {
+      mockLoadConfig.mockReturnValue({ discordToken: 'test-token' })
+
+      expect(() => MeoCordFactory.create(appWith())).toThrow('PingService injects Translator, but @MeoCord has no i18n')
     })
   })
 })

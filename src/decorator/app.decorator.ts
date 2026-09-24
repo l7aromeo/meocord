@@ -4,6 +4,7 @@ import { type ActivityOptions, type ClientOptions } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
+import { type Translator } from '@src/common/translator.js'
 
 /**
  * Declares the MeoCord application class: its controllers, services, client options and activities.
@@ -21,6 +22,8 @@ import { makeInjectable } from '@src/util/injectable.util.js'
  *   outside the controller's and the method's own. A controller method called directly runs none.
  * @param options.filters - Exception filters tried after the method's and the controller's, and for
  *   errors outside any handler, such as `CommandNotFoundError`.
+ * @param options.i18n - The translator `createTranslator` made, injected as `Translator` wherever a class
+ *   asks for one.
  *
  * @example
  * ```typescript
@@ -54,6 +57,7 @@ export function MeoCord(options: {
     | (new (...args: any[]) => ExceptionFilter<any>)
     | { provide: new (...args: any[]) => ExceptionFilter<any>; params: Record<string, any> }
   )[]
+  i18n?: Translator<any>
 }): (target: any) => void {
   return (target: any): void => {
     makeInjectable(target)

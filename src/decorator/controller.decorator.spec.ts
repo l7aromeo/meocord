@@ -10,6 +10,9 @@ import {
   MessageHandler,
   ReactionHandler,
 } from '@src/decorator/controller.decorator.js'
+import { CommandBuilder } from '@src/decorator/command-builder.decorator.js'
+import { SlashCommandBuilder } from 'discord.js'
+import { type ChatInputCommandInteraction } from 'discord.js'
 import { CommandType, MetadataKey } from '@src/enum/index.js'
 import {
   ButtonInteraction,
@@ -540,5 +543,30 @@ describe('controller inheritance', () => {
     expect(getCommandMap(OtherController.prototype).base.map(meta => meta.methodName)).toEqual(['base', 'other'])
     expect(getCommandMap(BaseController.prototype).base.map(meta => meta.methodName)).toEqual(['base'])
     expect(Object.keys(getCommandMap(ChildController.prototype))).not.toContain('other')
+  })
+})
+
+// discord.js builders validate while they are set, at decoration time, with errors that name neither
+// the command nor the field.
+describe('a builder that throws', () => {
+  it('is reported with the builder and the command it was building', () => {
+    @CommandBuilder(CommandType.SLASH)
+    class BanBuilder {
+      build(commandName: string) {
+        return new SlashCommandBuilder()
+          .setName(commandName)
+          .setDescription('Ban')
+          .setDescriptionLocalizations({ ja: 'x'.repeat(104) })
+      }
+    }
+
+    expect(() => {
+      @Controller()
+      class BanController {
+        @Command('ban', BanBuilder)
+        async ban(_interaction: ChatInputCommandInteraction) {}
+      }
+      void BanController
+    }).toThrow('BanBuilder could not build "ban": Invalid string length')
   })
 })
