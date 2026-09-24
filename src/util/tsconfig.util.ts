@@ -1,5 +1,5 @@
 import path from 'path'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { Logger } from '@src/common/index.js'
 import { tmpdir } from 'os'
 import { fixJSON } from '@src/util/json.util.js'
@@ -8,7 +8,8 @@ const logger = new Logger()
 
 /**
  * Writes a copy of the project's `tsconfig.json` for the bundler to a temporary file, with invalid
- * JSON repaired, paths made absolute and `noEmit` removed.
+ * JSON repaired, paths made absolute and `noEmit` removed. Each call gets a directory of its own,
+ * removed when the process exits, so builds running at once never share or overwrite the file.
  * @returns The absolute path to the temporary tsconfig.
  * @throws When `tsconfig.json` is missing or cannot be parsed.
  */
@@ -77,8 +78,11 @@ export function prepareModifiedTsConfig(): string {
     }
   }
 
-  // Write the modified configuration to a temporary location for usage
-  const tempTsConfigPath = path.resolve(path.join(tmpdir(), 'modified-tsconfig.json'))
+  // Kept until the process exits: a development build reads it again on every rebuild
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'meocord-tsconfig-'))
+  process.once('exit', () => rmSync(tempDir, { recursive: true, force: true }))
+
+  const tempTsConfigPath = path.join(tempDir, 'modified-tsconfig.json')
   writeFileSync(tempTsConfigPath, JSON.stringify(parsedConfig, null, 2))
   return tempTsConfigPath
 }
