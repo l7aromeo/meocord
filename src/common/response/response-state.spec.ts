@@ -1,5 +1,8 @@
 import {
+  ActionRowBuilder,
   type APIEmbed,
+  ButtonBuilder,
+  ButtonStyle,
   ApplicationIntegrationType,
   ButtonInteraction,
   ChatInputCommandInteraction,
@@ -17,7 +20,7 @@ import { vi } from 'vitest'
 import { Logger } from '@src/common/logger.js'
 import { Theme } from '@src/common/theme.js'
 import { GuardDeniedError } from '@src/common/errors.js'
-import { respond, responseOf } from '@src/common/response/response-state.js'
+import { LOCK_MEMORY_MS, lockedMessageCount, respond, responseOf } from '@src/common/response/response-state.js'
 import { RENDERED_CONTAINER_ID, setPresenter } from '@src/common/response/presenter.js'
 import { UnroutedExecutionContext } from '@src/common/execution-context.js'
 import { createDiscordError, createMockInteraction, createMockMessage, getResponse } from '@src/testing/index.js'
@@ -532,5 +535,434 @@ describe('respond()', () => {
     expect(getResponse(interaction)).toMatchObject({ state: 'replied', sent: true })
     expect(getResponse(interaction).calls.map(call => call.method)).toEqual(['deferUpdate', 'editReply'])
     expect(getResponse(command())).toEqual({ state: 'unanswered', sent: false, calls: [] })
+  })
+})
+
+describe('respond(), call by call', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  const row = (...ids: string[]) => ({
+    type: ComponentType.ActionRow,
+    components: ids.map(id => ({ type: ComponentType.Button, style: 1, custom_id: id, label: id })),
+  })
+
+  describe('reading answers made around it', () => {
+    it('reports a raw reply in its state, before any call of its own', async () => {
+      const interaction = command()
+      await interaction.reply('raw')
+
+      expect(respond(interaction).state).toBe('replied')
+    })
+
+    it('deletes, follows up and refuses a modal after a raw acknowledgement it did not make', async () => {
+      const deleted = command()
+      await deleted.deferReply()
+      await respond(deleted).delete()
+      expect(deleted.deleteReply).toHaveBeenCalled()
+
+      const followed = command()
+      await followed.deferReply()
+      await respond(followed).followUp('done')
+      expect(sent(followed.editReply)).toMatchObject({ content: 'done' })
+
+      const modal = button()
+      await modal.deferUpdate()
+      await expect(respond(modal).modal(new ModalBuilder().setCustomId('m').setTitle('M'))).rejects.toThrow(
+        'A modal must be the first response',
+      )
+    })
+
+    it('refuses a modal while its own acknowledgement is still in flight', async () => {
+      const interaction = button()
+      let finish!: () => void
+      interaction.deferUpdate.mockImplementation(() => new Promise<never>(resolve => (finish = resolve as () => void)))
+      const acknowledging = respond(interaction).acknowledge()
+
+      await expect(respond(interaction).modal(new ModalBuilder().setCustomId('m').setTitle('M'))).rejects.toThrow(
+        'A modal must be the first response',
+      )
+      finish()
+      await acknowledging
+    })
+  })
+
+  describe('acknowledge()', () => {
+    it('returns a promise once the interaction is answered', async () => {
+      const interaction = command()
+      await respond(interaction).send('done')
+
+      await expect(respond(interaction).acknowledge()).resolves.toBeUndefined()
+    })
+
+    it('passes on a rejection that carries no code, as it came', async () => {
+      const interaction = command()
+      interaction.deferReply.mockRejectedValueOnce(null)
+
+      await expect(respond(interaction).acknowledge()).rejects.toBeNull()
+    })
+  })
+
+  describe('what send() returns and records', () => {
+    it("returns the message Discord answers a reply and an update with, and records each call's payload", async () => {
+      const reply = createMockMessage()
+      const commandCall = command()
+      commandCall.reply.mockResolvedValue({ resource: { message: reply } } as never)
+      const update = createMockMessage()
+      const buttonCall = button()
+      buttonCall.update.mockResolvedValue({ resource: { message: update } } as never)
+
+      expect(await respond(commandCall).send('hi')).toBe(reply)
+      expect(await respond(buttonCall).send('updated')).toBe(update)
+      expect(getResponse(commandCall).calls).toEqual([{ method: 'reply', payload: { content: 'hi', flags: 0 } }])
+      expect(getResponse(buttonCall).calls).toEqual([{ method: 'update', payload: { content: 'updated', flags: 0 } }])
+    })
+
+    it('records the delete and the private follow-up that keep a follow-up off a public deferral', async () => {
+      const interaction = command()
+      await respond(interaction).acknowledge()
+
+      await respond(interaction).followUp({ content: 'secret', flags: Ephemeral })
+
+      expect(getResponse(interaction).calls.map(call => call.method)).toEqual(['deferReply', 'deleteReply', 'followUp'])
+    })
+  })
+
+  describe('flags on edits', () => {
+    it('sets no SuppressEmbeds on an edit of a message that does not have it', async () => {
+      const interaction = button(messageWith())
+      await respond(interaction).acknowledge()
+
+      await respond(interaction).edit('plain')
+
+      expect(sent(interaction.editReply).flags).toBe(0)
+    })
+
+    it('keeps a message Components V2 once an edit made it so', async () => {
+      const interaction = command()
+      await respond(interaction).acknowledge()
+
+      await respond(interaction).edit({ components: [], flags: IsComponentsV2 })
+      await respond(interaction).edit('text is dropped now')
+
+      expect(sent(interaction.editReply, 1)).toEqual({ flags: IsComponentsV2 })
+    })
+
+    it('names the flags it drops in development, and says nothing in production', async () => {
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      const interaction = command()
+      await respond(interaction).acknowledge()
+
+      await respond(interaction).edit({ content: 'x', flags: SuppressNotifications } as never)
+      expect(warn).toHaveBeenCalledWith('Dropped flags SuppressNotifications, which a edit cannot take.')
+
+      warn.mockClear()
+      vi.stubEnv('NODE_ENV', 'production')
+      await respond(interaction).edit({ content: 'y', flags: SuppressNotifications } as never)
+      expect(warn).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('the token', () => {
+    const inGuild = (age: number) => {
+      const message = messageWith()
+      const interaction = button(message)
+      Object.assign(interaction, { createdTimestamp: Date.now() - age, context: InteractionContextType.Guild })
+      return { interaction, message }
+    }
+
+    it('rethrows a token error a second after the interaction was created', async () => {
+      const { interaction, message } = inGuild(1000)
+      await respond(interaction).acknowledge()
+      interaction.editReply.mockRejectedValueOnce(createDiscordError(50027))
+
+      await expect(respond(interaction).send('early')).rejects.toThrow('50027')
+      expect(message.edit).not.toHaveBeenCalled()
+    })
+
+    it('takes a token error as expiry from exactly 14 minutes, and records the channel edit', async () => {
+      vi.useFakeTimers({ now: Date.now(), toFake: ['Date'] })
+      const { interaction, message } = inGuild(14 * 60 * 1000)
+      await respond(interaction).acknowledge()
+      interaction.editReply.mockRejectedValueOnce(createDiscordError(10015))
+
+      await respond(interaction).send('late')
+
+      expect(message.edit).toHaveBeenCalled()
+      expect(getResponse(interaction).calls.map(call => call.method)).toEqual(['deferUpdate', 'editReply', 'message.edit'])
+    })
+  })
+
+  describe('lock()', () => {
+    it('keeps the snapshot as original', async () => {
+      const interaction = button(messageWith({ embeds: [{ description: 'card' }], components: [row('refresh')] }))
+
+      await respond(interaction).lock()
+
+      expect(respond(interaction).original).toEqual({ components: [row('refresh')], embeds: [{ description: 'card' }] })
+    })
+
+    it('locks nothing on a message a raw update already answered', async () => {
+      const interaction = button(messageWith({ components: [row('refresh')] }))
+      await interaction.update({ content: 'raw' })
+
+      await respond(interaction).lock()
+
+      expect(interaction.editReply).not.toHaveBeenCalled()
+      expect(respond(interaction).original).toBeUndefined()
+    })
+
+    // 40060 from our own acknowledgement means another process acknowledged it: the message is still ours to lock
+    it('still locks after its own acknowledgement found the interaction acknowledged elsewhere', async () => {
+      const interaction = button(messageWith({ components: [row('refresh')] }))
+      interaction.deferUpdate.mockRejectedValueOnce(createDiscordError(40060))
+      interaction.editReply.mockResolvedValue(createMockMessage() as never)
+
+      await respond(interaction).lock()
+
+      expect(interaction.editReply).toHaveBeenCalled()
+    })
+
+    it('adds the loading container to a Components V2 card only while it fits in 40 components', async () => {
+      // A container with one text display: two components
+      const texts = (count: number) => Array.from({ length: count }, () => ({ type: ComponentType.TextDisplay, content: 't' }))
+      const fits = button(messageWith({ flags: IsComponentsV2, components: texts(38) }))
+      const full = button(messageWith({ flags: IsComponentsV2, components: texts(39) }))
+
+      await respond(fits).lock()
+      await respond(full).lock()
+
+      expect(sent(fits.editReply).components).toHaveLength(39)
+      expect(sent(full.editReply).components).toHaveLength(39)
+    })
+
+    it('writes back the embeds without the loading view when send() leaves embeds out', async () => {
+      const interaction = button(messageWith({ embeds: [{ description: 'card' }], components: [row('refresh')] }))
+      await respond(interaction).lock()
+
+      await respond(interaction).send({ content: 'done' })
+
+      expect(sent(interaction.editReply, 1)).toMatchObject({ content: 'done', embeds: [{ description: 'card' }], components: [row('refresh')] })
+    })
+  })
+
+  describe('error()', () => {
+    const texts = (count: number) => Array.from({ length: count }, () => ({ type: ComponentType.TextDisplay, content: 't' }))
+
+    it('adds the error to a private card at the limit, 10 embeds or 40 components, and not past it', async () => {
+      const nine = button(messageWith({ flags: Ephemeral, embeds: Array.from({ length: 9 }, () => ({ description: 'p' })) }))
+      const v2Fits = button(messageWith({ flags: Ephemeral | IsComponentsV2, components: texts(38) }))
+      const v2Full = button(messageWith({ flags: Ephemeral | IsComponentsV2, components: texts(39) }))
+      for (const interaction of [nine, v2Fits, v2Full]) await respond(interaction).acknowledge()
+
+      for (const interaction of [nine, v2Fits, v2Full]) await respond(interaction).error(new Error('x'))
+
+      expect(sent(nine.editReply).embeds).toHaveLength(10)
+      expect(sent(v2Fits.editReply).components?.at(-1)).toMatchObject({ type: ComponentType.Container, id: RENDERED_CONTAINER_ID })
+      expect(v2Full.editReply).not.toHaveBeenCalledWith(expect.objectContaining({ components: expect.arrayContaining([expect.objectContaining({ id: RENDERED_CONTAINER_ID })]) }))
+      expect(sent(v2Full.followUp).flags).toBe(Ephemeral | IsComponentsV2)
+    })
+
+    it("tells the presenter a Components V2 message's mode", async () => {
+      const modes: string[] = []
+      const interaction = button(messageWith({ flags: IsComponentsV2 }))
+      setPresenter(interaction.client, {
+        loading: () => ({ text: 'x' }),
+        error: context => {
+          modes.push(context.mode)
+          return { text: 'x' }
+        },
+      })
+      await respond(interaction).acknowledge()
+
+      await respond(interaction).error(new Error('x'))
+
+      expect(modes).toEqual(['v2'])
+    })
+
+    it('never deletes a reply the handler already sent, even for a private error', async () => {
+      const interaction = command()
+      await respond(interaction).send('public answer')
+
+      await respond(interaction).error(new Error('x'), { visibility: 'private' })
+
+      expect(interaction.deleteReply).not.toHaveBeenCalled()
+      expect(sent(interaction.followUp).flags).toBe(Ephemeral)
+    })
+  })
+})
+
+describe("respond() under @Defer's timer and locks", () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  const row = (...ids: string[]) => ({
+    type: ComponentType.ActionRow,
+    components: ids.map(id => ({ type: ComponentType.Button, style: 1, custom_id: id, label: id })),
+  })
+  const pending = () => new Promise<never>(() => {})
+
+  describe('the timer', () => {
+    it('acknowledges nothing while an update, a reply or a modal of its own is in flight', async () => {
+      vi.useFakeTimers()
+      const updating = button()
+      updating.update.mockImplementation(pending)
+      const replying = command()
+      replying.reply.mockImplementation(pending)
+      const opening = button()
+      opening.showModal.mockImplementation(pending)
+      for (const interaction of [updating, replying, opening]) responseOf(interaction).scheduleAcknowledge(1000)
+
+      void respond(updating).send('x')
+      void respond(replying).send('x')
+      void respond(opening).modal(new ModalBuilder().setCustomId('m').setTitle('M'))
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(updating.deferUpdate).not.toHaveBeenCalled()
+      expect(replying.deferReply).not.toHaveBeenCalled()
+      expect(opening.deferUpdate).not.toHaveBeenCalled()
+    })
+
+    it('applies a lock asked for before it fired, with the controls asked for', async () => {
+      vi.useFakeTimers()
+      const interaction = button(messageWith({ components: [row('refresh', 'other')] }))
+      Object.assign(interaction, { customId: 'refresh' })
+      interaction.editReply.mockResolvedValue(createMockMessage() as never)
+      responseOf(interaction).scheduleAcknowledge(1000)
+
+      await respond(interaction).lock({ disable: 'clicked' })
+      expect(interaction.editReply).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1000)
+
+      const buttons = (sent(interaction.editReply).components?.[0] as unknown as { components: { disabled?: boolean }[] }).components
+      expect(buttons.map(node => node.disabled)).toEqual([true, undefined])
+    })
+
+    it('warns in development when a raw discord.js call answered first, and never otherwise', async () => {
+      vi.useFakeTimers()
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      const raw = command()
+      const through = command()
+      for (const interaction of [raw, through]) responseOf(interaction).scheduleAcknowledge(1000)
+
+      await raw.reply('raw')
+      await respond(through).send('through respond')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn).toHaveBeenCalledWith(
+        'An interaction under @Defer was answered with a raw discord.js call; answer through respond(interaction) so its state stays in step.',
+      )
+
+      warn.mockClear()
+      vi.stubEnv('NODE_ENV', 'production')
+      const quiet = command()
+      responseOf(quiet).scheduleAcknowledge(1000)
+      await quiet.reply('raw')
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(warn).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('release() and abandon()', () => {
+    it("never acknowledges a command whose handler returned before the timer: Discord's own failure says more", async () => {
+      vi.useFakeTimers()
+      const interaction = command()
+      responseOf(interaction).scheduleAcknowledge(1000)
+
+      await responseOf(interaction).release()
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(interaction.deferReply).not.toHaveBeenCalled()
+    })
+
+    it("defers a command denied before the timer privately, so nobody sees it before it is deleted", async () => {
+      vi.useFakeTimers()
+      const interaction = command()
+      responseOf(interaction).scheduleAcknowledge(1000)
+
+      await responseOf(interaction).abandon()
+
+      expect(sent(interaction.deferReply).flags).toBe(Ephemeral)
+      expect(interaction.deleteReply).toHaveBeenCalled()
+    })
+
+    it("never deletes a component's message: its acknowledgement left nothing to undo", async () => {
+      const interaction = button()
+      await respond(interaction).acknowledge()
+
+      await responseOf(interaction).abandon()
+
+      expect(interaction.deleteReply).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('a message two calls hold', () => {
+    function shared(components: unknown[]) {
+      let current = components
+      const read = () => Object.assign(messageWith({ components: current }), { id: `shared-${Math.random()}` })
+      const message = read()
+      const clickOn = (customId: string) => {
+        const interaction = createMockInteraction(ButtonInteraction, { customId, message })
+        interaction.editReply.mockImplementation(async payload => {
+          current = ((payload as Payload).components ?? current) as unknown[]
+          return Object.assign(messageWith({ components: current }), { id: message.id }) as never
+        })
+        interaction.fetchReply.mockImplementation(async () => Object.assign(messageWith({ components: current }), { id: message.id }) as never)
+        return interaction
+      }
+      return { clickOn, current: () => current as { components: { custom_id: string; disabled?: boolean; label?: string }[] }[] }
+    }
+
+    it("keeps the other call's control disabled in an answer, and its new components once that call settles", async () => {
+      const message = shared([row('a', 'b')])
+      const first = message.clickOn('a')
+      const second = message.clickOn('b')
+      await respond(first).acknowledge()
+      await respond(second).acknowledge()
+      await respond(first).lock({ disable: 'clicked' })
+      await respond(second).lock({ disable: 'clicked' })
+
+      await respond(first).send({ components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId('a').setLabel('A done').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('b').setLabel('b').setStyle(ButtonStyle.Primary),
+      )] })
+      expect(message.current()[0].components.map(({ label, disabled }) => [label, disabled])).toEqual([['A done', undefined], ['b', true]])
+
+      await responseOf(second).release()
+      expect(message.current()[0].components.map(({ label, disabled }) => [label, disabled])).toEqual([['A done', undefined], ['b', undefined]])
+    })
+  })
+
+  describe('the lock registry', () => {
+    it('forgets a message at once when something else changed it', async () => {
+      const interaction = button(Object.assign(messageWith({ components: [row('refresh')] }), { id: 'changed-outside' }))
+      interaction.editReply.mockResolvedValue(createMockMessage() as never)
+      await respond(interaction).lock()
+      const held = lockedMessageCount()
+      interaction.fetchReply.mockResolvedValue(Object.assign(messageWith({ components: [row('someone-else')] })) as never)
+
+      await responseOf(interaction).release()
+
+      expect(lockedMessageCount()).toBe(held - 1)
+    })
+
+    it('forgets a private card answered with the error added, once the memory window passes', async () => {
+      vi.useFakeTimers()
+      const interaction = button(Object.assign(messageWith({ flags: Ephemeral, components: [row('refresh')] }), { id: 'private-card' }))
+      interaction.editReply.mockResolvedValue(createMockMessage() as never)
+      await respond(interaction).lock()
+      const held = lockedMessageCount()
+
+      await respond(interaction).error(new Error('x'))
+      await vi.advanceTimersByTimeAsync(LOCK_MEMORY_MS)
+
+      expect(lockedMessageCount()).toBe(held - 1)
+    })
   })
 })
