@@ -54,6 +54,16 @@ describe('resolveRuntime — following the launcher', () => {
     ).toBe('/usr/bin/node')
   })
 
+  // What npm run passes on when a bun script started it: bun's user agent, npm's own execpath
+  it('ignores a bun user agent whose execpath is not bun', () => {
+    expect(
+      resolveRuntime(
+        { ...bunLauncher, npm_execpath: '/usr/lib/node_modules/npm/bin/npm-cli.js' },
+        '/usr/bin/node',
+      ),
+    ).toBe('/usr/bin/node')
+  })
+
   it('ignores a launcher it cannot locate', () => {
     expect(resolveRuntime({ npm_config_user_agent: bunLauncher.npm_config_user_agent }, '/usr/bin/node')).toBe(
       '/usr/bin/node',

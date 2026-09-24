@@ -29,7 +29,9 @@ function launcherRuntime(env: NodeJS.ProcessEnv): string | undefined {
 
   if (runner === undefined || !launcher) return undefined
 
-  return RUNTIME_RUNNERS.has(runner) ? launcher : undefined
+  // npm keeps a user agent it inherits but sets its own execpath, so under `npm run` started from a
+  // bun script the two disagree; the execpath is trusted only when it is the runner's own binary.
+  return RUNTIME_RUNNERS.has(runner) && isBun(launcher) ? launcher : undefined
 }
 
 /**
