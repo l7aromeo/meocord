@@ -94,11 +94,12 @@ describe('generateArgumentsTable', () => {
     expect(output).toContain('advanced')
   })
 
-  it('shows "No available choices" when no choices defined', () => {
+  it('leaves the choices section out when no argument has choices', () => {
     const arg = new Argument('<name>', 'The project name')
 
     const output = generateArgumentsTable([arg])
-    expect(output).toContain('No available choices')
+    expect(output).not.toMatch(/choices/i)
+    expect(output).toContain('Available Arguments')
   })
 })
 

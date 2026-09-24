@@ -71,7 +71,7 @@ export function generateOptionsTable(options: readonly Option[], helper: Help): 
   return table.toString()
 }
 
-/** Renders a command's arguments as a table, plus a table of choices for arguments that have them. */
+/** Renders a command's arguments as a table, after a table of choices when an argument has them. */
 export function generateArgumentsTable(args: readonly Argument[]): string {
   const table = new CliTable3({
     head: ['Argument', 'Description'],
@@ -99,8 +99,6 @@ export function generateArgumentsTable(args: readonly Argument[]): string {
     text += 'Available Choices:\n'
     text += choiceTable.toString()
     text += '\n\n'
-  } else {
-    text += 'No available choices.\n\n'
   }
 
   text += 'Available Arguments:\n'
