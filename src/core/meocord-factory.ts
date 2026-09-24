@@ -6,6 +6,7 @@ import { MeoCordApp } from '@src/core/meocord.app.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
 import { assertBuiltForThisPlatform } from '@src/util/platform.util.js'
 import { MetadataKey } from '@src/enum/index.js'
+import { isRegisterOnly } from '@src/util/registration-mode.util.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import { appStages, bindGlobalStages, prepareHandlerStages } from '@src/core/handler-pipeline.js'
@@ -47,6 +48,12 @@ export class MeoCordFactory {
     const meocordConfig = loadMeoCordConfig()
     if (!meocordConfig) {
       throw new Error('MeoCord config not found: dist/meocord.config.mjs is missing or failed to load. Run `meocord build`.')
+    }
+
+    // `meocord register` reads the commands from the controllers' prototypes and sends them over REST,
+    // so nothing is bound or constructed, and nothing that needs the platform's native addons runs.
+    if (isRegisterOnly()) {
+      return new MeoCordApp(options.controllers, new Container(), new Client(options.clientOptions), meocordConfig.discordToken)
     }
 
     // Before anything is resolved: a controller or service is what first loads a native addon, and

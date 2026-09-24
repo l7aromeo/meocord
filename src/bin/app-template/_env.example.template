@@ -1,2 +1,4 @@
 # Copy to .env and fill in. Never commit the real token.
 DISCORD_TOKEN=
+# Optional: a test guild. `start:dev` registers every command there, where changes show at once.
+DEV_GUILD_ID=

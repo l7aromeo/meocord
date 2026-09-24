@@ -81,6 +81,8 @@ export interface CommandMetadata<T extends string = string> {
    * `gi-profile/summary/{ownerId}/{uid}` beats `gi-profile/{uuid}/{uid}` whatever the declaration order.
    */
   specificity?: number
+  /** The builder's own `guilds` option, when it has one. */
+  guilds?: (string | undefined)[]
 }
 
 /** Metadata describing one `@Autocomplete` handler. */

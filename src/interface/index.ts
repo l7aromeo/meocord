@@ -211,6 +211,73 @@ export interface MeoCordConfig {
    * @defaultValue `10_000`
    */
   shutdownTimeout?: number
+
+  /**
+   * Where the bot registers its application commands, and whether it does so at startup.
+   *
+   * @defaultValue Every command registered globally, each time the bot starts.
+   */
+  commands?: CommandRegistrationConfig
+}
+
+/**
+ * Where and whether MeoCord registers the application's commands with Discord.
+ *
+ * Registration replaces the commands in each scope it sends to with exactly the ones the bot
+ * declares. Global commands can take a while to show up in clients; guild commands appear at once,
+ * which is what a development guild is for.
+ *
+ * @example
+ * ```ts
+ * commands: {
+ *   developmentGuild: process.env.DEV_GUILD_ID || undefined,
+ * }
+ * ```
+ */
+export interface CommandRegistrationConfig {
+  /**
+   * Guilds to register every command to instead of globally. Unset or empty registers globally.
+   * A builder's own `guilds` option takes precedence for its command.
+   */
+  guilds?: string[]
+  /**
+   * A guild that receives every command, and nothing else does, while `NODE_ENV` is `development` —
+   * as under `meocord start --dev`. Ignored in production.
+   */
+  developmentGuild?: string
+  /**
+   * Whether the bot registers its commands when it starts. Set `false` to register only with
+   * `meocord register`, from CI for instance.
+   *
+   * @defaultValue `true`
+   */
+  register?: boolean
+  /**
+   * Whether to remove this application's commands from the scopes this configuration names but is
+   * not registering to, such as the global commands left behind after moving to `guilds`. Without it,
+   * such leftovers are reported as a warning. If development and production share one application,
+   * this deletes production's commands whenever the development build registers.
+   *
+   * @defaultValue `false`
+   */
+  clearOther?: boolean
+}
+
+/**
+ * Options for `@CommandBuilder`.
+ *
+ * @example
+ * ```ts
+ * @CommandBuilder(CommandType.SLASH, { guilds: [process.env.STAFF_GUILD_ID!] })
+ * ```
+ */
+export interface CommandBuilderOptions {
+  /**
+   * Guilds this command is registered to, in place of the configured scope. A command whose list is
+   * empty after dropping blank ids is not registered at all, rather than falling back to global.
+   * Under a development guild, it goes there with every other command.
+   */
+  guilds?: (string | undefined)[]
 }
 
 export type {

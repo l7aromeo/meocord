@@ -22,6 +22,7 @@
 - [Configuration](#configuration)
   - [meocord.config.ts](#meocordconfigts)
   - [Environment variables](#environment-variables)
+  - [Command registration](#command-registration)
   - [ESLint](#eslint)
 - [CLI Reference](#cli-reference)
 - [Command Types](#command-types)
@@ -265,14 +266,15 @@ MeoCord builds with [Rsbuild](https://rsbuild.rs). The hook receives its configu
 
 - **Raw bundler rules** go through `tools.rspack`, which takes a webpack-shaped configuration.
 
-| Option               | Default | Description                                                                                            |
-| -------------------- | ------- | ------------------------------------------------------------------------------------------------------ |
-| `discordToken`       | —       | The bot token. Read it from the environment rather than writing it here.                               |
-| `appName`            | —       | Shown in log lines.                                                                                    |
-| `rsbuild`            | —       | `(config) => config` — adjust the Rsbuild configuration.                                               |
-| `bundleDependencies` | `false` | Put everything the bot needs inside `dist`, native addons included, so it runs without `node_modules`. |
-| `externals`          | `[]`    | Modules to keep out of the bundle. Native addons are found without being listed.                       |
-| `shutdownTimeout`    | `10000` | Milliseconds shutdown waits for the [`onShutdown` hooks](#lifecycle-hooks), all of them together.      |
+| Option               | Default | Description                                                                                                |
+| -------------------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+| `discordToken`       | —       | The bot token. Read it from the environment rather than writing it here.                                   |
+| `appName`            | —       | Shown in log lines.                                                                                        |
+| `rsbuild`            | —       | `(config) => config` — adjust the Rsbuild configuration.                                                   |
+| `bundleDependencies` | `false` | Put everything the bot needs inside `dist`, native addons included, so it runs without `node_modules`.     |
+| `externals`          | `[]`    | Modules to keep out of the bundle. Native addons are found without being listed.                           |
+| `shutdownTimeout`    | `10000` | Milliseconds shutdown waits for the [`onShutdown` hooks](#lifecycle-hooks), all of them together.          |
+| `commands`           | global  | Where commands are registered, and whether at startup — see [Command registration](#command-registration). |
 
 See [Self-contained builds](#self-contained-builds) for when to turn on `bundleDependencies`.
 
@@ -309,6 +311,58 @@ APP_ENV=staging node dist/main.js
 ```
 
 Start the bot from the project root: the `.env` files and `dist/meocord.config.mjs` are both found from the working directory, so set `cwd` in pm2 and `WORKDIR` in a Dockerfile.
+
+### Command registration
+
+The bot registers its slash, context menu and entry point commands once it is ready. By default they go globally, every start. `commands` in `meocord.config.ts` changes where:
+
+```typescript
+export default {
+  discordToken: process.env.DISCORD_TOKEN!,
+  commands: {
+    developmentGuild: process.env.DEV_GUILD_ID || undefined, // every command goes here under start --dev
+    guilds: undefined, // guild ids to register to instead of globally
+    register: true, // false: only `meocord register` registers
+    clearOther: false, // true: remove this app's commands from the scopes above that are not in use
+  },
+} satisfies MeoCordConfig
+```
+
+| Option             | Default | Description                                                                                                                                |
+| ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `guilds`           | —       | Register every command to these guilds instead of globally. Unset or empty: global.                                                        |
+| `developmentGuild` | —       | While `NODE_ENV` is `development`, as under `start --dev`, every command goes to this guild and nowhere else. Guild commands show at once. |
+| `register`         | `true`  | Register at startup. Set `false` to register only with `meocord register`, from CI for instance.                                           |
+| `clearOther`       | `false` | Remove this application's commands from the scopes named here but not in use. Without it, leftovers are reported as a warning.             |
+
+Each scope gets one bulk update, which replaces everything the application has there, so a removed command disappears on the next registration. A failed registration is logged and the bot stays online.
+
+**One command in its own guilds.** A builder's `guilds` option sends its command to those guilds only, in place of the scope above — for staff commands, say. The ids are read when the class is decorated, after `.env` has loaded:
+
+```typescript
+@CommandBuilder(CommandType.SLASH, { guilds: [process.env.STAFF_GUILD_ID] })
+export class BanCommandBuilder implements CommandBuilderBase {
+  build(commandName: string) {
+    return new SlashCommandBuilder().setName(commandName).setDescription('Ban a member')
+  }
+}
+```
+
+A builder whose list is empty after dropping blank ids is not registered anywhere, rather than published globally by accident. Under a development guild it goes there with the rest.
+
+**Leftovers.** Moving from global to guild commands, or the other way, leaves the old ones behind, and Discord shows both. After registering, MeoCord checks the scopes this configuration names — global, `guilds`, `developmentGuild` and builders' guilds — that it did not send to, and warns about any commands left there; `clearOther: true` removes them instead. If development and production share one application, `clearOther` in development removes production's commands, so give development its own application.
+
+**Unchanged commands in development.** Under `start --dev`, a scope whose commands have not changed since the last start from this project is not sent again. The record lives in `node_modules/.cache/meocord`, per application and scope. `meocord start --dev --force-register` sends them anyway — after deleting commands in the developer portal, for instance. Production always sends; the update is idempotent.
+
+**Registering without starting.** `meocord register` registers and exits, without logging in to the gateway. It runs the built bot in a register-only mode that reads the commands and constructs no controller or service, so it needs a build (`--build` makes one) and the same token as the bot:
+
+```shell
+npx meocord register --build          # production scope
+npx meocord register --dev            # to commands.developmentGuild
+npx meocord register --guild 1234567  # every command to one guild
+```
+
+It exits non-zero when Discord rejects the token or the commands, so a deploy step can stop on it.
 
 ### ESLint
 
@@ -349,18 +403,20 @@ npx meocord --help
 | `create`   | —     | Scaffold a new MeoCord application                   |
 | `build`    | —     | Compile the application via Rsbuild                  |
 | `start`    | —     | Start the application                                |
+| `register` | —     | Register the commands, without starting the bot      |
 | `generate` | `g`   | Scaffold controllers, services, guards, interceptors |
 | `show`     | —     | Display framework info                               |
 
 Every command's own flags:
 
-| Command    | Flags                                                   |
-| ---------- | ------------------------------------------------------- |
-| `create`   | `--use-npm` · `--use-yarn` · `--use-pnpm` · `--use-bun` |
-| `build`    | `-d, --dev` · `-p, --prod`                              |
-| `start`    | `-b, --build` · `-d, --dev` · `-p, --prod`              |
-| `show`     | `-w, --warranty` · `-c, --license`                      |
-| `generate` | see the sub-commands below                              |
+| Command    | Flags                                                           |
+| ---------- | --------------------------------------------------------------- |
+| `create`   | `--use-npm` · `--use-yarn` · `--use-pnpm` · `--use-bun`         |
+| `build`    | `-d, --dev` · `-p, --prod`                                      |
+| `start`    | `-b, --build` · `-d, --dev` · `-p, --prod` · `--force-register` |
+| `register` | `-b, --build` · `-d, --dev` · `-g, --guild <id>`                |
+| `show`     | `-w, --warranty` · `-c, --license`                              |
+| `generate` | see the sub-commands below                                      |
 
 `meocord -V` / `--version` prints the installed version.
 

@@ -24,6 +24,7 @@ vi.mock('node:fs', async importOriginal => {
 })
 
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { MeoCordCLI } from '@src/bin/meocord.js'
 import { RUNTIME_OVERRIDE_ENV } from '@src/util/runtime.util.js'
 
@@ -156,6 +157,48 @@ describe('spawning the application', () => {
 
   // Someone who typed `bun` expects a bun process. Pinning the binary the CLI happens to
   // be executing would hand them node, because the bin's shebang defers to it.
+  // `meocord register` runs the same bundle, told by its environment to register and exit.
+  describe('register()', () => {
+    afterEach(() => {
+      vi.mocked(existsSync).mockReturnValue(true)
+    })
+
+    it('runs the built application in register-only mode, sending even an unchanged payload', async () => {
+      await new MeoCordCLI().register()
+
+      const { args, options } = lastSpawn()
+      expect(args).toEqual([expect.stringContaining('main.js')])
+      expect(options.env).toMatchObject({ MEOCORD_REGISTER_ONLY: '1', MEOCORD_FORCE_REGISTER: '1' })
+      expect(options.env).not.toHaveProperty('MEOCORD_REGISTER_GUILD')
+    })
+
+    it('passes the guild it is given', async () => {
+      await new MeoCordCLI().register('guild-id')
+
+      expect(lastSpawn().options.env).toMatchObject({ MEOCORD_REGISTER_GUILD: 'guild-id' })
+    })
+
+    it("exits with the application's code", async () => {
+      await new MeoCordCLI().register()
+
+      const child = spawnMock.mock.results.at(-1)?.value as { on: ReturnType<typeof vi.fn> }
+      const onExit = child.on.mock.calls.find(([event]) => event === 'exit')?.[1] as (code: number | null) => void
+      onExit(1)
+
+      expect(exitSpy).toHaveBeenCalledWith(1)
+    })
+
+    it('asks for a build, and spawns nothing, when there is no bundle', async () => {
+      vi.mocked(existsSync).mockReturnValue(false)
+      spawnMock.mockClear()
+
+      await new MeoCordCLI().register()
+
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      expect(spawnMock).not.toHaveBeenCalled()
+    })
+  })
+
   describe('following the launcher', () => {
     beforeEach(() => Object.assign(process.env, BUN_LAUNCHER))
 

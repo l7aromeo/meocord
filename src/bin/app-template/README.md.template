@@ -24,6 +24,20 @@ rewriting history.
 The bot runs on whichever runtime you launch it with — launch with bun and it is a bun
 process, launch with node and it is a node process. Node needs to be 22.13 or newer.
 
+## Registering commands
+
+The bot registers its commands when it starts: globally in production, and to the guild in
+`DEV_GUILD_ID`, when set, under `start:dev`, where changes show at once. In development an
+unchanged set is not sent again; `npx meocord start --dev --force-register` sends it anyway.
+
+To register without starting the bot, as a deploy step for instance:
+
+```shell
+{{packageManager}} run register     # builds for production, then registers
+```
+
+Set `commands.register: false` in `meocord.config.ts` to leave registration to that step.
+
 ## Building
 
 ```shell

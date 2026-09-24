@@ -9,6 +9,7 @@
     "build:prod": "{{runtimePrefix}}meocord build --prod",
     "start:dev": "{{runtimePrefix}}meocord start --dev",
     "start:prod": "{{runtimePrefix}}meocord start --prod",
+    "register": "{{runtimePrefix}}meocord register --build",
     "lint": "eslint --fix && tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
