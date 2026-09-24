@@ -183,8 +183,13 @@ export class TestingModule {
           if (this.firedOnce.has(key)) continue
           this.firedOnce.add(key)
         }
-        const instance = this.container.get(cls) as Record<string, (...args: unknown[]) => unknown>
-        calls.push(runHandler(this.container, instance, handler.method, args, { type: 'event' }).then(({ ran }) => ran))
+        // Resolved inside the call, so a class that cannot be resolved fails as its handler would
+        const run = async () => {
+          const instance = this.container.get(cls) as Record<string, (...args: unknown[]) => unknown>
+          const { ran } = await runHandler(this.container, instance, handler.method, args, { type: 'event' })
+          return ran
+        }
+        calls.push(run())
       }
     }
 
