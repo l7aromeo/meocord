@@ -1,11 +1,8 @@
 import path from 'path'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
-import { Logger } from '@src/common/index.js'
 import { tmpdir } from 'os'
 import { createRequire } from 'module'
-import { fixJSON } from '@src/util/json.util.js'
-
-const logger = new Logger()
+import { parseJsonc } from '@src/util/json.util.js'
 
 /**
  * An `extends` made to work from another directory: a relative path made absolute, and a package
@@ -25,8 +22,9 @@ function resolveExtends(value: string | string[], cwd: string): string | string[
 }
 
 /**
- * Writes a copy of the project's `tsconfig.json` for the bundler to a temporary file, with invalid
- * JSON repaired, paths made absolute and `noEmit` removed. Each call gets a directory of its own,
+ * Writes a copy of the project's `tsconfig.json` for the bundler to a temporary file, with comments
+ * and trailing commas removed, paths made absolute and `noEmit` removed. The project's file is never
+ * changed. Each call gets a directory of its own,
  * removed when the process exits, so builds running at once never share or overwrite the file.
  * @returns The absolute path to the temporary tsconfig.
  * @throws When `tsconfig.json` is missing or cannot be parsed.
@@ -43,22 +41,13 @@ export function prepareModifiedTsConfig(): string {
 
   let parsedConfig: any
   try {
-    parsedConfig = JSON.parse(tsConfigContent)
+    // TypeScript allows comments and trailing commas; the project's file itself is only read, never written
+    parsedConfig = parseJsonc(tsConfigContent)
   } catch (error) {
-    logger.warn('Invalid JSON detected in tsconfig.json!', error)
-    logger.log('Attempting to fix JSON...')
-    try {
-      const fixedContent = fixJSON(tsConfigContent)
-      parsedConfig = JSON.parse(fixedContent)
-      writeFileSync(tsConfigPath, fixedContent, 'utf-8')
-      logger.info('Fixed and updated tsconfig.json successfully.')
-    } catch (fixError) {
-      throw new Error(
-        `Failed to parse tsconfig.json, even after attempting to fix: ${
-          fixError instanceof Error ? fixError.message : fixError
-        }`,
-      )
-    }
+    throw new Error(
+      `Could not parse tsconfig.json in ${process.cwd()}: ${error instanceof Error ? error.message : String(error)}. ` +
+        `Fix the JSON, then build again.`,
+    )
   }
 
   // The copy lives in the temp directory, so every path in it is made absolute from the project

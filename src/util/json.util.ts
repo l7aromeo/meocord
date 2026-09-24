@@ -1,8 +1,46 @@
-/** Makes tsconfig-style JSON parseable: strips line comments, trailing commas and newlines. */
-export function fixJSON(jsonString: string): string {
-  return jsonString
-    .replace(/\/\/.*$/gm, '') // Remove single-line comments
-    .replace(/,(\s*[}\]])/g, '$1') // Remove trailing commas before } or ]
-    .replace(/,\s*$/, '') // Remove trailing commas at the end of the file
-    .replace(/^\s*[\r\n]/gm, '') // Replace empty lines only
+/**
+ * Removes the comments and trailing commas `tsconfig.json` allows, leaving strings untouched, so an
+ * `https://` URL or a `/*` glob inside one survives.
+ */
+export function stripJsonc(text: string): string {
+  let withoutComments = ''
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    if (char === '"') {
+      // Copy the whole string, escapes included
+      let end = i + 1
+      while (end < text.length && text[end] !== '"') end += text[end] === '\\' ? 2 : 1
+      withoutComments += text.slice(i, end + 1)
+      i = end
+    } else if (char === '/' && text[i + 1] === '/') {
+      while (i < text.length && text[i] !== '\n') i++
+      withoutComments += '\n'
+    } else if (char === '/' && text[i + 1] === '*') {
+      const end = text.indexOf('*/', i + 2)
+      i = end === -1 ? text.length : end + 1
+    } else {
+      withoutComments += char
+    }
+  }
+
+  let result = ''
+  for (let i = 0; i < withoutComments.length; i++) {
+    const char = withoutComments[i]
+    if (char === '"') {
+      let end = i + 1
+      while (end < withoutComments.length && withoutComments[end] !== '"') end += withoutComments[end] === '\\' ? 2 : 1
+      result += withoutComments.slice(i, end + 1)
+      i = end
+    } else if (char === ',' && /^\s*[}\]]/.test(withoutComments.slice(i + 1))) {
+      continue
+    } else {
+      result += char
+    }
+  }
+  return result
+}
+
+/** Parses JSON with the comments and trailing commas `tsconfig.json` allows. */
+export function parseJsonc<T = any>(text: string): T {
+  return JSON.parse(stripJsonc(text)) as T
 }
