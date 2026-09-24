@@ -83,3 +83,11 @@ describe('@MeoCord({ presenter })', () => {
     )
   })
 })
+
+describe('renderContainer and renderEmbed', () => {
+  it('give a view without a colour no colour', () => {
+    expect(renderContainer({ text: 'plain' })).not.toHaveProperty('accent_color')
+    expect(renderEmbed({ text: 'plain' })).not.toHaveProperty('color')
+  })
+})
+
