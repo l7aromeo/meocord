@@ -1,8 +1,9 @@
 import 'reflect-metadata'
-import { makeInjectable } from '@src/util/injectable.util.js'
 import { type ServiceIdentifier } from 'inversify'
 import { type ActivityOptions, type ClientOptions } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
+import { type GuardInterface } from '@src/interface/index.js'
+import { makeInjectable } from '@src/util/injectable.util.js'
 
 /**
  * Declares the MeoCord application class: its controllers, services, client options and activities.
@@ -13,6 +14,9 @@ import { MetadataKey } from '@src/enum/index.js'
  * @param options.clientOptions - Options for the discord.js `Client`.
  * @param options.activities - Activities the bot rotates through, if any.
  * @param options.services - Services to register that no controller depends on.
+ * @param options.guards - Guards run before every dispatched handler, ahead of the controller's and
+ *   the method's own guards: guard classes, or `{ provide, params }`. A controller method called
+ *   directly runs only its own guards.
  *
  * @example
  * ```typescript
@@ -22,6 +26,7 @@ import { MetadataKey } from '@src/enum/index.js'
  *     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
  *   },
  *   activities: [{ name: 'with slash commands', type: ActivityType.Playing }],
+ *   guards: [BlocklistGuard],
  * })
  * class App {}
  * ```
@@ -31,6 +36,10 @@ export function MeoCord(options: {
   clientOptions: ClientOptions
   activities?: ActivityOptions[]
   services?: ServiceIdentifier[]
+  guards?: (
+    | (new (...args: any[]) => GuardInterface)
+    | { provide: new (...args: any[]) => GuardInterface; params: Record<string, any> }
+  )[]
 }): (target: any) => void {
   return (target: any): void => {
     makeInjectable(target)

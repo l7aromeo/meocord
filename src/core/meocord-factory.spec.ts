@@ -25,6 +25,7 @@ const { MeoCordApp } = await import('@src/core/meocord.app.js')
 const { MetadataKey } = await import('@src/enum/index.js')
 const { ExecutionContext } = await import('@src/common/execution-context.js')
 const { injectable } = await import('inversify')
+const { runHandler } = await import('@src/core/handler-pipeline.js')
 
 describe('MeoCordFactory.create()', () => {
   afterEach(() => {
@@ -53,6 +54,35 @@ describe('MeoCordFactory.create()', () => {
 
     const result = MeoCordFactory.create(MyApp)
     expect(result).toBeInstanceOf(MeoCordApp)
+  })
+
+  it('runs the global guards of @MeoCord({ guards }) before a dispatched handler', async () => {
+    mockLoadConfig.mockReturnValue({ discordToken: 'test-token' })
+    const log: string[] = []
+
+    class GlobalGuard {
+      canActivate() {
+        log.push('global')
+        return true
+      }
+    }
+    injectable()(GlobalGuard)
+    class Handlers {
+      async run(_event: object) {
+        log.push('run')
+      }
+    }
+    class MyApp {}
+    Reflect.defineMetadata(
+      MetadataKey.AppOptions,
+      { controllers: [], clientOptions: { intents: [] }, guards: [GlobalGuard] },
+      MyApp,
+    )
+
+    const app = MeoCordFactory.create(MyApp)
+    await runHandler(Reflect.get(app, 'container'), new Handlers() as never, 'run', [{}])
+
+    expect(log).toEqual(['global', 'run'])
   })
 
   it('refuses a controller dependency that injects ExecutionContext, since it is shared across calls', () => {

@@ -1,5 +1,4 @@
 import 'reflect-metadata'
-import { makeInjectable } from '@src/util/injectable.util.js'
 import {
   type AutocompleteInteraction,
   Message,
@@ -18,6 +17,7 @@ import {
   type CommandMetadata,
 } from '@src/interface/command-decorator.interface.js'
 import { isCustomIdRouted, matchesCommandType } from '@src/util/interaction.util.js'
+import { makeInjectable } from '@src/util/injectable.util.js'
 
 const COMMAND_METADATA_KEY = Symbol('commands')
 const MESSAGE_HANDLER_METADATA_KEY = Symbol('message_handlers')

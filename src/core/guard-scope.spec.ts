@@ -1,10 +1,12 @@
 import { Container } from 'inversify'
 import { ButtonInteraction, ChatInputCommandInteraction, Message } from 'discord.js'
 import { vi } from 'vitest'
-import { Command, Controller, Guard, MessageHandler, UseGuard } from '@src/decorator/index.js'
+import { Command, Controller, Guard, MeoCord, MessageHandler, UseGuard } from '@src/decorator/index.js'
 import { CommandType, MetadataKey } from '@src/enum/index.js'
 import { type GuardInterface } from '@src/interface/index.js'
 import { MeoCordApp } from '@src/core/meocord.app.js'
+import { appStages, bindGlobalStages } from '@src/core/handler-pipeline.js'
+import { ExecutionContext } from '@src/common/index.js'
 import {
   createChatInputOptions,
   createMockInteraction,
@@ -83,10 +85,11 @@ function createClient() {
   }
 }
 
-async function startApp(controller: new () => object) {
+async function startApp(controller: new () => object, app?: new () => unknown) {
   const container = new Container()
   container.bind(controller).toSelf().inSingletonScope()
   Reflect.defineMetadata(MetadataKey.Container, container, controller)
+  if (app) bindGlobalStages(container, appStages(app))
   const client = createClient()
   await new MeoCordApp([controller], container, client as any, 'token').start()
   return { container, client }
@@ -163,5 +166,105 @@ describe('class-level @UseGuard on inherited handlers', () => {
       ChildGuard,
       BaseClassGuard,
     ])
+  })
+})
+
+const GlobalGuard = logGuard('global')
+
+@Guard()
+class GlobalContextGuard implements GuardInterface {
+  constructor(private readonly context: ExecutionContext) {}
+
+  // Set per use with { provide: GlobalContextGuard, params: { label } }
+  label = ''
+
+  canActivate() {
+    log.push(`${this.label}:${this.context.getHandlerName()}:${this.context.getParams()?.label}`)
+    return true
+  }
+}
+
+@MeoCord({
+  controllers: [BaseController],
+  clientOptions: { intents: [] },
+  guards: [GlobalGuard, { provide: GlobalContextGuard, params: { label: 'ctx' } }],
+})
+class GuardedApp {}
+
+@MeoCord({ controllers: [BaseController], clientOptions: { intents: [] }, guards: [DenyGuard, GlobalGuard] })
+class DenyingApp {}
+
+describe('global guards from @MeoCord({ guards })', () => {
+  beforeEach(() => {
+    log.length = 0
+  })
+
+  it('run before class and method guards under dispatch', async () => {
+    const { client } = await startApp(BaseController, GuardedApp)
+
+    await client.emit('interactionCreate', slash('ping'))
+    expect(log).toEqual(['global', 'ctx:ping:ctx', 'base class', 'base method', 'ping'])
+  })
+
+  it('run for message handlers too', async () => {
+    const { client } = await startApp(BaseController, GuardedApp)
+    const message = createMockMessage()
+    Object.assign(message, { content: 'hello' })
+    Object.assign(message.author, { bot: false })
+
+    await client.emit('messageCreate', message)
+    expect(log).toEqual(['global', 'ctx:hello:ctx', 'base class', 'hello'])
+  })
+
+  it('stop the handler, and every later guard, when one denies', async () => {
+    const { client } = await startApp(BaseController, DenyingApp)
+
+    await client.emit('interactionCreate', slash('ping'))
+    expect(log).toEqual(['deny'])
+  })
+
+  it('do not run on a direct call, which runs only the method\'s own guards', async () => {
+    const module = MeoCordTestingModule.create({ app: GuardedApp, controllers: [BaseController] }).compile()
+
+    await module.get(BaseController).ping(slash('ping'))
+    expect(log).toEqual(['base class', 'base method', 'ping'])
+  })
+
+  it('run under invoke when the testing module is given the app', async () => {
+    const module = MeoCordTestingModule.create({ app: GuardedApp, controllers: [BaseController] }).compile()
+
+    await module.invoke(BaseController, 'ping', slash('ping'))
+    expect(log).toEqual(['global', 'ctx:ping:ctx', 'base class', 'base method', 'ping'])
+  })
+
+  it('honour overrideGuard stubs under invoke', async () => {
+    const options = { app: DenyingApp, controllers: [BaseController] }
+    const denied = MeoCordTestingModule.create(options).compile()
+    const overridden = MeoCordTestingModule.create(options)
+      .overrideGuard(DenyGuard)
+      .useValue({ canActivate: () => true })
+      .compile()
+
+    expect((await denied.invoke(BaseController, 'ping', slash('ping'))).ran).toBe(false)
+    expect((await overridden.invoke(BaseController, 'ping', slash('ping'))).ran).toBe(true)
+  })
+
+  it('are reported first by inspectHandler given the app', () => {
+    expect(inspectHandler(BaseController, 'ping', { app: GuardedApp }).guards).toEqual([
+      GlobalGuard,
+      { provide: GlobalContextGuard, params: { label: 'ctx' } },
+      BaseClassGuard,
+      BaseMethodGuard,
+    ])
+    expect(inspectHandler(BaseController, 'ping').guards).toEqual([BaseClassGuard, BaseMethodGuard])
+  })
+
+  it('require the app to be decorated with @MeoCord', () => {
+    class PlainApp {}
+
+    expect(() => MeoCordTestingModule.create({ app: PlainApp }).compile()).toThrow(
+      'PlainApp is not decorated with @MeoCord().',
+    )
+    expect(() => inspectHandler(BaseController, 'ping', { app: PlainApp })).toThrow('PlainApp is not decorated')
   })
 })

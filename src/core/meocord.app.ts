@@ -504,8 +504,8 @@ export class MeoCordApp {
   }
 
   /**
-   * Runs a handler's guards, then the handler. The handler's own guard wrappers let this call
-   * through, so each guard runs once, and a direct call from inside the handler runs its guards.
+   * Runs the global guards and the handler's own, then the handler. The handler's guard wrappers let
+   * this call through, so each guard runs once, and a direct call from inside the handler runs its guards.
    */
   private async invokeHandler(
     instance: Record<string, (...args: unknown[]) => unknown>,

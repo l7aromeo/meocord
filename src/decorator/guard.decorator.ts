@@ -1,5 +1,4 @@
 import 'reflect-metadata'
-import { makeInjectable } from '@src/util/injectable.util.js'
 import { type Container } from 'inversify'
 import { BaseInteraction, Message, MessageReaction, type Interaction } from 'discord.js'
 import { type GuardInterface } from '@src/interface/index.js'
@@ -13,6 +12,7 @@ import {
   type GuardWithParams,
   runGuards,
 } from '@src/core/guard-runner.js'
+import { makeInjectable } from '@src/util/injectable.util.js'
 
 /** The guards a class-level `@UseGuard` applies to one method, in the order they run. */
 const CLASS_GUARDS = Symbol('class_guards')
