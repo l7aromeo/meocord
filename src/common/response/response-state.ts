@@ -6,6 +6,7 @@ import {
   type InteractionReplyOptions,
   type Message,
   MessageFlags,
+  MessageFlagsBitField,
   type MessageFlagsResolvable,
   type ModalComponentData,
   type JSONEncodable,
@@ -415,7 +416,8 @@ export class ResponseState {
   /**
    * Sends another message after the answer. Before any answer it is the first reply. While a command's
    * reply is deferred and nothing is sent yet, Discord turns a follow-up into the deferred reply and
-   * ignores its flags, so it is sent as that edit.
+   * ignores its flags, so it is sent as that edit; a private follow-up on a public deferral deletes the
+   * deferral first and is sent privately.
    *
    * @param payload - Text, or reply options; `Ephemeral` makes the follow-up private.
    * @returns The message sent, when Discord returns it.
@@ -427,10 +429,15 @@ export class ResponseState {
     const body = toBody(payload)
     if (this.phase === 'unanswered') return this.reply(body)
     if (this.phase === 'deferred' && answersWithOwnMessage(this.interaction)) {
-      if (hasEphemeral(Number(body.flags ?? 0)) && development()) {
-        logger.warn('A follow-up to a deferred, unsent reply becomes that reply, so its Ephemeral flag has no effect.')
-      }
-      return this.editMessage(body)
+      // Discord makes a follow-up to a deferred, unsent reply that reply, ignoring its flags: a private one
+      // would be shown to everyone on a public deferral, so that deferral is deleted first.
+      const requested = Number(MessageFlagsBitField.resolve(body.flags ?? 0))
+      if (!hasEphemeral(requested)) return this.editMessage(body)
+      // A private deferral is already what the flag asks for, which an edit cannot take
+      if (this.interaction.ephemeral) return this.editMessage({ ...body, flags: requested & ~MessageFlags.Ephemeral })
+      this.record('deleteReply')
+      await this.interaction.deleteReply()
+      this.phase = 'replied'
     }
     const flags = this.withSuppression(this.flagsFor('followUp', body.flags, false))
     const sent = forMode(body, hasComponentsV2(flags))
