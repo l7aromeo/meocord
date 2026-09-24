@@ -1,4 +1,9 @@
-import { CHECKED_CONFIG_KEYS, configProblems } from '@src/util/meocord-config-validation.util.js'
+import {
+  CHECKED_COMMANDS_KEYS,
+  CHECKED_CONFIG_KEYS,
+  CHECKED_SHARDING_KEYS,
+  configProblems,
+} from '@src/util/meocord-config-validation.util.js'
 
 describe('configProblems', () => {
   it('finds nothing wrong with a valid configuration', () => {
@@ -61,5 +66,11 @@ describe('configProblems', () => {
     expect([...CHECKED_CONFIG_KEYS].sort()).toEqual(
       ['appName', 'bundleDependencies', 'commands', 'discordToken', 'externals', 'optionalExternals', 'rsbuild', 'sharding', 'shutdownTimeout'].sort(),
     )
+  })
+
+  // Typed against CommandRegistrationConfig and ShardingConfig, as the top level is against MeoCordConfig
+  it('checks every option of commands and sharding', () => {
+    expect([...CHECKED_COMMANDS_KEYS].sort()).toEqual(['clearOther', 'developmentGuild', 'guilds', 'register'])
+    expect([...CHECKED_SHARDING_KEYS].sort()).toEqual(['development', 'mode', 'shards'])
   })
 })

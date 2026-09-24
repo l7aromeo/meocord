@@ -1,4 +1,4 @@
-import { type MeoCordConfig } from '@src/interface/index.js'
+import { type CommandRegistrationConfig, type MeoCordConfig, type ShardingConfig } from '@src/interface/index.js'
 
 /** What is wrong with a configuration: errors stop the command, warnings are only reported. */
 export interface ConfigProblems {
@@ -49,6 +49,25 @@ function objectOf(shape: Record<string, Check>, problems: ConfigProblems): Check
   }
 }
 
+/** How each `commands` option is checked, typed so an option added to the interface needs a check here. */
+const commandsShape: Record<keyof CommandRegistrationConfig, Check> = {
+  guilds: optional(stringList('guild ids')),
+  developmentGuild: optional(string),
+  register: optional(boolean),
+  clearOther: optional(boolean),
+}
+
+/** How each `sharding` option is checked, typed as `commandsShape` is. */
+const shardingShape: Record<keyof ShardingConfig, Check> = {
+  mode: optional(oneOf('internal', 'process')),
+  shards: optional((value, key) =>
+    value === 'auto' || (typeof value === 'number' && Number.isInteger(value) && value > 0)
+      ? undefined
+      : `${key} must be 'auto' or a whole number of shards (got ${describe(value)})`,
+  ),
+  development: optional(boolean),
+}
+
 /**
  * The options `meocord.config.ts` may set, and how each is checked. Typed against `MeoCordConfig`, so a
  * new option cannot be added there without a check here.
@@ -70,36 +89,19 @@ function configShape(problems: ConfigProblems): Record<keyof MeoCordConfig, Chec
         ? undefined
         : `${key} must be a number of milliseconds (got ${describe(value)})`,
     ),
-    commands: optional(
-      objectOf(
-        {
-          guilds: optional(stringList('guild ids')),
-          developmentGuild: optional(string),
-          register: optional(boolean),
-          clearOther: optional(boolean),
-        },
-        problems,
-      ),
-    ),
-    sharding: optional(
-      objectOf(
-        {
-          mode: optional(oneOf('internal', 'process')),
-          shards: optional((value, key) =>
-            value === 'auto' || (typeof value === 'number' && Number.isInteger(value) && value > 0)
-              ? undefined
-              : `${key} must be 'auto' or a whole number of shards (got ${describe(value)})`,
-          ),
-          development: optional(boolean),
-        },
-        problems,
-      ),
-    ),
+    commands: optional(objectOf(commandsShape, problems)),
+    sharding: optional(objectOf(shardingShape, problems)),
   }
 }
 
 /** The option names the validator checks, for the spec that keeps it in step with `MeoCordConfig`. */
 export const CHECKED_CONFIG_KEYS: readonly string[] = Object.keys(configShape({ errors: [], warnings: [] }))
+
+/** The `commands` option names the validator checks. */
+export const CHECKED_COMMANDS_KEYS: readonly string[] = Object.keys(commandsShape)
+
+/** The `sharding` option names the validator checks. */
+export const CHECKED_SHARDING_KEYS: readonly string[] = Object.keys(shardingShape)
 
 /**
  * Checks a loaded configuration's shape, so a wrong type fails at once with what to fix instead of
