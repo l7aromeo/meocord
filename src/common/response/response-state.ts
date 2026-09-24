@@ -228,6 +228,14 @@ export class ResponseState {
     }
   }
 
+  private async acknowledgeUnanswered(options: { ephemeral?: boolean } = {}): Promise<void> {
+    try {
+      await this.acknowledge(options)
+    } catch (error) {
+      logger.debug(`Could not acknowledge: ${String(error)}`)
+    }
+  }
+
   /** Sets what `@Defer` asks of every answer: notifications suppressed on new messages. */
   configure({ suppressNotifications = false }: { suppressNotifications?: boolean }): void {
     this.suppressNotifications = suppressNotifications
@@ -318,7 +326,10 @@ export class ResponseState {
    * calls it after the handler, for a handler that never answered. Never throws.
    */
   async release(): Promise<void> {
+    const waiting = this.timer !== undefined
     this.cancelScheduled()
+    // A component's handler that returned before the 'auto' timer, unanswered, gets eager's invisible acknowledgement
+    if (waiting && !answersWithOwnMessage(this.interaction)) await this.acknowledgeUnanswered()
     this.warnIfAnsweredOutside()
     try {
       await this.restore()
@@ -352,7 +363,10 @@ export class ResponseState {
    * nothing. Never throws.
    */
   async abandon(): Promise<void> {
+    const waiting = this.timer !== undefined
     this.cancelScheduled()
+    // Denied before the 'auto' timer: acknowledged here, since Discord tells the user an unanswered call failed
+    if (waiting) await this.acknowledgeUnanswered({ ephemeral: true })
     await this.acknowledging?.catch(() => undefined)
     this.sync()
     const onlyDeferred = this.calls.every(call => call.method === 'deferReply')
