@@ -222,7 +222,7 @@ function lookup(catalog: CatalogShape | undefined, key: string): string | Plural
 }
 
 function interpolate(message: string, params: Record<string, unknown>): string {
-  return message.replace(/\{(\w+)}/g, (whole, name: string) => (name in params ? String(params[name]) : whole))
+  return message.replace(/\{(\w+)}/g, (whole, name: string) => (Object.hasOwn(params, name) ? String(params[name]) : whole))
 }
 
 class CatalogTranslator<C extends CatalogShape> extends Translator<C> {

@@ -105,6 +105,12 @@ describe('interpolation', () => {
     expect(t.default('ban.done', {} as never)).toBe('Banned {user}.')
   })
 
+  it("leaves a placeholder named like an object's built-in members in place when no param has that name", () => {
+    const own = createTranslator({ default: 'en-US', locales: { 'en-US': { note: 'Built by {constructor}; see {toString}.' } } })
+
+    expect(own.default('note', {} as never)).toBe('Built by {constructor}; see {toString}.')
+  })
+
   it('returns the key for a message no catalog has, rather than throwing', () => {
     expect((t.default as (key: string) => string)('ban.missing')).toBe('ban.missing')
   })
