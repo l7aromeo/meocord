@@ -103,6 +103,20 @@ class CardController {
     await handlerBody(interaction)
   }
 
+  @Command('guarded-fast/{action}', CommandType.BUTTON)
+  @UseGuard(OwnerGuard)
+  @Defer({ mode: 'auto' })
+  async guardedFast(interaction: ButtonInteraction) {
+    await handlerBody(interaction)
+  }
+
+  @Command('slow-command', CommandType.SLASH)
+  @UseGuard(OwnerGuard)
+  @Defer({ mode: 'auto' })
+  async slowCommand(interaction: ChatInputCommandInteraction) {
+    await handlerBody(interaction)
+  }
+
   @Command('form', CommandType.MODAL_SUBMIT)
   @Defer()
   async form(interaction: ModalSubmitInteraction) {
@@ -432,6 +446,45 @@ describe('@Defer', () => {
       expect(calls(interaction)[0]).toBe('deferUpdate')
       finish()
       await done
+    })
+
+    // Unacknowledged, Discord shows the user that the interaction failed
+    it('acknowledges invisibly when a guard denies a click silently before the timer', async () => {
+      vi.useFakeTimers({ now: Date.now() })
+      const emit = await startApp()
+      guardAllows = false
+      const interaction = click('guarded-fast/go')
+      Object.assign(interaction, { createdTimestamp: Date.now() })
+
+      await emit(interaction)
+      await vi.advanceTimersByTimeAsync(5_000)
+
+      expect(calls(interaction)).toEqual(['deferUpdate'])
+    })
+
+    it('leaves no reply when a guard denies a command silently before the timer', async () => {
+      vi.useFakeTimers({ now: Date.now() })
+      const emit = await startApp()
+      guardAllows = false
+      const interaction = createMockInteraction(ChatInputCommandInteraction, { commandName: 'slow-command', createdTimestamp: Date.now() })
+      interaction.options = createChatInputOptions({})
+
+      await emit(interaction)
+      await vi.advanceTimersByTimeAsync(5_000)
+
+      expect(calls(interaction)).toEqual(['deferReply', 'deleteReply'])
+    })
+
+    it('acknowledges invisibly when a handler returns before the timer without answering', async () => {
+      vi.useFakeTimers({ now: Date.now() })
+      const emit = await startApp()
+      const interaction = click('fast/go')
+      Object.assign(interaction, { createdTimestamp: Date.now() })
+
+      await emit(interaction)
+      await vi.advanceTimersByTimeAsync(5_000)
+
+      expect(calls(interaction)).toEqual(['deferUpdate'])
     })
 
     it('suppresses notifications on new messages when asked', async () => {
