@@ -44,7 +44,7 @@ type AcceptsInput<P, Input> = [Input] extends [Unpiped<P>]
  *
  * Validation runs after guards and inside interceptors, then pipes run on single values: those given
  * here first, then `@UsePipe`'s, in order. The handler's second parameter is checked against the
- * result.
+ * result. A handler takes one `@Validate`; a second is refused, so combine the schemas into one.
  *
  * @param schema - A Standard Schema for the whole input object.
  * @param options - `pipes` maps an output key to a pipe, or to several applied in order.
@@ -73,6 +73,11 @@ export function Validate<S extends StandardSchemaV1, const Pipes extends SchemaP
     propertyKey: string,
     _descriptor: TypedPropertyDescriptor<M> & AcceptsInput<ParamsOf<M>, ValidatedInput<S, Pipes>>,
   ): void {
+    if (Reflect.hasOwnMetadata(METHOD_VALIDATION, target, propertyKey)) {
+      throw new Error(
+        `${target.constructor.name}.${propertyKey} has more than one @Validate; one @Validate per handler: combine the schemas into one.`,
+      )
+    }
     const metadata: ValidationMetadata = { schema, pipes: (options.pipes ?? {}) as ValidationMetadata['pipes'] }
     Reflect.defineMetadata(METHOD_VALIDATION, metadata, target, propertyKey)
   }

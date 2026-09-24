@@ -11,6 +11,7 @@ import { MetadataKey } from '@src/enum/index.js'
 import {
   consumeDispatchMark,
   declaringPrototype,
+  GUARD_CLASS,
   GUARD_WRAPPERS,
   INHERITED_FROM,
   type GuardEntry,
@@ -108,6 +109,7 @@ export function Guard(options: { types?: readonly ExecutionContextType[] } = {})
   return function (target: any) {
     makeInjectable(target)
     defineStageTypes(target, options.types, 'Guard')
+    Reflect.defineMetadata(GUARD_CLASS, true, target)
   }
 }
 

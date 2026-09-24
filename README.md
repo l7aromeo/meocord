@@ -1220,7 +1220,7 @@ In tests, each `MeoCordTestingModule` counts in a fresh in-memory store; provide
 
 ## Custom Decorators
 
-MeoCord exports `applyDecorators` from `meocord/common` to combine decorators into one of your own, and `createMetadata` for a typed decorator that stores a value on a handler — see [Reading handler metadata](#reading-handler-metadata). `SetMetadata(key, value)` stores a value under a key of your choosing; prefer `createMetadata`, whose values are typed.
+MeoCord exports `applyDecorators` from `meocord/common` to combine decorators into one of your own, and `createMetadata` for a typed decorator that stores a value on a handler — see [Reading handler metadata](#reading-handler-metadata). `SetMetadata(key, value)` stores a value under a key of your choosing, read with `ExecutionContext.get(key)`; prefer `createMetadata`, whose values are typed and whose key cannot collide. `SetMetadata` refuses MeoCord's own keys, such as `'guards'`, where a value would replace what the framework stores.
 
 ### Composing guards into a reusable decorator
 

@@ -27,7 +27,7 @@ const { ExecutionContext } = await import('@src/common/execution-context.js')
 const { injectable } = await import('inversify')
 const { createTranslator, Translator } = await import('@src/common/translator.js')
 const { CooldownStore, MemoryCooldownStore } = await import('@src/common/cooldown-store.js')
-const { Command, Controller, Cooldown } = await import('@src/decorator/index.js')
+const { Command, Controller, Cooldown, Guard } = await import('@src/decorator/index.js')
 const { CommandType } = await import('@src/enum/index.js')
 const { runHandler } = await import('@src/core/handler-pipeline.js')
 const { presenterFor } = await import('@src/common/response/presenter.js')
@@ -278,6 +278,39 @@ describe('MeoCordFactory.create()', () => {
       MeoCordFactory.create(appWith(RedisCooldownStore))
 
       expect(warn()).not.toHaveBeenCalledWith(expect.stringContaining('cooldowns'))
+    })
+  })
+
+  describe('a guard listed in services', () => {
+    @Guard()
+    class ChannelGuard {
+      channelIds: string[] = []
+      canActivate() {
+        return true
+      }
+    }
+
+    class Scheduler {}
+
+    const appWith = (services: unknown[]) => {
+      class MyApp {}
+      Reflect.defineMetadata(MetadataKey.AppOptions, { controllers: [], services, clientOptions: { intents: [] } }, MyApp)
+      return MyApp
+    }
+    const warn = () => (MeoCordFactory as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger.warn
+
+    beforeEach(() => mockLoadConfig.mockReturnValue({ discordToken: 'test-token' }))
+
+    it('is warned about, since one shared instance would take every call\'s params', () => {
+      MeoCordFactory.create(appWith([Scheduler, ChannelGuard]))
+
+      expect(warn()).toHaveBeenCalledWith(expect.stringContaining('ChannelGuard is a guard listed in @MeoCord({ services })'))
+    })
+
+    it('is not warned about for a plain service', () => {
+      MeoCordFactory.create(appWith([Scheduler]))
+
+      expect(warn()).not.toHaveBeenCalledWith(expect.stringContaining('listed in @MeoCord({ services })'))
     })
   })
 })
