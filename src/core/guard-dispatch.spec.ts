@@ -166,6 +166,28 @@ describe('a guard', () => {
 })
 
 describe('a shared stage', () => {
+  it('without a name is called "A class" when refused for asking for ExecutionContext', () => {
+    class Anonymous {
+      constructor(@inject(ExecutionContext) readonly context: object) {}
+      intercept(_context: ExecutionContext, next: CallHandler) {
+        return next.handle()
+      }
+    }
+    Interceptor()(Anonymous)
+    Object.defineProperty(Anonymous, 'name', { value: '' })
+
+    @Controller()
+    class AnonymousStage {
+      @Command('anonymous', CommandType.SLASH)
+      @UseInterceptor(Anonymous)
+      async anonymous(_interaction: ChatInputCommandInteraction) {}
+    }
+
+    expect(() => MeoCordTestingModule.create({ controllers: [AnonymousStage] }).compile()).toThrow(
+      'A class is resolved once and shared, so it cannot inject ExecutionContext',
+    )
+  })
+
   it('that injects ExecutionContext through @inject is refused at startup', () => {
     @Interceptor()
     class Sneaky implements InterceptorInterface {
