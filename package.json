@@ -120,7 +120,7 @@
   ],
   "dependencies": {
     "@clack/prompts": "^1.8.0",
-    "@rsbuild/core": "^2.2.8",
+    "@rsbuild/core": "^2.2.9",
     "chalk": "^6.0.0",
     "cli-table3": "^0.6.5",
     "commander": "^15.0.0",
@@ -151,7 +151,7 @@
     "eslint-plugin-unused-imports": "^4.4.1",
     "globals": "^17.12.0",
     "husky": "^9.1.7",
-    "prettier": "^3.9.8",
+    "prettier": "^3.9.9",
     "rollup": "^4.63.4",
     "rollup-plugin-copy": "^3.5.0",
     "rollup-plugin-dts": "^6.5.1",
