@@ -39,7 +39,8 @@ async function load() {
   const app: typeof AppModule = await import('@src/core/meocord.app.js')
   const factory: typeof FactoryModule = await import('@src/core/meocord-factory.js')
   const decorators: typeof DecoratorModule = await import('@src/decorator/index.js')
-  return { discord, ...app, ...factory, ...decorators }
+  const { inject } = await import('inversify')
+  return { discord, inject, ...app, ...factory, ...decorators }
 }
 
 type Loaded = Awaited<ReturnType<typeof load>>
@@ -203,6 +204,37 @@ describe('lifecycle hooks', () => {
         'controller:start',
         'controller:end',
       ])
+    })
+
+    it('orders by an @inject token when the parameter is typed as an interface', async () => {
+      const loaded = await load()
+      const order: string[] = []
+
+      interface Database {
+        query(): void
+      }
+
+      @loaded.Service()
+      class DatabaseService implements Database, OnReady {
+        query() {}
+        onReady() {
+          order.push('database')
+        }
+      }
+
+      @loaded.Service()
+      class ReminderScheduler implements OnReady {
+        constructor(@loaded.inject(DatabaseService) readonly database: Database) {}
+        onReady() {
+          order.push('scheduler')
+        }
+      }
+
+      // Listed after the scheduler, so only the injected token can put it first
+      const { client } = await startApp(loaded, { controllers: [], services: [ReminderScheduler, DatabaseService] })
+      await becomeReady(client)
+
+      expect(order).toEqual(['database', 'scheduler'])
     })
 
     it('still runs a hook whose dependency failed, and says so', async () => {
