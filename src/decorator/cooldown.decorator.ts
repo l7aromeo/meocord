@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import { CLASS_COOLDOWNS, type CooldownOptions, METHOD_COOLDOWNS } from '@src/core/cooldown-runner.js'
+import { CLASS_COOLDOWNS, type CooldownOptions, METHOD_COOLDOWNS, type StoredCooldown } from '@src/core/cooldown-runner.js'
 
 /**
  * Limits how often a handler runs: at most `uses` calls within `seconds`, counted per user, server,
@@ -34,15 +34,15 @@ export function Cooldown(options: CooldownOptions): ClassDecorator & MethodDecor
   if (!['user', 'guild', 'channel', 'global'].includes(per)) {
     throw new Error(`@Cooldown counts per 'user', 'guild', 'channel' or 'global', not '${String(per)}'.`)
   }
-  const cooldown: CooldownOptions = { ...options, uses, per }
+  const cooldown: StoredCooldown = { ...options, uses, per }
 
   return function (target: object, propertyKey?: string | symbol) {
     // Decorators apply bottom-up; prepending keeps them in the order they read.
     if (propertyKey === undefined) {
-      const existing = (Reflect.getOwnMetadata(CLASS_COOLDOWNS, target) as CooldownOptions[]) ?? []
+      const existing = (Reflect.getOwnMetadata(CLASS_COOLDOWNS, target) as StoredCooldown[]) ?? []
       Reflect.defineMetadata(CLASS_COOLDOWNS, [cooldown, ...existing], target)
     } else {
-      const existing = (Reflect.getOwnMetadata(METHOD_COOLDOWNS, target, propertyKey) as CooldownOptions[]) ?? []
+      const existing = (Reflect.getOwnMetadata(METHOD_COOLDOWNS, target, propertyKey) as StoredCooldown[]) ?? []
       Reflect.defineMetadata(METHOD_COOLDOWNS, [cooldown, ...existing], target, propertyKey)
     }
   } as ClassDecorator & MethodDecorator
