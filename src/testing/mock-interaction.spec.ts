@@ -253,6 +253,16 @@ describe('createMockInteraction', () => {
     })
   })
 
+  describe('isFromMessage', () => {
+    it('tells a modal submitted from a message from one submitted from a command', () => {
+      const fromCommand = createMockInteraction(ModalSubmitInteraction)
+      const fromMessage = createMockInteraction(ModalSubmitInteraction, { message: createMockMessage() as never })
+
+      expect(fromCommand.isFromMessage()).toBe(false)
+      expect(fromMessage.isFromMessage()).toBe(true)
+    })
+  })
+
   describe('reply state machine', () => {
     it('replied and deferred start as false booleans', () => {
       const interaction = createMockInteraction(ButtonInteraction)
