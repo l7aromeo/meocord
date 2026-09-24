@@ -14,14 +14,14 @@ import {
   ModalSubmitInteraction,
 } from 'discord.js'
 import { vi } from 'vitest'
-import { Command, Controller, Defer, Guard, MessageHandler, UseGuard } from '@src/decorator/index.js'
+import { Command, Controller, Cooldown, Defer, Guard, MessageHandler, UseGuard } from '@src/decorator/index.js'
 import { CommandType, MetadataKey } from '@src/enum/index.js'
 import { type GuardInterface } from '@src/interface/index.js'
 import { GuardDeniedError } from '@src/common/errors.js'
 import { LOCK_MEMORY_MS, lockedMessageCount, respond } from '@src/common/response/response-state.js'
 import { defaultPresenter, renderContainer, renderEmbed, RENDERED_CONTAINER_ID } from '@src/common/response/presenter.js'
 import { MeoCordApp } from '@src/core/meocord.app.js'
-import { createChatInputOptions, createMockInteraction, createMockMessage, getResponse } from '@src/testing/index.js'
+import { createChatInputOptions, createDiscordError, createMockInteraction, createMockMessage, getResponse } from '@src/testing/index.js'
 
 const { Ephemeral, IsComponentsV2, SuppressNotifications } = MessageFlags
 type Json = Record<string, unknown>
@@ -114,6 +114,25 @@ class CardController {
   @UseGuard(OwnerGuard)
   @Defer({ mode: 'auto' })
   async slowCommand(interaction: ChatInputCommandInteraction) {
+    await handlerBody(interaction)
+  }
+
+  @Command('quiet/{action}', CommandType.BUTTON)
+  @Defer({ disable: 'none' })
+  async quiet(interaction: ButtonInteraction) {
+    await handlerBody(interaction)
+  }
+
+  @Command('ask/{action}', CommandType.BUTTON)
+  @Defer({ mode: 'auto' })
+  async ask(interaction: ButtonInteraction) {
+    await handlerBody(interaction)
+  }
+
+  @Command('limited/{action}', CommandType.BUTTON)
+  @Cooldown({ seconds: 60 })
+  @Defer()
+  async limited(interaction: ButtonInteraction) {
     await handlerBody(interaction)
   }
 
@@ -602,6 +621,69 @@ describe('@Defer', () => {
     await emit(click('card/refresh'))
 
     expect(String(failure)).toContain('A modal must be the first response')
+  })
+
+  describe('at the edges', () => {
+    it("shows a modal under mode: 'auto' before the timer, which then never acknowledges", async () => {
+      vi.useFakeTimers({ now: Date.now() })
+      const emit = await startApp()
+      handlerBody = async interaction =>
+        respond(interaction).modal(new ModalBuilder().setCustomId('form').setTitle('Form'))
+      const interaction = click('ask/go')
+      Object.assign(interaction, { createdTimestamp: Date.now() })
+
+      await emit(interaction)
+      await vi.advanceTimersByTimeAsync(5_000)
+
+      expect(calls(interaction)).toEqual(['showModal'])
+      vi.useRealTimers()
+    })
+
+    it("with disable: 'none', acknowledges and never edits the message", async () => {
+      const emit = await startApp()
+      const interaction = click('quiet/go')
+
+      await emit(interaction)
+
+      expect(calls(interaction)).toEqual(['deferUpdate'])
+    })
+
+    it('locks nothing on a component that carries no message', async () => {
+      const emit = await startApp()
+      const interaction = createMockInteraction(ButtonInteraction, { customId: 'card/refresh' })
+      Object.assign(interaction, { message: undefined })
+
+      await emit(interaction)
+
+      expect(calls(interaction)).toEqual(['deferUpdate'])
+    })
+
+    it('answers a call a cooldown blocks privately, leaving the card untouched', async () => {
+      const emit = await startApp()
+      const message = messageWith()
+      handlerBody = async () => void log.push('limited')
+      await emit(click('limited/go', message))
+      const second = click('limited/go', message)
+
+      await emit(second)
+
+      expect(calls(second)).toEqual(['deferUpdate', 'followUp'])
+      expect(payloads(second)[1].flags).toBe(Ephemeral)
+      expect(log.filter(entry => entry === 'limited')).toHaveLength(1)
+    })
+
+    it('runs nothing more when the acknowledgement fails because the interaction expired', async () => {
+      const emit = await startApp()
+      const interaction = click('card/refresh')
+      interaction.deferUpdate.mockRejectedValueOnce(createDiscordError(10062))
+      let ran = false
+      handlerBody = async () => void (ran = true)
+
+      await emit(interaction)
+
+      expect(ran).toBe(false)
+      expect(calls(interaction)).toEqual(['deferUpdate'])
+    })
   })
 
   it('refuses a message handler at decoration', () => {
