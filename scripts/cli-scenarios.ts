@@ -724,18 +724,37 @@ const scenarios: Scenario[] = [
   },
 ]
 
+/** Stops before anything is installed: a typo in the arguments must not pass by running nothing. */
+function refuse(message: string): never {
+  console.error(message)
+  rmSync(workDir, { recursive: true, force: true })
+  process.exit(1)
+}
+
 async function main(): Promise<void> {
-  const tierArg = process.argv[process.argv.indexOf('--tier') + 1]
-  const tiers: Tier[] = process.argv.includes('--tier') ? (tierArg === 'all' ? ['fast', 'slow'] : [tierArg as Tier]) : ['fast']
-  const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : undefined
+  const valueOf = (flag: string) => (process.argv.includes(flag) ? (process.argv[process.argv.indexOf(flag) + 1] ?? '') : undefined)
+  const tierArg = valueOf('--tier')
+  if (tierArg !== undefined && !['fast', 'slow', 'all'].includes(tierArg)) {
+    refuse(`Unknown tier "${tierArg}": use --tier fast, slow or all.`)
+  }
+  const tiers: Tier[] = tierArg === 'all' ? ['fast', 'slow'] : [(tierArg as Tier | undefined) ?? 'fast']
+  const only = valueOf('--only')
+  if (only === '') refuse('--only needs part of a scenario name.')
   const windowsOnly = process.argv.includes('--windows')
-  const selected = scenarios.filter(
+  const runnable = scenarios.filter(
     scenario =>
       tiers.includes(scenario.tier) &&
       (!windowsOnly || scenario.windows) &&
-      (!scenario.platforms || scenario.platforms.includes(process.platform)) &&
-      (!only || scenario.name.includes(only)),
+      (!scenario.platforms || scenario.platforms.includes(process.platform)),
   )
+  const selected = runnable.filter(scenario => !only || scenario.name.includes(only))
+  if (selected.length === 0) {
+    refuse(
+      only
+        ? `No scenario in ${tiers.join(' and ')} matches "${only}". The scenarios are:\n  ${runnable.map(({ name }) => name).join('\n  ')}`
+        : `No scenario in ${tiers.join(' and ')} runs here.`,
+    )
+  }
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.once(signal, () => {
