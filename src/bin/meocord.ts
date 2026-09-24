@@ -9,8 +9,7 @@ import wait from '@src/util/wait.util.js'
 import { GeneratorCLI } from '@src/bin/generator.js'
 import { AppGeneratorHelper, runtimePrefixFor } from '@src/bin/helper/app-generator.helper.js'
 import * as fs from 'node:fs'
-import { assertConfigShape, compileAndValidateConfig, setEnvironment, validateDiscordToken } from '@src/util/common.util.js'
-import { loadMeoCordCliConfig } from '@src/util/meocord-source-config.util.js'
+import { compileAndValidateConfig, setEnvironment, validateDiscordToken, validateRunConfig } from '@src/util/common.util.js'
 import { Command } from 'commander'
 import { simpleGit } from 'simple-git'
 import { execSync } from 'child_process'
@@ -204,8 +203,8 @@ copies or substantial portions of the Software.
         if (options.build || !options.prod) {
           await compileAndValidateConfig()
         } else {
-          // The compiled config, when there is one, is what the bot will run with.
-          await assertConfigShape(loadMeoCordCliConfig())
+          // The compiled config, when there is one, is what the bot will run with
+          await validateRunConfig()
         }
 
         // Checked for every start, including one that skips the build: this is the point

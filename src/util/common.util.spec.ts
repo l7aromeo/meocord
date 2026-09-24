@@ -1,13 +1,22 @@
 import { vi } from 'vitest'
 import path from 'path'
 
-const { mockExistsSync, mockReadFileSync, mockWriteFileSync, mockLoadMeoCordConfig, mockReadSourceConfig, mockWait } = vi.hoisted(() => ({
+const {
+  mockExistsSync,
+  mockReadFileSync,
+  mockWriteFileSync,
+  mockLoadMeoCordConfig,
+  mockReadSourceConfig,
+  mockWait,
+  mockLoadCompiledConfig,
+} = vi.hoisted(() => ({
   mockReadSourceConfig: vi.fn(),
   mockExistsSync: vi.fn(),
   mockReadFileSync: vi.fn(),
   mockWriteFileSync: vi.fn(),
   mockLoadMeoCordConfig: vi.fn(),
   mockWait: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+  mockLoadCompiledConfig: vi.fn(),
 }))
 
 vi.mock('fs', () => ({
@@ -33,11 +42,15 @@ vi.mock('@src/util/meocord-source-config.util.js', () => ({
   readMeoCordSourceConfig: mockReadSourceConfig,
 }))
 
+vi.mock('@src/util/meocord-config-loader.util.js', () => ({
+  loadMeoCordConfig: mockLoadCompiledConfig,
+}))
+
 vi.mock('@src/util/wait.util.js', () => ({
   default: mockWait,
 }))
 
-const { findModulePackageDir, compileAndValidateConfig, setEnvironment, validateDiscordToken } = await import(
+const { findModulePackageDir, compileAndValidateConfig, setEnvironment, validateDiscordToken, validateRunConfig } = await import(
   '@src/util/common.util.js',
 )
 
@@ -85,6 +98,59 @@ describe('findModulePackageDir', () => {
     consoleSpy.mockRestore()
 
     expect(result).toBeNull()
+  })
+})
+
+// `meocord start --prod` without --build runs whatever was built, or finds nothing to run
+describe('validateRunConfig', () => {
+  beforeEach(() => {
+    mockExistsSync.mockReset()
+    mockReadSourceConfig.mockReset()
+    mockLoadCompiledConfig.mockReset()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('checks the compiled config when there is one', async () => {
+    mockLoadCompiledConfig.mockReturnValue({ discordToken: 't', shutdownTimeout: 'soon' })
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await validateRunConfig()
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('shutdownTimeout must be a number'))
+    expect(mockReadSourceConfig).not.toHaveBeenCalled()
+  })
+
+  it('says the config is missing, not that it exports nothing, when there is none at all', async () => {
+    mockLoadCompiledConfig.mockReturnValue(undefined)
+    mockExistsSync.mockReturnValue(false)
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await validateRunConfig()
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(consoleSpy.mock.calls.map(([message]) => String(message))).toEqual([
+      'Configuration file "meocord.config.ts" is missing!',
+    ])
+  })
+
+  it('reports a source that fails to load once, with the loader’s message', async () => {
+    mockLoadCompiledConfig.mockReturnValue(undefined)
+    mockExistsSync.mockReturnValue(true)
+    mockReadSourceConfig.mockReturnValue({ error: 'ParseError: Unexpected token  meocord.config.ts:4:0' })
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never)
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await validateRunConfig()
+
+    expect(exitSpy).toHaveBeenCalledTimes(1)
+    expect(consoleSpy).toHaveBeenCalledTimes(1)
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('meocord.config.ts:4:0'))
   })
 })
 
