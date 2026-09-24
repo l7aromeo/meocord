@@ -147,8 +147,9 @@ function wrapperCount(prototype: object, methodName: string): number {
 }
 
 /**
- * Calls dispatch has already guarded, keyed by the call's first argument and method name. The count
- * is how many guard wrappers still have to let the call through; each one takes one on entry.
+ * Calls dispatch has already guarded, keyed by first argument and method, counting the wrappers still
+ * to pass. A user decorator that awaits between two wrappers leaves a pass pending during that await,
+ * which a concurrent direct call with the same object and method could take; other overlaps fail closed.
  */
 const dispatched = new WeakMap<object, Map<string, number>>()
 

@@ -1,7 +1,7 @@
 import { ButtonInteraction } from 'discord.js'
 import { Command, Controller, UseGuard } from 'meocord/decorator'
 import { CommandType } from 'meocord/enum'
-import { createMockInteraction, createMockUser, MeoCordTestingModule } from 'meocord/testing'
+import { createMockInteraction, createMockUser, MeoCordTestingModule, type TestingModule } from 'meocord/testing'
 import { RateLimitGuard, requestTimes } from '@src/guards/rate-limit.guard.js'
 
 @Controller()
@@ -20,30 +20,30 @@ const createClick = (customId: string, userId: string) => {
 }
 
 describe('RateLimitGuard', () => {
-  let controller: LimitedController
+  let module: TestingModule
 
   beforeEach(() => {
-    const module = MeoCordTestingModule.create({ controllers: [LimitedController] }).compile()
-    controller = module.get(LimitedController)
+    module = MeoCordTestingModule.create({ controllers: [LimitedController] }).compile()
   })
 
   // Each call resolves a new guard, so this fails unless the counts are shared between guard instances.
   it('blocks a user once the limit is reached across calls', async () => {
     const clicks = [1, 2, 3].map(() => createClick('limited', 'user-over-limit'))
 
-    for (const click of clicks) await controller.handle(click)
+    const ran: boolean[] = []
+    for (const click of clicks) ran.push((await module.invoke(LimitedController, 'handle', click)).ran)
 
+    expect(ran).toEqual([true, true, false])
     expect(clicks.map(click => click.deferUpdate.mock.calls.length)).toEqual([1, 1, 0])
   })
 
   it('counts each user separately', async () => {
-    await controller.handle(createClick('limited', 'user-a'))
-    await controller.handle(createClick('limited', 'user-a'))
-    const other = createClick('limited', 'user-b')
+    await module.invoke(LimitedController, 'handle', createClick('limited', 'user-a'))
+    await module.invoke(LimitedController, 'handle', createClick('limited', 'user-a'))
 
-    await controller.handle(other)
+    const { ran } = await module.invoke(LimitedController, 'handle', createClick('limited', 'user-b'))
 
-    expect(other.deferUpdate).toHaveBeenCalled()
+    expect(ran).toBe(true)
   })
 
   it('allows a user again once the window has passed', async () => {
