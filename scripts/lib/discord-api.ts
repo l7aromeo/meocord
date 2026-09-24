@@ -45,6 +45,11 @@ export class DiscordApi {
     return this.request('GET', `/applications/${applicationId}/guilds/${guildId}/commands`)
   }
 
+  /** Replaces the guild's commands with none. */
+  clearGuildCommands(applicationId: string, guildId: string): Promise<RegisteredCommand[]> {
+    return this.request('PUT', `/applications/${applicationId}/guilds/${guildId}/commands`, [])
+  }
+
   globalCommands(applicationId: string): Promise<RegisteredCommand[]> {
     return this.request('GET', `/applications/${applicationId}/commands`)
   }
