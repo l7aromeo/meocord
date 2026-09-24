@@ -11,6 +11,9 @@ on:
     branches:
       - main
       - beta
+  # GitHub's merge queue: the required checks run on the queued merge before it lands on main.
+  merge_group:
+    types: [checks_requested]
   # Publishing is gated by merging the release pull request, so this is not how a
   # release is started. It is here to re-run the job after a publish fails partway.
   workflow_dispatch:
@@ -19,7 +22,8 @@ permissions:
   contents: read
 
 # A new push to a pull request makes the run in flight irrelevant. Release branches are
-# keyed individually so a release is never cancelled by the push that follows it.
+# keyed individually so a release is never cancelled by the push that follows it, and each
+# queued merge has a ref of its own (gh-readonly-queue/...), so none cancels another.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -47,6 +51,7 @@ jobs:
         run: bun run lint
 
       # AGENTS.md changes only with the maintainer's `agents-md-approved` label, and stays short.
+      # A queued merge carries no labels; its pull request passed this check to be queued.
       - name: Guard AGENTS.md
         if: github.event_name == 'pull_request'
         env:
@@ -228,9 +233,10 @@ jobs:
   # application's whole dependency tree, its bot, bundling, sharding. They gate a release, so they
   # run before it, but in a job of their own that can only read the repository: code they install
   # never runs where the publishing identity can be requested.
+  # Only for a push to main or beta, or a manual re-run: never for a pull request or a queued merge.
   release-checks:
     name: Release checks
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: [lint, test-result, coverage, build, windows]
     runs-on: ubuntu-latest
     permissions:
@@ -271,10 +277,13 @@ jobs:
   # The smoke app against real Discord, as the test application's bot: see "Checking against real
   # Discord" in CONTRIBUTING.md. Its secrets live in the `e2e` environment and reach only the step that
   # runs it. Not a required check, so an outage at Discord blocks nothing; test:e2e skips and passes
-  # when the environment has no secrets.
+  # when the environment has no secrets. Skipped in the merge queue: the pull request already ran it,
+  # and the push to main runs it again.
   e2e:
     name: Real Discord
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event_name == 'push' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: e2e
@@ -333,7 +342,7 @@ jobs:
   # no generated application, since any step here can request the token npm publishes with.
   release:
     name: Release
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: [lint, test-result, coverage, build, windows, release-checks]
     runs-on: ubuntu-latest
     environment: Production
