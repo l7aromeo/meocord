@@ -29,7 +29,7 @@ const AUTOCOMPLETE_METADATA_KEY = Symbol('autocomplete_handlers')
  * The class's own handler list, started from a copy of the inherited one, so a subclass's
  * handlers never land in its base class's metadata.
  */
-function ownHandlerList<T>(key: symbol, target: object): T[] {
+export function ownHandlerList<T>(key: symbol, target: object): T[] {
   return Reflect.getOwnMetadata(key, target) ?? [...(Reflect.getMetadata(key, target) ?? [])]
 }
 

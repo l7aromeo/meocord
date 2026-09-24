@@ -33,6 +33,8 @@
 - [Interceptors](#interceptors)
 - [Exception filters](#exception-filters)
 - [Custom Decorators](#custom-decorators)
+- [Gateway Events](#gateway-events)
+- [Handler Discovery](#handler-discovery)
 - [Lifecycle Hooks](#lifecycle-hooks)
 - [Testing](#testing)
 - [Deployment](#deployment)
@@ -47,6 +49,7 @@
 - **Decorator-based controllers** — Handle every Discord interaction type — slash commands and their subcommands, autocomplete, buttons, modals, all five select menus, context menus, activity entry points, messages, and reactions — with `@Command`, `@Autocomplete`, `@Controller`, and `@UseGuard` decorators. No routing boilerplate.
 - **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators.
 - **Guard system** — Pre-execution hooks for auth, rate limiting, metrics, and anything else. Apply per-method or per-class with `@UseGuard`. Guards receive the full interaction context.
+- **Gateway events** — `@On` and `@Once` handle any discord.js client event on a controller or service, with typed arguments, guards and isolated errors. `HandlerRegistry` lists every handler for a `/help` command or generated docs.
 - **Lifecycle hooks** — `onReady` and `onShutdown` on any controller or service, for schedulers, cache warm-up and clean shutdown.
 - **Full CLI** — `meocord create`, `build`, `start`, `generate`. Scaffolds controllers, services, guards, interceptors and filters; builds with Rsbuild for both development and production.
 - **Testing utilities** — `MeoCordTestingModule` with `invoke` to run a handler through its guards, `inspectHandler`, `createMockInteraction`, `createMockMessage`, `createMockUser`, `createMockClient`, `createMockGuild`, `createMockChannel`, `createChatInputOptions`, `overrideGuard`, `overrideInterceptor` and `overrideFilter` let you test controllers against real guard logic without a Discord connection. Type guards and reply state machines work out of the box.
@@ -944,6 +947,85 @@ expect(guard.canActivate(interaction)).toBe(false)
 ```
 
 To test the guard together with the handler it protects, run the handler with [`invoke`](#running-a-handler-with-invoke).
+
+---
+
+## Gateway Events
+
+`@On(event)` handles a discord.js client event every time it is emitted, and `@Once(event)` the first time only. Put them on a controller or a service; the handler's parameters are typed from discord.js's `ClientEvents`:
+
+```typescript
+import { Controller, On, Once } from 'meocord/decorator'
+import { type Client, type GuildMember } from 'discord.js'
+import { WelcomeService } from '@src/services/welcome.service.js'
+
+@Controller()
+export class WelcomeController {
+  constructor(private readonly welcome: WelcomeService) {}
+
+  @On('guildMemberAdd')
+  async greet(member: GuildMember) {
+    await this.welcome.send(member)
+  }
+
+  @Once('clientReady')
+  async warmCache(client: Client<true>) {
+    await client.guilds.fetch()
+  }
+}
+```
+
+- **Where**: on any controller or service the app binds — listed in `@MeoCord({ controllers, services })` or injected by one. The instance is resolved when the first event arrives.
+- **Guards**: an event handler runs through the same pipeline as a command. `@UseGuard` on the method or the controller, and `@MeoCord({ guards })`, run first; a guard receives the event's arguments, and `ExecutionContext.getType()` is `'event'`.
+- **Errors** a handler throws are logged with the event and the handler's name, and never stop the bot or the other handlers of that event.
+- **Intents**: at startup MeoCord warns once for each intent or partial your handlers need that `clientOptions` lacks — `GuildMembers` for `guildMemberAdd`, say — and reminds you to enable privileged intents in the Discord developer portal. `@MessageHandler` and `@ReactionHandler` are checked the same way.
+- `@On('interactionCreate')` and `@On('messageCreate')` run alongside MeoCord's own dispatch of those events.
+
+In a test, `module.emit(event, ...args)` sends an event to the module's handlers through the same pipeline:
+
+```typescript
+const module = MeoCordTestingModule.create({ controllers: [WelcomeController], providers: [...] }).compile()
+
+const { ran } = await module.emit('guildMemberAdd', createMock<GuildMember>())
+expect(ran).toBe(1)
+```
+
+`emit` resolves to how many handlers ran, and rejects once they have all settled if any threw: with that error, or an `AggregateError` when several did.
+
+---
+
+## Handler Discovery
+
+`HandlerRegistry`, from `meocord/core`, lists every handler the app registered, with the metadata declared on it — for a `/help` command, an admin page or generated docs. Inject it like any service:
+
+```typescript
+import { Service } from 'meocord/decorator'
+import { HandlerRegistry } from 'meocord/core'
+import { Category } from '@src/common/category.metadata.js'
+
+@Service()
+export class HelpService {
+  constructor(private readonly handlers: HandlerRegistry) {}
+
+  commands() {
+    return this.handlers
+      .list({ kind: 'command' })
+      .map(h => ({ path: h.name, description: h.description, category: h.get(Category) ?? 'Other' }))
+  }
+}
+```
+
+`list({ kind, controller })` filters by what a handler handles and by the class declaring it, and narrows the entries' type to that kind. Each entry has `controller`, `method`, `kind` and `name`, plus `get` and `getAll`, which read metadata as `ExecutionContext` does:
+
+| `kind`         | `name`                                         | Also                                           |
+| -------------- | ---------------------------------------------- | ---------------------------------------------- |
+| `command`      | The command, or a subcommand's full path       | `commandType`, `command` (the registered JSON) |
+| `component`    | The customId pattern, such as `profile/{uid}`  | `commandType`                                  |
+| `modal`        | The customId pattern                           | `commandType`                                  |
+| `autocomplete` | The command path, then the option it completes |                                                |
+| `message`      | The keyword, or `undefined` for every message  |                                                |
+| `reaction`     | The emoji, or `undefined` for every reaction   |                                                |
+| `event`        | The client event                               | `once`                                         |
 
 ---
 

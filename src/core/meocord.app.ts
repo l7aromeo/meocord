@@ -40,6 +40,14 @@ import {
 import { handleUnroutedError, runHandler } from '@src/core/handler-pipeline.js'
 import { closeAutocomplete, createFallback, type Fallback } from '@src/core/fallback.js'
 import { CommandNotFoundError } from '@src/common/errors.js'
+import { getEventHandlers } from '@src/decorator/event.decorator.js'
+import {
+  eventRequirements,
+  MESSAGE_HANDLER_REQUIREMENTS,
+  missingRequirementWarnings,
+  REACTION_HANDLER_REQUIREMENTS,
+  type RequiringHandler,
+} from '@src/core/event-requirements.js'
 import { lifecycleDependencies } from '@src/core/lifecycle-order.js'
 import { registerCommands } from '@src/core/command-registration.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
@@ -210,6 +218,9 @@ export class MeoCordApp {
         this.handleReaction(reaction, { user, action: ReactionHandlerAction.REMOVE }),
       ),
     )
+
+    this.attachEventHandlers()
+    this.warnAboutMissingRequirements()
 
     try {
       await this.bot.login(this.discordToken)
@@ -461,6 +472,60 @@ export class MeoCordApp {
     }
 
     await this.invokeHandler(controllerInstance, methodName, [interaction, dynamicParams])
+  }
+
+  /**
+   * Adds a client listener for every `@On` and `@Once` handler on the app's controllers and services.
+   * The instance is resolved when the first event arrives, and each call is isolated: an error is
+   * logged against the event and the handler, and the next listener still runs.
+   */
+  private attachEventHandlers(): void {
+    for (const lifecycleClass of this.lifecycleClasses) {
+      for (const { event, method, once } of getEventHandlers(lifecycleClass.prototype)) {
+        const logError = (error: unknown) =>
+          this.logger.error(`Error handling event "${event}" in ${lifecycleClass.name}.${method}:`, error)
+        // An event has no one to answer, so an error no filter handles is only logged, with the handler
+        const fallback: Fallback = async error => logError(error)
+        const listener = async (...args: unknown[]) => {
+          try {
+            const instance = this.container.get(lifecycleClass)
+            await runHandler(this.container, instance, method, args, { fallback, type: 'event' })
+          } catch (error) {
+            // Only resolving the instance can fail here; the pipeline hands every other error to the fallback
+            logError(error)
+          }
+        }
+        if (once) this.bot.once(event, listener)
+        else this.bot.on(event, listener)
+      }
+    }
+  }
+
+  /** Warns about handlers whose events the client options will not deliver, once per missing intent or partial. */
+  private warnAboutMissingRequirements(): void {
+    const options = this.bot.options
+    if (!options?.intents) return
+
+    const handlers: RequiringHandler[] = []
+    for (const lifecycleClass of this.lifecycleClasses) {
+      const prototype = lifecycleClass.prototype
+      for (const { event, method, once } of getEventHandlers(prototype)) {
+        handlers.push({
+          label: `@${once ? 'Once' : 'On'}('${event}') in ${lifecycleClass.name}.${method}`,
+          requirements: eventRequirements(event),
+        })
+      }
+      for (const { keyword, method } of getMessageHandlers(prototype)) {
+        const decorator = keyword === undefined ? '@MessageHandler()' : `@MessageHandler('${keyword}')`
+        handlers.push({ label: `${decorator} in ${lifecycleClass.name}.${method}`, requirements: MESSAGE_HANDLER_REQUIREMENTS })
+      }
+      for (const { emoji, method } of getReactionHandlers(prototype)) {
+        const decorator = emoji === undefined ? '@ReactionHandler()' : `@ReactionHandler('${emoji}')`
+        handlers.push({ label: `${decorator} in ${lifecycleClass.name}.${method}`, requirements: REACTION_HANDLER_REQUIREMENTS })
+      }
+    }
+
+    for (const warning of missingRequirementWarnings(options, handlers)) this.logger.warn(warning)
   }
 
   /**

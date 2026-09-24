@@ -8,7 +8,12 @@ import {
   prepareInterceptor,
   runInterceptors,
 } from '@src/core/interceptor-runner.js'
-import { HandlerExecutionContext, UnroutedExecutionContext } from '@src/common/execution-context.js'
+import {
+  type ExecutionContextType,
+  HandlerExecutionContext,
+  inferContextType,
+  UnroutedExecutionContext,
+} from '@src/common/execution-context.js'
 import {
   callFilter,
   type FilterContext,
@@ -19,6 +24,7 @@ import {
 } from '@src/core/filter-runner.js'
 import { type Fallback } from '@src/core/fallback.js'
 import { Logger } from '@src/common/logger.js'
+import { getEventHandlers } from '@src/decorator/event.decorator.js'
 import {
   getAutocompleteHandlers,
   getCommandMap,
@@ -110,6 +116,7 @@ export function prepareHandlerStages(container: Container, controllers: readonly
       ...getMessageHandlers(prototype).map(handler => handler.method),
       ...getReactionHandlers(prototype).map(handler => handler.method),
       ...getAutocompleteHandlers(prototype).map(handler => handler.methodName),
+      ...getEventHandlers(prototype).map(handler => handler.method),
     ])
     for (const method of methods) {
       for (const entry of handlerInterceptors(prototype, method)) prepareInterceptor(container, entry)
@@ -122,6 +129,8 @@ export function prepareHandlerStages(container: Container, controllers: readonly
 export interface RunOptions {
   /** Answers an error no filter handled. Without it, such an error rejects the call. */
   fallback?: Fallback
+  /** What the call handles, when its first argument cannot say, as for an event whose first argument is a message. */
+  type?: ExecutionContextType
 }
 
 const logger = new Logger('ExceptionFilter')
@@ -157,6 +166,7 @@ async function handleError(
  * Runs one handler through the pipeline, inside its filters: the global guards, then the handler's
  * own; then the interceptors, global first, around the handler, which is called with the dispatch
  * marks set. Dispatch and `TestingModule.invoke` both call this, so a test runs what production runs.
+ * The context is built only when an interceptor applies or an error reaches the filters.
  */
 export async function runHandler(
   container: Container,
@@ -171,22 +181,25 @@ export async function runHandler(
     methodName,
     globalStagesOf(container),
   )
-  const context = new HandlerExecutionContext({ controller, methodName, args })
+  const type = options.type ?? inferContextType(args[0])
+  let context: HandlerExecutionContext | undefined
+  const contextOf = () => (context ??= new HandlerExecutionContext({ controller, methodName, args, type }))
 
   let ran = false
   try {
-    if (!(await runGuards(guards, { container, controller, methodName, args }))) return { ran: false }
+    if (!(await runGuards(guards, { container, controller, methodName, args, type }))) return { ran: false }
 
     const handler = async () => {
       ran = true
       return callGuardedHandler(instance, methodName, args)
     }
     // Autocomplete answers within three seconds and has no reply to shape, so it skips interceptors.
-    if (context.getType() === 'autocomplete' || interceptors.length === 0) await handler()
-    else await runInterceptors(interceptors, container, context, handler)
+    const applicable = type === 'autocomplete' ? [] : interceptors
+    if (applicable.length === 0) await handler()
+    else await runInterceptors(applicable, container, contextOf(), handler)
     return { ran }
   } catch (error) {
-    await handleError(filters, container, context, error, options)
+    await handleError(filters, container, contextOf(), error, options)
     return { ran, error }
   }
 }

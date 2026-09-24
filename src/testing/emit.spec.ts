@@ -1,0 +1,153 @@
+import { type GuildMember } from 'discord.js'
+import { vi } from 'vitest'
+import { Controller, Guard, MeoCord, On, Once, Service, UseGuard } from '@src/decorator/index.js'
+import { type GuardInterface } from '@src/interface/index.js'
+import { createMock, MeoCordTestingModule } from '@src/testing/index.js'
+
+describe('TestingModule.emit', () => {
+  it('runs the handlers on controllers, class providers and their dependencies', async () => {
+    const greeted: string[] = []
+
+    @Service()
+    class Audit {
+      @On('guildMemberAdd')
+      record(member: GuildMember) {
+        greeted.push(`audit ${member.id}`)
+      }
+    }
+
+    @Service()
+    class Welcome {
+      constructor(readonly audit: Audit) {}
+      @On('guildMemberAdd')
+      greet(member: GuildMember) {
+        greeted.push(`welcome ${member.id}`)
+      }
+    }
+
+    @Controller()
+    class Members {
+      constructor(readonly welcome: Welcome) {}
+      @On('guildMemberAdd')
+      count(member: GuildMember) {
+        greeted.push(`members ${member.id}`)
+      }
+    }
+
+    @Service()
+    class Standalone {
+      @On('guildMemberAdd')
+      note(member: GuildMember) {
+        greeted.push(`standalone ${member.id}`)
+      }
+    }
+
+    const module = MeoCordTestingModule.create({
+      controllers: [Members],
+      providers: [{ provide: Standalone, useClass: Standalone }],
+    }).compile()
+
+    const { ran } = await module.emit('guildMemberAdd', createMock<GuildMember>({ id: '42' }))
+
+    expect(ran).toBe(4)
+    expect(greeted.sort()).toEqual(['audit 42', 'members 42', 'standalone 42', 'welcome 42'])
+  })
+
+  it('runs an @Once handler for the first event only', async () => {
+    const warm = vi.fn()
+
+    @Controller()
+    class Warmup {
+      @Once('clientReady')
+      warm() {
+        warm()
+      }
+    }
+
+    const module = MeoCordTestingModule.create({ controllers: [Warmup] }).compile()
+    const client = createMock<any>()
+
+    expect((await module.emit('clientReady', client)).ran).toBe(1)
+    expect((await module.emit('clientReady', client)).ran).toBe(0)
+    expect(warm).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs the app guards and the handler guards, and does not count a denied handler', async () => {
+    const order: string[] = []
+
+    @Guard()
+    class GlobalGuard implements GuardInterface {
+      canActivate() {
+        order.push('global')
+        return true
+      }
+    }
+
+    @Guard()
+    class Deny implements GuardInterface {
+      canActivate() {
+        order.push('deny')
+        return false
+      }
+    }
+
+    @Controller()
+    class Members {
+      @On('guildMemberAdd')
+      @UseGuard(Deny)
+      greet() {
+        order.push('handler')
+      }
+    }
+
+    @MeoCord({ controllers: [], guards: [GlobalGuard], clientOptions: { intents: [] } })
+    class App {}
+
+    const module = MeoCordTestingModule.create({ app: App, controllers: [Members] }).compile()
+    const { ran } = await module.emit('guildMemberAdd', createMock<GuildMember>())
+
+    expect(ran).toBe(0)
+    expect(order).toEqual(['global', 'deny'])
+  })
+
+  it('rejects with the error when one handler throws, after the others have run', async () => {
+    const ran = vi.fn()
+
+    @Controller()
+    class Members {
+      @On('guildMemberAdd')
+      fail() {
+        throw new Error('boom')
+      }
+      @On('guildMemberAdd')
+      greet() {
+        ran()
+      }
+    }
+
+    const module = MeoCordTestingModule.create({ controllers: [Members] }).compile()
+
+    await expect(module.emit('guildMemberAdd', createMock<GuildMember>())).rejects.toThrow('boom')
+    expect(ran).toHaveBeenCalled()
+  })
+
+  it('rejects with an AggregateError when several handlers throw', async () => {
+    @Controller()
+    class Members {
+      @On('guildMemberAdd')
+      first() {
+        throw new Error('one')
+      }
+      @On('guildMemberAdd')
+      second() {
+        throw new Error('two')
+      }
+    }
+
+    const module = MeoCordTestingModule.create({ controllers: [Members] }).compile()
+    const error = await module.emit('guildMemberAdd', createMock<GuildMember>()).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(AggregateError)
+    expect((error as AggregateError).errors.map(e => (e as Error).message)).toEqual(['one', 'two'])
+  })
+})
