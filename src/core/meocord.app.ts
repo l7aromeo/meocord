@@ -41,7 +41,7 @@ import {
   findComponentRouteConflicts,
   matchComponentRoute,
 } from '@src/core/component-routes.js'
-import { callGuardedHandler, handlerGuards, runGuards } from '@src/core/guard-runner.js'
+import { runHandler } from '@src/core/handler-pipeline.js'
 
 interface AutocompleteRoute {
   controllerClass: new (...args: any[]) => any
@@ -512,11 +512,7 @@ export class MeoCordApp {
     methodName: string,
     args: unknown[],
   ): Promise<void> {
-    const controller = instance.constructor as new (...args: any[]) => unknown
-    const guards = handlerGuards(Object.getPrototypeOf(instance), methodName)
-    if (!(await runGuards(guards, { container: this.container, controller, methodName, args }))) return
-
-    await callGuardedHandler(instance, methodName, args)
+    await runHandler(this.container, instance, methodName, args)
   }
 
   /**

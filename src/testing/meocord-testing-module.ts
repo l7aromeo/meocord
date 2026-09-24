@@ -3,6 +3,7 @@ import { Container, injectable, type ServiceIdentifier } from 'inversify'
 import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
+import { runHandler } from '@src/core/handler-pipeline.js'
 import { type GuardInterface } from '@src/interface/index.js'
 
 export interface ValueProvider<T = any> {
@@ -26,14 +27,71 @@ function isValueProvider(p: Provider): p is ValueProvider {
   return 'useValue' in p
 }
 
+/** The names of a class's instance methods. */
+export type HandlerName<C extends new (...args: any[]) => unknown> = {
+  [K in keyof InstanceType<C>]: InstanceType<C>[K] extends (...args: any[]) => unknown ? K : never
+}[keyof InstanceType<C>] &
+  string
+
+type HandlerArgs<C extends new (...args: any[]) => unknown, M extends HandlerName<C>> =
+  InstanceType<C>[M] extends (...args: infer A) => unknown ? A : never
+
+/** How a call made with `TestingModule.invoke` ended. */
+export interface InvocationResult {
+  /** Whether the handler ran; `false` when a guard denied the call. */
+  ran: boolean
+}
+
 /**
  * Resolved test module. Retrieve instances via `.get()`.
  */
 export class TestingModule {
-  constructor(private readonly container: Container) {}
+  constructor(
+    private readonly container: Container,
+    private readonly controllers: readonly (new (...args: any[]) => unknown)[] = [],
+  ) {}
 
   get<T>(token: ServiceIdentifier<T>): T {
     return this.container.get<T>(token)
+  }
+
+  /**
+   * Runs a handler through the same pipeline dispatch runs: the handler's guards, in order and once
+   * each, then the handler. Guards resolve from this module, so `overrideGuard` stubs apply and guards
+   * that inject `ExecutionContext` receive it.
+   *
+   * Calling the controller method directly still runs its guards as well; `invoke` is the way to test
+   * everything dispatch runs around a handler.
+   *
+   * @param controller - A controller passed to `MeoCordTestingModule.create`.
+   * @param methodName - The handler method's name.
+   * @param args - The arguments dispatch would pass: the interaction, message or reaction, then the
+   *   handler's params.
+   * @returns Whether the handler ran. Rejects with any error the handler or a guard throws.
+   *
+   * @example
+   * ```ts
+   * const module = MeoCordTestingModule.create({ controllers: [ModerationController] }).compile()
+   * const interaction = createMockInteraction(ChatInputCommandInteraction)
+   *
+   * const { ran } = await module.invoke(ModerationController, 'ban', interaction)
+   *
+   * expect(ran).toBe(false)
+   * expect(interaction.reply).not.toHaveBeenCalled()
+   * ```
+   */
+  async invoke<C extends new (...args: any[]) => unknown, M extends HandlerName<C>>(
+    controller: C,
+    methodName: M,
+    ...args: HandlerArgs<C, M>
+  ): Promise<InvocationResult> {
+    if (!this.controllers.includes(controller)) {
+      throw new Error(`${controller.name} is not a controller of this testing module. Add it to \`controllers\`.`)
+    }
+
+    const instance = this.container.get(controller) as Record<string, (...args: unknown[]) => unknown>
+    const { ran } = await runHandler(this.container, instance, methodName, args)
+    return { ran }
   }
 }
 
@@ -131,7 +189,7 @@ export class TestingModuleBuilder {
       Reflect.defineMetadata(MetadataKey.Container, container, ctrl)
     }
 
-    return new TestingModule(container)
+    return new TestingModule(container, [...(this.options.controllers ?? [])])
   }
 }
 

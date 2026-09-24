@@ -37,6 +37,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'createMockMessage',
     'createMockUser',
     'findRouteConflicts',
+    'inspectHandler',
     'isMockFunction',
     'resolveRoute',
   ],

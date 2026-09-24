@@ -1,5 +1,6 @@
-import { describe, it } from 'vitest'
-import { MeoCordTestingModule } from './meocord-testing-module.js'
+import { describe, expectTypeOf, it } from 'vitest'
+import { type ButtonInteraction } from 'discord.js'
+import { type InvocationResult, MeoCordTestingModule } from './meocord-testing-module.js'
 
 /**
  * Runs under `vitest --typecheck`. The negative case uses `@ts-expect-error`,
@@ -36,5 +37,29 @@ describe('overrideProvider', () => {
       .overrideProvider(NotificationService)
       // @ts-expect-error `notifi` is not a method on NotificationService.
       .useValue({ notifi: () => Promise.resolve('') })
+  })
+})
+
+class ProfileController {
+  show(_interaction: ButtonInteraction, _params: { id: string }): Promise<void> {
+    return Promise.resolve()
+  }
+}
+
+describe('invoke', () => {
+  const module = MeoCordTestingModule.create({ controllers: [ProfileController] }).compile()
+  const interaction = {} as ButtonInteraction
+
+  it('takes the handler arguments', () => {
+    expectTypeOf(module.invoke(ProfileController, 'show', interaction, { id: '1' })).toEqualTypeOf<
+      Promise<InvocationResult>
+    >()
+  })
+
+  it('rejects an unknown method and arguments the handler does not take', () => {
+    // @ts-expect-error `hide` is not a method on ProfileController.
+    void module.invoke(ProfileController, 'hide', interaction, { id: '1' })
+    // @ts-expect-error `id` must be a string.
+    void module.invoke(ProfileController, 'show', interaction, { id: 1 })
   })
 })

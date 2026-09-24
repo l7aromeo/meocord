@@ -1,5 +1,12 @@
 export { MeoCordTestingModule, TestingModule, TestingModuleBuilder } from './meocord-testing-module.js'
-export type { Provider, ValueProvider, ClassProvider, TestingModuleOptions } from './meocord-testing-module.js'
+export type {
+  Provider,
+  ValueProvider,
+  ClassProvider,
+  TestingModuleOptions,
+  HandlerName,
+  InvocationResult,
+} from './meocord-testing-module.js'
 
 export {
   createMock,
@@ -21,3 +28,6 @@ export type { ComponentCommandType, ResolvedRoute, RouteConflict } from './routi
 
 export { createExecutionContext } from './execution-context.js'
 export type { ExecutionContextOptions } from './execution-context.js'
+
+export { inspectHandler } from './inspect-handler.js'
+export type { HandlerInspection, InspectedGuard } from './inspect-handler.js'

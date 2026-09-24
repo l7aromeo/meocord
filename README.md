@@ -43,7 +43,7 @@
 - **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators.
 - **Guard system** — Pre-execution hooks for auth, rate limiting, metrics, and anything else. Apply per-method or per-class with `@UseGuard`. Guards receive the full interaction context.
 - **Full CLI** — `meocord create`, `build`, `start`, `generate`. Scaffolds controllers, services, and guards; builds with Rsbuild for both development and production.
-- **Testing utilities** — `MeoCordTestingModule`, `createMockInteraction`, `createMockMessage`, `createMockUser`, `createMockClient`, `createMockGuild`, `createMockChannel`, `createChatInputOptions`, and `overrideGuard` let you test controllers against real guard logic without a Discord connection. Type guards and reply state machines work out of the box.
+- **Testing utilities** — `MeoCordTestingModule` with `invoke` to run a handler through its guards, `inspectHandler`, `createMockInteraction`, `createMockMessage`, `createMockUser`, `createMockClient`, `createMockGuild`, `createMockChannel`, `createChatInputOptions`, and `overrideGuard` let you test controllers against real guard logic without a Discord connection. Type guards and reply state machines work out of the box.
 - **TypeScript-first** — Strict types throughout. Decorator metadata, `DeepMocked<T>` for test mocks, and typed config interfaces included.
 - **Extensible build** — An Rsbuild config hook in `meocord.config.ts` to adjust the build without ejecting, and an option to bundle dependencies so production runs without `node_modules`.
 
@@ -717,6 +717,8 @@ const guard = new RolesGuard(createExecutionContext(ModerationController, 'ban',
 expect(guard.canActivate(interaction)).toBe(false)
 ```
 
+To test the guard together with the handler it protects, run the handler with [`invoke`](#running-a-handler-with-invoke).
+
 ---
 
 ## Testing
@@ -752,6 +754,37 @@ const module = MeoCordTestingModule.create({
 }).compile()
 
 const controller = module.get(GreetingSlashController)
+```
+
+### Running a handler with `invoke`
+
+`module.invoke(Controller, 'method', ...args)` runs a handler the way dispatch does: its guards, class guards first and each once, then the handler. Guards resolve from the module, so `overrideGuard` stubs and injected `ExecutionContext` work as they do in the bot. Pass the arguments dispatch would: the interaction, message or reaction, then the handler's params.
+
+```typescript
+import { ButtonInteraction } from 'discord.js'
+import { createMockInteraction, MeoCordTestingModule } from 'meocord/testing'
+
+const module = MeoCordTestingModule.create({ controllers: [ProfileController] }).compile()
+const interaction = createMockInteraction(ButtonInteraction, { customId: 'profile/111/8000' })
+
+// Someone other than the owner clicked, so the owner guard denies the call.
+const { ran } = await module.invoke(ProfileController, 'showProfile', interaction, { ownerId: '111', uid: '8000' })
+
+expect(ran).toBe(false)
+expect(interaction.reply).not.toHaveBeenCalled()
+```
+
+`invoke` resolves to `{ ran }`, which is `false` when a guard denied the call, and rejects with any error the handler or a guard throws. The method name and arguments are type-checked against the handler. Calling the controller method directly still runs its guards, as in earlier versions; `invoke` is the way to test everything dispatch runs around a handler.
+
+To check what a handler is set up with, without running it, use `inspectHandler`. It lists the guards dispatch runs, in order, and reads the handler's metadata as `ExecutionContext` does:
+
+```typescript
+import { inspectHandler } from 'meocord/testing'
+
+const ban = inspectHandler(ModerationController, 'ban')
+
+expect(ban.guards).toEqual([RolesGuard, { provide: RateLimitGuard, params: { limit: 2 } }])
+expect(ban.get(Roles)).toEqual(['admin'])
 ```
 
 <details>
