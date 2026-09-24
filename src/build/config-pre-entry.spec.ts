@@ -88,16 +88,20 @@ afterAll(() => {
   rmSync(fixture, { recursive: true, force: true })
 })
 
+// One build per mode, shared by the cases that read it: each build is the slow part, on Windows above all.
+const runs = new Map<'production' | 'development', Promise<RunResult>>()
+const runFor = (mode: 'production' | 'development') => runs.get(mode) ?? runs.set(mode, buildAndRun(mode)).get(mode)!
+
 describe('the config pre-entry, built and run with node', () => {
   it.each(['production', 'development'] as const)('lets decorator options read .env in a %s build', async mode => {
-    const result = await buildAndRun(mode)
+    const result = await runFor(mode)
 
     expect(result.greeting).toBe('from-dotenv')
   })
 
   // The runtime loads the config again after the pre-entry; require's cache keeps that one evaluation.
-  it('evaluates the config once', async () => {
-    const result = await buildAndRun('production')
+  it.each(['production', 'development'] as const)('evaluates the config once in a %s build', async mode => {
+    const result = await runFor(mode)
 
     expect(result.evaluations).toBe(1)
   })
