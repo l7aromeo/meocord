@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
 import { inspect } from 'util'
@@ -408,6 +408,108 @@ describe('registerCommands', () => {
     expect(logger.error).toHaveBeenCalledWith('Error registering commands to guild one:', expect.any(Error))
   })
 
+  describe('what it logs and touches', () => {
+    it('lists what it registered in a table: name, type, sub-commands', async () => {
+      const typed = controllerBuilding([
+        { name: 'settings', body: { name: 'settings', description: 's', options: [{ name: 'language' }, { name: 'theme' }] } },
+        { name: 'Report', body: { name: 'Report', type: 3 } },
+        { name: 'Profile', body: { name: 'Profile', type: 2 } },
+        { name: 'launch', body: { name: 'launch', type: 4 } },
+        { name: 'odd', body: { name: 'odd', type: 9 } },
+      ])
+      const { logger, run } = register({ controllerClasses: [typed] })
+      await run
+
+      const [message] = logger.log.mock.calls.map(([line]) => String(line)).filter(line => line.startsWith('Registered'))
+      expect(message).toMatch(/^Registered 5 bot commands globally:\n/)
+      for (const text of ['Name', 'Type', 'Sub-commands', 'SlashCommand', 'MessageContextMenu', 'UserContextMenu', 'PrimaryEntryPoint', 'Command', 'language, theme']) {
+        expect(message).toContain(text)
+      }
+    })
+
+    it('checks only the scopes the configuration names and it did not send to', async () => {
+      const rest = createRest()
+      await register({ rest, config: { guilds: ['one'], developmentGuild: 'dev' }, controllerClasses: [controllerWith([{ name: 'ping' }, { name: 'ban', guilds: ['staff'] }])] }).run
+
+      expect(rest.get.mock.calls.map(([route]) => route).sort()).toEqual(['/applications/app/commands', '/applications/app/guilds/dev/commands'])
+    })
+
+    // The default scope is sent even when empty, so a configuration naming no guild leaves nothing else to check
+    it('checks no scope when the configuration names no guild', async () => {
+      const rest = createRest()
+      await register({ rest, config: {}, controllerClasses: [controllerWith([{ name: 'ping', guilds: ['staff'] }])] }).run
+
+      expect(rest.get).not.toHaveBeenCalled()
+    })
+
+    it('names every command left behind, and removes them with clearOther, saying so', async () => {
+      const rest = createRest({ '/applications/app/commands': [{ name: 'ping' }, { name: 'ban' }] })
+      const warned = register({ rest, config: { guilds: ['one'] } })
+      await warned.run
+      const cleared = register({ rest, config: { guilds: ['one'], clearOther: true } })
+      await cleared.run
+
+      expect(warned.logger.warn).toHaveBeenCalledWith(
+        '2 command(s) are still registered globally (ping, ban), which this configuration does not register to, so Discord keeps showing them there. Set commands.clearOther to remove them.',
+      )
+      expect(cleared.logger.log).toHaveBeenCalledWith('Removed 2 command(s) left registered globally: ping, ban')
+    })
+
+    it('says why it keeps leftovers while sending to the development guild, even with clearOther', async () => {
+      const rest = createRest({ '/applications/app/commands': [{ name: 'ping' }] })
+      const { logger, run } = register({ rest, development: true, config: { developmentGuild: 'dev', clearOther: true } })
+      await run
+
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringMatching(/clearOther is on, but they are not removed while commands go to the development guild, since a production bot sharing this application may own them\.$/))
+    })
+
+    it('clears in development when the development guild is only spaces, which sends to the configured guilds', async () => {
+      const rest = createRest({ '/applications/app/commands': [{ name: 'old' }] })
+      await register({ rest, development: true, config: { guilds: ['one'], developmentGuild: '   ', clearOther: true } }).run
+
+      expect(sentTo(rest)).toEqual({ '/applications/app/guilds/one/commands': ['ping'], '/applications/app/commands': [] })
+    })
+
+    it('says nothing about a scope that lists no commands, or answers with something that is not a list', async () => {
+      const rest = createRest()
+      rest.get.mockResolvedValueOnce({ unexpected: true } as never)
+      const { logger, run } = register({ rest, config: { guilds: ['one'], developmentGuild: 'dev' } })
+      await run
+
+      expect(logger.warn).not.toHaveBeenCalled()
+      expect(rest.put).toHaveBeenCalledTimes(1)
+    })
+
+    it('logs a removal Discord refuses, and still reports the registration a success', async () => {
+      const rest = createRest({ '/applications/app/commands': [{ name: 'ping' }] })
+      rest.put.mockImplementation(async (_route: string, { body }: { body: unknown[] }) => {
+        if (body.length === 0) throw new Error('forbidden')
+        return []
+      })
+      const { logger, run } = register({ rest, config: { guilds: ['one'], clearOther: true } })
+
+      await expect(run).resolves.toBe(true)
+      expect(logger.error).toHaveBeenCalledWith('Error removing the commands left registered globally:', new Error('forbidden'))
+    })
+
+    it('creates no cache in development when the project has no node_modules', async () => {
+      rmSync(path.join(cwd, 'node_modules'), { recursive: true })
+      const { logger, run } = register({ development: true })
+      await run
+
+      expect(existsSync(path.join(cwd, 'node_modules'))).toBe(false)
+      expect(logger.debug).not.toHaveBeenCalled()
+    })
+
+    it('registers anyway when the cache cannot be written, saying why at debug level', async () => {
+      writeFileSync(path.join(cwd, 'node_modules', '.cache'), 'not a directory')
+      const { logger, run } = register({ development: true })
+
+      await expect(run).resolves.toBe(true)
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringMatching(/^Could not record the registered commands: /))
+    })
+  })
+
   describe('in development', () => {
     it('skips a scope whose payload is unchanged since it was last sent', async () => {
       await register({ development: true }).run
@@ -522,6 +624,106 @@ describe('registerCommands', () => {
       await run
 
       expect(rest.get).not.toHaveBeenCalled()
+    })
+  })
+})
+
+/** A controller whose command \`name\` is built from \`body\`, as a REST body the builder returns. */
+function controllerBuilding(entries: { name: string; body: object; method?: string }[]) {
+  @Controller()
+  class BuiltController {}
+  for (const { name, body, method = name } of entries) {
+    class RawBuilder {
+      build = () => ({ toJSON: () => body }) as any
+    }
+    Reflect.defineMetadata('commandType', CommandType.SLASH, RawBuilder)
+    Object.defineProperty(BuiltController.prototype, method, { value: async () => {}, writable: true, configurable: true })
+    Command(name, RawBuilder as any)(BuiltController.prototype, method, Object.getOwnPropertyDescriptor(BuiltController.prototype, method)! as any)
+  }
+  return BuiltController
+}
+
+describe('registration, message by message', () => {
+  describe('collectCommands', () => {
+    it("names a command its builder leaves unnamed after its @Command, keyed apart from the others", () => {
+      const commands = collectCommands(
+        [controllerBuilding([{ name: 'ping', body: { type: 1, description: 'p' } }, { name: 'pong', body: { type: 1, description: 'q' } }])],
+        createLogger(),
+      )
+
+      expect(commands?.map(({ name }) => name)).toEqual(['ping', 'pong'])
+    })
+
+    it('skips a handler declared without a builder, which has nothing to register', () => {
+      @Controller()
+      class MixedController {
+        @Command('plain', CommandType.SLASH)
+        async plain(..._args: any[]) {}
+      }
+
+      expect(collectCommands([MixedController, controllerWith([{ name: 'ping' }])], createLogger())?.map(({ name }) => name)).toEqual(['ping'])
+    })
+
+    it('says in full why a second builder of the same type is not registered', () => {
+      const logger = createLogger()
+
+      collectCommands(
+        [controllerBuilding([{ name: 'ping', body: { name: 'ping', type: 1 } }, { name: 'ping', method: 'again', body: { name: 'ping', type: 1 } }])],
+        logger,
+      )
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'Command "ping" is built more than once for the same application command type; only the first builder is registered. ' +
+          'Two builders of one type cannot both own a name, so declare the builder on a single @Command and give the others the plain CommandType.',
+      )
+    })
+
+    it('says in full why nothing is registered when a builder cannot be serialised', () => {
+      class BrokenBuilder {
+        build = () => ({ toJSON: () => { throw new Error('description is required') } }) as any
+      }
+      Reflect.defineMetadata('commandType', CommandType.SLASH, BrokenBuilder)
+      @Controller()
+      class BrokenController {
+        @Command('broken', BrokenBuilder as any)
+        async handle(..._args: any[]) {}
+      }
+      const logger = createLogger()
+
+      collectCommands([BrokenController], logger)
+
+      expect(logger.error).toHaveBeenCalledWith(
+        'No commands were registered: 1 builder(s) could not be serialised: "broken" (description is required). Registering the rest would remove these from Discord.',
+      )
+    })
+
+    it('lists each localization Discord would reject on a line of its own', () => {
+      const logger = createLogger()
+
+      collectCommands([controllerBuilding([{ name: 'ban', body: { name: 'ban', type: 1, description: 'b', name_localizations: { ja: 'A', fr: 'B' } } }])], logger)
+
+      expect(logger.error).toHaveBeenCalledWith(
+        'No commands were registered: Discord would reject 2 localization(s):\n' +
+          '  "ban" name_localizations.ja: "A" must be lowercase letters, numbers, - _ or \' with no spaces\n' +
+          '  "ban" name_localizations.fr: "B" must be lowercase letters, numbers, - _ or \' with no spaces',
+      )
+    })
+  })
+
+  describe('planTargets', () => {
+    it('trims the guild of --guild and of developmentGuild', () => {
+      const commands = collectCommands([controllerWith([{ name: 'ping' }])], createLogger())!
+
+      expect(planTargets(commands, { development: false, onlyGuild: ' staff ' }, createLogger())[0].scope).toEqual({ guild: 'staff' })
+      expect(planTargets(commands, { development: true, config: { developmentGuild: ' dev ' } }, createLogger())[0].scope).toEqual({ guild: 'dev' })
+    })
+
+    it('warns only about a command whose builder lists no guild ids', () => {
+      const logger = createLogger()
+
+      planTargets(collectCommands([controllerWith([{ name: 'ban', guilds: ['staff'] }])], createLogger())!, { development: false }, logger)
+
+      expect(logger.warn).not.toHaveBeenCalled()
     })
   })
 })
