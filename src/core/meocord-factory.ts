@@ -12,23 +12,39 @@ import { appStages, bindGlobalStages } from '@src/core/handler-pipeline.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 
 /**
- * Recursively binds a class and all its constructor dependencies to the container in singleton scope,
- * collecting each class it binds into `bound`.
+ * Recursively binds a class and all its constructor dependencies to the container in singleton scope.
  */
-function bindDependencies(container: Container, cls: any, bound: any[]): void {
+function bindDependencies(container: Container, cls: any): void {
   if (container.isBound(cls)) return
   if (injectedTokens(cls).includes(ExecutionContext)) throw singletonContextError(cls)
 
   makeInjectable(cls)
 
   container.bind(cls).toSelf().inSingletonScope()
-  bound.push(cls)
 
   const deps: any[] = Reflect.getMetadata(MetadataKey.ParamTypes, cls) || []
   for (const dep of deps) {
     if (dep === Client) continue
-    bindDependencies(container, dep, bound)
+    bindDependencies(container, dep)
   }
+}
+
+/**
+ * The classes reachable from `roots`, each after everything it injects: the order lifecycle hooks run
+ * in. Roots are the listed services, then the controllers, so classes with no dependency between them
+ * keep that declaration order.
+ */
+function dependencyOrder(roots: any[]): any[] {
+  const ordered: any[] = []
+  const seen = new Set<any>()
+  const visit = (cls: any) => {
+    if (cls === Client || seen.has(cls)) return
+    seen.add(cls)
+    for (const dep of Reflect.getMetadata(MetadataKey.ParamTypes, cls) || []) visit(dep)
+    ordered.push(cls)
+  }
+  roots.forEach(visit)
+  return ordered
 }
 
 export class MeoCordFactory {
@@ -62,19 +78,16 @@ export class MeoCordFactory {
     const discordClient = new Client(options.clientOptions)
     container.bind(Client).toConstantValue(discordClient)
 
-    // Every singleton the app binds, which is where lifecycle hooks are looked for
-    const boundClasses: any[] = []
-
     // Bind all controllers and their transitive dependencies
     for (const ctrl of options.controllers as any[]) {
-      bindDependencies(container, ctrl, boundClasses)
+      bindDependencies(container, ctrl)
     }
 
     // Bind and eagerly instantiate standalone services so their constructors run.
     // This is critical for event-driven services that register Discord event
     // listeners (or connect to external systems) inside their constructor.
     for (const svc of (options.services ?? []) as any[]) {
-      bindDependencies(container, svc, boundClasses)
+      bindDependencies(container, svc)
       container.get(svc)
     }
 
@@ -89,7 +102,8 @@ export class MeoCordFactory {
       discordClient,
       meocordConfig.discordToken,
       options.activities,
-      boundClasses,
+      dependencyOrder([...(options.services ?? []), ...options.controllers]),
+      meocordConfig.shutdownTimeout,
     )
   }
 }

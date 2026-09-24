@@ -30,7 +30,7 @@ import {
   resolveCommandPaths,
   resolveOptionParams,
 } from '@src/util/interaction.util.js'
-import { CommandType } from '@src/enum/index.js'
+import { CommandType, MetadataKey } from '@src/enum/index.js'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 import { type OnReady, type OnShutdown, type ReactionHandlerOptions } from '@src/interface/index.js'
 import { type AutocompleteMetadata, type CommandMetadata } from '@src/interface/command-decorator.interface.js'
@@ -100,8 +100,19 @@ function registrationKey(builder: NonNullable<CommandMetadata['builder']>, fallb
   return `${commandTypeOf(builder)}:${commandNameOf(builder) ?? fallbackName}`
 }
 
-/** How long shutdown waits for the `onShutdown` hooks before destroying the client anyway. */
-export const SHUTDOWN_HOOK_TIMEOUT_MS = 10_000
+/** How long shutdown waits for the `onShutdown` hooks when `shutdownTimeout` is not configured. */
+export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000
+
+/** How long an `onReady` hook runs before a warning says the hooks after it are waiting. */
+export const SLOW_READY_HOOK_MS = 10_000
+
+type LifecycleClass = new (...args: any[]) => any
+
+/** A resolved controller or service, with the class it came from. */
+interface LifecycleEntry {
+  lifecycleClass: LifecycleClass
+  instance: Partial<OnReady & OnShutdown>
+}
 
 /** Closes each started app: runs its shutdown hooks and destroys its client, resolving `false` on failure. */
 const runningApps = new Set<() => Promise<boolean>>()
@@ -109,7 +120,7 @@ let shuttingDown = false
 let signalHandlersInstalled = false
 
 /**
- * Shuts every started app down and exits: `onShutdown` hooks under {@link SHUTDOWN_HOOK_TIMEOUT_MS},
+ * Shuts every started app down and exits: `onShutdown` hooks under the configured `shutdownTimeout`,
  * then `destroy()`, then exit 0, or 1 if a client failed to close. SIGINT and SIGTERM call it, and so
  * does a shard its manager tells to stop; a second call while one is running forces exit 1.
  */
@@ -144,13 +155,19 @@ export class MeoCordApp {
     private readonly discordClient: Client,
     private discordToken: string,
     private activities?: ActivityOptions[],
-    private readonly lifecycleClasses: (new (...args: any[]) => any)[] = [],
+    private readonly lifecycleClasses: LifecycleClass[] = [],
+    shutdownTimeout?: number,
   ) {
     this.bot = this.discordClient
+    this.shutdownTimeout =
+      typeof shutdownTimeout === 'number' && shutdownTimeout >= 0 ? shutdownTimeout : DEFAULT_SHUTDOWN_TIMEOUT_MS
   }
 
+  /** How long shutdown waits for the `onShutdown` hooks, from `shutdownTimeout` in the config. */
+  private readonly shutdownTimeout: number
+
   /** The resolved instances whose hooks ran at ready, so shutdown calls the same ones; `undefined` before ready. */
-  private lifecycleInstances?: Partial<OnReady & OnShutdown>[]
+  private lifecycleEntries?: LifecycleEntry[]
 
   private readonly close = () => this.closeClient()
 
@@ -657,50 +674,83 @@ export class MeoCordApp {
     }
   }
 
-  /** Resolves every bound controller and service and runs the `onReady` hooks they have, each isolated. */
+  /**
+   * Resolves every bound controller and service and runs their `onReady` hooks one at a time, in
+   * dependency order. A hook that throws is logged and the next one still runs, with a warning for
+   * each hook whose dependencies' hooks failed.
+   */
   private async runReadyHooks(client: Client<true>): Promise<void> {
-    const instances: Partial<OnReady & OnShutdown>[] = []
+    const entries: LifecycleEntry[] = []
+    const failed = new Set<LifecycleClass>()
+    // For each class, the failed classes it depends on, directly or through another dependency
+    const failedUpstream = new Map<LifecycleClass, Set<LifecycleClass>>()
+    this.lifecycleEntries = entries
+
     for (const lifecycleClass of this.lifecycleClasses) {
+      const upstream = new Set<LifecycleClass>()
+      for (const dependency of Reflect.getMetadata(MetadataKey.ParamTypes, lifecycleClass) ?? []) {
+        if (failed.has(dependency)) upstream.add(dependency)
+        failedUpstream.get(dependency)?.forEach(cls => upstream.add(cls))
+      }
+      failedUpstream.set(lifecycleClass, upstream)
+
+      let instance: Partial<OnReady & OnShutdown>
       try {
-        instances.push(this.container.get(lifecycleClass))
+        instance = this.container.get(lifecycleClass)
       } catch (error) {
+        failed.add(lifecycleClass)
         this.logger.error(`Could not resolve ${lifecycleClass.name} to run its lifecycle hooks:`, error)
+        continue
+      }
+      entries.push({ lifecycleClass, instance })
+      if (typeof instance.onReady !== 'function') continue
+
+      if (upstream.size > 0) {
+        const names = [...upstream].map(cls => cls.name).join(', ')
+        this.logger.warn(`Running onReady in ${lifecycleClass.name} although it depends on ${names}, which failed.`)
+      }
+
+      const slow = setTimeout(
+        () =>
+          this.logger.warn(
+            `onReady in ${lifecycleClass.name} has run for over ${SLOW_READY_HOOK_MS} ms; the hooks after it are waiting.`,
+          ),
+        SLOW_READY_HOOK_MS,
+      )
+      try {
+        await instance.onReady(client, { primary: true })
+      } catch (error) {
+        failed.add(lifecycleClass)
+        this.logger.error(`onReady failed in ${lifecycleClass.name}:`, error)
+      } finally {
+        clearTimeout(slow)
       }
     }
-    this.lifecycleInstances = instances
-
-    await Promise.all(
-      instances.map(async instance => {
-        if (typeof instance.onReady !== 'function') return
-        try {
-          await instance.onReady(client, { primary: true })
-        } catch (error) {
-          this.logger.error(`onReady failed in ${instance.constructor.name}:`, error)
-        }
-      }),
-    )
   }
 
-  /** Runs the `onShutdown` hooks in parallel, each isolated, and stops waiting after {@link SHUTDOWN_HOOK_TIMEOUT_MS}. */
-  private async runShutdownHooks(instances: Partial<OnReady & OnShutdown>[]): Promise<void> {
-    const hooks = Promise.all(
-      instances.map(async instance => {
-        if (typeof instance.onShutdown !== 'function') return
+  /**
+   * Runs the `onShutdown` hooks one at a time in reverse dependency order, each isolated, and stops
+   * waiting once the whole sequence has run for the configured `shutdownTimeout`.
+   */
+  private async runShutdownHooks(entries: LifecycleEntry[]): Promise<void> {
+    const hooks = (async () => {
+      for (const { lifecycleClass, instance } of [...entries].reverse()) {
+        if (typeof instance.onShutdown !== 'function') continue
         try {
           await instance.onShutdown()
         } catch (error) {
-          this.logger.error(`onShutdown failed in ${instance.constructor.name}:`, error)
+          this.logger.error(`onShutdown failed in ${lifecycleClass.name}:`, error)
         }
-      }),
-    )
+      }
+    })()
 
     let timer: ReturnType<typeof setTimeout> | undefined
     const timedOut = new Promise<'timeout'>(resolve => {
-      timer = setTimeout(() => resolve('timeout'), SHUTDOWN_HOOK_TIMEOUT_MS)
+      timer = setTimeout(() => resolve('timeout'), this.shutdownTimeout)
     })
     try {
       if ((await Promise.race([hooks, timedOut])) === 'timeout') {
-        this.logger.warn(`onShutdown hooks did not finish within ${SHUTDOWN_HOOK_TIMEOUT_MS} ms; shutting down anyway.`)
+        this.logger.warn(`onShutdown hooks did not finish within ${this.shutdownTimeout} ms; shutting down anyway.`)
       }
     } finally {
       clearTimeout(timer)
@@ -718,7 +768,7 @@ export class MeoCordApp {
     if (this.activityInterval) clearInterval(this.activityInterval)
 
     // A login that failed never ran onReady, so there is nothing for onShutdown to undo
-    if (this.lifecycleInstances) await this.runShutdownHooks(this.lifecycleInstances)
+    if (this.lifecycleEntries) await this.runShutdownHooks(this.lifecycleEntries)
 
     try {
       this.bot.removeAllListeners()
