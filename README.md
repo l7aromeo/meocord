@@ -753,7 +753,7 @@ async profile(interaction: ChatInputCommandInteraction) {
 | `modal(modal)`                          | Shows a modal. A modal must be the first response, so this throws once the interaction is acknowledged.                                                                                                                                                                                |
 | `error(error, { message, visibility })` | Shows an error in the presenter's style, and never throws. `'reply'` may turn a public deferred reply into the error; `'private'` shows it only to the user who made the call.                                                                                                         |
 
-`state` tells where the answer stands (`'unanswered'`, `'deferred'` or `'replied'`), re-read from the interaction on every call, so answers made directly with discord.js or by a collector still count. `message` is the message last sent or edited. Interceptors and filters reach the same state as `context.response`.
+`state` tells where the answer stands (`'unanswered'`, `'deferred'` or `'replied'`), re-read from the interaction on every call, so answers made directly with discord.js or by a collector still count. `message` is the message last sent or edited, `location` is what [`getInstallContext`](#where-the-interaction-happened) reports, and `original` holds the message's components and embeds from before `@Defer` locked it. `lock()` is `@Defer`'s second step, for a handler that acknowledges on its own. Interceptors and filters reach the same state as `context.response`.
 
 Each call takes only the flags Discord accepts for it, computed afresh: an ephemeral follow-up never makes later messages ephemeral. `send()` and `followUp()` payloads are typed so an impossible flag does not compile. Once a message uses Components V2 its edits keep the flag, and content and embeds are dropped from them. When an edit re-sends an embed or Components V2 media whose image is one of the message's own Discord attachments, the URL is pointed at `attachment://` so the image survives the edit.
 
@@ -787,7 +787,7 @@ A guard that returns `false` under `@Defer` leaves nothing behind: a command's d
 
 ### Where the interaction happened
 
-A user-installed app can be used in servers the bot is not in and in direct messages between users, where the bot cannot use the channel API. `respond()` always answers through the interaction's own methods, which work everywhere, and turns to the channel only when the interaction's fifteen-minute token has expired and the bot is present. Only edits can take that path: after fifteen minutes, an error can be logged but not shown privately, so a public card is put back without a private error. `getInstallContext(interaction)` reports the same thing to your code:
+A user-installed app can be used in servers the bot is not in and in direct messages between users, where the bot cannot use the channel API. `respond()` always answers through the interaction's own methods, which work everywhere, and turns to the channel only when the interaction's fifteen-minute token has expired and the bot is present; a token error from 14 minutes on counts as expired, allowing for a clock running late. Only edits can take that path: after fifteen minutes, an error can be logged but not shown privately, so a public card is put back without a private error. `getInstallContext(interaction)` reports the same thing to your code:
 
 ```typescript
 import { getInstallContext } from 'meocord/common'
@@ -1185,7 +1185,7 @@ A blocked call throws `CooldownError` (from `meocord/common`, with `retryAfterMs
 
 The cooldown is the [last stage](#how-a-handler-runs) before the handler: guards, validation and pipes have let the call through, so a denied call or bad input spends nothing. It applies to interaction and message handlers. On a controller, `@Cooldown` applies to each of those handlers separately and skips the controller's autocomplete, reaction and event handlers; on one of those handlers itself, the bot refuses to start.
 
-Cooldowns are counted under the controller's class name, so the bot refuses to start when two classes of the same name have one; rename one of them.
+Cooldowns are counted under the controller's class name, so the bot refuses to start when two classes share a name and either has a cooldown; rename one of them.
 
 For a reusable exemption, compose it: `const Limited = (seconds: number) => applyDecorators(Cooldown({ seconds, bypass: isOwner }))`.
 
@@ -1273,6 +1273,7 @@ export class WelcomeController {
 - **Errors** a handler throws go to its exception filters, as a command's do. One no filter handles is logged with the event and the handler's name, never answered, and never stops the bot or the other handlers of that event.
 - **Intents**: at startup MeoCord warns once for each intent or partial your handlers need that `clientOptions` lacks — `GuildMembers` for `guildMemberAdd`, say — and reminds you to enable privileged intents in the Discord developer portal. `@MessageHandler` and `@ReactionHandler` are checked the same way.
 - `@On('interactionCreate')` and `@On('messageCreate')` run alongside MeoCord's own dispatch of those events.
+- **Names**: `@Once` and `@Cooldown` tell classes apart by name, so the bot refuses to start when two classes share a name and either has a `@Once` handler; rename one of them.
 
 In a test, `module.emit(event, ...args)` sends an event to the module's handlers through the same pipeline:
 
@@ -1930,7 +1931,7 @@ Start in production:
 npx meocord start --prod
 ```
 
-`meocord start` passes SIGINT and SIGTERM on to the bot, so it shuts down cleanly whether the signal comes from a terminal, Docker, pm2 or systemd. In a container, `CMD ["node", "dist/main.js"]` is the lean choice: the bot is the only process, and it receives the signal itself.
+`meocord start` passes SIGINT and SIGTERM on to the bot, so it shuts down cleanly whether the signal comes from a terminal, Docker, pm2 or systemd. A second signal more than a second after the first is passed on too, and if the bot is still running two seconds later, `start` kills it and exits 1. In a container, `CMD ["node", "dist/main.js"]` is the lean choice: the bot is the only process, and it receives the signal itself.
 
 ### Self-contained builds
 
@@ -2084,7 +2085,7 @@ export class StatsService {
 }
 ```
 
-`call(Service, 'method', ...args)` runs the method in every process, each resolving the service from its own container, and resolves to one `{ shardIds, ok, value | error }` per process: one per shard with process sharding, one in all otherwise. Arguments and results cross processes as JSON. A process that throws, lacks the service or takes more than 10 seconds gives an error result instead of failing the others. `ids`, `count` and `isPrimary` describe the shards of this process. `broadcastEval` is there as well, but it turns its function into a string, which a minified bundle can break; prefer `call`.
+`call(Service, 'method', ...args)` runs the method in every process, each resolving the service from its own container — the class you pass in this process, and a class of the same name in another, since only JSON crosses between them, so with process sharding the bot refuses to start when two controllers or services share a name — and resolves to one `{ shardIds, ok, value | error }` per process: one per shard with process sharding, one in all otherwise. Arguments and results cross processes as JSON. A process that throws, lacks the service or takes more than 10 seconds gives an error result instead of failing the others. `ids`, `count` and `isPrimary` describe the shards of this process. `broadcastEval` is there as well, but it turns its function into a string, which a minified bundle can break; prefer `call`.
 
 ---
 
