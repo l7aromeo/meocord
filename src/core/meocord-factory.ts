@@ -13,7 +13,7 @@ import { CooldownStore, MemoryCooldownStore } from '@src/common/cooldown-store.j
 import { handlerCooldowns } from '@src/core/cooldown-runner.js'
 import { getCommandMap, getMessageHandlers } from '@src/decorator/controller.decorator.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
-import { appStages, bindGlobalStages, prepareHandlerStages } from '@src/core/handler-pipeline.js'
+import { appStages, bindAppPresenter, bindGlobalStages, prepareHandlerStages } from '@src/core/handler-pipeline.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { dependencyOrder, isAppClassToken } from '@src/core/lifecycle-order.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
@@ -193,6 +193,7 @@ export class MeoCordFactory {
     if (shardingRole(meocordConfig) === 'shard' && container.get(CooldownStore) instanceof MemoryCooldownStore) {
       warnPerShardCooldowns(options.controllers, this.logger)
     }
+    bindAppPresenter(container, target as object, discordClient)
 
     return new MeoCordApp(
       options.controllers,

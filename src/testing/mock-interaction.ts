@@ -9,6 +9,7 @@ import {
   ChannelManager,
   Client,
   ClientUser,
+  Collection,
   CommandInteractionOptionResolver,
   ComponentType,
   DMMessageManager,
@@ -21,6 +22,7 @@ import {
   GuildManager,
   InteractionType,
   Message,
+  MessageFlagsBitField,
   MessageManager,
   MessageMentions,
   Role,
@@ -328,8 +330,19 @@ export function createMockInteraction<T extends object>(
       }),
     )
 
-    // deferUpdate / update — MessageComponentInteraction only (type === MessageComponent)
-    if (instance.type === InteractionType.MessageComponent) {
+    // showModal — the first response of a command or a component, like reply()
+    if (instance.type === InteractionType.ApplicationCommand || instance.type === InteractionType.MessageComponent) {
+      stubs.set(
+        'showModal',
+        createMockFn(async () => {
+          if (instance.deferred || instance.replied) throw alreadyReplied()
+          instance.replied = true
+        }),
+      )
+    }
+
+    // deferUpdate / update — components, and modals submitted from a message's component
+    if (instance.type === InteractionType.MessageComponent || instance.type === InteractionType.ModalSubmit) {
       stubs.set(
         'update',
         createMockFn(async () => {
@@ -587,6 +600,12 @@ export function createMockMessage(): DeepMocked<Message> & { deleted: boolean } 
 
   // MessageMentions — constructor-assigned, has methods like .has(), .members
   instance.mentions = stubDeep(Object.create(MessageMentions.prototype))
+
+  // Data a message always has, real rather than stubbed, so code reading it sees an empty message
+  instance.flags = new MessageFlagsBitField()
+  instance.components = []
+  instance.embeds = []
+  instance.attachments = new Collection()
 
   const alreadyDeleted = () => new Error('This message has already been deleted.')
 

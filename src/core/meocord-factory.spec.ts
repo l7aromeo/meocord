@@ -30,6 +30,7 @@ const { CooldownStore, MemoryCooldownStore } = await import('@src/common/cooldow
 const { Command, Controller, Cooldown } = await import('@src/decorator/index.js')
 const { CommandType } = await import('@src/enum/index.js')
 const { runHandler } = await import('@src/core/handler-pipeline.js')
+const { presenterFor } = await import('@src/common/response/presenter.js')
 
 describe('MeoCordFactory.create()', () => {
   afterEach(() => {
@@ -105,6 +106,29 @@ describe('MeoCordFactory.create()', () => {
     )
 
     expect(() => MeoCordFactory.create(MyApp)).toThrow('ContextInterceptor is resolved once and shared')
+  })
+
+  it('makes the @MeoCord({ presenter }) the one respond() uses for the bot client', () => {
+    mockLoadConfig.mockReturnValue({ discordToken: 'test-token' })
+
+    class Presenter {
+      loading() {
+        return { text: 'loading' }
+      }
+      error() {
+        return { text: 'error' }
+      }
+    }
+    class MyApp {}
+    Reflect.defineMetadata(
+      MetadataKey.AppOptions,
+      { controllers: [], clientOptions: { intents: [] }, presenter: Presenter },
+      MyApp,
+    )
+
+    const client = Reflect.get(MeoCordFactory.create(MyApp), 'discordClient') as object
+
+    expect(presenterFor(client)).toBeInstanceOf(Presenter)
   })
 
   it('refuses a controller dependency that injects ExecutionContext, since it is shared across calls', () => {

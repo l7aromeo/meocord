@@ -32,6 +32,7 @@
 - [Guards](#guards)
 - [Interceptors](#interceptors)
 - [Exception filters](#exception-filters)
+- [Interaction responses](#interaction-responses)
 - [Validation and Pipes](#validation-and-pipes)
 - [Localisation](#localisation)
 - [Cooldowns](#cooldowns)
@@ -852,21 +853,89 @@ One instance of a filter serves every call, as with interceptors, so it cannot i
 
 ### The built-in fallback
 
-An error no filter handles goes to the built-in fallback. It logs the error, then answers the user if the interaction can still take an answer, privately and in the error style:
+An error no filter handles goes to the built-in fallback. It logs the error, then answers through [`respond(interaction).error()`](#interaction-responses) if the interaction can still take an answer, privately and in the error style of the app's [presenter](#presenters):
 
-| The interaction                                                          | The fallback                                            |
-| ------------------------------------------------------------------------ | ------------------------------------------------------- |
-| Not answered yet                                                         | replies                                                 |
-| A command whose reply was deferred                                       | edits the deferred reply into the error                 |
-| Already replied to, or a deferred button, select or modal from a message | follows up; it never edits the message the user clicked |
-| Autocomplete                                                             | closes the menu with an empty list                      |
-| Expired (Discord error 10062)                                            | logs only                                               |
+| The interaction                                                                 | The fallback                                            |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Not answered yet                                                                | replies                                                 |
+| A command whose reply was deferred                                              | edits the deferred reply into the error                 |
+| Already replied to, or a deferred button, select or modal from a public message | follows up; it never edits the message the user clicked |
+| A deferred button, select or modal from a private (ephemeral) message           | adds the error to that message                          |
+| Autocomplete                                                                    | closes the menu with an empty list                      |
+| Expired (Discord error 10062)                                                   | logs only                                               |
 
 It says "An error occurred while executing the command.", "Command not found!" for `CommandNotFoundError`, a `GuardDeniedError`'s own message, and a `ValidationError`'s list of issues — the last two kept private even on a deferred public command, by deleting the deferred reply and following up. Errors from message, reaction and event handlers are only logged, and the next handler still runs. The fallback never throws.
 
 Filters apply when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke); a controller method called directly throws as it would without them. Under `invoke` the fallback does not run: an error no filter handles rejects, so tests see it.
 
 Generate a filter with `npx meocord g f <name>`.
+
+---
+
+## Interaction responses
+
+`respond(interaction)` from `meocord/common` is the one place an interaction is answered. It remembers where the answer stands and picks the right Discord call each time, so a handler says what to send, not how:
+
+```typescript
+import { respond } from 'meocord/common'
+
+@Command('profile', CommandType.SLASH)
+async profile(interaction: ChatInputCommandInteraction) {
+  await respond(interaction).acknowledge() // "thinking…" while the profile loads
+  const card = await this.profiles.render(interaction.user.id)
+  await respond(interaction).send({ embeds: [card] })
+}
+```
+
+| Call                                    | What it does                                                                                                                                                                       |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `acknowledge({ ephemeral })`            | A deferred reply for a command; an invisible deferred update for a component or a modal from a message. Once only, however often it is called.                                     |
+| `send(payload)`                         | Replies to an unanswered command, updates an unanswered component's message, and edits once the interaction is deferred or replied. A second `send()` edits again.                 |
+| `edit(payload)`                         | Edits the answer, as `send()` does once answered.                                                                                                                                  |
+| `followUp(payload)`                     | Another message after the answer. While a command's reply is deferred and nothing is sent, Discord makes a follow-up that reply and ignores its flags, so it is sent as that edit. |
+| `delete()`                              | Deletes the answer.                                                                                                                                                                |
+| `modal(modal)`                          | Shows a modal. A modal must be the first response, so this throws once the interaction is acknowledged.                                                                            |
+| `error(error, { message, visibility })` | Shows an error in the presenter's style, and never throws. `'reply'` may turn a public deferred reply into the error; `'private'` shows it only to the user who made the call.     |
+
+`state` tells where the answer stands (`'unanswered'`, `'deferred'` or `'replied'`), re-read from the interaction on every call, so answers made directly with discord.js or by a collector still count. `message` is the message last sent or edited. Interceptors and filters reach the same state as `context.response`.
+
+Each call takes only the flags Discord accepts for it, computed afresh: an ephemeral follow-up never makes later messages ephemeral. `send()` and `followUp()` payloads are typed so an impossible flag does not compile. Once a message uses Components V2 its edits keep the flag, and content and embeds are dropped from them. When an edit re-sends an embed or Components V2 media whose image is one of the message's own Discord attachments, the URL is pointed at `attachment://` so the image survives the edit.
+
+### Where the interaction happened
+
+A user-installed app can be used in servers the bot is not in and in direct messages between users, where the bot cannot use the channel API. `respond()` always answers through the interaction's own methods, which work everywhere, and turns to the channel only when the interaction's fifteen-minute token has expired and the bot is present. `getInstallContext(interaction)` reports the same thing to your code:
+
+```typescript
+import { getInstallContext } from 'meocord/common'
+
+const { where, botInstalled } = getInstallContext(interaction) // where: 'guild' | 'bot-dm' | 'private-channel'
+```
+
+### Presenters
+
+A presenter decides how MeoCord's answers look — the error view, and the loading view `@Defer` shows — while filters and the fallback decide what they say. It returns `{ text, title?, color?, emoji?, components? }`, rendered as an embed, or as a Components V2 container on a Components V2 message. Register one with `@MeoCord({ presenter })`; it is resolved once from the container, so it can inject services such as a `Translator`.
+
+```typescript
+import { type PresentedError, type ResponseContext, type ResponsePresenter } from 'meocord/interface'
+
+@Service()
+export class BrandPresenter implements ResponsePresenter {
+  constructor(private readonly t: Translator) {}
+
+  loading(context: ResponseContext) {
+    return { text: this.t.for(context.interaction)('common.working'), emoji: '⏳', color: Theme.primaryColor }
+  }
+
+  error(_context: ResponseContext, { message }: PresentedError) {
+    return { title: 'Something went wrong', text: message, color: Theme.errorColor }
+  }
+}
+
+@MeoCord({ controllers: [...], clientOptions: { ... }, presenter: BrandPresenter })
+class App {}
+```
+
+Without one, errors look as they always have — "Oops!" in `Theme.errorColor` — and the loading view is "⏳ Working on it…" in `Theme.primaryColor`.
 
 ---
 
@@ -1621,6 +1690,33 @@ const module = MeoCordTestingModule.create({ controllers: [ProfileController] })
   .overrideFilter(RateLimitedFilter)
   .useValue({ catch: catchRateLimit })
   .compile()
+```
+
+</details>
+
+<details>
+<summary><b><code>getResponse</code> / <code>createDiscordError</code></b></summary>
+
+`getResponse(interaction)` reports what `respond()` did for an interaction: where its answer stands, whether anything visible was sent, and every Discord call it made with its payload.
+
+```typescript
+import { createDiscordError, getResponse } from 'meocord/testing'
+
+await module.invoke(ProfileController, 'refresh', interaction, { uid: '8000' })
+
+const response = getResponse(interaction)
+expect(response.sent).toBe(true)
+expect(response.calls.map(call => call.method)).toEqual(['deferUpdate', 'editReply'])
+```
+
+`createDiscordError(code)` builds the `DiscordAPIError` discord.js throws, for a mock to reject with: 10062 (the three seconds passed), 40060 (already acknowledged), 50001 (missing access), 50027 (the fifteen-minute token expired). Mock interactions take `context` and `authorizingIntegrationOwners`, to test each place a user-installed app can be used:
+
+```typescript
+const interaction = createMockInteraction(ButtonInteraction, {
+  context: InteractionContextType.PrivateChannel,
+  authorizingIntegrationOwners: { [ApplicationIntegrationType.UserInstall]: userId },
+})
+interaction.editReply.mockRejectedValueOnce(createDiscordError(50027))
 ```
 
 </details>

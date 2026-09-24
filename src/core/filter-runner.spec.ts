@@ -337,7 +337,7 @@ describe('exception filters under dispatch', () => {
 
     await handler(interaction)
 
-    const [[payload]] = interaction.reply.mock.calls as [[{ embeds: { data: { description: string } }[] }]]
-    expect(payload.embeds[0].data.description).toBe('Command not found!')
+    const [[payload]] = interaction.reply.mock.calls as [[{ embeds: { description: string }[] }]]
+    expect(payload.embeds[0].description).toBe('Command not found!')
   })
 })

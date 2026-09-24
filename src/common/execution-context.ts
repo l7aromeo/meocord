@@ -8,6 +8,7 @@ import {
   type PartialMessageReaction,
 } from 'discord.js'
 import { type MetadataDecorator } from '@src/common/metadata.js'
+import { respond, type ResponseState } from '@src/common/response/response-state.js'
 
 /** What an {@link ExecutionContext} is running a handler for. */
 export type ExecutionContextType = 'interaction' | 'autocomplete' | 'message' | 'reaction' | 'event'
@@ -35,6 +36,16 @@ export type ExecutionContextType = 'interaction' | 'autocomplete' | 'message' | 
  * ```
  */
 export abstract class ExecutionContext {
+  /**
+   * The response state of the interaction being handled, the same one `respond(interaction)` returns,
+   * or `undefined` for anything that cannot be answered: a message, a reaction, an event or
+   * autocomplete.
+   */
+  get response(): ResponseState | undefined {
+    const interaction = this.getInteraction()
+    return interaction?.isRepliable() ? respond(interaction) : undefined
+  }
+
   /**
    * Reads a metadata value for the running handler: the method's value, else the controller's.
    * Values resolve through the prototype chain, so an inherited handler reads its base class's
