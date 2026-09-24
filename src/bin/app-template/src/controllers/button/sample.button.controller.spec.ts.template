@@ -27,19 +27,22 @@ describe('SampleButtonController', () => {
   })
 
   it('answers the owner of the button', async () => {
-    const { ran } = await module.invoke(SampleButtonController, 'handleButtonWithId', clickBy('owner'), {
-      ownerId: 'owner',
-    })
+    // The customId's route gives the handler its ownerId
+    const { ran } = await module.invoke(
+      SampleButtonController,
+      'handleButtonWithId',
+      clickBy('owner', 'button-with/owner'),
+    )
 
     expect(ran).toBe(true)
   })
 
   it('denies anyone else before touching the message', async () => {
-    const interaction = clickBy('stranger')
+    const interaction = clickBy('stranger', 'button-with/owner')
 
-    await expect(
-      module.invoke(SampleButtonController, 'handleButtonWithId', interaction, { ownerId: 'owner' }),
-    ).rejects.toThrow(GuardDeniedError)
+    await expect(module.invoke(SampleButtonController, 'handleButtonWithId', interaction)).rejects.toThrow(
+      GuardDeniedError,
+    )
     expect(getResponse(interaction).calls.map(call => call.method)).toEqual(['deferUpdate'])
   })
 })
