@@ -666,6 +666,19 @@ A class-level `@UseGuard` also guards the handlers a controller inherits. For a 
 export class AdminController extends ModerationController { ... } // ModerationController's handlers run StaffGuard first
 ```
 
+To guard every handler in the bot, list guards in `@MeoCord({ guards })`. They take the same forms as `@UseGuard` and run first, before the controller's and the method's guards:
+
+```typescript
+@MeoCord({
+  controllers: [ProfileController, ModerationController],
+  clientOptions: { intents: [GatewayIntentBits.Guilds] },
+  guards: [BlocklistGuard, { provide: RateLimiterGuard, params: { limit: 20, window: 60_000 } }],
+})
+class App {}
+```
+
+Global guards run when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke). A controller method called directly runs only its own class and method guards.
+
 ---
 
 ## Custom Decorators
@@ -817,6 +830,15 @@ expect(ran).toBe(false)
 expect(interaction.reply).not.toHaveBeenCalled()
 ```
 
+To include the global guards of `@MeoCord({ guards })`, pass the application class as `app`. Only its guards are read; controllers and providers are still listed as usual:
+
+```typescript
+import App from '@src/app'
+
+const module = MeoCordTestingModule.create({ app: App, controllers: [ProfileController] }).compile()
+await module.invoke(ProfileController, 'showProfile', interaction, { ownerId: '111', uid: '8000' }) // global guards run first
+```
+
 `invoke` resolves to `{ ran }`, which is `false` when a guard denied the call, and rejects with any error the handler or a guard throws. The method name and arguments are type-checked against the handler. Calling the controller method directly still runs its guards, as in earlier versions; `invoke` is the way to test everything dispatch runs around a handler.
 
 To check what a handler is set up with, without running it, use `inspectHandler`. It lists the guards dispatch runs, in order, and reads the handler's metadata as `ExecutionContext` does:
@@ -828,6 +850,9 @@ const ban = inspectHandler(ModerationController, 'ban')
 
 expect(ban.guards).toEqual([RolesGuard, { provide: RateLimitGuard, params: { limit: 2 } }])
 expect(ban.get(Roles)).toEqual(['admin'])
+
+// With the app, the global guards come first
+expect(inspectHandler(ModerationController, 'ban', { app: App }).guards[0]).toBe(BlocklistGuard)
 ```
 
 <details>

@@ -1,5 +1,4 @@
 import 'reflect-metadata'
-import { makeInjectable } from '@src/util/injectable.util.js'
 import { Container, type ServiceIdentifier } from 'inversify'
 import { Client } from 'discord.js'
 import { Logger } from '@src/common/index.js'
@@ -9,6 +8,8 @@ import { assertBuiltForThisPlatform } from '@src/util/platform.util.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
+import { appStages, bindGlobalStages } from '@src/core/handler-pipeline.js'
+import { makeInjectable } from '@src/util/injectable.util.js'
 
 /**
  * Recursively binds a class and all its constructor dependencies to the container in singleton scope.
@@ -53,6 +54,7 @@ export class MeoCordFactory {
     assertBuiltForThisPlatform()
 
     const container = new Container()
+    bindGlobalStages(container, appStages(target as object))
 
     // Bind the Discord client as a constant value
     const discordClient = new Client(options.clientOptions)

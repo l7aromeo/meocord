@@ -1,11 +1,11 @@
 import 'reflect-metadata'
-import { makeInjectable } from '@src/util/injectable.util.js'
 import { Container, type ServiceIdentifier } from 'inversify'
 import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
-import { runHandler } from '@src/core/handler-pipeline.js'
+import { appStages, bindGlobalStages, runHandler } from '@src/core/handler-pipeline.js'
 import { type GuardInterface } from '@src/interface/index.js'
+import { makeInjectable } from '@src/util/injectable.util.js'
 
 export interface ValueProvider<T = any> {
   provide: ServiceIdentifier<T>
@@ -22,6 +22,12 @@ export type Provider<T = any> = ValueProvider<T> | ClassProvider<T>
 export interface TestingModuleOptions {
   controllers?: (new (...args: any[]) => any)[]
   providers?: Provider[]
+
+  /**
+   * The `@MeoCord` application class, whose global stages, such as `guards`, `invoke` runs before
+   * each handler's own. Its controllers and services are not registered; list them here.
+   */
+  app?: new (...args: any[]) => unknown
 }
 
 function isValueProvider(p: Provider): p is ValueProvider {
@@ -57,8 +63,8 @@ export class TestingModule {
   }
 
   /**
-   * Runs a handler through the same pipeline dispatch runs: the handler's guards, in order and once
-   * each, then the handler. Guards resolve from this module, so `overrideGuard` stubs apply and guards
+   * Runs a handler through the same pipeline dispatch runs: the global guards of the module's `app`,
+   * then the handler's own, in order and once each, then the handler. Guards resolve from this module, so `overrideGuard` stubs apply and guards
    * that inject `ExecutionContext` receive it.
    *
    * Calling the controller method directly still runs its guards as well; `invoke` is the way to test
@@ -139,6 +145,7 @@ export class TestingModuleBuilder {
 
   compile(): TestingModule {
     const container = new Container()
+    if (this.options.app) bindGlobalStages(container, appStages(this.options.app))
 
     // Merge explicit providers with overrides (overrides win)
     const providers = new Map<ServiceIdentifier, Provider>()

@@ -2,7 +2,7 @@ import 'reflect-metadata'
 import { type GuardInterface } from '@src/interface/index.js'
 import { HandlerExecutionContext } from '@src/common/execution-context.js'
 import { type MetadataDecorator } from '@src/common/metadata.js'
-import { handlerStages } from '@src/core/handler-pipeline.js'
+import { appStages, handlerStages } from '@src/core/handler-pipeline.js'
 
 /** A guard as `@UseGuard` declares it: the class, or the class with the params set on its instance. */
 export type InspectedGuard =
@@ -17,7 +17,7 @@ export interface HandlerInspection {
   /** The handler method's name. */
   readonly methodName: string
 
-  /** The guards that run before the handler, in order: class guards, then method guards. */
+  /** The guards that run before the handler, in order: global guards, class guards, then method guards. */
   readonly guards: readonly InspectedGuard[]
 
   /**
@@ -39,6 +39,12 @@ export interface HandlerInspection {
   getAll<T = unknown>(key: string | symbol): T[]
 }
 
+/** What {@link inspectHandler} includes besides the handler's own metadata. */
+export interface InspectHandlerOptions {
+  /** The `@MeoCord` application class, whose global guards run before the handler's own. */
+  app?: new (...args: any[]) => unknown
+}
+
 /**
  * Reports what runs when a handler is dispatched, and the metadata declared on it, without building
  * a module or running anything. Use it to check that a decorator applied the guards and metadata it
@@ -46,6 +52,7 @@ export interface HandlerInspection {
  *
  * @param controller - The controller class declaring the handler.
  * @param methodName - The handler method's name.
+ * @param options - `app` to include the global guards `@MeoCord` declares.
  * @returns The handler's guards, in the order they run, and a reader for its metadata.
  *
  * @example
@@ -54,14 +61,18 @@ export interface HandlerInspection {
  *
  * expect(ban.guards).toEqual([RolesGuard])
  * expect(ban.get(Roles)).toEqual(['admin'])
+ *
+ * expect(inspectHandler(ModerationController, 'ban', { app: App }).guards).toEqual([BlocklistGuard, RolesGuard])
  * ```
  */
 export function inspectHandler<C extends new (...args: any[]) => unknown>(
   controller: C,
   methodName: keyof InstanceType<C> & string,
+  options: InspectHandlerOptions = {},
 ): HandlerInspection {
   const context = new HandlerExecutionContext({ controller, methodName, args: [] })
-  const { guards } = handlerStages(controller.prototype as object, methodName)
+  const globals = options.app ? appStages(options.app) : undefined
+  const { guards } = handlerStages(controller.prototype as object, methodName, globals)
 
   return {
     controller,

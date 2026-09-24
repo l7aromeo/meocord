@@ -1,7 +1,7 @@
 import 'reflect-metadata'
-import { makeInjectable } from '@src/util/injectable.util.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { type BuildableCommandType, type CommandBuilderBase } from '@src/interface/command-decorator.interface.js'
+import { makeInjectable } from '@src/util/injectable.util.js'
 
 /**
  * Marks a class as the builder for a Discord command, for use with `@Command`.
