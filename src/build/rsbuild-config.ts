@@ -77,6 +77,14 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
       tsconfigPath: prepareModifiedTsConfig(),
     },
     tools: {
+      // The pre-entry records the bundle's own path from import.meta.url, which the bundler would
+      // otherwise fix at build time to the pre-entry's source file. Production only: development's eval
+      // source maps cannot run import.meta. Set here, not in tools.rspack, which an app's hook may replace.
+      bundlerChain: chain => {
+        if (mode === 'production') {
+          chain.module.rule('meocord-pre-entry').test(CONFIG_PRE_ENTRY).parser({ importMeta: false })
+        }
+      },
       swc: {
         jsc: {
           // Rsbuild leaves externalHelpers on, which emits the decorator helpers as imports

@@ -9,6 +9,7 @@ import { handlerInput, routeParamsFor } from '@src/core/handler-input.js'
 import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
+import { ShardContext } from '@src/core/shard-context.js'
 import { dependencyOrder, isAppClassToken } from '@src/core/lifecycle-order.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
 
@@ -269,6 +270,14 @@ export class TestingModuleBuilder {
     // Bound first, as in the app, so a class that injects it gets this instance
     const appClasses: (new (...args: any[]) => unknown)[] = []
     container.bind(HandlerRegistry).toConstantValue(new HandlerRegistry(appClasses))
+    // A testing module runs as one process, so a cross-shard call runs once, here
+    container.bind(ShardContext).toConstantValue(
+      new ShardContext(undefined, async (service, method, args) => {
+        const cls = appClasses.find(candidate => candidate.name === service)
+        if (!cls) throw new Error(`${service} is not a controller or class provider of this testing module.`)
+        return (container.get(cls) as Record<string, (...args: unknown[]) => unknown>)[method](...args)
+      }),
+    )
 
     // Merge explicit providers with overrides (overrides win)
     const providers = new Map<ServiceIdentifier, Provider>()

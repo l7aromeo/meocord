@@ -13,6 +13,16 @@ import { appStages, bindGlobalStages, prepareHandlerStages } from '@src/core/han
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { dependencyOrder, isAppClassToken } from '@src/core/lifecycle-order.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
+import { type MeoCordApplication } from '@src/interface/index.js'
+import { ShardManager } from '@src/core/shard-manager.js'
+import { SHARD_CALL_KEY, type ShardCallHandler, ShardContext } from '@src/core/shard-context.js'
+import {
+  clientOptionsWithSharding,
+  isShardProcess,
+  processShardingEnabled,
+  shardingRole,
+} from '@src/util/sharding-mode.util.js'
+import { type MeoCordConfig } from '@src/interface/index.js'
 
 /**
  * Recursively binds a class and all its constructor dependencies to the container in singleton scope.
@@ -34,7 +44,21 @@ function bindDependencies(container: Container, cls: any): void {
 export class MeoCordFactory {
   private static logger = new Logger()
 
-  static create(target: ServiceIdentifier): MeoCordApp {
+  /**
+   * The config a single process runs with. Under `meocord start --dev` without `sharding.development`,
+   * process sharding falls back to running every shard in this process, so the watcher restarts one
+   * process and leaves no shards behind.
+   */
+  private static effectiveConfig(config: MeoCordConfig): MeoCordConfig {
+    if (config.sharding?.mode !== 'process' || isShardProcess() || processShardingEnabled(config)) return config
+    this.logger.info(
+      "sharding.mode 'process' is off in development, so every shard runs in this process; set " +
+        'sharding.development: true to run them in separate processes.',
+    )
+    return { ...config, sharding: { ...config.sharding, mode: 'internal' } }
+  }
+
+  static create(target: ServiceIdentifier): MeoCordApplication {
     const options = Reflect.getMetadata(MetadataKey.AppOptions, target)
 
     if (!options) {
@@ -57,6 +81,15 @@ export class MeoCordFactory {
       return new MeoCordApp(options.controllers, new Container(), new Client(options.clientOptions), meocordConfig.discordToken)
     }
 
+    // A process-sharding manager only spawns shards, so it binds, constructs and connects nothing itself.
+    if (shardingRole(meocordConfig) === 'manager') {
+      return new ShardManager({
+        controllerClasses: options.controllers,
+        token: meocordConfig.discordToken,
+        config: meocordConfig,
+      })
+    }
+
     // Before anything is resolved: a controller or service is what first loads a native addon, and
     // one built for another platform would otherwise fail there with a linker error.
     assertBuiltForThisPlatform()
@@ -65,12 +98,19 @@ export class MeoCordFactory {
     bindGlobalStages(container, appStages(target as object))
 
     // Bind the Discord client as a constant value
-    const discordClient = new Client(options.clientOptions)
+    const discordClient = new Client(clientOptionsWithSharding(this.effectiveConfig(meocordConfig), options.clientOptions))
     container.bind(Client).toConstantValue(discordClient)
 
     // Bound before the app's classes, so a class that injects it gets this instance; filled once they are bound
     const appClasses: (new (...args: any[]) => unknown)[] = []
     container.bind(HandlerRegistry).toConstantValue(new HandlerRegistry(appClasses))
+    container
+      .bind(ShardContext)
+      .toConstantValue(
+        new ShardContext(discordClient, (service, method, args) =>
+          (Reflect.get(discordClient, SHARD_CALL_KEY) as ShardCallHandler)(service, method, args),
+        ),
+      )
 
     // Bind all controllers and their transitive dependencies
     for (const ctrl of options.controllers as any[]) {
@@ -80,6 +120,26 @@ export class MeoCordFactory {
       bindDependencies(container, svc)
     }
     appClasses.push(...dependencyOrder(container, [...(options.services ?? []), ...options.controllers]))
+
+    // ShardContext.call reaches a service in another shard by its class name
+    const byName = new Map<string, new (...args: any[]) => unknown>()
+    for (const cls of appClasses) {
+      if (byName.has(cls.name) && meocordConfig.sharding?.mode === 'process') {
+        throw new Error(
+          `Two classes are named ${cls.name}; with process sharding, ShardContext.call finds a service in ` +
+            `another shard by its name, so give each controller and service a distinct name.`,
+        )
+      }
+      byName.set(cls.name, cls)
+    }
+    const runHere = async (service: string, method: string, args: unknown[]) => {
+      const cls = byName.get(service)
+      if (!cls) throw new Error(`${service} is not a controller or service of this app.`)
+      const instance = container.get(cls) as Record<string, (...args: unknown[]) => unknown>
+      if (typeof instance[method] !== 'function') throw new Error(`${service}.${method} is not a method.`)
+      return instance[method](...args)
+    }
+    Reflect.set(discordClient, SHARD_CALL_KEY, runHere)
 
     // Stamp each class with the container so @UseGuard can resolve guards on a direct call
     for (const cls of appClasses) {

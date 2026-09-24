@@ -39,6 +39,7 @@
 - [Lifecycle Hooks](#lifecycle-hooks)
 - [Testing](#testing)
 - [Deployment](#deployment)
+  - [Sharding](#sharding)
 - [Contributing](#contributing)
 - [Release Notes](#release-notes)
 - [License](#license)
@@ -1118,7 +1119,7 @@ export class ReminderScheduler implements OnReady, OnShutdown {
 ```
 
 - **Which classes**: every controller and every service the app binds — the ones listed in `@MeoCord({ controllers, services })` and everything they depend on — including a service no handler has used yet. Guards are created per call and get no hooks.
-- **`onReady`** runs once the client is ready. It receives the client and `{ primary }`, which says whether this process should do one-off work; it is `true` for a bot running in one process.
+- **`onReady`** runs once the client is ready. It receives the client and `{ primary }`, which says whether this process should do one-off work: `true` for a bot running in one process, and with [process sharding](#sharding) only in the process running shard 0.
 - **Dependency order.** `onReady` hooks run one at a time, each class after the classes it injects: a `DatabaseService` is ready before the `ReminderScheduler` that injects it. Classes with no dependency between them run in declaration order, the `services` first, then the `controllers`. Command registration runs alongside and never delays the hooks. A hook still running after 10 seconds is named in a warning, and the hooks after it wait for it.
 - **`onShutdown`** runs on SIGINT or SIGTERM, before the client is destroyed, in reverse order, so a class stops before the classes it uses. The bot waits for the whole sequence up to `shutdownTimeout` from `meocord.config.ts` (10 seconds by default), then shuts down whether or not it finished. A second signal exits at once. If the bot never became ready, for example because the login failed, no `onShutdown` hook runs.
 - A hook that throws is logged and the next one still runs. When a class's `onReady` failed, the classes that depend on it still run theirs, with a warning naming the failed dependency.
@@ -1697,6 +1698,55 @@ MEOCORD_RUNTIME=/usr/local/bin/bun npm run start
 </details>
 
 ---
+
+### Sharding
+
+Discord requires a bot in more than about 2,500 servers to split its gateway connection into shards. Turn it on in `meocord.config.ts`:
+
+```typescript
+export default {
+  discordToken: process.env.DISCORD_TOKEN!,
+  sharding: { shards: 'auto' }, // or a number
+} satisfies MeoCordConfig
+```
+
+By default every shard runs in one process, in one client: one set of services, `onReady` once, commands registered once, and nothing else changes. Unset, `sharding` leaves `clientOptions.shards` as you set it.
+
+For a bot that needs more than one CPU core, `mode: 'process'` runs each shard in a process of its own. Start the bot as usual — `meocord start`, `node dist/main.js`, bun, pm2 or Docker all behave the same — and the first process becomes a manager that:
+
+- registers the commands once, over REST, then spawns the shards one after another from the built bundle, with the same runtime flags (such as bun's `--no-install`);
+- restarts a shard that exits, waiting 1 second, then 2, 4 and so on up to a minute, and from the start again once a shard has stayed up for five minutes;
+- stops everything and exits 1 when a shard cannot log in because the token is invalid or an intent is disallowed, instead of restarting it forever;
+- on SIGINT or SIGTERM, asks each shard to shut down through its `onShutdown` hooks, waits up to `shutdownTimeout` plus five seconds, and kills any shard still running — on Windows too. A second signal kills them at once.
+
+Each shard process runs the whole application with its own container, and its lifecycle hooks run in it; `onReady`'s `primary` is `true` only in the process running shard 0. Under `meocord start --dev`, process mode is off and every shard runs in one process, so the watcher restarts a single process; set `sharding.development: true` to run separate processes there too.
+
+To reach every shard, inject `ShardContext` from `meocord/core`:
+
+```typescript
+import { Service } from 'meocord/decorator'
+import { ShardContext } from 'meocord/core'
+import { Client } from 'discord.js'
+
+@Service()
+export class StatsService {
+  constructor(
+    private readonly shards: ShardContext,
+    private readonly client: Client,
+  ) {}
+
+  guildCount() {
+    return this.client.guilds.cache.size
+  }
+
+  async totalGuilds() {
+    const results = await this.shards.call(StatsService, 'guildCount')
+    return results.reduce((sum, result) => sum + (result.ok ? result.value : 0), 0)
+  }
+}
+```
+
+`call(Service, 'method', ...args)` runs the method in every process, each resolving the service from its own container, and resolves to one `{ shardIds, ok, value | error }` per process: one per shard with process sharding, one in all otherwise. Arguments and results cross processes as JSON. A process that throws, lacks the service or takes more than 10 seconds gives an error result instead of failing the others. `ids`, `count` and `isPrimary` describe the shards of this process. `broadcastEval` is there as well, but it turns its function into a string, which a minified bundle can break; prefer `call`.
 
 ## Contributing
 

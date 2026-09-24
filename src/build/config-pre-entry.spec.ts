@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process'
-import { mkdirSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'fs'
 import path from 'path'
 import { createRsbuild, type RsbuildConfig } from '@rsbuild/core'
 import { vi } from 'vitest'
@@ -43,12 +43,19 @@ import path from 'node:path'
 const load = createRequire(import.meta.url)
 load(path.resolve(process.cwd(), 'dist', 'meocord.config.mjs'))
 
-console.log(JSON.stringify({ greeting, evaluations: Reflect.get(globalThis, 'configEvaluations') }))
+console.log(
+  JSON.stringify({
+    greeting,
+    evaluations: Reflect.get(globalThis, 'configEvaluations'),
+    bundleEntry: Reflect.get(globalThis, Symbol.for('meocord.bundleEntry')),
+  }),
+)
 `
 
 interface RunResult {
   greeting: string | null
   evaluations: number
+  bundleEntry: string
 }
 
 async function buildAndRun(mode: 'production' | 'development', adjust = (config: RsbuildConfig) => config): Promise<RunResult> {
@@ -104,6 +111,13 @@ describe('the config pre-entry, built and run with node', () => {
     const result = await runFor(mode)
 
     expect(result.evaluations).toBe(1)
+  })
+
+  // A shard manager spawns this path; process.argv[1] may be a process manager's wrapper instead
+  it('records the built bundle as its own path in a production build', async () => {
+    const result = await runFor('production')
+
+    expect(realpathSync(result.bundleEntry)).toBe(realpathSync(path.join(fixture, 'dist', 'main.js')))
   })
 
   it('is what makes the value available: without it, the options read undefined', async () => {

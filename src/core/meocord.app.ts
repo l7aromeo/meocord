@@ -51,6 +51,9 @@ import {
   type RequiringHandler,
 } from '@src/core/event-requirements.js'
 import { lifecycleDependencies } from '@src/core/lifecycle-order.js'
+import { type MeoCordApplication } from '@src/interface/index.js'
+import { isShardProcess } from '@src/util/sharding-mode.util.js'
+import { isShardMessage, type ShardMessage } from '@src/core/shard-messages.js'
 import { registerCommands } from '@src/core/command-registration.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
 import { FORCE_REGISTER_ENV, isRegisterOnly, REGISTER_GUILD_ENV } from '@src/util/registration-mode.util.js'
@@ -86,6 +89,8 @@ let signalHandlersInstalled = false
  */
 export async function shutdownAndExit(): Promise<void> {
   if (shuttingDown) {
+    // A shard hears Ctrl+C both directly and from its manager, which owns forcing it; so it waits
+    if (isShardProcess()) return
     process.exit(1)
     return
   }
@@ -101,9 +106,28 @@ function installSignalHandlers(): void {
   signalHandlersInstalled = true
   process.on('SIGINT', () => void shutdownAndExit())
   process.on('SIGTERM', () => void shutdownAndExit())
+
+  // A shard stops when its manager asks, or when the manager is gone and cannot ask
+  if (isShardProcess()) {
+    process.on('message', message => {
+      if (isShardMessage(message) && message.meocord === 'shutdown') void shutdownAndExit()
+    })
+    process.on('disconnect', () => void shutdownAndExit())
+  }
 }
 
-export class MeoCordApp {
+/** The discord.js login errors no restart can fix, which a shard reports to its manager before exiting. */
+const FATAL_LOGIN_CODES = new Set(['TokenInvalid', 'DisallowedIntents'])
+
+/** Tells the manager a shard cannot log in, and waits until the message is sent. */
+async function reportFatalLogin(error: unknown): Promise<void> {
+  const code = (error as { code?: unknown } | null)?.code
+  if (!isShardProcess() || !process.send || typeof code !== 'string' || !FATAL_LOGIN_CODES.has(code)) return
+  const message: ShardMessage = { meocord: 'fatal', code, message: error instanceof Error ? error.message : String(error) }
+  await new Promise<void>(resolve => process.send!(message, undefined, {}, () => resolve()))
+}
+
+export class MeoCordApp implements MeoCordApplication {
   private readonly logger = new Logger(MeoCordApp.name)
   private readonly fallback: Fallback = createFallback(this.logger)
   private readonly bot: Client
@@ -198,7 +222,8 @@ export class MeoCordApp {
         this.activityInterval = setInterval(() => this.updateActivity(), 10000)
         // Started before registration and not waited on by it, so a slow or failed registration never holds them up
         const readyHooks = this.runReadyHooks((readyClient ?? this.bot) as Client<true>)
-        await this.registerCommands()
+        // With process sharding, the manager registers once for every shard
+        if (!isShardProcess()) await this.registerCommands()
         await readyHooks
       }),
     )
@@ -229,6 +254,7 @@ export class MeoCordApp {
       await this.bot.login(this.discordToken)
     } catch (error) {
       runningApps.delete(this.close)
+      await reportFatalLogin(error)
       if (process.exitCode === undefined || process.exitCode === 0) {
         process.exitCode = 1
         MeoCordApp.failedLoginSetExitCode = true
@@ -697,7 +723,7 @@ export class MeoCordApp {
         SLOW_READY_HOOK_MS,
       )
       try {
-        await instance.onReady(client, { primary: true })
+        await instance.onReady(client, { primary: client.shard ? client.shard.ids.includes(0) : true })
       } catch (error) {
         failed.add(lifecycleClass)
         this.logger.error(`onReady failed in ${lifecycleClass.name}:`, error)

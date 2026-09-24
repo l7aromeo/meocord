@@ -4,6 +4,11 @@
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// Bundled into the application's entry, so this is the built bundle's own path. A shard manager spawns
+// it: process.argv[1] may be a process manager's wrapper instead.
+globalThis[Symbol.for('meocord.bundleEntry')] = fileURLToPath(import.meta.url)
 
 const compiledPath = path.resolve(process.cwd(), 'dist', 'meocord.config.mjs')
 

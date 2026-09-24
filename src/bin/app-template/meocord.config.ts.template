@@ -6,6 +6,8 @@ export default {
   // Read from the environment rather than written here: this file is committed, and a
   // token pasted into it is a token pushed to the remote. Copy .env.example to .env.
   discordToken: process.env.DISCORD_TOKEN!,
+  // Discord requires sharding from about 2,500 servers. Every shard runs in this process unless mode is 'process'.
+  // sharding: { shards: 'auto' },
   commands: {
     // Registers globally in production. In development every command goes to this guild instead,
     // where changes show at once; leave DEV_GUILD_ID empty to register globally there too.
