@@ -1,5 +1,6 @@
 import 'reflect-metadata'
-import { Container, injectable, type ServiceIdentifier } from 'inversify'
+import { makeInjectable } from '@src/util/injectable.util.js'
+import { Container, type ServiceIdentifier } from 'inversify'
 import { Client } from 'discord.js'
 import { Logger } from '@src/common/index.js'
 import { MeoCordApp } from '@src/core/meocord.app.js'
@@ -16,9 +17,7 @@ function bindDependencies(container: Container, cls: any): void {
   if (container.isBound(cls)) return
   if (injectedTokens(cls).includes(ExecutionContext)) throw singletonContextError(cls)
 
-  if (!Reflect.hasMetadata(MetadataKey.Injectable, cls)) {
-    injectable()(cls)
-  }
+  makeInjectable(cls)
 
   container.bind(cls).toSelf().inSingletonScope()
 

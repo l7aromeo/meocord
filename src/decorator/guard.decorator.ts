@@ -1,5 +1,6 @@
 import 'reflect-metadata'
-import { injectable, type Container } from 'inversify'
+import { makeInjectable } from '@src/util/injectable.util.js'
+import { type Container } from 'inversify'
 import { BaseInteraction, Message, MessageReaction, type Interaction } from 'discord.js'
 import { type GuardInterface } from '@src/interface/index.js'
 import { getCommandMap, getMessageHandlers, getReactionHandlers } from '@src/decorator/controller.decorator.js'
@@ -80,9 +81,7 @@ function applyGuards(descriptor: PropertyDescriptor, guards: GuardEntry[], proto
  */
 export function Guard() {
   return function (target: any) {
-    if (!Reflect.hasMetadata(MetadataKey.Injectable, target)) {
-      injectable()(target)
-    }
+    makeInjectable(target)
   }
 }
 

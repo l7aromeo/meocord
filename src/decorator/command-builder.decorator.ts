@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import { injectable } from 'inversify'
+import { makeInjectable } from '@src/util/injectable.util.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { type BuildableCommandType, type CommandBuilderBase } from '@src/interface/command-decorator.interface.js'
 
@@ -20,10 +20,7 @@ import { type BuildableCommandType, type CommandBuilderBase } from '@src/interfa
  */
 export function CommandBuilder<T extends BuildableCommandType>(commandType: T) {
   return function (target: new () => CommandBuilderBase<T>) {
-    // Check if the class is already injectable; if not, make it injectable dynamically
-    if (!Reflect.hasMetadata(MetadataKey.Injectable, target)) {
-      injectable()(target)
-    }
+    makeInjectable(target)
 
     // Define the command type metadata for the target class
     Reflect.defineMetadata(

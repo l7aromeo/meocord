@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import { injectable } from 'inversify'
+import { makeInjectable } from '@src/util/injectable.util.js'
 import {
   type AutocompleteInteraction,
   Message,
@@ -356,9 +356,7 @@ export function getAutocompleteHandlers(controller: any): AutocompleteMetadata[]
  */
 export function Controller() {
   return function (target: any) {
-    if (!Reflect.hasMetadata(MetadataKey.Injectable, target)) {
-      injectable()(target)
-    }
+    makeInjectable(target)
   }
 }
 

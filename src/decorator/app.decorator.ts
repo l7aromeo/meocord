@@ -1,5 +1,6 @@
 import 'reflect-metadata'
-import { injectable, type ServiceIdentifier } from 'inversify'
+import { makeInjectable } from '@src/util/injectable.util.js'
+import { type ServiceIdentifier } from 'inversify'
 import { type ActivityOptions, type ClientOptions } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
 
@@ -32,9 +33,7 @@ export function MeoCord(options: {
   services?: ServiceIdentifier[]
 }): (target: any) => void {
   return (target: any): void => {
-    if (!Reflect.hasMetadata(MetadataKey.Injectable, target)) {
-      injectable()(target)
-    }
+    makeInjectable(target)
 
     Reflect.defineMetadata(MetadataKey.AppOptions, options, target)
   }
