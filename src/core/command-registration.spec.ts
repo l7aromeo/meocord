@@ -427,6 +427,20 @@ describe('registerCommands', () => {
       }
     })
 
+    it('wraps a long list of sub-commands, and names an unknown type "Command"', async () => {
+      const options = Array.from({ length: 8 }, (_, index) => ({ name: `option-${index}` }))
+      const typed = controllerBuilding([
+        { name: 'wide', body: { name: 'wide', type: 1, description: 'w', options } },
+        { name: 'odd', body: { name: 'odd', type: 9 } },
+      ])
+      const { logger, run } = register({ controllerClasses: [typed] })
+      await run
+
+      const message = String(logger.log.mock.calls.find(([line]) => String(line).startsWith('Registered'))?.[0])
+      expect(message.split('\n').filter(line => line.includes('option-')).length).toBeGreaterThan(1)
+      expect(message.split('\n').find(line => line.includes(' odd '))).toMatch(/│ odd\s+│ Command\s+│/)
+    })
+
     it('checks only the scopes the configuration names and it did not send to', async () => {
       const rest = createRest()
       await register({ rest, config: { guilds: ['one'], developmentGuild: 'dev' }, controllerClasses: [controllerWith([{ name: 'ping' }, { name: 'ban', guilds: ['staff'] }])] }).run
@@ -537,6 +551,13 @@ describe('registerCommands', () => {
       await run
 
       expect(rest.put).toHaveBeenCalled()
+    })
+
+    it('says nothing on a first run, when there is no record yet', async () => {
+      const { logger, run } = register({ development: true })
+      await run
+
+      expect(logger.debug).not.toHaveBeenCalled()
     })
 
     it('sends again when the recorded payload cannot be read', async () => {
@@ -717,6 +738,62 @@ describe('registration, message by message', () => {
           '  "ban" name_localizations.ja: "A" must be lowercase letters, numbers, - _ or \' with no spaces\n' +
           '  "ban" name_localizations.fr: "B" must be lowercase letters, numbers, - _ or \' with no spaces',
       )
+    })
+
+    it('takes a builder with no type and one with the chat input type as the same command', () => {
+      const logger = createLogger()
+
+      const commands = collectCommands(
+        [controllerBuilding([{ name: 'ping', body: { name: 'ping' } }, { name: 'ping', method: 'typed', body: { name: 'ping', type: 1 } }])],
+        logger,
+      )
+
+      expect(commands).toHaveLength(1)
+      expect(logger.warn).toHaveBeenCalled()
+    })
+
+    it("keys and names a command by its builder's name, when one builder serves a command and its subcommand", () => {
+      const body = { name: 'settings', type: 1, description: 's', options: [{ name: 'language', type: 1, description: 'l' }] }
+      const builder = { toJSON: () => body }
+      class SharedBuilder {
+        build = () => builder as any
+      }
+      Reflect.defineMetadata('commandType', CommandType.SLASH, SharedBuilder)
+      @Controller()
+      class SettingsController {
+        // The subcommand first, so the command is first met under a route that is not its name
+        @Command('settings language', SharedBuilder as any)
+        async language(..._args: any[]) {}
+
+        @Command('settings', SharedBuilder as any)
+        async settings(..._args: any[]) {}
+      }
+
+      expect(collectCommands([SettingsController], createLogger())?.map(({ name }) => name)).toEqual(['settings'])
+    })
+
+    it('lists every builder that cannot be serialised, separated', () => {
+      const broken = (message: string) =>
+        class {
+          build = () => ({ toJSON: () => { throw new Error(message) } }) as any
+        }
+      const First = broken('one')
+      const Second = broken('two')
+      Reflect.defineMetadata('commandType', CommandType.SLASH, First)
+      Reflect.defineMetadata('commandType', CommandType.SLASH, Second)
+      @Controller()
+      class BrokenController {
+        @Command('first', First as any)
+        async first(..._args: any[]) {}
+
+        @Command('second', Second as any)
+        async second(..._args: any[]) {}
+      }
+      const logger = createLogger()
+
+      collectCommands([BrokenController], logger)
+
+      expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('2 builder(s) could not be serialised: "first" (one), "second" (two).'))
     })
   })
 
