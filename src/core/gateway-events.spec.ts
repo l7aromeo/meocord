@@ -5,6 +5,7 @@ import {
   type ClientOptions,
   GatewayIntentBits,
   type GuildMember,
+  type PartialGuildMember,
   Message,
   MessageReaction,
   Partials,
@@ -404,6 +405,133 @@ describe('gateway event handlers', () => {
       await startApp({ services: [], guards: [RolesGuard] })
 
       expect(logged.info).toEqual([])
+    })
+  })
+
+  describe('failures and misuse', () => {
+    it('logs a handler whose instance cannot be resolved, and keeps the listener for the next event', async () => {
+      let attempts = 0
+
+      @Controller()
+      class Broken {
+        constructor() {
+          attempts++
+          throw new Error('no database')
+        }
+
+        @On('guildMemberAdd')
+        greet() {}
+      }
+
+      const client = await startApp({ controllers: [Broken] })
+      await emit(client, 'guildMemberAdd', member)
+      await emit(client, 'guildMemberAdd', member)
+
+      expect(attempts).toBe(2)
+      expect(logged.error).toHaveLength(2)
+      expect(String(logged.error[0][0])).toContain('"guildMemberAdd" in Broken.greet')
+      expect(client.listenerCount('guildMemberAdd')).toBe(1)
+    })
+
+    // Standalone services are created at startup, so a failing one stops the app before it goes online
+    it('stops startup with the error of a standalone service whose constructor throws', async () => {
+      @Service()
+      class Broken {
+        constructor() {
+          throw new Error('no database')
+        }
+
+        @On('guildMemberAdd')
+        greet() {}
+      }
+
+      await expect(startApp({ services: [Broken] })).rejects.toThrow('no database')
+    })
+
+    it('logs a handler that throws synchronously, like one that rejects', async () => {
+      @Service()
+      class Sync {
+        @On('guildMemberAdd')
+        greet() {
+          throw new Error('sync failure')
+        }
+      }
+
+      const client = await startApp({ services: [Sync] })
+      await expect(emit(client, 'guildMemberAdd', member)).resolves.toBeUndefined()
+
+      expect(logged.error).toHaveLength(1)
+      expect(logged.error[0][1]).toEqual(new Error('sync failure'))
+    })
+
+    it('runs an @Once handler that threw only once', async () => {
+      let runs = 0
+
+      @Service()
+      class Warmup {
+        @Once('guildMemberAdd')
+        warm() {
+          runs++
+          throw new Error('cold')
+        }
+      }
+
+      const client = await startApp({ services: [Warmup] })
+      await emit(client, 'guildMemberAdd', member)
+      await emit(client, 'guildMemberAdd', member)
+
+      expect(runs).toBe(1)
+      expect(logged.error).toHaveLength(1)
+    })
+
+    it('runs an inherited @On once, on the subclass bound', async () => {
+      const seen: string[] = []
+
+      class BaseAudit {
+        @On('guildMemberAdd')
+        record() {
+          seen.push(this.constructor.name)
+        }
+      }
+
+      @Service()
+      class GuildAudit extends BaseAudit {}
+
+      const client = await startApp({ services: [GuildAudit] })
+      await emit(client, 'guildMemberAdd', member)
+
+      expect(seen).toEqual(['GuildAudit'])
+    })
+
+    it('handles each event a method is declared for', async () => {
+      const seen: string[] = []
+
+      @Service()
+      class Presence {
+        @On('guildMemberAdd')
+        @On('guildMemberRemove')
+        track(changed: GuildMember | PartialGuildMember) {
+          seen.push(changed.id)
+        }
+      }
+
+      const client = await startApp({ services: [Presence] })
+      await emit(client, 'guildMemberAdd', member)
+      await emit(client, 'guildMemberRemove', member)
+
+      expect(seen).toEqual(['member-1', 'member-1'])
+    })
+
+    it('attaches nothing for a class the app does not bind', async () => {
+      class Unbound {
+        @On('guildMemberAdd')
+        greet() {}
+      }
+      void Unbound
+
+      const client = await startApp({})
+
+      expect(client.listenerCount('guildMemberAdd')).toBe(0)
     })
   })
 
