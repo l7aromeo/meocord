@@ -787,7 +787,7 @@ A guard that returns `false` under `@Defer` leaves nothing behind: a command's d
 
 ### Where the interaction happened
 
-A user-installed app can be used in servers the bot is not in and in direct messages between users, where the bot cannot use the channel API. `respond()` always answers through the interaction's own methods, which work everywhere, and turns to the channel only when the interaction's fifteen-minute token has expired and the bot is present. `getInstallContext(interaction)` reports the same thing to your code:
+A user-installed app can be used in servers the bot is not in and in direct messages between users, where the bot cannot use the channel API. `respond()` always answers through the interaction's own methods, which work everywhere, and turns to the channel only when the interaction's fifteen-minute token has expired and the bot is present. Only edits can take that path: after fifteen minutes, an error can be logged but not shown privately, so a public card is put back without a private error. `getInstallContext(interaction)` reports the same thing to your code:
 
 ```typescript
 import { getInstallContext } from 'meocord/common'

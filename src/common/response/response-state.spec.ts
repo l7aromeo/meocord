@@ -314,6 +314,19 @@ describe('respond()', () => {
       expect(message.edit).toHaveBeenCalledWith(expect.objectContaining({ content: 'late' }))
     })
 
+    // The token's age is read on the host's clock, which may run behind Discord's
+    it('takes a token error as expiry from 14 minutes, allowing for a clock running late', async () => {
+      const message = messageWith()
+      const interaction = button(message)
+      Object.assign(interaction, { createdTimestamp: Date.now() - 14.5 * 60 * 1000, context: InteractionContextType.Guild })
+      await respond(interaction).acknowledge()
+      interaction.editReply.mockRejectedValueOnce(createDiscordError(10015))
+
+      await respond(interaction).send('late')
+
+      expect(message.edit).toHaveBeenCalledWith(expect.objectContaining({ content: 'late' }))
+    })
+
     it('never uses the channel in a server without the bot', async () => {
       const message = messageWith()
       const interaction = createMockInteraction(ButtonInteraction, {

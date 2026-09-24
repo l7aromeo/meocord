@@ -94,7 +94,11 @@ export interface ResponseCall {
 const DEFAULT_ERROR = 'An error occurred while executing the command.'
 const ALREADY_ACKNOWLEDGED = 40060
 const TOKEN_EXPIRED = new Set([50027, 10015])
-const TOKEN_LIFETIME_MS = 15 * 60 * 1000
+/**
+ * How old an interaction's token must be for a token error to mean it expired. Discord's tokens last 15
+ * minutes; the age is read on this host's clock, which may run behind Discord's, so a minute is allowed.
+ */
+const TOKEN_EXPIRED_AFTER_MS = 14 * 60 * 1000
 
 const logger = new Logger('Response')
 const development = () => process.env.NODE_ENV !== 'production'
@@ -527,7 +531,7 @@ export class ResponseState {
       this.lastMessage = await this.interaction.editReply(sent as InteractionEditReplyOptions)
     } catch (error) {
       const message = this.message
-      const expired = Date.now() - this.interaction.createdTimestamp >= TOKEN_LIFETIME_MS
+      const expired = Date.now() - this.interaction.createdTimestamp >= TOKEN_EXPIRED_AFTER_MS
       if (!TOKEN_EXPIRED.has(errorCode(error) as number) || !expired || !this.location.botInstalled || !message) throw error
       this.record('message.edit', sent)
       this.lastMessage = await message.edit(sent as never)
