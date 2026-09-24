@@ -224,10 +224,56 @@ jobs:
       - name: Run CLI scenarios
         run: bun run cli:scenarios
 
+  # The checks that install and run code from outside the repository's lockfile: a generated
+  # application's whole dependency tree, its bot, bundling, sharding. They gate a release, so they
+  # run before it, but in a job of their own that can only read the repository: code they install
+  # never runs where the publishing identity can be requested.
+  release-checks:
+    name: Release checks
+    if: github.event_name != 'pull_request'
+    needs: [lint, test-result, coverage, build, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The generated application's tools run through their node shebangs, and the CLI
+      # needs the Node its engines field names, not whichever one the image carries.
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build package
+        run: bun run build
+
+      # Installs an application from the packed build and runs its own lint, typecheck,
+      # tests, coverage and builds. Rendering a template says nothing about whether the
+      # code it produces passes any of them.
+      - name: Verify generated applications
+        run: bun run verify:generated
+
+      # The CLI scenarios that install with npm, run on bun, bundle, shard and send signals: slower,
+      # and they reach Discord, so they gate a release rather than every pull request.
+      - name: Run the slow CLI scenarios
+        run: bun run cli:scenarios --tier slow
+
+  # Publishes, and only that: it installs nothing beyond the repository's frozen lockfile and runs
+  # no generated application, since any step here can request the token npm publishes with.
   release:
     name: Release
     if: github.event_name != 'pull_request'
-    needs: [lint, test-result, coverage, build, windows]
+    needs: [lint, test-result, coverage, build, windows, release-checks]
     runs-on: ubuntu-latest
     environment: Production
     concurrency:
@@ -263,25 +309,16 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
+      # The lockfile's exact packages, with no install scripts: the build needs none, and each one
+      # would be code from a dependency running beside the publishing identity.
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Verify provenance attestations
         run: npm audit signatures
 
       - name: Build package
         run: bun run build
-
-      # Installs an application from the packed build and runs its own lint, typecheck,
-      # tests, coverage and builds. Rendering a template says nothing about whether the
-      # code it produces passes any of them.
-      - name: Verify generated applications
-        run: bun run verify:generated
-
-      # The CLI scenarios that install with npm, run on bun, bundle, shard and send signals: slower,
-      # and they reach Discord, so they gate a release rather than every pull request.
-      - name: Run the slow CLI scenarios
-        run: bun run cli:scenarios --tier slow
 
       # With pending changesets, this opens or updates the release pull request and
       # stops. With none — which is the state right after that pull request merges —
