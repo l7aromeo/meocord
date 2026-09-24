@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "include": [
     "vitest.config.ts",
+    "vitest.mutation.config.ts",
     "eslint.config.ts",
     "meocord.eslint.d.ts",
     "scripts/**/*.ts"
