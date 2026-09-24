@@ -258,6 +258,13 @@ describe('respond()', () => {
       expect(interaction.showModal).toHaveBeenCalledWith(modal)
     })
 
+    it('refuses an interaction that cannot show a modal, such as a modal submission', async () => {
+      const interaction = createMockInteraction(ModalSubmitInteraction, { customId: 'form' })
+      Reflect.deleteProperty(interaction, 'showModal')
+
+      await expect(respond(interaction).modal(new ModalBuilder().setCustomId('x').setTitle('X'))).rejects.toThrow('cannot show a modal')
+    })
+
     it('throws a clear error once acknowledged, rather than failing at Discord', async () => {
       const interaction = command()
       await respond(interaction).acknowledge()
@@ -477,6 +484,18 @@ describe('respond()', () => {
 
       await expect(respond(interaction).error(new Error('x'))).resolves.toBeUndefined()
       expect(interaction.followUp).toHaveBeenCalledTimes(1)
+    })
+
+    it('never throws when the presenter itself fails', async () => {
+      const interaction = command()
+      setPresenter(interaction.client, {
+        loading: () => ({ text: 'x' }),
+        error: () => {
+          throw new Error('presenter broke')
+        },
+      })
+
+      await expect(respond(interaction).error(new Error('x'))).resolves.toBeUndefined()
     })
 
     it("styles the error with the client's presenter", async () => {
