@@ -1356,7 +1356,7 @@ export class ReminderScheduler implements OnReady, OnShutdown {
 - **Which classes**: every controller and every service the app binds — the ones listed in `@MeoCord({ controllers, services })` and everything they depend on — including a service no handler has used yet. Guards are created per call and get no hooks.
 - **`onReady`** runs once the client is ready. It receives the client and `{ primary }`, which says whether this process should do one-off work: `true` for a bot running in one process, and with [process sharding](#sharding) only in the process running shard 0.
 - **Dependency order.** `onReady` hooks run one at a time, each class after the classes it injects: a `DatabaseService` is ready before the `ReminderScheduler` that injects it. Classes with no dependency between them run in declaration order, the `services` first, then the `controllers`. Command registration runs alongside and never delays the hooks. A hook still running after 10 seconds is named in a warning, and the hooks after it wait for it.
-- **`onShutdown`** runs on SIGINT or SIGTERM, before the client is destroyed, in reverse order, so a class stops before the classes it uses. The bot waits for the whole sequence up to `shutdownTimeout` from `meocord.config.ts` (10 seconds by default), then shuts down whether or not it finished. A second signal exits at once. If the bot never became ready, for example because the login failed, no `onShutdown` hook runs. A signal that arrives while the `onReady` hooks are still running shuts down only the classes whose `onReady` finished, and those without one; the class still starting, and those after it, are skipped, and no further `onReady` starts.
+- **`onShutdown`** runs on SIGINT or SIGTERM, before the client is destroyed, in reverse order, so a class stops before the classes it uses. The bot waits for the whole sequence up to `shutdownTimeout` from `meocord.config.ts` (10 seconds by default), then shuts down whether or not it finished. A second signal more than a second after the first exits at once; one sooner is taken as the same request, since a terminal's Ctrl+C can arrive twice. If the bot never became ready, for example because the login failed, no `onShutdown` hook runs. A signal that arrives while the `onReady` hooks are still running shuts down only the classes whose `onReady` finished, and those without one; the class still starting, and those after it, are skipped, and no further `onReady` starts.
 - A hook that throws is logged and the next one still runs. When a class's `onReady` failed, the classes that depend on it still run theirs, with a warning naming the failed dependency.
 
 ---
@@ -1930,6 +1930,8 @@ Start in production:
 npx meocord start --prod
 ```
 
+`meocord start` passes SIGINT and SIGTERM on to the bot, so it shuts down cleanly whether the signal comes from a terminal, Docker, pm2 or systemd. In a container, `CMD ["node", "dist/main.js"]` is the lean choice: the bot is the only process, and it receives the signal itself.
+
 ### Self-contained builds
 
 By default `dist/main.js` imports its dependencies at runtime, which is why the server needs `node_modules`. Set `bundleDependencies` and the build puts everything the bot needs inside `dist` instead:
@@ -2053,7 +2055,7 @@ For a bot that needs more than one CPU core, `mode: 'process'` runs each shard i
 - registers the commands once, over REST, then spawns the shards one after another from the built bundle, with the same runtime flags (such as bun's `--no-install`);
 - restarts a shard that exits, waiting 1 second, then 2, 4 and so on up to a minute, and from the start again once a shard has stayed up for five minutes;
 - stops everything and exits 1 when a shard cannot log in because the token is invalid or an intent is disallowed, instead of restarting it forever;
-- on SIGINT or SIGTERM, asks each shard to shut down through its `onShutdown` hooks, waits up to `shutdownTimeout` plus five seconds, and kills any shard still running — on Windows too. A second signal kills them at once.
+- on SIGINT or SIGTERM, asks each shard to shut down through its `onShutdown` hooks, waits up to `shutdownTimeout` plus five seconds, and kills any shard still running — on Windows too. A second signal more than a second after the first kills them at once.
 
 Each shard process runs the whole application with its own container, and its lifecycle hooks run in it; `onReady`'s `primary` is `true` only in the process running shard 0. Under `meocord start --dev`, process mode is off and every shard runs in one process, so the watcher restarts a single process; set `sharding.development: true` to run separate processes there too.
 
