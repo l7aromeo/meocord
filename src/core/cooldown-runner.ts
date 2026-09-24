@@ -18,6 +18,9 @@ export interface CooldownOptions {
   bypass?: (context: ExecutionContext) => boolean | Promise<boolean>
 }
 
+/** A `@Cooldown` as the decorator stores it, with its defaults filled in. */
+export type StoredCooldown = CooldownOptions & { uses: number; per: CooldownScope }
+
 /** Private metadata: a controller's class-level `@Cooldown`s. */
 export const CLASS_COOLDOWNS = Symbol('class_cooldowns')
 
@@ -25,22 +28,22 @@ export const CLASS_COOLDOWNS = Symbol('class_cooldowns')
 export const METHOD_COOLDOWNS = Symbol('method_cooldowns')
 
 /** The cooldowns on a handler: the controller's, from the class declaring it down, then the method's. */
-export function handlerCooldowns(prototype: object, methodName: string): CooldownOptions[] {
+export function handlerCooldowns(prototype: object, methodName: string): StoredCooldown[] {
   const source = sourcePrototype(prototype, methodName)
   if (!source) return []
 
-  const classLevel: CooldownOptions[] = []
+  const classLevel: StoredCooldown[] = []
   for (let current: object | null = prototype; current; current = Object.getPrototypeOf(current)) {
-    classLevel.unshift(...((Reflect.getOwnMetadata(CLASS_COOLDOWNS, current.constructor) as CooldownOptions[]) ?? []))
+    classLevel.unshift(...((Reflect.getOwnMetadata(CLASS_COOLDOWNS, current.constructor) as StoredCooldown[]) ?? []))
     if (current === source) break
   }
-  return [...classLevel, ...((Reflect.getOwnMetadata(METHOD_COOLDOWNS, source, methodName) as CooldownOptions[]) ?? [])]
+  return [...classLevel, ...((Reflect.getOwnMetadata(METHOD_COOLDOWNS, source, methodName) as StoredCooldown[]) ?? [])]
 }
 
 /** The cooldowns declared on a method itself. */
-export function methodCooldowns(prototype: object, methodName: string): CooldownOptions[] {
+export function methodCooldowns(prototype: object, methodName: string): StoredCooldown[] {
   const source = sourcePrototype(prototype, methodName)
-  return source ? ((Reflect.getOwnMetadata(METHOD_COOLDOWNS, source, methodName) as CooldownOptions[]) ?? []) : []
+  return source ? ((Reflect.getOwnMetadata(METHOD_COOLDOWNS, source, methodName) as StoredCooldown[]) ?? []) : []
 }
 
 /** Who and where a call came from: an interaction's or a message's user, server and channel. */
@@ -76,7 +79,7 @@ export async function consumeCooldowns(
   container: Container,
   controller: { name: string },
   methodName: string,
-  cooldowns: readonly CooldownOptions[],
+  cooldowns: readonly StoredCooldown[],
   contextOf: () => HandlerExecutionContext,
 ): Promise<void> {
   if (cooldowns.length === 0) return
@@ -87,7 +90,7 @@ export async function consumeCooldowns(
   const store = cooldownStoreOf(container)
   const first = contextOf().getArgs()[0]
 
-  for (const [index, { seconds, uses = 1, per = 'user', bypass }] of cooldowns.entries()) {
+  for (const [index, { seconds, uses, per, bypass }] of cooldowns.entries()) {
     if (bypass && (await bypass(contextOf()))) continue
 
     const key = `${controller.name}.${methodName}#${index}:${per}:${scopeId(per, first)}`

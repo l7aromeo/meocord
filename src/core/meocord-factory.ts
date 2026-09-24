@@ -57,7 +57,7 @@ function warnPerShardCooldowns(controllers: readonly (new (...args: any[]) => un
       .flat()
       .map(command => command.methodName)
     return [...new Set([...methods, ...getMessageHandlers(prototype).map(handler => handler.method)])]
-      .filter(method => handlerCooldowns(prototype, method).some(({ per = 'user' }) => per === 'user' || per === 'global'))
+      .filter(method => handlerCooldowns(prototype, method).some(({ per }) => per === 'user' || per === 'global'))
       .map(method => `${controller.name}.${method}`)
   })
   if (loose.length === 0) return

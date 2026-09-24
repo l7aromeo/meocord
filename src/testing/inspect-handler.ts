@@ -115,7 +115,7 @@ export function inspectHandler<C extends new (...args: any[]) => unknown>(
     interceptors: Object.freeze([...interceptors]),
     filters: Object.freeze(filters.flat()),
     cooldowns: Object.freeze(
-      handlerCooldowns(controller.prototype as object, methodName).map(({ seconds, uses = 1, per = 'user', bypass }) =>
+      handlerCooldowns(controller.prototype as object, methodName).map(({ seconds, uses, per, bypass }) =>
         Object.freeze({ seconds, uses, per, bypass: bypass !== undefined }),
       ),
     ),
