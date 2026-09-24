@@ -1487,7 +1487,7 @@ await module.invoke(ProfileController, 'showProfile', interaction, { ownerId: '1
 
 `invoke` resolves to `{ ran }`, which is `false` when a guard denied the call or an interceptor skipped the handler, with `error` set when a filter handled one. An error no filter handles rejects the call, since the built-in fallback does not run in tests. The method name and arguments are type-checked against the handler. Calling the controller method directly runs its guards but no interceptors, validation or filters; `invoke` is the way to test everything dispatch runs around a handler.
 
-Pass the interaction alone and `invoke` builds the params as dispatch does: a command's options, or the handler's customId params and a modal's fields. `createModalFields({ body: 'It crashed' })` gives a mock `ModalSubmitInteraction` its submitted fields, which discord.js does not let a test construct.
+Pass the interaction alone and `invoke` builds the params as dispatch does: a command's or an autocomplete's options, or the handler's customId params and a modal's fields. `createModalFields({ body: 'It crashed' })` gives a mock `ModalSubmitInteraction` its submitted fields, which discord.js does not let a test construct.
 
 To send a client event to the module's `@On` and `@Once` handlers, use [`emit`](#gateway-events).
 

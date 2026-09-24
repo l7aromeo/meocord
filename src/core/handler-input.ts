@@ -27,14 +27,16 @@ function modalFields(interaction: ModalSubmitInteraction): Record<string, unknow
 }
 
 /**
- * Builds a handler's input in one object: a chat command's options, or a component's customId params
- * and, for a modal, its fields. When a customId param and a field share a name, the customId param
- * wins, since the route was chosen by it.
+ * Builds a handler's input in one object: a chat command's or an autocomplete's options, or a
+ * component's customId params and, for a modal, its fields. When a customId param and a field share
+ * a name, the customId param wins, since the route was chosen by it.
  *
  * @param routeParams - The params the customId's pattern captured.
  */
 export function handlerInput(interaction: Interaction, routeParams: Record<string, string> = {}): HandlerInput {
-  if (interaction.isChatInputCommand()) return { params: resolveOptionParams(interaction), collisions: [] }
+  if (interaction.isChatInputCommand() || interaction.isAutocomplete()) {
+    return { params: resolveOptionParams(interaction), collisions: [] }
+  }
   if (!hasCustomId(interaction)) return { params: {}, collisions: [] }
 
   const fields = interaction instanceof ModalSubmitInteraction ? modalFields(interaction) : {}

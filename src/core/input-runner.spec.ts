@@ -1,5 +1,6 @@
-import { ButtonInteraction, ChatInputCommandInteraction, ModalSubmitInteraction } from 'discord.js'
+import { AutocompleteInteraction, ButtonInteraction, ChatInputCommandInteraction, ModalSubmitInteraction } from 'discord.js'
 import {
+  Autocomplete,
   Command,
   Controller,
   Guard,
@@ -172,6 +173,11 @@ class InputController {
   async feedback(_interaction: ModalSubmitInteraction, params: Record<string, unknown>) {
     received.push(params)
   }
+
+  @Autocomplete('remind')
+  async suggest(_interaction: AutocompleteInteraction, params: Record<string, unknown>) {
+    received.push(params)
+  }
 }
 
 const module = () =>
@@ -261,6 +267,13 @@ describe('the input invoke builds when a test gives only the interaction', () =>
     await module().invoke(InputController, 'remind', slash({ minutes: 3, note: 'tea' }))
 
     expect(received).toEqual([{ minutes: 3, note: 'tea' }])
+  })
+
+  it("takes an autocomplete's options, as dispatch passes them", async () => {
+    const interaction = createMockInteraction(AutocompleteInteraction, { options: createChatInputOptions({ note: 'te' }) as never })
+    await module().invoke(InputController, 'suggest', interaction)
+
+    expect(received).toEqual([{ note: 'te' }])
   })
 
   it("takes the handler's customId params and a modal's fields together", async () => {
