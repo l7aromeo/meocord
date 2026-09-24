@@ -1,0 +1,40 @@
+import { describe, expectTypeOf, it } from 'vitest'
+import { type ButtonInteraction, type Message, MessageFlags } from 'discord.js'
+import { respond } from '@src/common/index.js'
+
+/**
+ * Runs under `vitest --typecheck`. The negative cases use `@ts-expect-error`,
+ * which fails once the rejected form starts compiling.
+ */
+
+declare const interaction: ButtonInteraction
+
+describe('respond()', () => {
+  it('sends text, or reply options with the flags a new message can take', () => {
+    expectTypeOf(respond(interaction).send('Done')).resolves.toEqualTypeOf<Message | undefined>()
+    void respond(interaction).send({ content: 'Only you', flags: MessageFlags.Ephemeral })
+    void respond(interaction).followUp({ content: 'Quiet', flags: [MessageFlags.SuppressNotifications, MessageFlags.Ephemeral] })
+    void respond(interaction).send({ components: [], flags: MessageFlags.IsComponentsV2 })
+  })
+
+  it('refuses a flag Discord ignores or rejects on a new message', () => {
+    // @ts-expect-error Crossposted is set by Discord, never sent
+    void respond(interaction).send({ content: 'x', flags: MessageFlags.Crossposted })
+    // @ts-expect-error withResponse is managed by respond()
+    void respond(interaction).send({ content: 'x', withResponse: true })
+  })
+
+  it('refuses making an existing message ephemeral with edit()', () => {
+    void respond(interaction).edit({ content: 'x', flags: MessageFlags.SuppressEmbeds })
+    // @ts-expect-error an edit cannot change who sees the message
+    void respond(interaction).edit({ content: 'x', flags: MessageFlags.Ephemeral })
+  })
+
+  it('takes only the documented error visibilities and acknowledge options', () => {
+    void respond(interaction).error(new Error('x'), { message: 'Nope', visibility: 'private' })
+    // @ts-expect-error visibility is 'reply' or 'private'
+    void respond(interaction).error(new Error('x'), { visibility: 'public' })
+    // @ts-expect-error acknowledge takes only ephemeral
+    void respond(interaction).acknowledge({ ephemeral: true, fetchReply: true })
+  })
+})
