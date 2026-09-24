@@ -126,6 +126,22 @@ describe('respond()', () => {
       warn.mockRestore()
     })
 
+    // A flags value on an edit sets every flag Discord lets an edit change, SuppressEmbeds among them
+    it("keeps a message's suppressed embeds suppressed through the lock, the restore and an edit", async () => {
+      const interaction = button(messageWith({ flags: SuppressEmbeds, components: [{ type: ComponentType.ActionRow, components: [{ type: ComponentType.Button, style: 1, custom_id: 'refresh', label: 'Refresh' }] }] }))
+      vi.mocked(interaction.fetchReply).mockRejectedValue(new Error('not readable'))
+      // Discord returns the edited message with the flags it kept
+      vi.mocked(interaction.editReply).mockResolvedValue(messageWith({ flags: SuppressEmbeds }))
+
+      await respond(interaction).lock()
+      await respond(interaction).release()
+      await respond(interaction).edit('done')
+
+      const edits = vi.mocked(interaction.editReply).mock.calls.map(([payload]) => Number((payload as Payload).flags ?? 0))
+      expect(edits).toHaveLength(3)
+      for (const flags of edits) expect(flags & SuppressEmbeds).toBe(SuppressEmbeds)
+    })
+
     it('keeps IsComponentsV2 on edits of a Components V2 message, dropping content and embeds', async () => {
       const interaction = button(messageWith({ flags: IsComponentsV2 }))
       await respond(interaction).acknowledge()
