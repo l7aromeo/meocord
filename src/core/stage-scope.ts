@@ -8,8 +8,8 @@ const STAGE_TYPES = Symbol('stage_types')
 type StageEntry = (new (...args: any[]) => unknown) | { provide: new (...args: any[]) => unknown }
 
 /**
- * Records the context types a stage class runs for; without them it runs for every type. An empty list
- * is refused: the stage would never run, and a guard that never runs protects nothing.
+ * Records the context types a stage class runs for; without them it runs for every type. A list that
+ * can match no call is refused: an empty one, or autocomplete alone for an interceptor.
  */
 export function defineStageTypes(
   cls: { name: string },
@@ -21,6 +21,13 @@ export function defineStageTypes(
     throw new Error(
       `@${decorator}({ types: [] }) on ${cls.name} lists no types, so it would never run. List the types it ` +
         `runs for, or leave types out to run for every type.`,
+    )
+  }
+  // Interceptors never run for autocomplete, which must answer within three seconds
+  if (decorator === 'Interceptor' && types.every(type => type === 'autocomplete')) {
+    throw new Error(
+      `@Interceptor({ types: ['autocomplete'] }) on ${cls.name} can never run: interceptors skip autocomplete ` +
+        `handlers. List the types it should run for instead.`,
     )
   }
   Reflect.defineMetadata(STAGE_TYPES, [...types], cls)

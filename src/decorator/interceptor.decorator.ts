@@ -13,7 +13,9 @@ import { type ExecutionContextType } from '@src/common/execution-context.js'
  * interceptor from `@MeoCord({ interceptors })` also runs around `@On` and `@Once` event handlers.
  *
  * @param options.types - The context types the interceptor runs for, as `ExecutionContext.getType()`
- *   reports them; for any other call it is skipped. Every type when omitted; an empty list throws.
+ *   reports them; for any other call it is skipped. Every type when omitted; an empty list, or
+ *   `['autocomplete']`, which interceptors never run for, throws. A subclass inherits the types of the
+ *   class it extends unless it declares its own.
  *
  * @example
  * ```typescript

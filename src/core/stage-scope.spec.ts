@@ -192,4 +192,44 @@ describe('stage types', () => {
       return NeverInterceptor
     }).toThrow('@Interceptor({ types: [] }) on NeverInterceptor lists no types')
   })
+
+  it('refuses an interceptor limited to autocomplete, which interceptors never run for', () => {
+    expect(() => {
+      @Interceptor({ types: ['autocomplete'] })
+      class CompletionTimer implements InterceptorInterface {
+        intercept(_context: unknown, next: CallHandler) {
+          return next.handle()
+        }
+      }
+      return CompletionTimer
+    }).toThrow("@Interceptor({ types: ['autocomplete'] }) on CompletionTimer can never run")
+  })
+
+  it('lets a subclass inherit the types of the guard it extends', async () => {
+    const seen: string[] = []
+
+    @Guard({ types: ['interaction'] })
+    class InteractionGuard implements GuardInterface {
+      canActivate() {
+        seen.push('guard')
+        return true
+      }
+    }
+
+    @Guard()
+    class StricterGuard extends InteractionGuard {}
+
+    @Controller()
+    @UseGuard(StricterGuard)
+    class Members {
+      @On('guildMemberAdd')
+      greet() {
+        seen.push('greet')
+      }
+    }
+
+    await MeoCordTestingModule.create({ controllers: [Members] }).compile().emit('guildMemberAdd', createMock<GuildMember>())
+
+    expect(seen).toEqual(['greet'])
+  })
 })

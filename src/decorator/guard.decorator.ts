@@ -92,6 +92,7 @@ function ownHandlerDescriptor(prototype: object, methodName: string): PropertyDe
  *
  * @param options.types - The context types the guard runs for, as `ExecutionContext.getType()`
  *   reports them; for any other call it is skipped. Every type when omitted; an empty list throws.
+ *   A subclass inherits the types of the class it extends unless it declares its own.
  *
  * @example
  * ```typescript
