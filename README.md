@@ -64,6 +64,7 @@
 - **Decorator-based controllers** — Handle every Discord interaction type — slash commands and their subcommands, autocomplete, buttons, modals, all five select menus, context menus, activity entry points, messages, and reactions — with `@Command`, `@Autocomplete`, `@MessageHandler` and `@ReactionHandler`. No routing boilerplate.
 - **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators.
 - **A request pipeline** — [Guards](#guards) decide whether a handler runs, [interceptors](#interceptors) wrap it, [validation and pipes](#validation-and-pipes) check and transform its input, [cooldowns](#cooldowns) limit how often it runs, and [exception filters](#exception-filters) decide what the user is told when something throws. Each applies to a method, a controller, or the whole bot.
+- **Cooldowns** — `@Cooldown` limits how often a handler runs, per user, server, channel or for everyone, with a pluggable store to share the count across shards.
 - **Gateway events** — `@On` and `@Once` handle any discord.js client event on a controller or service, with typed arguments and the same pipeline. `HandlerRegistry` lists every handler for a `/help` command or generated docs.
 - **Lifecycle hooks** — `onReady` and `onShutdown` on any controller or service, in dependency order, for schedulers, cache warm-up and clean shutdown.
 - **Localisation** — One typed catalog per locale for command names, descriptions and replies, checked at compile time.
@@ -1144,6 +1145,7 @@ To share one count, extend `CooldownStore` and pass it to `@MeoCord({ cooldownSt
 
 ```typescript
 import { CooldownStore, type CooldownLimit, type CooldownVerdict } from 'meocord/common'
+import { RedisService } from '@src/services/redis.service.js'
 
 @Service()
 export class RedisCooldownStore extends CooldownStore {
@@ -1157,6 +1159,7 @@ export class RedisCooldownStore extends CooldownStore {
 }
 
 @MeoCord({ controllers: [...], clientOptions: {...}, cooldownStore: RedisCooldownStore })
+export default class App {}
 ```
 
 In tests, each `MeoCordTestingModule` counts in a fresh in-memory store; provide `{ provide: CooldownStore, useValue }` to use another. `inspectHandler(Controller, 'method').cooldowns` lists a handler's cooldowns with their defaults.
@@ -1447,7 +1450,7 @@ Pass the interaction alone and `invoke` builds the params as dispatch does: a co
 
 To send a client event to the module's `@On` and `@Once` handlers, use [`emit`](#gateway-events).
 
-To check what a handler is set up with, without running it, use `inspectHandler`. It lists the guards, interceptors and filters dispatch applies, in order, and reads the handler's metadata as `ExecutionContext` does:
+To check what a handler is set up with, without running it, use `inspectHandler`. It lists the guards, interceptors, filters and cooldowns dispatch applies, in order, and reads the handler's metadata as `ExecutionContext` does:
 
 ```typescript
 import { inspectHandler } from 'meocord/testing'
