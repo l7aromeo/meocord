@@ -106,7 +106,8 @@
         "types": "./meocord.eslint.d.cts",
         "default": "./meocord.eslint.cjs"
       }
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist/**/*",

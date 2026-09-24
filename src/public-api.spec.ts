@@ -1,3 +1,4 @@
+import { createRequire } from 'module'
 import * as common from '@src/common/index.js'
 import * as core from '@src/core/index.js'
 import * as decorator from '@src/decorator/index.js'
@@ -89,5 +90,14 @@ const modules: Record<string, object> = {
 describe('public API', () => {
   it.each(Object.keys(PUBLIC_API))('%s exports exactly its public names', entry => {
     expect(Object.keys(modules[entry]).sort()).toEqual([...PUBLIC_API[entry]].sort())
+  })
+})
+
+// Resolved by the package's own name, as tools reading the installed version do; only the exports map decides it
+describe('package.json', () => {
+  it('is reachable as meocord/package.json', () => {
+    const manifest = createRequire(import.meta.url)('meocord/package.json') as { name: string }
+
+    expect(manifest.name).toBe('meocord')
   })
 })
