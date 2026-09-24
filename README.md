@@ -918,7 +918,7 @@ Global guards run when a handler is dispatched, or run with [`invoke`](#running-
 
 ### Passing options to a guard
 
-Use params when a value configures one use of a guard, such as a limit or the channels a command is allowed in. `@UseGuard({ provide, params })` sets them as properties on the guard instance before `canActivate` runs, and a decorator of your own can wrap it. For facts about the handler itself that any guard can read, use [metadata](#reading-handler-metadata) instead.
+Use params when a value configures one use of a guard, such as a limit or the channels a command is allowed in. `@UseGuard({ provide, params })` sets them as properties on the guard instance before `canActivate` runs, and a decorator of your own can wrap it. For facts about the handler itself that any guard can read, use [metadata](#reading-handler-metadata) instead. `params` is optional, so `{ provide: ChannelGuard }` works as the class alone. The same entry forms apply to interceptors, filters and pipes, and an entry that is neither a class nor `{ provide: Class, params? }` is refused when its decorator applies.
 
 ```typescript
 import { Guard, UseGuard } from 'meocord/decorator'

@@ -17,8 +17,8 @@ export interface GuardWithParams {
   /** The guard class to resolve. */
   provide: GuardClass
 
-  /** Properties assigned to the guard instance. */
-  params: Record<string, any>
+  /** Properties assigned to the guard instance; none when omitted. */
+  params?: Record<string, any>
 }
 
 export type GuardEntry = GuardClass | GuardWithParams
@@ -28,7 +28,8 @@ export const GUARD_CLASS = Symbol('guard_class')
 
 /** Whether a `@UseGuard` entry is a guard with params rather than a guard class. */
 export function isGuardWithParams(guard: unknown): guard is GuardWithParams {
-  return typeof guard === 'object' && guard !== null && 'provide' in guard && 'params' in guard
+  // Entries are checked when @UseGuard or @MeoCord applies, so an object here is always { provide, params? }
+  return typeof guard === 'object'
 }
 
 /** Where inversify keeps the tokens `@inject` declares; `design:paramtypes` covers the rest. */

@@ -20,7 +20,7 @@ import {
 } from '@src/core/guard-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
-import { defineStageTypes } from '@src/core/stage-scope.js'
+import { assertStageEntries, defineStageTypes } from '@src/core/stage-scope.js'
 import { type ExecutionContextType } from '@src/common/execution-context.js'
 
 /** The guards a class-level `@UseGuard` applies to one method, in the order they run. */
@@ -117,8 +117,8 @@ export function Guard(options: { types?: readonly ExecutionContextType[] } = {})
  * Runs guards before a method, or before every method of a class; the method runs only when every
  * guard's `canActivate` returns true.
  *
- * @param guards - Guard classes, or `{ provide, params }` to set `params` as properties on the guard
- *   instance before it runs.
+ * @param guards - Guard classes, or `{ provide, params? }` to set `params` as properties on the guard
+ *   instance before it runs. Any other entry is refused when the decorator applies.
  *
  * @example
  * ```typescript
@@ -131,6 +131,8 @@ export function Guard(options: { types?: readonly ExecutionContextType[] } = {})
  */
 export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | GuardWithParams)[]): any {
   return function (target: any, propertyKey?: string | symbol, descriptor?: PropertyDescriptor) {
+    const where = propertyKey === undefined ? String(target?.name) : `${target.constructor.name}.${String(propertyKey)}`
+    assertStageEntries('@UseGuard', 'guard', where, guards)
     if (descriptor && propertyKey) {
       // Method Decorator
       applyGuards(descriptor, guards, target, String(propertyKey))

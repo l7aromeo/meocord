@@ -10,7 +10,7 @@ export type FilterClass = new (...args: any[]) => ExceptionFilter
 /** A filter class, and the params its `ExecutionContext.getParams()` returns. */
 export interface FilterWithParams {
   provide: FilterClass
-  params: Record<string, any>
+  params?: Record<string, any>
 }
 
 export type FilterEntry = FilterClass | FilterWithParams
