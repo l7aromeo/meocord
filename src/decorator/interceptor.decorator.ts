@@ -2,10 +2,18 @@ import 'reflect-metadata'
 import { type InterceptorInterface } from '@src/interface/index.js'
 import { CLASS_INTERCEPTORS, type InterceptorEntry, METHOD_INTERCEPTORS } from '@src/core/interceptor-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
+import { defineStageTypes } from '@src/core/stage-scope.js'
+import { type ExecutionContextType } from '@src/common/execution-context.js'
 
 /**
  * Marks a class as an interceptor, for use with {@link UseInterceptor}. The class implements
  * `InterceptorInterface`. One instance is shared across calls.
+ *
+ * An interceptor runs for every kind of handler it is applied to unless `types` limits it. A global
+ * interceptor from `@MeoCord({ interceptors })` also runs around `@On` and `@Once` event handlers.
+ *
+ * @param options.types - The context types the interceptor runs for, as `ExecutionContext.getType()`
+ *   reports them; for any other call it is skipped. Every type when omitted.
  *
  * @example
  * ```typescript
@@ -22,9 +30,10 @@ import { makeInjectable } from '@src/util/injectable.util.js'
  * }
  * ```
  */
-export function Interceptor() {
+export function Interceptor(options: { types?: readonly ExecutionContextType[] } = {}) {
   return function (target: new (...args: any[]) => InterceptorInterface) {
     makeInjectable(target)
+    defineStageTypes(target, options.types)
   }
 }
 

@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import {
+  ChatInputCommandInteraction,
   Client,
   type ClientOptions,
   GatewayIntentBits,
@@ -9,20 +10,40 @@ import {
   Partials,
 } from 'discord.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
-import { Controller, Guard, MeoCord, MessageHandler, On, Once, ReactionHandler, Service, UseGuard } from '@src/decorator/index.js'
+import {
+  Catch,
+  Controller,
+  Guard,
+  Interceptor,
+  MeoCord,
+  MessageHandler,
+  On,
+  Once,
+  ReactionHandler,
+  Service,
+  UseFilter,
+  UseGuard,
+} from '@src/decorator/index.js'
 import { MeoCordFactory } from '@src/core/meocord-factory.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
-import { type GuardInterface } from '@src/interface/index.js'
-import { createMockMessage } from '@src/testing/index.js'
+import {
+  type CallHandler,
+  type ExceptionFilter,
+  type GuardInterface,
+  type InterceptorInterface,
+} from '@src/interface/index.js'
+import { createMockInteraction, createMockMessage } from '@src/testing/index.js'
 
-const { logged } = vi.hoisted(() => ({ logged: { error: [] as unknown[][], warn: [] as unknown[][] } }))
+const { logged } = vi.hoisted(() => ({
+  logged: { error: [] as unknown[][], warn: [] as unknown[][], info: [] as unknown[][] },
+}))
 
 vi.mock('@src/common/index.js', async importOriginal => ({
   ...(await importOriginal<object>()),
   Logger: class {
     log = vi.fn()
     debug = vi.fn()
-    info = vi.fn()
+    info = (...args: unknown[]) => logged.info.push(args)
     verbose = vi.fn()
     error = (...args: unknown[]) => logged.error.push(args)
     warn = (...args: unknown[]) => logged.warn.push(args)
@@ -33,7 +54,7 @@ vi.mock('@src/util/platform.util.js', () => ({ assertBuiltForThisPlatform: () =>
 
 /** Starts an app built by the factory, with a client that logs in without a network. */
 async function startApp(
-  options: { controllers?: any[]; services?: any[] },
+  options: { controllers?: any[]; services?: any[]; guards?: any[]; interceptors?: any[] },
   clientOptions: ClientOptions = { intents: [] },
 ): Promise<Client> {
   const clients: Client[] = []
@@ -42,7 +63,13 @@ async function startApp(
     return Promise.resolve('token')
   })
 
-  @MeoCord({ controllers: options.controllers ?? [], services: options.services, clientOptions })
+  @MeoCord({
+    controllers: options.controllers ?? [],
+    services: options.services,
+    guards: options.guards,
+    interceptors: options.interceptors,
+    clientOptions,
+  })
   class App {}
 
   await MeoCordFactory.create(App).start()
@@ -60,6 +87,7 @@ describe('gateway event handlers', () => {
   beforeEach(() => {
     logged.error.length = 0
     logged.warn.length = 0
+    logged.info.length = 0
   })
 
   afterEach(() => {
@@ -236,6 +264,146 @@ describe('gateway event handlers', () => {
 
       expect(canActivate).toHaveBeenCalledTimes(1)
       expect(handled).toHaveBeenCalledWith('heartbeat')
+    })
+  })
+
+  describe('filters and the fallback', () => {
+    it('hands an event handler\'s error to its filters, and logs nothing when one handles it', async () => {
+      const handled: unknown[] = []
+
+      @Catch()
+      class EventErrors implements ExceptionFilter {
+        catch(error: unknown, context: ExecutionContext) {
+          handled.push([(error as Error).message, context.getType(), context.getHandlerName()])
+        }
+      }
+
+      @Service()
+      @UseFilter(EventErrors)
+      class Welcome {
+        @On('guildMemberAdd')
+        greet() {
+          throw new Error('boom')
+        }
+      }
+
+      const client = await startApp({ services: [Welcome] })
+      await emit(client, 'guildMemberAdd', member)
+
+      expect(handled).toEqual([['boom', 'event', 'greet']])
+      expect(logged.error).toEqual([])
+    })
+
+    it('only logs an unhandled error from an event handler, even when its argument is an interaction', async () => {
+      @Controller()
+      class Audit {
+        @On('interactionCreate')
+        record() {
+          throw new Error('audit failed')
+        }
+      }
+
+      const client = await startApp({ controllers: [Audit] })
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      // Only the @On listener: MeoCord's own dispatch of interactionCreate is not under test here
+      const listener = client.rawListeners('interactionCreate').at(-1) as (...a: unknown[]) => Promise<void>
+      await listener(interaction)
+
+      expect(interaction.reply).not.toHaveBeenCalled()
+      expect(logged.error).toContainEqual([
+        'Error handling event "interactionCreate" in Audit.record:',
+        new Error('audit failed'),
+      ])
+    })
+  })
+
+  describe('global stages', () => {
+    it('keeps a listener alive when a global guard written for interactions throws on an event', async () => {
+      const greeted = vi.fn()
+
+      @Guard()
+      class RolesGuard implements GuardInterface {
+        canActivate(interaction: { user: { id: string } }) {
+          return interaction.user.id === 'admin'
+        }
+      }
+
+      @Service()
+      class Welcome {
+        @On('guildMemberAdd')
+        greet() {
+          greeted()
+        }
+      }
+
+      @Service()
+      class Audit {
+        @On('guildMemberAdd')
+        record() {
+          greeted()
+        }
+      }
+
+      const client = await startApp({ services: [Welcome, Audit], guards: [RolesGuard] })
+      await expect(emit(client, 'guildMemberAdd', { id: 'member-1' })).resolves.toBeUndefined()
+
+      // The guard throws before either handler, for both listeners; both errors are logged, nothing escapes
+      expect(greeted).not.toHaveBeenCalled()
+      expect(logged.error.map(args => args[0])).toEqual([
+        'Error handling event "guildMemberAdd" in Welcome.greet:',
+        'Error handling event "guildMemberAdd" in Audit.record:',
+      ])
+    })
+
+    it('notes once per global guard or interceptor without types that it also runs on events', async () => {
+      @Guard()
+      class RolesGuard implements GuardInterface {
+        canActivate() {
+          return true
+        }
+      }
+
+      @Guard({ types: ['interaction'] })
+      class ScopedGuard implements GuardInterface {
+        canActivate() {
+          return true
+        }
+      }
+
+      @Interceptor()
+      class Timing implements InterceptorInterface {
+        intercept(_context: unknown, next: CallHandler) {
+          return next.handle()
+        }
+      }
+
+      @Service()
+      class Welcome {
+        @On('guildMemberAdd')
+        greet() {}
+        @On('guildMemberRemove')
+        farewell() {}
+      }
+
+      await startApp({ services: [Welcome], guards: [RolesGuard, ScopedGuard], interceptors: [Timing] })
+
+      expect(logged.info.map(args => args[0])).toEqual([
+        'Global guard RolesGuard also runs on gateway events; declare @Guard({ types: [...] }) to limit it.',
+        'Global interceptor Timing also runs on gateway events; declare @Interceptor({ types: [...] }) to limit it.',
+      ])
+    })
+
+    it('notes nothing when the app has no event handlers', async () => {
+      @Guard()
+      class RolesGuard implements GuardInterface {
+        canActivate() {
+          return true
+        }
+      }
+
+      await startApp({ services: [], guards: [RolesGuard] })
+
+      expect(logged.info).toEqual([])
     })
   })
 

@@ -687,6 +687,8 @@ Guards run before the handler method. Each guard implements `canActivate` — re
 
 A new guard instance is created for every call, so keep state that must outlast one call — such as rate-limit counts — outside the guard: at module level, or in a service registered in `@MeoCord({ services })`, which makes it a singleton.
 
+A guard runs for every kind of handler it applies to — global guards from `@MeoCord({ guards })` included, which also run before [`@On` event handlers](#gateway-events). To limit one, declare the context types it runs for: `@Guard({ types: ['interaction'] })` skips messages, reactions and events.
+
 ```typescript
 import { Guard } from 'meocord/decorator'
 import { type GuardInterface } from 'meocord/interface'
@@ -791,6 +793,8 @@ Apply them like guards: on a method, on a controller, or to every handler with `
 One instance of an interceptor serves every call, so it can hold a cache or counters; keep per-call state in local variables. For per-use options, pass `{ provide, params }` and read them with `context.getParams()` — they are never assigned onto the shared instance. For the same reason an interceptor cannot inject `ExecutionContext`; the bot refuses to start if one does.
 
 Interceptors run when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke) in a test. A controller method called directly runs its guards but no interceptors. Autocomplete handlers run none.
+
+Global interceptors also run around [`@On` event handlers](#gateway-events). Like a guard, an interceptor can be limited to some context types: `@Interceptor({ types: ['interaction', 'message'] })`.
 
 Generate one with `npx meocord g i <name>`.
 
@@ -976,8 +980,8 @@ export class WelcomeController {
 ```
 
 - **Where**: on any controller or service the app binds — listed in `@MeoCord({ controllers, services })` or injected by one. The instance is resolved when the first event arrives.
-- **Guards**: an event handler runs through the same pipeline as a command. `@UseGuard` on the method or the controller, and `@MeoCord({ guards })`, run first; a guard receives the event's arguments, and `ExecutionContext.getType()` is `'event'`.
-- **Errors** a handler throws are logged with the event and the handler's name, and never stop the bot or the other handlers of that event.
+- **Guards and interceptors**: an event handler runs through the same pipeline as a command. `@UseGuard` and `@UseInterceptor` on the method or the controller, and the global ones from `@MeoCord({ guards, interceptors })`, apply; a guard receives the event's arguments, and `ExecutionContext.getType()` is `'event'`. A global guard written for interactions should declare `@Guard({ types: ['interaction'] })`, so it skips events; at startup MeoCord names each global guard or interceptor without `types` that will also run on events. A guard or interceptor that throws on an event is logged like any handler error.
+- **Errors** a handler throws go to its exception filters, as a command's do. One no filter handles is logged with the event and the handler's name, never answered, and never stops the bot or the other handlers of that event.
 - **Intents**: at startup MeoCord warns once for each intent or partial your handlers need that `clientOptions` lacks — `GuildMembers` for `guildMemberAdd`, say — and reminds you to enable privileged intents in the Discord developer portal. `@MessageHandler` and `@ReactionHandler` are checked the same way.
 - `@On('interactionCreate')` and `@On('messageCreate')` run alongside MeoCord's own dispatch of those events.
 

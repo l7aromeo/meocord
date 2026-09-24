@@ -2,7 +2,13 @@ import 'reflect-metadata'
 import { Container, LazyServiceIdentifier } from 'inversify'
 import { type GuardInterface } from '@src/interface/index.js'
 import { MetadataKey } from '@src/enum/index.js'
-import { ExecutionContext, type ExecutionContextType, HandlerExecutionContext } from '@src/common/execution-context.js'
+import {
+  ExecutionContext,
+  type ExecutionContextType,
+  HandlerExecutionContext,
+  inferContextType,
+} from '@src/common/execution-context.js'
+import { appliesTo } from '@src/core/stage-scope.js'
 
 export type GuardClass = new (...args: any[]) => GuardInterface
 
@@ -105,10 +111,15 @@ export interface GuardedCall {
 export async function runGuards(guards: readonly GuardEntry[], call: GuardedCall): Promise<boolean> {
   if (guards.length === 0) return true
 
-  const { container, ...handlerCall } = call
-  const context = new HandlerExecutionContext(handlerCall)
+  // Guards declared for other context types are skipped; with none left, no context is built
+  const type = call.type ?? inferContextType(call.args[0])
+  const applicable = guards.filter(guard => appliesTo(guard, type))
+  if (applicable.length === 0) return true
 
-  for (const guard of guards) {
+  const { container, ...handlerCall } = call
+  const context = new HandlerExecutionContext({ ...handlerCall, type })
+
+  for (const guard of applicable) {
     const [guardClass, params] = isGuardWithParams(guard) ? [guard.provide, guard.params] : [guard, undefined]
     const guardInstance = resolveGuard(container, guardClass, context.withParams(params))
     if (params) Object.assign(guardInstance, params)

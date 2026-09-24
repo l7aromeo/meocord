@@ -19,6 +19,8 @@ import {
 } from '@src/core/guard-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
+import { defineStageTypes } from '@src/core/stage-scope.js'
+import { type ExecutionContextType } from '@src/common/execution-context.js'
 
 /** The guards a class-level `@UseGuard` applies to one method, in the order they run. */
 const CLASS_GUARDS = Symbol('class_guards')
@@ -84,9 +86,16 @@ function ownHandlerDescriptor(prototype: object, methodName: string): PropertyDe
 /**
  * Marks a class as a guard, for use with {@link UseGuard}. The class implements `GuardInterface`.
  *
+ * A guard runs for every kind of handler it is applied to unless `types` limits it. A global guard
+ * from `@MeoCord({ guards })` also runs before `@On` and `@Once` event handlers, so a guard that reads
+ * an interaction should declare `types: ['interaction']`.
+ *
+ * @param options.types - The context types the guard runs for, as `ExecutionContext.getType()`
+ *   reports them; for any other call it is skipped. Every type when omitted.
+ *
  * @example
  * ```typescript
- * @Guard()
+ * @Guard({ types: ['interaction'] })
  * export class OwnerOnlyGuard implements GuardInterface {
  *   canActivate(interaction: ButtonInteraction, { ownerId }: { ownerId: string }): boolean {
  *     return interaction.user.id === ownerId
@@ -94,9 +103,10 @@ function ownHandlerDescriptor(prototype: object, methodName: string): PropertyDe
  * }
  * ```
  */
-export function Guard() {
+export function Guard(options: { types?: readonly ExecutionContextType[] } = {}) {
   return function (target: any) {
     makeInjectable(target)
+    defineStageTypes(target, options.types)
   }
 }
 

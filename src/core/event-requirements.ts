@@ -14,6 +14,7 @@ const REACTIONS: IntentRequirement = [
   GatewayIntentBits.GuildMessageReactions,
   GatewayIntentBits.DirectMessageReactions,
 ]
+// Partials.User is left out: guild reactions carry their user, and requiring it would warn on the generated app
 const REACTION_PARTIALS = [Partials.Message, Partials.Reaction]
 
 /** The intents Discord only sends once they are also enabled for the app in the developer portal. */
