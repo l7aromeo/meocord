@@ -313,6 +313,7 @@ what a bot does at runtime; each says what to check. Everything else in 4.1 is n
 - [ ] Check what users see when a command throws after it replied or deferred
 - [ ] Fix any command builder that throws, since it now stops registration
 - [ ] Fix or replace the generated `src/guards/rate-limit.guard.ts`, if your app still has it
+- [ ] Rename any `SetMetadata` key that MeoCord reserves, such as `'guards'`
 - [ ] Rebuild
 
 ### Class guards now cover inherited handlers
@@ -388,6 +389,23 @@ guard instance is created for every call, so the counts it kept on the instance 
 Upgrading `meocord` does not change your copy. Move its `rateLimits` map out of the class to module
 level, so every instance shares it, or drop the guard for [`@Cooldown`](#adopting-41-patterns), which
 does the same job without code of your own and is what new applications use.
+
+### `SetMetadata` refuses MeoCord's own keys
+
+`SetMetadata` now throws when a decorator is created with a key MeoCord stores its own metadata under:
+`'guards'`, `'commandType'`, `'design:paramtypes'` and inversify's keys. A value there replaced the
+framework's: under `'guards'` it replaced the guards dispatch runs, so a handler could run with none of
+its `@UseGuard` guards. Only code whose guards or commands were already broken this way is affected.
+The error names the key; choose another, or declare the decorator with `createMetadata`, whose key is
+unique.
+
+```typescript
+// Throws in 4.1
+export const Guards = (...names: string[]) => SetMetadata('guards', names)
+
+// 4.1
+export const Guards = createMetadata<string[]>('guards')
+```
 
 ### Smaller changes
 

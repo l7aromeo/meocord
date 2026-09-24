@@ -317,6 +317,19 @@ describe('the input invoke builds when a test gives only the interaction', () =>
 })
 
 describe('where they apply', () => {
+  it('refuses a second @Validate on one handler, which would replace the first', () => {
+    expect(() => {
+      @Controller()
+      class TwiceController {
+        @Command('twice', CommandType.SLASH)
+        @Validate(reminder)
+        @Validate(reminder)
+        async twice(_interaction: ChatInputCommandInteraction, _params: { minutes: number; note: string }) {}
+      }
+      return TwiceController
+    }).toThrow('TwiceController.twice has more than one @Validate; one @Validate per handler: combine the schemas into one.')
+  })
+
   it('refuses @Validate on a message handler at startup', () => {
     @Controller()
     class MessageController {
