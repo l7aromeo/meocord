@@ -132,6 +132,10 @@ MeoCord, discord.js, Node, and runtime versions, because behaviour genuinely dif
 
 A minimal controller that reproduces the problem is worth more than a description of it.
 
+New issues start as `status: needs triage`. A maintainer adds its `type:` and `area:` labels and moves
+it to `status: confirmed`, `status: needs reproduction` or `status: needs info`. Issues labelled
+`good first issue` or `help wanted` are open for anyone to take on — say so in the issue first.
+
 ## Security issues
 
 Do not open a public issue for a vulnerability. See [SECURITY.md](./SECURITY.md).

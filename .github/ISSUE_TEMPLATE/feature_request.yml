@@ -1,7 +1,15 @@
 name: Feature request
 description: Propose a capability MeoCord does not have
-labels: ['enhancement']
+labels: ['type: feature', 'status: needs triage']
 body:
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched existing issues and discussions and found nothing matching
+          required: true
+
   - type: textarea
     id: problem
     attributes:
@@ -26,7 +34,7 @@ body:
       description: Anything you tried, or other shapes this could take.
 
   - type: checkboxes
-    id: breaking
+    id: compatibility
     attributes:
       label: Compatibility
       options:
