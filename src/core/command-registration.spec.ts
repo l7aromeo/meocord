@@ -472,6 +472,32 @@ describe('registerCommands', () => {
       expect(rest.put).toHaveBeenCalledWith('/applications/app/commands', { body: [] })
     })
 
+    // Development and production often share one application; clearing from a development start
+    // would delete the commands production registered.
+    it('only warns, even with clearOther, while every command goes to the development guild', async () => {
+      const rest = createRest({ '/applications/app/commands': [{ name: 'ping' }] })
+      const { logger, run } = register({ rest, development: true, config: { developmentGuild: 'dev', clearOther: true } })
+      await run
+
+      expect(rest.put).not.toHaveBeenCalledWith('/applications/app/commands', { body: [] })
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('still registered globally (ping)'))
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('not removed while commands go to the development guild'))
+    })
+
+    it('still clears with clearOther in development when no development guild is set', async () => {
+      const rest = createRest({ '/applications/app/commands': [{ name: 'ping' }] })
+      await register({ rest, development: true, config: { guilds: ['one'], clearOther: true } }).run
+
+      expect(rest.put).toHaveBeenCalledWith('/applications/app/commands', { body: [] })
+    })
+
+    it('clears with clearOther from a production run that names a development guild', async () => {
+      const rest = createRest({ '/applications/app/guilds/dev/commands': [{ name: 'ping' }] })
+      await register({ rest, config: { developmentGuild: 'dev', clearOther: true } }).run
+
+      expect(rest.put).toHaveBeenCalledWith('/applications/app/guilds/dev/commands', { body: [] })
+    })
+
     it('checks the development guild from a production start', async () => {
       const rest = createRest({ '/applications/app/guilds/dev/commands': [{ name: 'ping' }] })
       const { logger, run } = register({ rest, config: { developmentGuild: 'dev' } })

@@ -374,12 +374,12 @@ export default {
 } satisfies MeoCordConfig
 ```
 
-| Option             | Default | Description                                                                                                                                |
-| ------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `guilds`           | —       | Register every command to these guilds instead of globally. Unset or empty: global.                                                        |
-| `developmentGuild` | —       | While `NODE_ENV` is `development`, as under `start --dev`, every command goes to this guild and nowhere else. Guild commands show at once. |
-| `register`         | `true`  | Register at startup. Set `false` to register only with `meocord register`, from CI for instance.                                           |
-| `clearOther`       | `false` | Remove this application's commands from the scopes named here but not in use. Without it, leftovers are reported as a warning.             |
+| Option             | Default | Description                                                                                                                                                                        |
+| ------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `guilds`           | —       | Register every command to these guilds instead of globally. Unset or empty: global.                                                                                                |
+| `developmentGuild` | —       | While `NODE_ENV` is `development`, as under `start --dev`, every command goes to this guild and nowhere else. Guild commands show at once.                                         |
+| `register`         | `true`  | Register at startup. Set `false` to register only with `meocord register`, from CI for instance.                                                                                   |
+| `clearOther`       | `false` | Remove this application's commands from the scopes named here but not in use. Without it, or while `developmentGuild` receives every command, leftovers are reported as a warning. |
 
 Each scope gets one bulk update, which replaces everything the application has there, so a removed command disappears on the next registration. A failed registration is logged and the bot stays online.
 
@@ -396,7 +396,7 @@ export class BanCommandBuilder implements CommandBuilderBase {
 
 A builder whose list is empty after dropping blank ids is not registered anywhere, rather than published globally by accident. Under a development guild it goes there with the rest.
 
-**Leftovers.** Moving from global to guild commands, or the other way, leaves the old ones behind, and Discord shows both. After registering, MeoCord checks the scopes this configuration names — global, `guilds`, `developmentGuild` and builders' guilds — that it did not send to, and warns about any commands left there; `clearOther: true` removes them instead. If development and production share one application, `clearOther` in development removes production's commands, so give development its own application.
+**Leftovers.** Moving from global to guild commands, or the other way, leaves the old ones behind, and Discord shows both. After registering, MeoCord checks the scopes this configuration names — global, `guilds`, `developmentGuild` and builders' guilds — that it did not send to, and warns about any commands left there; `clearOther: true` removes them instead. While `developmentGuild` receives every command, as under `start --dev`, leftovers are only warned about, even with `clearOther`: development and production often share one application, and the global commands belong to production. Production starts and `meocord register` without `--dev` remove them.
 
 **Unchanged commands in development.** Under `start --dev`, a scope whose commands have not changed since the last start from this project is not sent again. The record lives in `node_modules/.cache/meocord`, per application and scope. `meocord start --dev --force-register` sends them anyway — after deleting commands in the developer portal, for instance. Production always sends; the update is idempotent.
 
