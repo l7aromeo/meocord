@@ -216,6 +216,27 @@ describe('@Validate', () => {
     expect(log).not.toContain('handler')
   })
 
+  it('reports an issue whose path holds a symbol key, as Standard Schema allows', async () => {
+    const tagged: StandardSchemaV1<unknown, { minutes: number }> = {
+      '~standard': {
+        version: 1,
+        vendor: 'test',
+        validate: () => ({ issues: [{ message: 'Unknown tag', path: ['tags', { key: Symbol('primary') }] }] }),
+      },
+    }
+    @Controller()
+    class TaggedController {
+      @Command('tagged', CommandType.SLASH)
+      @Validate(tagged)
+      async tagged(_interaction: ChatInputCommandInteraction, _params: { minutes: number }) {}
+    }
+
+    const run = MeoCordTestingModule.create({ controllers: [TaggedController] }).compile().invoke(TaggedController, 'tagged', slash({}))
+
+    await expect(run).rejects.toThrow(ValidationError)
+    await expect(run).rejects.toThrow('tags.primary: Unknown tag')
+  })
+
   it('awaits an asynchronous schema', async () => {
     await expect(module().invoke(InputController, 'profile', button('profile/abc'))).rejects.toThrow('uid: Not a uid')
   })

@@ -55,6 +55,10 @@ export interface ValidationIssue {
   path: PropertyKey[]
 }
 
+/** A path as the user reads it; a symbol key shows its description. */
+const describePath = (path: readonly PropertyKey[]): string =>
+  path.map(segment => (typeof segment === 'symbol' ? (segment.description ?? '') : String(segment))).join('.')
+
 /**
  * Thrown when a handler's input fails its `@Validate` schema, so the handler does not run. The user is
  * answered privately with {@link ValidationError.issues}; an exception filter can phrase them otherwise.
@@ -64,7 +68,7 @@ export interface ValidationIssue {
  * @Catch(ValidationError)
  * export class ValidationFilter implements ExceptionFilter<ValidationError> {
  *   async catch(error: ValidationError, context: ExecutionContext) {
- *     const lines = error.issues.map(issue => `${issue.path.join('.') || 'input'}: ${issue.message}`)
+ *     const lines = error.issues.map(issue => `${issue.path.map(String).join('.') || 'input'}: ${issue.message}`)
  *   }
  * }
  * ```
@@ -72,7 +76,7 @@ export interface ValidationIssue {
 export class ValidationError extends Error {
   /** @param issues - Every problem found, in the order the schema reported them. */
   constructor(readonly issues: ValidationIssue[]) {
-    super(issues.map(issue => (issue.path.length > 0 ? `${issue.path.join('.')}: ${issue.message}` : issue.message)).join('\n'))
+    super(issues.map(issue => (issue.path.length > 0 ? `${describePath(issue.path)}: ${issue.message}` : issue.message)).join('\n'))
     this.name = 'ValidationError'
   }
 
