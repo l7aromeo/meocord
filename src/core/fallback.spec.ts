@@ -2,15 +2,22 @@ import {
   AutocompleteInteraction,
   ButtonInteraction,
   ChatInputCommandInteraction,
-  type EmbedBuilder,
+  type APIEmbed,
   Message,
   MessageFlagsBitField,
   ModalSubmitInteraction,
   resolveColor,
 } from 'discord.js'
 import { vi } from 'vitest'
-import { CommandNotFoundError, CooldownError, GuardDeniedError, Theme, ValidationError } from '@src/common/index.js'
-import { type Logger } from '@src/common/logger.js'
+import {
+  CommandNotFoundError,
+  CooldownError,
+  cooldownMessage,
+  GuardDeniedError,
+  Theme,
+  ValidationError,
+} from '@src/common/index.js'
+import { Logger } from '@src/common/logger.js'
 import { UnroutedExecutionContext } from '@src/common/execution-context.js'
 import { createFallback } from '@src/core/fallback.js'
 import { createMockInteraction, createMockMessage } from '@src/testing/index.js'
@@ -31,7 +38,7 @@ function discordError(code: number) {
 }
 
 interface Sent {
-  embeds?: EmbedBuilder[]
+  embeds?: APIEmbed[]
   flags?: unknown
 }
 
@@ -43,8 +50,9 @@ function sent(method: { mock: { calls: unknown[][] } }): Sent {
 /** The description of the one embed a payload carries, checking it is styled as an error. */
 function describedAs(payload: Sent): string | undefined {
   const [embed] = payload.embeds ?? []
-  expect(embed.data.color).toBe(resolveColor(Theme.errorColor))
-  return embed.data.description
+  expect(embed.color).toBe(resolveColor(Theme.errorColor))
+  expect(embed.title).toBe('Oops!')
+  return embed.description
 }
 
 async function fail(interaction: unknown, error: unknown = failure, logger = createLogger()) {
@@ -170,6 +178,19 @@ describe('the fallback', () => {
       expect(payload.flags).toBe(Ephemeral)
     })
 
+    it('keeps a CooldownError private on a public deferred command, with cooldownMessage()', async () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      await interaction.deferReply()
+
+      await fail(interaction, new CooldownError(12_000, 'user'))
+
+      expect(interaction.editReply).not.toHaveBeenCalled()
+      expect(interaction.deleteReply).toHaveBeenCalledTimes(1)
+      const payload = sent(interaction.followUp)
+      expect(describedAs(payload)).toBe(cooldownMessage(12_000))
+      expect(payload.flags).toBe(Ephemeral)
+    })
+
     it('treats a modal submitted from a command like a command', async () => {
       const interaction = createMockInteraction(ModalSubmitInteraction)
       await interaction.deferReply()
@@ -231,10 +252,13 @@ describe('the fallback', () => {
       const interaction = createMockInteraction(ChatInputCommandInteraction)
       interaction.reply.mockRejectedValueOnce(discordError(50001))
 
-      const logger = await fail(interaction)
+      const debug = vi.spyOn(Logger.prototype, 'debug').mockImplementation(() => undefined)
+
+      await fail(interaction)
 
       expect(interaction.followUp).not.toHaveBeenCalled()
-      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('Could not deliver the error reply'))
+      expect(debug).toHaveBeenCalledWith(expect.stringContaining('Could not deliver the error reply'))
+      debug.mockRestore()
     })
 
     it('never throws when the 40060 retry fails too', async () => {

@@ -43,3 +43,6 @@ export type {
   InspectedInterceptor,
   InspectHandlerOptions,
 } from './inspect-handler.js'
+
+export { createDiscordError, getResponse } from './response.js'
+export type { ResponseReport } from './response.js'

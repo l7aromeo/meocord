@@ -5,7 +5,15 @@ import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { missingTranslatorError, Translator } from '@src/common/translator.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
-import { appStages, bindGlobalStages, prepareHandlerStages, runHandler } from '@src/core/handler-pipeline.js'
+import {
+  appPresenterOf,
+  appStages,
+  bindAppPresenter,
+  bindGlobalStages,
+  prepareHandlerStages,
+  runHandler,
+} from '@src/core/handler-pipeline.js'
+import { setPresenter } from '@src/common/response/presenter.js'
 import { handlerInput, routeParamsFor } from '@src/core/handler-input.js'
 import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
@@ -32,8 +40,9 @@ export interface TestingModuleOptions {
 
   /**
    * The `@MeoCord` application class, whose global `guards`, `interceptors` and `filters` `invoke`
-   * applies with each handler's own, and whose `i18n` translator is injected as `Translator`. Its
-   * controllers and services are not registered; list them here.
+   * applies with each handler's own, whose `i18n` translator is injected as `Translator`, and whose
+   * `presenter` styles what `respond()` shows. Its controllers and services are not registered; list
+   * them here.
    */
   app?: new (...args: any[]) => unknown
 }
@@ -129,6 +138,9 @@ export class TestingModule {
       args.length === 1 && first instanceof BaseInteraction
         ? [first, handlerInput(first as Interaction, routeParamsFor(controller.prototype as object, methodName, first as Interaction)).params]
         : (args as unknown[])
+    const presenter = appPresenterOf(this.container)
+    const client = first instanceof BaseInteraction ? first.client : undefined
+    if (presenter && client) setPresenter(client, presenter)
     const { ran, error } = await runHandler(this.container, instance, methodName, callArgs)
     return error === undefined ? { ran } : { ran, error }
   }
@@ -348,6 +360,7 @@ export class TestingModuleBuilder {
     appClasses.push(...dependencyOrder(container, [...selfProviders, ...(this.options.controllers ?? [])]))
     for (const cls of appClasses) Reflect.defineMetadata(MetadataKey.Container, container, cls)
     prepareHandlerStages(container, appClasses)
+    if (this.options.app) bindAppPresenter(container, this.options.app)
 
     return new TestingModule(container, [...(this.options.controllers ?? [])], appClasses)
   }

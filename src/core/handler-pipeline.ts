@@ -1,8 +1,11 @@
 import 'reflect-metadata'
 import { type Container } from 'inversify'
 import { MetadataKey } from '@src/enum/index.js'
+import { type ResponsePresenter } from '@src/interface/index.js'
+import { setPresenter } from '@src/common/response/presenter.js'
 import { callGuardedHandler, type GuardEntry, handlerGuards, runGuards } from '@src/core/guard-runner.js'
 import {
+  bindShared,
   handlerInterceptors,
   type InterceptorEntry,
   prepareInterceptor,
@@ -68,6 +71,28 @@ export function appStages(app: object): GlobalStages {
     interceptors: [...(options.interceptors ?? [])],
     filters: [...(options.filters ?? [])],
   }
+}
+
+/**
+ * Resolves the presenter `@MeoCord({ presenter })` declares, as a singleton of `container`, and makes it
+ * the one `respond()` uses for interactions `client` receives. Returns it, or `undefined` without one.
+ */
+export function bindAppPresenter(container: Container, app: object, client?: object): ResponsePresenter | undefined {
+  const options = Reflect.getMetadata(MetadataKey.AppOptions, app) as { presenter?: new (...args: any[]) => ResponsePresenter } | undefined
+  if (!options?.presenter) return undefined
+  bindShared(container, options.presenter)
+  const presenter = container.get<ResponsePresenter>(options.presenter)
+  container.bind<ResponsePresenter>(APP_PRESENTER).toConstantValue(presenter)
+  if (client) setPresenter(client, presenter)
+  return presenter
+}
+
+/** Where a container keeps the application's presenter. */
+const APP_PRESENTER = Symbol('app_presenter')
+
+/** The presenter `bindAppPresenter` resolved into `container`, if any. */
+export function appPresenterOf(container: Container): ResponsePresenter | undefined {
+  return container.isBound(APP_PRESENTER) ? container.get<ResponsePresenter>(APP_PRESENTER) : undefined
 }
 
 /** Stores the global stages that handlers run through `container` start with. */

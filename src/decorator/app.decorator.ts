@@ -2,7 +2,12 @@ import 'reflect-metadata'
 import { type ServiceIdentifier } from 'inversify'
 import { type ActivityOptions, type ClientOptions } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
-import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
+import {
+  type ExceptionFilter,
+  type GuardInterface,
+  type InterceptorInterface,
+  type ResponsePresenter,
+} from '@src/interface/index.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { type Translator } from '@src/common/translator.js'
 import { type CooldownStore } from '@src/common/cooldown-store.js'
@@ -27,6 +32,8 @@ import { type CooldownStore } from '@src/common/cooldown-store.js'
  *   class extending `CooldownStore`, resolved like a service so it can inject its client.
  * @param options.i18n - The translator `createTranslator` made, injected as `Translator` wherever a class
  *   asks for one.
+ * @param options.presenter - The `ResponsePresenter` that styles loading and error views, resolved once
+ *   from the container. Without one, MeoCord's own styling is used.
  *
  * @example
  * ```typescript
@@ -62,6 +69,7 @@ export function MeoCord(options: {
   )[]
   i18n?: Translator<any>
   cooldownStore?: new (...args: any[]) => CooldownStore
+  presenter?: new (...args: any[]) => ResponsePresenter
 }): (target: any) => void {
   return (target: any): void => {
     makeInjectable(target)

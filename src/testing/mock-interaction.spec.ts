@@ -253,6 +253,26 @@ describe('createMockInteraction', () => {
     })
   })
 
+  describe('showModal', () => {
+    it('is a first response: it answers the interaction, and cannot follow a reply', async () => {
+      const shown = createMockInteraction(ChatInputCommandInteraction)
+      await shown.showModal({ customId: 'm', title: 'T', components: [] })
+      expect(shown.replied).toBe(true)
+
+      const replied = createMockInteraction(ButtonInteraction)
+      await replied.reply('first')
+      await expect(replied.showModal({ customId: 'm', title: 'T', components: [] })).rejects.toThrow()
+    })
+  })
+
+  describe('deferUpdate on a modal submission', () => {
+    it('defers like a component does', async () => {
+      const modal = createMockInteraction(ModalSubmitInteraction, { message: createMockMessage() as never })
+      await modal.deferUpdate()
+      expect(modal.deferred).toBe(true)
+    })
+  })
+
   describe('isFromMessage', () => {
     it('tells a modal submitted from a message from one submitted from a command', () => {
       const fromCommand = createMockInteraction(ModalSubmitInteraction)
@@ -788,6 +808,15 @@ describe('overrideGuard()', () => {
 describe('createMockMessage', () => {
   it('returns a Message instance', () => {
     expect(createMockMessage()).toBeInstanceOf(Message)
+  })
+
+  it('starts as an empty message: no flags, components, embeds or attachments', () => {
+    const msg = createMockMessage()
+
+    expect(msg.flags.has(MessageFlags.Ephemeral)).toBe(false)
+    expect(msg.components).toEqual([])
+    expect(msg.embeds).toEqual([])
+    expect(msg.attachments.size).toBe(0)
   })
 
   it('methods are auto-stubbed as vi.fn()', () => {

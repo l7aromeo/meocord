@@ -1,4 +1,15 @@
-import { BaseInteraction, type Client, Message, MessageReaction, type PartialUser, User } from 'discord.js'
+import {
+  BaseInteraction,
+  type Client,
+  type ColorResolvable,
+  type Interaction,
+  type JSONEncodable,
+  type APIComponentInContainer,
+  Message,
+  MessageReaction,
+  type PartialUser,
+  User,
+} from 'discord.js'
 import { type RsbuildConfig } from '@rsbuild/core'
 
 /**
@@ -181,6 +192,76 @@ export interface InterceptorInterface {
    * @returns What the call returns: usually the result of `next.handle()`.
    */
   intercept(context: ExecutionContext, next: CallHandler): Promise<unknown> | unknown
+}
+
+/**
+ * What a presenter renders: MeoCord turns it into an embed, or into a Components V2 container on a
+ * Components V2 message.
+ */
+export interface ResponseView {
+  /** The main text. */
+  text: string
+
+  /** A heading above the text. */
+  title?: string
+
+  /** The accent colour: the embed colour, or the container's accent. */
+  color?: ColorResolvable
+
+  /** An emoji shown before the text, and on the clicked button while it loads. */
+  emoji?: string
+
+  /** Further Components V2 content placed in the container, below the text. Ignored in an embed. */
+  components?: (APIComponentInContainer | JSONEncodable<APIComponentInContainer>)[]
+}
+
+/** What a presenter knows about the interaction it renders for. */
+export interface ResponseContext {
+  /** The interaction being answered. */
+  interaction: Interaction
+
+  /** The locale of the user who made the interaction. */
+  locale: string
+
+  /** Whether the view is rendered as an embed or as a Components V2 container. */
+  mode: 'embed' | 'v2'
+}
+
+/** An error a presenter styles: the words a filter chose, and the error itself. */
+export interface PresentedError {
+  /** What the user is told. */
+  message: string
+
+  /** The error being answered, so a presenter can style it by kind. */
+  error: unknown
+}
+
+/**
+ * Styles MeoCord's answers for an application: the loading view `@Defer` shows, and the error view
+ * `respond(interaction).error()` shows. It decides how they look, not what they say: filters and the
+ * built-in fallback choose the words. Register one with `@MeoCord({ presenter })`; it is resolved once
+ * from the container, so it can inject services such as a `Translator`.
+ *
+ * @example
+ * ```ts
+ * @Service()
+ * export class BrandPresenter implements ResponsePresenter {
+ *   loading() {
+ *     return { text: 'Working on it…', emoji: '⏳', color: Theme.primaryColor }
+ *   }
+ *
+ *   error(_context: ResponseContext, { message }: PresentedError) {
+ *     return { title: 'Something went wrong', text: message, color: Theme.errorColor }
+ *   }
+ * }
+ * ```
+ */
+export interface ResponsePresenter {
+  /** The view shown while a handler under `@Defer` works. */
+  loading(context: ResponseContext): ResponseView
+
+  /** The view shown for an error. */
+  error(context: ResponseContext, error: PresentedError): ResponseView
 }
 
 /**

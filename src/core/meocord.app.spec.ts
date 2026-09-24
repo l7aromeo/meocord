@@ -18,12 +18,6 @@ vi.mock('@src/common/index.js', () => ({
 const { mockLoadConfig } = vi.hoisted(() => ({ mockLoadConfig: vi.fn() }))
 vi.mock('@src/util/meocord-config-loader.util.js', () => ({ loadMeoCordConfig: mockLoadConfig }))
 
-vi.mock('@src/util/index.js', () => ({
-  EmbedUtil: {
-    createErrorEmbed: vi.fn().mockReturnValue({ setColor: vi.fn() }),
-  },
-}))
-
 import {
   AutocompleteInteraction,
   ButtonInteraction,
@@ -40,11 +34,15 @@ import {
   UserSelectMenuInteraction,
 } from 'discord.js'
 import { Logger } from '@src/common/index.js'
-import { EmbedUtil } from '@src/util/index.js'
 import { createChatInputOptions, createMockInteraction, createModalFields, resolveRoute } from '@src/testing/index.js'
 import { Autocomplete, Command, Controller, MeoCord, ReactionHandler, Validate } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { MeoCordApp, shutdownAndExit } from '@src/core/meocord.app.js'
+
+/** The text of the error embed the first call to a reply method sent. */
+function errorShown(method: { mock: { calls: unknown[][] } }): string | undefined {
+  return (method.mock.calls[0]?.[0] as { embeds?: { description?: string }[] } | undefined)?.embeds?.[0]?.description
+}
 import { type StandardSchemaV1 } from '@src/interface/index.js'
 
 function createMockClient() {
@@ -672,10 +670,12 @@ describe('MeoCordApp', () => {
       const app = new MeoCordApp([], createMockContainer() as any, mockClient as any, 't')
       await app.start()
 
-      mockClient.emit('interactionCreate', typing('search', { focused: 'query', query: 'ad' }))
+      const interaction = typing('search', { focused: 'query', query: 'ad' })
+      mockClient.emit('interactionCreate', interaction)
       await vi.advanceTimersByTimeAsync(0)
 
-      expect(EmbedUtil.createErrorEmbed).not.toHaveBeenCalled()
+      expect(interaction.respond).toHaveBeenCalledTimes(1)
+      expect(interaction.respond).toHaveBeenCalledWith([])
     })
 
     // `getFocused` throws when nothing is focused. Routing must still reach a
@@ -752,7 +752,7 @@ describe('MeoCordApp', () => {
     await mockClient.listenersFor('interactionCreate')[0](interaction)
 
     expect(ran).not.toHaveBeenCalled()
-    expect(EmbedUtil.createErrorEmbed).toHaveBeenCalledWith('minutes: Must be at least 1')
+    expect(errorShown(interaction.reply)).toBe('minutes: Must be at least 1')
     expect(interaction.reply).toHaveBeenCalledWith(expect.objectContaining({ flags: MessageFlags.Ephemeral }))
   })
 
@@ -921,8 +921,7 @@ describe('MeoCordApp', () => {
       mockClient.emit('interactionCreate', interaction)
       await vi.advanceTimersByTimeAsync(0)
 
-      expect(EmbedUtil.createErrorEmbed).toHaveBeenCalledWith('An error occurred while executing the command.')
-      expect(interaction.reply).toHaveBeenCalled()
+      expect(errorShown(interaction.reply)).toBe('An error occurred while executing the command.')
     })
 
     it('follows up privately, rather than replying again, when the handler replied and then threw', async () => {
@@ -960,7 +959,7 @@ describe('MeoCordApp', () => {
       mockClient.emit('interactionCreate', interaction)
       await vi.advanceTimersByTimeAsync(0)
 
-      expect(EmbedUtil.createErrorEmbed).toHaveBeenCalledWith('An error occurred while executing the command.')
+      expect(errorShown(interaction.editReply)).toBe('An error occurred while executing the command.')
       expect(interaction.editReply).toHaveBeenCalledTimes(1)
       expect(interaction.reply).not.toHaveBeenCalled()
     })
@@ -1029,8 +1028,7 @@ describe('MeoCordApp', () => {
       const interaction = createMockInteraction(ButtonInteraction, { customId: 'boom/1' })
       await mockClient.listenersFor('interactionCreate')[0](interaction)
 
-      expect(EmbedUtil.createErrorEmbed).toHaveBeenCalledWith('An error occurred while executing the command.')
-      expect(interaction.reply).toHaveBeenCalled()
+      expect(errorShown(interaction.reply)).toBe('An error occurred while executing the command.')
     })
 
     // Autocomplete cannot be replied to, so closing its window is the only way the
