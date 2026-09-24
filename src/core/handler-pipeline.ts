@@ -31,6 +31,7 @@ import {
   getMessageHandlers,
   getReactionHandlers,
 } from '@src/decorator/controller.decorator.js'
+import { appliesTo } from '@src/core/stage-scope.js'
 
 /** The stages that run around one handler, in the order they run. */
 export interface HandlerStages {
@@ -72,7 +73,7 @@ export function bindGlobalStages(container: Container, stages: GlobalStages): vo
   container.bind<GlobalStages>(GLOBAL_STAGES).toConstantValue(stages)
 }
 
-function globalStagesOf(container: Container): GlobalStages {
+export function globalStagesOf(container: Container): GlobalStages {
   return container.isBound(GLOBAL_STAGES) ? container.get<GlobalStages>(GLOBAL_STAGES) : NO_GLOBAL_STAGES
 }
 
@@ -194,7 +195,7 @@ export async function runHandler(
       return callGuardedHandler(instance, methodName, args)
     }
     // Autocomplete answers within three seconds and has no reply to shape, so it skips interceptors.
-    const applicable = type === 'autocomplete' ? [] : interceptors
+    const applicable = type === 'autocomplete' ? [] : interceptors.filter(entry => appliesTo(entry, type))
     if (applicable.length === 0) await handler()
     else await runInterceptors(applicable, container, contextOf(), handler)
     return { ran }

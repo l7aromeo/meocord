@@ -315,7 +315,6 @@ export class TestingModuleBuilder {
       // Stamp container on controller class so @UseGuard works in tests too
       Reflect.defineMetadata(MetadataKey.Container, container, ctrl)
     }
-    prepareHandlerStages(container, this.options.controllers ?? [])
 
     // The classes whose @On and @Once handlers emit reaches: class providers bound as themselves, the
     // controllers, and what they inject
@@ -324,6 +323,7 @@ export class TestingModuleBuilder {
     )
     appClasses.push(...dependencyOrder(container, [...selfProviders, ...(this.options.controllers ?? [])]))
     for (const cls of appClasses) Reflect.defineMetadata(MetadataKey.Container, container, cls)
+    prepareHandlerStages(container, appClasses)
 
     return new TestingModule(container, [...(this.options.controllers ?? [])], appClasses)
   }

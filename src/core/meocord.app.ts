@@ -37,9 +37,10 @@ import {
   findComponentRouteConflicts,
   matchComponentRoute,
 } from '@src/core/component-routes.js'
-import { handleUnroutedError, runHandler } from '@src/core/handler-pipeline.js'
+import { globalStagesOf, handleUnroutedError, runHandler } from '@src/core/handler-pipeline.js'
 import { closeAutocomplete, createFallback, type Fallback } from '@src/core/fallback.js'
 import { CommandNotFoundError } from '@src/common/errors.js'
+import { stageClass, stageTypes } from '@src/core/stage-scope.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
 import {
   eventRequirements,
@@ -221,6 +222,7 @@ export class MeoCordApp {
 
     this.attachEventHandlers()
     this.warnAboutMissingRequirements()
+    this.noteGlobalStagesOnEvents()
 
     try {
       await this.bot.login(this.discordToken)
@@ -497,6 +499,28 @@ export class MeoCordApp {
         }
         if (once) this.bot.once(event, listener)
         else this.bot.on(event, listener)
+      }
+    }
+  }
+
+  /**
+   * Says, once per stage, which global guards and interceptors declare no `types` and so also run
+   * before `@On` and `@Once` handlers, when the app has any.
+   */
+  private noteGlobalStagesOnEvents(): void {
+    if (!this.lifecycleClasses.some(cls => getEventHandlers(cls.prototype).length > 0)) return
+
+    const { guards, interceptors } = globalStagesOf(this.container)
+    for (const [label, decorator, entries] of [
+      ['guard', 'Guard', guards],
+      ['interceptor', 'Interceptor', interceptors],
+    ] as const) {
+      for (const entry of entries) {
+        if (stageTypes(entry)) continue
+        this.logger.info(
+          `Global ${label} ${stageClass(entry).name} also runs on gateway events; declare ` +
+            `@${decorator}({ types: [...] }) to limit it.`,
+        )
       }
     }
   }

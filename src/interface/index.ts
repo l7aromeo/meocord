@@ -17,7 +17,8 @@ import { type ExecutionContext } from '@src/common/execution-context.js'
  * reply there: returning `false` denies, and the menu is closed with an empty list.
  *
  * Before an `@On` or `@Once` handler, a guard receives the event's arguments, such as a `GuildMember`
- * for `guildMemberAdd`, and `ExecutionContext.getType()` is `'event'`.
+ * for `guildMemberAdd`, and `ExecutionContext.getType()` is `'event'`. Global guards run there too;
+ * `@Guard({ types })` limits a guard to the context types it is written for.
  *
  * @example
  * ```ts
@@ -123,6 +124,9 @@ export interface CallHandler {
  * the handler by not calling `next.handle()`, or catch and replace the error the handler throws. One
  * instance is shared across calls, so keep per-call state in local variables, and read
  * `{ provide, params }` through `context.getParams()`.
+ *
+ * Global interceptors also run around `@On` and `@Once` event handlers; `@Interceptor({ types })`
+ * limits an interceptor to the context types it is written for.
  *
  * @example
  * ```ts
