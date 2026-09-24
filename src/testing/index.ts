@@ -18,3 +18,6 @@ export type { Mock, MockedFunction, MockInstance, MockResult, MockState } from '
 
 export { resolveRoute, findRouteConflicts } from './routing.js'
 export type { ComponentCommandType, ResolvedRoute, RouteConflict } from './routing.js'
+
+export { createExecutionContext } from './execution-context.js'
+export type { ExecutionContextOptions } from './execution-context.js'

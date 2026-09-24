@@ -1,3 +1,7 @@
 export { Logger } from '@src/common/logger.js'
 export { Theme } from '@src/common/theme.js'
 export { applyDecorators, SetMetadata } from '@src/common/decorator.js'
+export { createMetadata } from '@src/common/metadata.js'
+export type { MetadataDecorator } from '@src/common/metadata.js'
+export { ExecutionContext } from '@src/common/execution-context.js'
+export type { ExecutionContextType } from '@src/common/execution-context.js'

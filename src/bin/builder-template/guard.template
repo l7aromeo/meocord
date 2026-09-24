@@ -1,11 +1,19 @@
 import { Guard } from 'meocord/decorator'
 import { type GuardInterface } from 'meocord/interface'
+import { createMetadata, ExecutionContext } from 'meocord/common'
 import { BaseInteraction, Message, MessageReaction } from 'discord.js'
+
+/** What a handler requires, read by {{className}}Guard: `@{{className}}(['value'])` on a controller or handler. */
+export const {{className}} = createMetadata<string[]>('{{kebabCaseName}}')
 
 @Guard()
 export class {{className}}Guard implements GuardInterface {
-  async canActivate(_context: BaseInteraction | Message | MessageReaction): Promise<boolean> {
-    // TODO: Implement the guard logic to determine if the interaction is allowed
-    return true
+  constructor(private readonly context: ExecutionContext) {}
+
+  async canActivate(_target: BaseInteraction | Message | MessageReaction): Promise<boolean> {
+    const required = this.context.get({{className}}) ?? []
+
+    // TODO: Decide from `required` and the interaction, message or reaction whether the handler runs
+    return required.length === 0
   }
 }

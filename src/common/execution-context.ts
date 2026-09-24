@@ -1,0 +1,179 @@
+import 'reflect-metadata'
+import {
+  AutocompleteInteraction,
+  BaseInteraction,
+  type Interaction,
+  Message,
+  MessageReaction,
+  type PartialMessageReaction,
+} from 'discord.js'
+import { type MetadataDecorator } from '@src/common/metadata.js'
+
+/** What an {@link ExecutionContext} is running a handler for. */
+export type ExecutionContextType = 'interaction' | 'autocomplete' | 'message' | 'reaction' | 'event'
+
+/**
+ * Describes the handler call a guard is deciding on: which controller and method run, with which
+ * arguments, and the metadata declared on them.
+ *
+ * A guard receives it by constructor injection. Each call gets its own context, so a guard that
+ * injects it is resolved per call; a singleton controller or service cannot inject it.
+ *
+ * @example
+ * ```typescript
+ * @Guard()
+ * export class RolesGuard implements GuardInterface {
+ *   constructor(private readonly context: ExecutionContext) {}
+ *
+ *   canActivate(interaction: ChatInputCommandInteraction): boolean {
+ *     const roles = this.context.get(Roles) ?? []
+ *     return roles.length === 0 || (interaction.inCachedGuild() && roles.some(r => interaction.member.roles.cache.has(r)))
+ *   }
+ * }
+ * ```
+ */
+export abstract class ExecutionContext {
+  /**
+   * Reads a metadata value for the running handler: the method's value, else the controller's.
+   * Values resolve through the prototype chain, so an inherited handler reads its base class's
+   * method value before the subclass's class value.
+   *
+   * @param metadata - A decorator made by `createMetadata`, or a `SetMetadata` key.
+   * @returns The value, or `undefined` when neither the method nor the controller declares one.
+   */
+  abstract get<T>(metadata: MetadataDecorator<T>): T | undefined
+  abstract get<T = unknown>(key: string | symbol): T | undefined
+
+  /**
+   * Reads every declared value for the running handler, method first, then controller.
+   *
+   * @param metadata - A decorator made by `createMetadata`, or a `SetMetadata` key.
+   * @returns The declared values; empty when none is declared.
+   */
+  abstract getAll<T>(metadata: MetadataDecorator<T>): T[]
+  abstract getAll<T = unknown>(key: string | symbol): T[]
+
+  /** The arguments the handler is called with. */
+  abstract getArgs(): readonly unknown[]
+
+  /** The interaction being handled, or `undefined` for a message, reaction or event. */
+  abstract getInteraction(): Interaction | undefined
+
+  /** The message being handled, or `undefined` for anything else. */
+  abstract getMessage(): Message | undefined
+
+  /** The reaction being handled, or `undefined` for anything else. */
+  abstract getReaction(): MessageReaction | PartialMessageReaction | undefined
+
+  /** What is being handled: an interaction, an autocomplete request, a message, a reaction or an event. */
+  abstract getType(): ExecutionContextType
+
+  /** The controller class declaring the handler. */
+  abstract getController(): (new (...args: any[]) => unknown) | undefined
+
+  /**
+   * The handler method as the controller declares it, with its decorators applied, so the function
+   * returned is the decorated one rather than the source method.
+   */
+  abstract getHandler(): ((...args: any[]) => unknown) | undefined
+
+  /** The name of the handler method. */
+  abstract getHandlerName(): string | undefined
+
+  /**
+   * The `params` of the running guard's `{ provide, params }` entry.
+   *
+   * @returns The params, or `undefined` for a guard applied by class alone.
+   */
+  abstract getParams<P extends Record<string, unknown> = Record<string, unknown>>(): Readonly<P> | undefined
+}
+
+/** What a {@link HandlerExecutionContext} describes. */
+export interface HandlerCall {
+  controller: new (...args: any[]) => unknown
+  methodName: string
+  args: readonly unknown[]
+  type?: ExecutionContextType
+  params?: Record<string, unknown>
+}
+
+/** The type of a call, read from its first argument when the caller does not say. */
+export function inferContextType(first: unknown): ExecutionContextType {
+  if (first instanceof AutocompleteInteraction) return 'autocomplete'
+  if (first instanceof BaseInteraction) return 'interaction'
+  if (first instanceof Message) return 'message'
+  if (first instanceof MessageReaction) return 'reaction'
+  return 'event'
+}
+
+function metadataKey(metadata: MetadataDecorator<unknown> | string | symbol): string | symbol {
+  return typeof metadata === 'function' ? metadata.key : metadata
+}
+
+/** The context of one handler call. */
+export class HandlerExecutionContext extends ExecutionContext {
+  private readonly type: ExecutionContextType
+
+  constructor(private readonly call: HandlerCall) {
+    super()
+    this.type = call.type ?? inferContextType(call.args[0])
+  }
+
+  /** The same call, with the params of another guard. */
+  withParams(params: Record<string, unknown> | undefined): HandlerExecutionContext {
+    return new HandlerExecutionContext({ ...this.call, type: this.type, params })
+  }
+
+  get<T>(metadata: MetadataDecorator<T> | string | symbol): T | undefined {
+    return this.getAll<T>(metadata as MetadataDecorator<T>)[0]
+  }
+
+  getAll<T>(metadata: MetadataDecorator<T> | string | symbol): T[] {
+    const key = metadataKey(metadata as MetadataDecorator<unknown>)
+    const { controller, methodName } = this.call
+    const values = [
+      Reflect.getMetadata(key, controller.prototype, methodName) as T | undefined,
+      Reflect.getMetadata(key, controller) as T | undefined,
+    ]
+    return values.filter((value): value is T => value !== undefined)
+  }
+
+  getArgs(): readonly unknown[] {
+    return this.call.args
+  }
+
+  getInteraction(): Interaction | undefined {
+    const [first] = this.call.args
+    return first instanceof BaseInteraction ? (first as Interaction) : undefined
+  }
+
+  getMessage(): Message | undefined {
+    const [first] = this.call.args
+    return first instanceof Message ? first : undefined
+  }
+
+  getReaction(): MessageReaction | PartialMessageReaction | undefined {
+    const [first] = this.call.args
+    return first instanceof MessageReaction ? first : undefined
+  }
+
+  getType(): ExecutionContextType {
+    return this.type
+  }
+
+  getController(): new (...args: any[]) => unknown {
+    return this.call.controller
+  }
+
+  getHandler(): (...args: any[]) => unknown {
+    return this.call.controller.prototype[this.call.methodName]
+  }
+
+  getHandlerName(): string {
+    return this.call.methodName
+  }
+
+  getParams<P extends Record<string, unknown> = Record<string, unknown>>(): Readonly<P> | undefined {
+    return this.call.params as Readonly<P> | undefined
+  }
+}

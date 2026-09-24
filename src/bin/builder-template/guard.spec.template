@@ -1,18 +1,24 @@
-import { {{className}}Guard } from './{{kebabCaseName}}.guard.js'
+import { ChatInputCommandInteraction } from 'discord.js'
+import { createExecutionContext, createMockInteraction } from 'meocord/testing'
+import { {{className}}, {{className}}Guard } from './{{kebabCaseName}}.guard.js'
+
+class SampleController {
+  async open() {}
+
+  @{{className}}(['value'])
+  async restricted() {}
+}
 
 describe('{{className}}Guard', () => {
-  let guard: {{className}}Guard
+  const interaction = createMockInteraction(ChatInputCommandInteraction)
+  const guardFor = (method: 'open' | 'restricted') =>
+    new {{className}}Guard(createExecutionContext(SampleController, method, { args: [interaction] }))
 
-  beforeEach(() => {
-    guard = new {{className}}Guard()
+  it('allows a handler that requires nothing', async () => {
+    expect(await guardFor('open').canActivate(interaction)).toBe(true)
   })
 
-  it('should be defined', () => {
-    expect(guard).toBeDefined()
-  })
-
-  it('should allow by default', async () => {
-    const result = await guard.canActivate({} as any)
-    expect(result).toBe(true)
+  it('denies a handler that declares a requirement', async () => {
+    expect(await guardFor('restricted').canActivate(interaction)).toBe(false)
   })
 })
