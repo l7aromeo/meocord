@@ -628,6 +628,114 @@ describe('lifecycle hooks', () => {
     })
   })
 
+  describe('at the edges', () => {
+    it('logs an onReady that throws something other than an Error, and runs the rest', async () => {
+      const loaded = await load()
+      const ran: string[] = []
+
+      @loaded.Service()
+      class Odd implements OnReady {
+        onReady() {
+          throw 'not an error'
+        }
+      }
+
+      @loaded.Service()
+      class After implements OnReady {
+        onReady() {
+          ran.push('after')
+        }
+      }
+
+      const { client } = await startApp(loaded, { controllers: [], services: [Odd, After] })
+      await becomeReady(client)
+
+      expect(ran).toEqual(['after'])
+      expect(logged.error.some(entry => entry.includes('not an error'))).toBe(true)
+    })
+
+    it('runs the hooks of a service two controllers inject once each', async () => {
+      const loaded = await load()
+      const calls: string[] = []
+
+      @loaded.Service()
+      class Shared implements OnReady, OnShutdown {
+        onReady() {
+          calls.push('ready')
+        }
+        onShutdown() {
+          calls.push('shutdown')
+        }
+      }
+
+      @loaded.Controller()
+      class First {
+        constructor(readonly shared: Shared) {}
+      }
+
+      @loaded.Controller()
+      class Second {
+        constructor(readonly shared: Shared) {}
+      }
+
+      const { client } = await startApp(loaded, { controllers: [First, Second] })
+      await becomeReady(client)
+      await loaded.shutdownAndExit()
+
+      expect(calls).toEqual(['ready', 'shutdown'])
+    })
+
+    it('shuts down a class that has onShutdown but no onReady', async () => {
+      const loaded = await load()
+      let stopped = false
+
+      @loaded.Service()
+      class Flusher implements OnShutdown {
+        onShutdown() {
+          stopped = true
+        }
+      }
+
+      const { client } = await startApp(loaded, { controllers: [], services: [Flusher] })
+      await becomeReady(client)
+      await loaded.shutdownAndExit()
+
+      expect(stopped).toBe(true)
+      expect(exit).toHaveBeenCalledWith(0)
+    })
+
+    it('waits for no hook with a shutdownTimeout of 0, and still destroys the client', async () => {
+      vi.useFakeTimers()
+      config.shutdownTimeout = 0
+      const loaded = await load()
+
+      @loaded.Service()
+      class Hanging implements OnShutdown {
+        onShutdown() {
+          return new Promise<void>(() => {})
+        }
+      }
+
+      const { client } = await startApp(loaded, { controllers: [], services: [Hanging] })
+      await becomeReady(client)
+      const done = loaded.shutdownAndExit()
+      await vi.advanceTimersByTimeAsync(0)
+      await done
+
+      expect(client.destroy).toHaveBeenCalled()
+      expect(logged.warn.some(entry => String(entry[0]).includes('within 0 ms'))).toBe(true)
+      expect(exit).toHaveBeenCalledWith(0)
+    })
+
+    it('exits 0 on a signal when no app was started', async () => {
+      const loaded = await load()
+
+      await loaded.shutdownAndExit()
+
+      expect(exit).toHaveBeenCalledWith(0)
+    })
+  })
+
   it('adds one pair of signal listeners however many apps start', async () => {
     const loaded = await load()
     const before = process.listenerCount('SIGINT')

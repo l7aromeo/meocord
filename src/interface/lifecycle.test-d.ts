@@ -41,3 +41,23 @@ describe('OnShutdown', () => {
     expectTypeOf<ReturnType<OnShutdown['onShutdown']>>().toEqualTypeOf<Promise<void> | void>()
   })
 })
+
+describe('OnShutdown, misused', () => {
+  it('rejects a hook that needs an argument shutdown does not pass', () => {
+    class Wrong implements OnShutdown {
+      // @ts-expect-error onShutdown is called with nothing
+      onShutdown(reason: string) {
+        return void reason
+      }
+    }
+    void Wrong
+  })
+
+  it('rejects a hook that is not a method', () => {
+    class Wrong implements OnShutdown {
+      // @ts-expect-error onShutdown must be callable
+      onShutdown = true
+    }
+    void Wrong
+  })
+})
