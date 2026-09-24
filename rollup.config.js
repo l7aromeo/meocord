@@ -108,6 +108,10 @@ const esmBuild = {
           src: 'src/bin/app-template',
           dest: 'dist/esm/bin',
         },
+        {
+          src: 'src/build/load-config.pre-entry.js',
+          dest: 'dist/esm/build',
+        },
       ],
     }),
   ],

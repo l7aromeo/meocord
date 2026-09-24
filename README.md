@@ -21,6 +21,7 @@
 - [Project Structure](#project-structure)
 - [Configuration](#configuration)
   - [meocord.config.ts](#meocordconfigts)
+  - [Environment variables](#environment-variables)
   - [ESLint](#eslint)
 - [CLI Reference](#cli-reference)
 - [Command Types](#command-types)
@@ -270,6 +271,40 @@ MeoCord builds with [Rsbuild](https://rsbuild.rs). The hook receives its configu
 | `externals`          | `[]`    | Modules to keep out of the bundle. Native addons are found without being listed.                       |
 
 See [Self-contained builds](#self-contained-builds) for when to turn on `bundleDependencies`.
+
+### Environment variables
+
+Load `.env` in `meocord.config.ts`, as the generated one does with `import 'dotenv/config'`, not in `main.ts`. The build runs the config ahead of `main.ts`, so every `process.env` value it loads is already set when `@MeoCord({...})` and the rest of your modules read it — whether the bot starts with `meocord start`, `node dist/main.js`, bun, pm2 or Docker.
+
+To keep one file per environment, put the choice in a module the config imports:
+
+```typescript
+// src/load-env.ts
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import { config } from 'dotenv'
+
+// APP_ENV picks the file: .env.dev, .env.staging, .env.prod. Paths resolve from the directory the bot starts in.
+const file = path.resolve(`.env.${process.env.APP_ENV ?? 'dev'}`)
+
+config({ path: existsSync(file) ? file : path.resolve('.env'), quiet: true })
+```
+
+```typescript
+// meocord.config.ts
+import './src/load-env'
+import { type MeoCordConfig } from 'meocord/interface'
+
+export default {
+  discordToken: process.env.DISCORD_TOKEN!,
+} satisfies MeoCordConfig
+```
+
+```shell
+APP_ENV=staging node dist/main.js
+```
+
+Start the bot from the project root: the `.env` files and `dist/meocord.config.mjs` are both found from the working directory, so set `cwd` in pm2 and `WORKDIR` in a Dockerfile.
 
 ### ESLint
 
