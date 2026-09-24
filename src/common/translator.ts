@@ -248,8 +248,7 @@ class CatalogTranslator<C extends CatalogShape> extends Translator<C> {
     if (requested && this.catalogs[requested as Locale]) add(requested as Locale)
     if (requested) {
       const language = languageOf(requested)
-      // The default goes first among its language's locales, so en-GB prefers the en-US default.
-      if (languageOf(this.defaultLocale) === language) add(this.defaultLocale)
+      // locales starts with the default, so en-GB prefers the en-US default to another English catalog.
       for (const locale of this.locales) if (languageOf(locale) === language) add(locale)
     }
     add(this.defaultLocale)
