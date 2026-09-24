@@ -159,9 +159,10 @@ replaced.
 
 What a person sees in Discord cannot be read back over the API, so `respond()` and `@Defer` are
 checked by hand. `bun run test:e2e --manual` builds the smoke app, registers its checklist commands
-globally, the only scope a user install reaches everywhere, prints the install link and runs until
-Ctrl+C, showing the bot's output. Install the application to your account through that link too. The
-next automated run removes the global commands again.
+globally, the only scope a user install reaches everywhere, prints the install links and runs until
+Ctrl+C, showing the bot's output. Install the application to your account through the second link too.
+It first clears the test server's own commands, so each command appears there once; the next automated
+run removes the global commands and registers the server's again.
 
 You need a second Discord account for the stranger's click, a server the bot is not in, and a group DM.
 `/e2e-panel` answers with where it was used and whether the bot is there, then a panel of buttons. Run

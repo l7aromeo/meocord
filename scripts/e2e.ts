@@ -325,8 +325,12 @@ async function automated(): Promise<void> {
 
 /** Starts the smoke app with the checklist's commands and passes its output through until Ctrl+C. */
 async function manualRun(): Promise<void> {
-  const applicationId = await new DiscordApi(botToken).applicationId()
-  console.log(`\nStarting the smoke app with the checklist's commands, registered globally.`)
+  const api = new DiscordApi(botToken)
+  const applicationId = await api.applicationId()
+  // The global copies replace them here, so the test server lists each command once
+  await api.clearGuildCommands(applicationId, guildId)
+  console.log(`\nCleared the test server's commands; the next automated run registers them there again.`)
+  console.log(`Starting the smoke app with the checklist's commands, registered globally.`)
   const install = `https://discord.com/oauth2/authorize?client_id=${applicationId}`
   console.log(`Add the bot to a server:  ${install}&scope=bot+applications.commands&permissions=117760&integration_type=0`)
   console.log(`Install it to an account: ${install}&scope=applications.commands&integration_type=1`)
