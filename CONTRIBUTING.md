@@ -8,6 +8,7 @@ Thanks for taking the time. Issues, questions, and pull requests are all welcome
 - [Making a change](#making-a-change)
 - [AI-assisted contributions](#ai-assisted-contributions)
 - [What the checks do](#what-the-checks-do)
+- [Checking against real Discord](#checking-against-real-discord)
 - [Changesets and releases](#changesets-and-releases)
 - [Reporting bugs](#reporting-bugs)
 - [Security issues](#security-issues)
@@ -36,6 +37,7 @@ bun run test
 | `bun run build`            | Clears `dist/` and builds ESM, CJS, and type declarations through rollup                       |
 | `bun run verify:generated` | Generates an app from the packed build and runs its own checks — see below                     |
 | `bun run cli:scenarios`    | Runs the packed CLI through what must work and what must fail clearly — see below              |
+| `bun run test:e2e`         | Runs a smoke app against real Discord with a test application — see below                      |
 | `bun run changeset`        | Records a release note for your change — see below                                             |
 | `bun run notices`          | Regenerates THIRD_PARTY_NOTICES.md after a dependency is added or removed                      |
 
@@ -85,6 +87,117 @@ whether that text lints, compiles, tests or builds; shipped bugs have hidden in 
 **The Windows job** installs the packed tarball globally and drives the CLI through the `.cmd` shim npm
 writes from the interpreter line. Nothing on a POSIX runner exercises that path, and generation is what
 walks and writes file paths, so it is also run where the separator and case rules differ.
+
+## Checking against real Discord
+
+`bun run test:e2e` runs a small bot against Discord itself: the smoke app in `test/e2e/app`, installed
+from the packed build as `verify:generated` installs its application. Mocks and render checks cannot say
+whether Discord accepts what MeoCord sends, so these checks do. Run it after `bun run build`. Without
+credentials it prints why it skipped and exits 0.
+
+It checks, in order:
+
+- the bot logs in, and `onReady` runs in dependency order, told the process is primary;
+- `ShardContext.call` reaches the process;
+- exactly the smoke command is registered in the test server, and `clearOther` leaves no global command;
+- with a helper bot, `@On('messageCreate')` receives its message and `@ReactionHandler` its reaction.
+  `@MessageHandler` ignores messages from bots, so that one is marked for a person to check;
+- SIGINT sent to the CLI alone, as Docker, pm2 and systemd send it, runs `onShutdown` in reverse
+  dependency order and exits 0, leaving no process behind;
+- with process sharding and two shards: a process per shard, primary only on shard 0, `ShardContext.call`
+  reaching both, commands registered once and left exactly as they were (same ids and versions), and
+  SIGINT shutting every shard down through `onShutdown`, leaving no process behind.
+
+The command set is stable, so each run's registration is an idempotent bulk update rather than a delete
+and re-create, which keeps the test application well inside Discord's limits. The script passes the bot
+its token in the environment of the processes it starts and prints no token; output it shows has them
+replaced.
+
+### Setting up a test application
+
+> [!WARNING]
+> Use an application and a server made only for testing. The checks register and remove commands and
+> the manual run registers global ones, which would replace a real bot's.
+
+1. In the [Developer Portal](https://discord.com/developers/applications), create an application for
+   testing.
+2. On **Installation**, tick both **User Install** and **Guild Install**, choose the Discord-provided
+   install link, give Guild Install the `applications.commands` and `bot` scopes with the **View
+   Channels**, **Send Messages** and **Read Message History** permissions, and User Install the
+   `applications.commands` scope.
+3. On **Bot**, reset the token and keep it for `.env`. Turn on the **Message Content Intent**; the smoke
+   app asks for it, and login fails without it.
+4. Create a server for testing and add the bot through the install link. In Discord's settings, turn on
+   **Advanced > Developer Mode** so **Copy Server ID** and **Copy Channel ID** appear.
+5. Optionally, create a second application as the helper bot. It needs no intents: the script drives it
+   over REST. Add it to the test server with the `bot` scope and **View Channels**, **Send Messages**,
+   **Add Reactions** and **Read Message History** in the channel it will use. It deletes its message
+   when the check ends.
+6. Copy `.env.example` to `.env` at the repository root and fill it in. git ignores `.env`, and Bun loads
+   it when the script runs.
+
+| Variable                       | Required | Value                                                     |
+| ------------------------------ | -------- | --------------------------------------------------------- |
+| `MEOCORD_E2E_BOT_TOKEN`        | yes      | The test application's bot token                          |
+| `MEOCORD_E2E_GUILD_ID`         | yes      | The test server's id                                      |
+| `MEOCORD_E2E_CHANNEL_ID`       | no       | A text channel in the test server, for the helper bot     |
+| `MEOCORD_E2E_HELPER_BOT_TOKEN` | no       | The helper bot's token; with the channel, runs its checks |
+
+### The manual checklist
+
+What a person sees in Discord cannot be read back over the API, so `respond()` and `@Defer` are
+checked by hand. `bun run test:e2e --manual` builds the smoke app, registers its checklist commands
+globally, the only scope a user install reaches everywhere, prints the install link and runs until
+Ctrl+C, showing the bot's output. Install the application to your account through that link too. The
+next automated run removes the global commands again.
+
+You need a second Discord account for the stranger's click, a server the bot is not in, and a group DM.
+`/e2e-panel` answers with where it was used and whether the bot is there, then a panel of buttons. Run
+it in each of the four contexts, and work through the steps in each:
+
+| Context                                     | The panel says                               |
+| ------------------------------------------- | -------------------------------------------- |
+| The test server                             | `Where: guild; bot present: true`            |
+| A server without the bot, as a user install | `Where: guild; bot present: false`           |
+| The bot's DMs                               | `Where: bot-dm; bot present: true`           |
+| A DM with someone else, or a group DM       | `Where: private-channel; bot present: false` |
+
+1. **`/e2e-panel`**: a "thinking…" state, then the panel, with the context as above.
+2. **Eager, 2s**: at once, every button is disabled, the clicked one shows ⏳, and "⏳ Working on it…" is
+   added. Two seconds later the text says "Eager: updated", the buttons are back and the loading view
+   is gone.
+3. **Auto, fast**: the text updates at once, with no disabled buttons or loading view in between.
+4. **Auto, 3s**: nothing for about a second and a half, then the lock as in step 2, then the update and
+   the buttons back.
+5. **Concurrent clicks**: click **Slow A, 5s**, then **Slow B, 5s** within a couple of seconds. Each is
+   disabled with ⏳ once clicked while the other buttons stay usable, and each comes back when its own
+   five seconds end, A first. The loading view stays until both have ended.
+6. **A stranger's click**: from the second account, click **Owner only**. Only they see "Only the user
+   who opened this panel can use this button.", and the panel does not change, not even briefly. When
+   you click it, the lock appears and the text says "Owner only: handled for its owner".
+7. **The error, public**: click **Fail**. You see a private "Oops!" message with "An error occurred
+   while executing the command.", and the panel comes back as it was.
+8. **The error, appended**: run `/e2e-panel private:True` and click **Fail** on that private panel. The
+   error is added to the private panel itself rather than sent as a separate message.
+9. **The error, edit in place**: run `/e2e-private-fail`. Its private "thinking…" reply turns into the
+   error message after a second.
+10. **Optional, the 15-minute expiry**: click **Answer after 15 min** and wait 15½ minutes. Where the bot
+    is present, the panel then says "Answered after the token expired" and its buttons come back, sent
+    through the channel since the interaction's token has expired. Where it is not, the panel stays
+    locked and the bot's output logs why.
+
+For message handlers, send `e2e ping` in the test server: the bot answers "pong".
+
+### In CI
+
+The **Real Discord** job runs `test:e2e` on pull requests from branches of this repository, on pushes to
+`main` and `beta`, and nightly. Its values are secrets of the `e2e` GitHub environment, under the same
+names as `.env`, and reach only the step that runs the script, which also masks both tokens. The job
+can read the repository and nothing more, requests no OIDC token and keeps no git credentials. Runs
+share the `discord-e2e` concurrency group, so only one logs in as the test bot at a time, and a
+running check is never cancelled for another. It is not a required check, so an outage at Discord blocks
+no merge. Pull requests from forks get no secrets: for them a separate job explains the skip. Without
+the environment's secrets, the job passes with the skip message.
 
 ## Changesets and releases
 
