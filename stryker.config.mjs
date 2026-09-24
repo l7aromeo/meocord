@@ -7,6 +7,8 @@
  * The vitest runner runs only the tests that cover each mutant. On Vitest 5 it reports covered mutants
  * as survived (stryker-mutator/stryker-js#6210), since Vitest 5 joins test names with ' > '.
  * patches/ carries that fix from stryker-mutator/stryker-js#6220; drop the patch once #6220 or #6214 ships.
+ * It does not re-run module-level code per mutant, so a static mutant (a decorator body, a top-level
+ * constant) may show as survived: verify those by hand, or with `testRunner: 'command'`.
  */
 
 /** Each module: the files it mutates. */
