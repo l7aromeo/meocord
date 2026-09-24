@@ -55,6 +55,10 @@ bun run test
 Include a description of what changed and why, and add tests for any new behaviour. CI runs everything
 above, so nothing is lost if you forget a step — running it locally is just faster than waiting.
 
+Approved pull requests land through GitHub's merge queue: the queue rebases each one onto the latest
+`main`, runs the required checks again, and merges it with a rebase merge, so `main` keeps a linear
+history and every commit on it has passed CI.
+
 Files carry no license header: the [LICENSE](./LICENSE) at the root covers the whole repository.
 
 ## AI-assisted contributions
