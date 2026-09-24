@@ -5,6 +5,7 @@ import { MetadataKey } from '@src/enum/index.js'
 import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { type Translator } from '@src/common/translator.js'
+import { type CooldownStore } from '@src/common/cooldown-store.js'
 
 /**
  * Declares the MeoCord application class: its controllers, services, client options and activities.
@@ -22,6 +23,8 @@ import { type Translator } from '@src/common/translator.js'
  *   outside the controller's and the method's own. A controller method called directly runs none.
  * @param options.filters - Exception filters tried after the method's and the controller's, and for
  *   errors outside any handler, such as `CommandNotFoundError`.
+ * @param options.cooldownStore - Where `@Cooldown` counts calls, in place of this process's memory: a
+ *   class extending `CooldownStore`, resolved like a service so it can inject its client.
  * @param options.i18n - The translator `createTranslator` made, injected as `Translator` wherever a class
  *   asks for one.
  *
@@ -58,6 +61,7 @@ export function MeoCord(options: {
     | { provide: new (...args: any[]) => ExceptionFilter<any>; params: Record<string, any> }
   )[]
   i18n?: Translator<any>
+  cooldownStore?: new (...args: any[]) => CooldownStore
 }): (target: any) => void {
   return (target: any): void => {
     makeInjectable(target)

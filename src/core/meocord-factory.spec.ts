@@ -26,6 +26,9 @@ const { MetadataKey } = await import('@src/enum/index.js')
 const { ExecutionContext } = await import('@src/common/execution-context.js')
 const { injectable } = await import('inversify')
 const { createTranslator, Translator } = await import('@src/common/translator.js')
+const { CooldownStore, MemoryCooldownStore } = await import('@src/common/cooldown-store.js')
+const { Command, Controller, Cooldown } = await import('@src/decorator/index.js')
+const { CommandType } = await import('@src/enum/index.js')
 const { runHandler } = await import('@src/core/handler-pipeline.js')
 
 describe('MeoCordFactory.create()', () => {
@@ -190,6 +193,67 @@ describe('MeoCordFactory.create()', () => {
       mockLoadConfig.mockReturnValue({ discordToken: 'test-token' })
 
       expect(() => MeoCordFactory.create(appWith())).toThrow('PingService injects Translator, but @MeoCord has no i18n')
+    })
+  })
+
+  describe('the cooldown store', () => {
+    class RedisClient {}
+    class RedisCooldownStore extends CooldownStore {
+      constructor(readonly redis: RedisClient) {
+        super()
+      }
+
+      consume() {
+        return Promise.resolve({ allowed: true, retryAfterMs: 0 })
+      }
+    }
+    Reflect.defineMetadata(MetadataKey.ParamTypes, [RedisClient], RedisCooldownStore)
+
+    @Controller()
+    class DailyController {
+      @Command('daily', CommandType.SLASH)
+      @Cooldown({ seconds: 10 })
+      async daily(..._args: any[]) {}
+    }
+
+    const appWith = (cooldownStore?: unknown) => {
+      class MyApp {}
+      Reflect.defineMetadata(MetadataKey.AppOptions, { controllers: [DailyController], clientOptions: { intents: [] }, cooldownStore }, MyApp)
+      return MyApp
+    }
+    const storeOf = (app: unknown) => (app as { container: { get(token: unknown): unknown } }).container.get(CooldownStore)
+    const warn = () => (MeoCordFactory as unknown as { logger: { warn: ReturnType<typeof vi.fn> } }).logger.warn
+
+    beforeEach(() => mockLoadConfig.mockReturnValue({ discordToken: 'test-token' }))
+    afterEach(() => {
+      delete process.env.SHARDING_MANAGER
+    })
+
+    it('is in memory by default', () => {
+      expect(storeOf(MeoCordFactory.create(appWith()))).toBeInstanceOf(MemoryCooldownStore)
+    })
+
+    it("is the app's own when given, resolved with its dependencies", () => {
+      const store = storeOf(MeoCordFactory.create(appWith(RedisCooldownStore))) as RedisCooldownStore
+
+      expect(store).toBeInstanceOf(RedisCooldownStore)
+      expect(store.redis).toBeInstanceOf(RedisClient)
+    })
+
+    it("warns a shard that in-memory 'user' and 'global' cooldowns count per shard", () => {
+      process.env.SHARDING_MANAGER = 'true'
+
+      MeoCordFactory.create(appWith())
+
+      expect(warn()).toHaveBeenCalledWith(expect.stringContaining('DailyController.daily'))
+    })
+
+    it('does not warn a shard with a shared store', () => {
+      process.env.SHARDING_MANAGER = 'true'
+
+      MeoCordFactory.create(appWith(RedisCooldownStore))
+
+      expect(warn()).not.toHaveBeenCalledWith(expect.stringContaining('cooldowns'))
     })
   })
 })

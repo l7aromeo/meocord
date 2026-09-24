@@ -38,6 +38,7 @@ export { inspectHandler } from './inspect-handler.js'
 export type {
   HandlerInspection,
   InspectedFilter,
+  InspectedCooldown,
   InspectedGuard,
   InspectedInterceptor,
   InspectHandlerOptions,

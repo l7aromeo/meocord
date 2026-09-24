@@ -86,3 +86,49 @@ export class ValidationError extends Error {
     )
   }
 }
+
+/** The scope a cooldown counts calls in. */
+export type CooldownScope = 'user' | 'guild' | 'channel' | 'global'
+
+/**
+ * What a blocked caller is told: "Slow down: try again in 12s." The one place this text is written,
+ * so a filter, a presenter or a translator can replace it by catching `CooldownError`.
+ *
+ * @param retryAfterMs - How long until the next call is allowed.
+ */
+export function cooldownMessage(retryAfterMs: number): string {
+  const seconds = Math.max(1, Math.ceil(retryAfterMs / 1000))
+  const wait = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m${seconds % 60 ? ` ${seconds % 60}s` : ''}`
+  return `Slow down: try again in ${wait}.`
+}
+
+/**
+ * Thrown when a `@Cooldown` blocks a call, so the handler does not run. The built-in fallback answers
+ * only the caller, with {@link cooldownMessage}; a filter can catch it to answer otherwise.
+ *
+ * @example
+ * ```ts
+ * @Catch(CooldownError)
+ * export class CooldownFilter implements ExceptionFilter<CooldownError> {
+ *   async catch(error: CooldownError, context: ExecutionContext) {
+ *     const interaction = context.getInteraction()
+ *     if (interaction?.isRepliable()) {
+ *       await interaction.reply({ content: `Wait ${Math.ceil(error.retryAfterMs / 1000)}s.`, flags: MessageFlags.Ephemeral })
+ *     }
+ *   }
+ * }
+ * ```
+ */
+export class CooldownError extends Error {
+  /**
+   * @param retryAfterMs - How long until the next call is allowed.
+   * @param per - The scope of the cooldown that blocked the call.
+   */
+  constructor(
+    readonly retryAfterMs: number,
+    readonly per: CooldownScope,
+  ) {
+    super(cooldownMessage(retryAfterMs))
+    this.name = 'CooldownError'
+  }
+}

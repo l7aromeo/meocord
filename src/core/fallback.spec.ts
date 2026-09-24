@@ -9,7 +9,7 @@ import {
   resolveColor,
 } from 'discord.js'
 import { vi } from 'vitest'
-import { CommandNotFoundError, GuardDeniedError, Theme, ValidationError } from '@src/common/index.js'
+import { CommandNotFoundError, CooldownError, GuardDeniedError, Theme, ValidationError } from '@src/common/index.js'
 import { type Logger } from '@src/common/logger.js'
 import { UnroutedExecutionContext } from '@src/common/execution-context.js'
 import { createFallback } from '@src/core/fallback.js'
@@ -53,6 +53,20 @@ async function fail(interaction: unknown, error: unknown = failure, logger = cre
 }
 
 describe('the fallback', () => {
+  // A message sent too often is simply ignored, as the cooldown means; it is not a fault to report.
+  it('logs a message blocked by a cooldown at debug level only', async () => {
+    const logger = await fail(createMockMessage(), new CooldownError(5_000, 'channel'))
+
+    expect(logger.error).not.toHaveBeenCalled()
+    expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('Cooldown (channel)'))
+  })
+
+  it('still logs any other error from a message as an error', async () => {
+    const logger = await fail(createMockMessage())
+
+    expect(logger.error).toHaveBeenCalled()
+  })
+
   describe('on an unanswered interaction', () => {
     it('replies privately with the 4.0 text and error styling', async () => {
       const interaction = createMockInteraction(ChatInputCommandInteraction)
@@ -84,6 +98,18 @@ describe('the fallback', () => {
       expect(describedAs(payload)).toBe('Owners only.')
       expect(payload.flags).toBe(Ephemeral)
       expect(logger.error).not.toHaveBeenCalled()
+    })
+
+    it('tells a caller blocked by a cooldown privately how long to wait, logging it only at debug level', async () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+
+      const logger = await fail(interaction, new CooldownError(12_000, 'user'))
+
+      const payload = sent(interaction.reply)
+      expect(describedAs(payload)).toBe('Slow down: try again in 12s.')
+      expect(payload.flags).toBe(Ephemeral)
+      expect(logger.error).not.toHaveBeenCalled()
+      expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('Cooldown (user)'))
     })
 
     it("lists a ValidationError's issues privately, logging it only at debug level", async () => {
