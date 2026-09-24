@@ -491,13 +491,14 @@ export class InteractionResponse implements ResponseState {
 
   /** Restores the snapshot while the message still shows the lock. */
   private async restore(): Promise<void> {
-    if (!this.snapshot || this.settled) return
-    this.settled = true
+    // A call holds its message from the lock until it settles, so an unsettled lock always has its entry
     const entry = this.held?.entry
+    if (!entry || this.settled) return
+    this.settled = true
     try {
       const current = await this.interaction.fetchReply()
       const components = current?.components?.map(component => component.toJSON())
-      if (components && !sameJson(components, entry?.written)) {
+      if (components && !sameJson(components, entry.written)) {
         this.leave({ changedOutside: true })
         return
       }
@@ -506,13 +507,7 @@ export class InteractionResponse implements ResponseState {
     }
     this.leave()
     // Calls still holding the message keep their controls disabled
-    const body = entry ? this.heldBody(entry, entry.original, this.loadingView) : this.restoredBody()
-    await this.editMessage(body, { restoring: true })
-  }
-
-  private restoredBody(): Body {
-    const snapshot = this.snapshot!
-    return this.v2 ? { components: snapshot.components } : { components: snapshot.components, embeds: snapshot.embeds }
+    await this.editMessage(this.heldBody(entry, entry.original, this.loadingView), { restoring: true })
   }
 
   /**
