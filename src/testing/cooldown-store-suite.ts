@@ -1,0 +1,123 @@
+import { randomUUID } from 'node:crypto'
+import type { CooldownStore, CooldownVerdict } from '@src/common/cooldown-store.js'
+
+/** The assertions the suite makes, which both Vitest's and Jest's `expect` provide. */
+interface Expectation {
+  toBe(expected: unknown): void
+  toEqual(expected: unknown): void
+  toBeGreaterThan(expected: number): void
+  toBeGreaterThanOrEqual(expected: number): void
+  toBeLessThanOrEqual(expected: number): void
+}
+
+/** The test framework the suite registers its cases with: its `describe`, `it` and `expect`. */
+export interface CooldownStoreSuiteFramework {
+  describe: (name: string, body: () => void) => void
+  it: (name: string, body: () => Promise<void>, timeout?: number) => void
+  expect: (actual: unknown) => Expectation
+}
+
+/** Long enough for a store over the network to answer each case, short enough that the suite takes seconds. */
+const CASE_TIMEOUT_MS = 10_000
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+/**
+ * Checks that a `CooldownStore` counts calls as `MemoryCooldownStore` does, for a store you write yourself
+ * over a database, or one you configure. It registers one `describe` of cases with the test framework you
+ * pass, so it runs under Vitest, Jest or any runner with the same three functions.
+ *
+ * The cases cover what a shared store most often gets wrong: calls within a window, a sliding window
+ * rather than fixed buckets, `retryAfterMs` counted from the oldest call still in the window, each key
+ * counted on its own, calls made in the same millisecond kept apart, and several concurrent calls at the
+ * limit where exactly one may pass. They use real time, since a store's clock may be its server's, with
+ * windows short enough that the suite takes a few seconds. Each case asks `factory` for a store and counts
+ * under keys of its own, so a store over a database that outlives the run can be checked again.
+ *
+ * @param name - What the store is called in the report.
+ * @param factory - Makes the store to check, once per case.
+ * @param framework - The test framework's `describe`, `it` and `expect`.
+ *
+ * @example
+ * ```ts
+ * import { testCooldownStore } from 'meocord/testing'
+ * import { PostgresCooldownStore } from '@src/stores/postgres-cooldown.store'
+ *
+ * testCooldownStore('PostgresCooldownStore', () => new PostgresCooldownStore(pool), { describe, it, expect })
+ * ```
+ */
+export function testCooldownStore(
+  name: string,
+  factory: () => CooldownStore | Promise<CooldownStore>,
+  { describe, it, expect }: CooldownStoreSuiteFramework,
+): void {
+  const run = randomUUID()
+  const key = (label: string) => `meocord-suite:${run}:${label}`
+  const test = (label: string, body: (store: CooldownStore) => Promise<void>) =>
+    it(label, async () => body(await factory()), CASE_TIMEOUT_MS)
+
+  describe(`${name} as a CooldownStore`, () => {
+    test('allows `uses` calls within a window, then refuses with how long until the next', async store => {
+      const limit = { uses: 3, windowMs: 2_000 }
+      for (let call = 0; call < 3; call += 1) {
+        expect(await store.consume(key('uses'), limit)).toEqual({ allowed: true, retryAfterMs: 0 })
+      }
+
+      const refused = await store.consume(key('uses'), limit)
+      expect(refused.allowed).toBe(false)
+      expect(refused.retryAfterMs).toBeGreaterThan(0)
+      expect(refused.retryAfterMs).toBeLessThanOrEqual(limit.windowMs)
+    })
+
+    test('slides its window: a call is allowed once the oldest leaves it, not when a bucket resets', async store => {
+      const limit = { uses: 2, windowMs: 500 }
+      await store.consume(key('sliding'), limit)
+      await sleep(250)
+      await store.consume(key('sliding'), limit)
+
+      const refused = await store.consume(key('sliding'), limit)
+      expect(refused.allowed).toBe(false)
+      await sleep(refused.retryAfterMs + 40)
+
+      // The first call has left the window; the second, 250ms younger, still holds its use.
+      expect((await store.consume(key('sliding'), limit)).allowed).toBe(true)
+      expect((await store.consume(key('sliding'), limit)).allowed).toBe(false)
+    })
+
+    test('counts retryAfterMs from the oldest call still in the window', async store => {
+      const limit = { uses: 2, windowMs: 1_000 }
+      await store.consume(key('retry'), limit)
+      await sleep(300)
+      await store.consume(key('retry'), limit)
+
+      // From the oldest call, about 700ms remain; from the newest, about 1000ms would.
+      const { retryAfterMs } = await store.consume(key('retry'), limit)
+      expect(retryAfterMs).toBeGreaterThan(limit.windowMs - 600)
+      expect(retryAfterMs).toBeLessThanOrEqual(limit.windowMs - 200)
+    })
+
+    test('counts each key on its own', async store => {
+      const limit = { uses: 1, windowMs: 2_000 }
+      expect((await store.consume(key('first'), limit)).allowed).toBe(true)
+      expect((await store.consume(key('first'), limit)).allowed).toBe(false)
+      expect((await store.consume(key('second'), limit)).allowed).toBe(true)
+    })
+
+    test('keeps calls made at the same instant apart, rather than counting them as one', async store => {
+      const limit = { uses: 3, windowMs: 2_000 }
+      const verdicts = await Promise.all([1, 2, 3].map(() => store.consume(key('instant'), limit)))
+
+      expect(verdicts.every(verdict => verdict.allowed)).toBe(true)
+      expect((await store.consume(key('instant'), limit)).allowed).toBe(false)
+    })
+
+    test('lets exactly one of several concurrent calls take the last use', async store => {
+      const limit = { uses: 1, windowMs: 2_000 }
+      const verdicts: CooldownVerdict[] = await Promise.all(
+        Array.from({ length: 8 }, () => store.consume(key('concurrent'), limit)),
+      )
+
+      expect(verdicts.filter(verdict => verdict.allowed).length).toBe(1)
+    })
+  })
+}

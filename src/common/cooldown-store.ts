@@ -18,7 +18,8 @@ export interface CooldownVerdict {
  * as one backed by Redis, with `@MeoCord({ cooldownStore })` so shards or several processes share one
  * count.
  *
- * `consume` must check and record a call as one step: two calls at the limit must not both pass.
+ * `consume` must check and record a call as one step: two calls at the limit must not both pass. Check a
+ * store of your own with `testCooldownStore` from `meocord/testing`.
  *
  * @example
  * ```ts
