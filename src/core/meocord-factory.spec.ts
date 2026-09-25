@@ -27,6 +27,7 @@ const { ExecutionContext } = await import('@src/common/execution-context.js')
 const { injectable } = await import('inversify')
 const { createTranslator, Translator } = await import('@src/common/translator.js')
 const { CooldownStore, MemoryCooldownStore } = await import('@src/common/cooldown-store.js')
+const { RedisCooldownStore: SharedRedisStore } = await import('@src/common/redis-cooldown-store.js')
 const { Command, Controller, Cooldown, Guard } = await import('@src/decorator/index.js')
 const { CommandType } = await import('@src/enum/index.js')
 const { runHandler } = await import('@src/core/handler-pipeline.js')
@@ -267,6 +268,15 @@ describe('MeoCordFactory.create()', () => {
 
       expect(store).toBeInstanceOf(RedisCooldownStore)
       expect(store.redis).toBeInstanceOf(RedisClient)
+    })
+
+    it('resolves RedisCooldownStore.using, which runs its script through the function it was given', async () => {
+      const evaluate = vi.fn(() => Promise.resolve([0, 750]))
+      const store = storeOf(MeoCordFactory.create(appWith(SharedRedisStore.using(evaluate)))) as InstanceType<typeof CooldownStore>
+
+      expect(store).toBeInstanceOf(SharedRedisStore)
+      expect(await store.consume('key', { uses: 1, windowMs: 1_000 })).toEqual({ allowed: false, retryAfterMs: 750 })
+      expect(evaluate).toHaveBeenCalledTimes(1)
     })
 
     it("warns a shard that in-memory 'user' and 'global' cooldowns count per shard", async () => {

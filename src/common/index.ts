@@ -10,6 +10,8 @@ export { CommandNotFoundError, CooldownError, cooldownMessage, GuardDeniedError,
 export type { CooldownScope } from '@src/common/errors.js'
 export { CooldownStore, MemoryCooldownStore } from '@src/common/cooldown-store.js'
 export type { CooldownLimit, CooldownVerdict } from '@src/common/cooldown-store.js'
+export { RedisCooldownStore } from '@src/common/redis-cooldown-store.js'
+export type { RedisCooldownStoreOptions, RedisEval, RedisEvalSha } from '@src/common/redis-cooldown-store.js'
 export { createTranslator, defineCatalog, Translator } from '@src/common/translator.js'
 export type {
   CatalogShape,
