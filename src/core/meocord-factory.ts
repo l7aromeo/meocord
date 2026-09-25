@@ -23,6 +23,7 @@ import {
   bindProvider,
   isClassProvider,
   providerMap,
+  type ProviderMap,
   resolutionOrder,
   resolveProviders,
   tokenDependencies,
@@ -44,8 +45,9 @@ import { type MeoCordConfig } from '@src/interface/index.js'
 /**
  * Recursively binds a class and all its constructor dependencies to the container in singleton scope.
  */
-function bindDependencies(container: Container, cls: any): void {
-  if (container.isBound(cls)) return
+function bindDependencies(container: Container, cls: any, providers: ProviderMap): void {
+  // A provided class is bound by its own provider, wherever in the list that provider comes
+  if (container.isBound(cls) || providers.has(cls)) return
   if (injectedTokens(cls).includes(ExecutionContext)) throw singletonContextError(cls)
 
   makeInjectable(cls)
@@ -55,7 +57,7 @@ function bindDependencies(container: Container, cls: any): void {
   // By constructor type or @inject token; an interface-typed parameter records Object, which is skipped
   for (const dep of injectedTokens(cls)) {
     if (dep === Translator && !container.isBound(Translator)) throw missingTranslatorError(cls)
-    if (isAppClassToken(dep)) bindDependencies(container, dep)
+    if (isAppClassToken(dep)) bindDependencies(container, dep, providers)
   }
 }
 
@@ -159,7 +161,7 @@ export class MeoCordFactory {
 
     // A store of the app's own is resolved like a service, so it can inject its client
     if (options.cooldownStore) {
-      bindDependencies(container, options.cooldownStore)
+      bindDependencies(container, options.cooldownStore, providers)
       container.bind(CooldownStore).toService(options.cooldownStore)
     } else {
       container.bind(CooldownStore).toConstantValue(new MemoryCooldownStore())
@@ -171,15 +173,15 @@ export class MeoCordFactory {
       if (container.isBound(token as ServiceIdentifier)) {
         throw new Error(`${tokenName(token)} is bound by MeoCord, so @MeoCord({ providers }) cannot provide it.`)
       }
-      bindProvider(container, provider, cls => bindDependencies(container, cls))
+      bindProvider(container, provider, cls => bindDependencies(container, cls, providers))
     }
 
     // Bind all controllers and their transitive dependencies
     for (const ctrl of options.controllers as any[]) {
-      bindDependencies(container, ctrl)
+      bindDependencies(container, ctrl, providers)
     }
     for (const svc of (options.services ?? []) as any[]) {
-      bindDependencies(container, svc)
+      bindDependencies(container, svc, providers)
     }
     // Providers first, then the services, then the controllers, each after what it depends on
     const order = resolutionOrder(container, providers, [...providers.keys(), ...(options.services ?? []), ...options.controllers])

@@ -118,6 +118,76 @@ describe('@MeoCord({ providers })', () => {
     expect(container.get(Storage)).toBe(container.get(Notes).storage)
   })
 
+  it('binds a provided class once, whichever provider in the list injects it first', async () => {
+    for (const order of ['dependent first', 'dependency first'] as const) {
+      const loaded = await load()
+
+      @loaded.Service()
+      class Greeting {
+        text() {
+          return 'Hello'
+        }
+      }
+      @loaded.Service()
+      class Status {
+        constructor(readonly greeting: Greeting) {}
+      }
+
+      const providers: Provider[] = [
+        { provide: Status, useClass: Status },
+        { provide: Greeting, useClass: Greeting },
+      ]
+      if (order === 'dependency first') providers.reverse()
+      const { app, container } = create(loaded, { providers })
+      await app.start()
+
+      expect(container.get(Status).greeting.text()).toBe('Hello')
+      expect(container.get(Status).greeting).toBe(container.get(Greeting))
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('still binds the class a provided class injects when only the injecting one is listed', async () => {
+    const loaded = await load()
+
+    @loaded.Service()
+    class Greeting {
+      text() {
+        return 'Hello'
+      }
+    }
+    @loaded.Service()
+    class Status {
+      constructor(readonly greeting: Greeting) {}
+    }
+
+    const { app, container } = create(loaded, { providers: [{ provide: Status, useClass: Status }] })
+    await app.start()
+
+    expect(container.get(Status).greeting.text()).toBe('Hello')
+  })
+
+  it('binds a provided class once when a factory listed before it injects it', async () => {
+    const loaded = await load()
+
+    @loaded.Service()
+    class Greeting {
+      text() {
+        return 'Hello'
+      }
+    }
+
+    const { app, container } = create(loaded, {
+      providers: [
+        { provide: 'message', useFactory: (greeting: Greeting) => `${greeting.text()}!`, inject: [Greeting] },
+        { provide: Greeting, useClass: Greeting },
+      ],
+    })
+    await app.start()
+
+    expect(container.get('message')).toBe('Hello!')
+  })
+
   it('calls a factory once with what it injects, and awaits one that returns a promise before login', async () => {
     const loaded = await load()
     const factory = vi.fn(async (url: string) => ({ url, connected: true }))

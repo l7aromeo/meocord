@@ -384,7 +384,8 @@ export class TestingModuleBuilder {
 
     // Recursively bind controllers and their dependencies, skipping already-bound tokens
     const bindClass = (cls: new (...args: any[]) => any) => {
-      if (container.isBound(cls)) return
+      // A provided class is bound by its own provider, wherever in the list that provider comes
+      if (container.isBound(cls) || providers.has(cls)) return
       if (injectedTokens(cls).includes(ExecutionContext)) throw singletonContextError(cls)
 
       makeInjectable(cls)

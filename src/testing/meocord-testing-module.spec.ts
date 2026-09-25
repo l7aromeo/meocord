@@ -72,6 +72,61 @@ describe('provided tokens', () => {
     expect(module.get(LIMITS).max).toBe(3)
   })
 
+  it('binds a provided class once, whichever provider in the list injects it first', () => {
+    @Service()
+    class Greeting {
+      text() {
+        return 'Hello'
+      }
+    }
+    @Service()
+    class Status {
+      constructor(readonly greeting: Greeting) {}
+    }
+    @Controller()
+    class StatusController {
+      constructor(readonly status: Status) {}
+    }
+
+    for (const providers of [
+      [
+        { provide: Status, useClass: Status },
+        { provide: Greeting, useClass: Greeting },
+      ],
+      [
+        { provide: Greeting, useClass: Greeting },
+        { provide: Status, useClass: Status },
+      ],
+    ]) {
+      const module = MeoCordTestingModule.create({ controllers: [StatusController], providers }).compile()
+      expect(module.get(Status).greeting.text()).toBe('Hello')
+      expect(module.get(StatusController).status).toBe(module.get(Status))
+    }
+
+    // Only the injecting class listed: the class it injects is still bound as itself
+    const alone = MeoCordTestingModule.create({ providers: [{ provide: Status, useClass: Status }] }).compile()
+    expect(alone.get(Status).greeting.text()).toBe('Hello')
+  })
+
+  it('binds a provided class once when a factory listed before it injects it', () => {
+    @Service()
+    class Greeting {
+      text() {
+        return 'Hello'
+      }
+    }
+    const MESSAGE = createToken<string>('Message')
+
+    const module = MeoCordTestingModule.create({
+      providers: [
+        { provide: MESSAGE, useFactory: (greeting: Greeting) => `${greeting.text()}!`, inject: [Greeting] },
+        { provide: Greeting, useClass: Greeting },
+      ],
+    }).compile()
+
+    expect(module.get(MESSAGE)).toBe('Hello!')
+  })
+
   it('awaits a factory that returns a promise in init(), and says so when get() comes first', async () => {
     @Service()
     class NotesStore {
