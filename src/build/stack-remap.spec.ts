@@ -169,7 +169,43 @@ function stack(): string {
   return ''
 }
 
-console.log(JSON.stringify({ stack: stack(), hooked: Error.prepareStackTrace?.name === 'meocordSourceMappedStackTrace' }))
+// An error type made the way follow-redirects, which axios uses, makes its own: a function, not a class
+function CustomError(this: { stack?: string; message: string }) {
+  Error.captureStackTrace(this, CustomError)
+  this.message = 'redirected'
+}
+CustomError.prototype = new Error()
+Object.defineProperty(CustomError.prototype, 'name', { value: 'Error [ERR_REDIRECT]' })
+
+const cases: Record<string, () => unknown> = {
+  plain: () => {
+    const target: { message: string; name: string; stack?: string } = { message: 'plain', name: 'Plainish' }
+    Error.captureStackTrace(target)
+    return target.stack
+  },
+  custom: () => new (CustomError as unknown as new () => Error)().stack,
+  twice: () => {
+    const error = new Error('twice')
+    const first = error.stack
+    return first === error.stack ? first : 'the second read differed'
+  },
+}
+
+const scenario = process.env.STACK_CASE
+console.log(
+  JSON.stringify(
+    scenario
+      ? { stack: cases[scenario](), hooked: Error.prepareStackTrace?.name === 'meocordSourceMappedStackTrace' }
+      : { stack: stack(), hooked: Error.prepareStackTrace?.name === 'meocordSourceMappedStackTrace' },
+  ),
+)
+`
+/** The line of the fixture's main.ts a piece of it is on. */
+const lineOf = (text: string) => String(MAIN.split('\n').findIndex(line => line.includes(text)) + 1)
+// Set before the bundle runs, as a broken preloaded error tracker's would be
+const THROWING = `Error.prepareStackTrace = () => {
+  throw new Error('the tracker broke')
+}
 `
 // Set before the bundle runs, as a preloaded error tracker would; shows the call sites it is given
 const BEFORE = `Error.prepareStackTrace = (error, sites) =>
@@ -194,6 +230,7 @@ function fixtureApp() {
   write('src/boom.ts', BOOM)
   write('src/main.ts', MAIN)
   write('before.mjs', BEFORE)
+  write('throwing.mjs', THROWING)
   return { root, write }
 }
 
@@ -294,6 +331,47 @@ describe('the stack hook alongside others', () => {
     const { stack } = run(root, runtime, flags)
 
     expect(stack).toBe(`before ${source('boom.ts')}:2 ${source('main.ts')}:${runtime === 'node' ? 12 : 11}`)
+  })
+
+  // As follow-redirects, which axios loads, does at import: Bun's own hook throws on such a target
+  it.each([
+    ['Node', 'node', [] as string[], 'Plainish: plain'],
+    ['Bun', bun, ['--no-install'], 'Error'],
+  ])('writes the stack Error.captureStackTrace gives a plain object, as the runtime does, on %s', (_name, runtime, flags, header) => {
+    const { stack } = run(root, runtime, flags, { STACK_CASE: 'plain' })
+
+    expect(stack.split('\n')[0]).toBe(header)
+    expect(frames(stack).thrower?.slice(0, 2)).toEqual([source('main.ts'), lineOf('Error.captureStackTrace(target)')])
+  })
+
+  it.each([
+    ['Node', 'node', [] as string[], 'Error [ERR_REDIRECT]: redirected'],
+    ['Bun', bun, ['--no-install'], 'Error'],
+  ])('writes the stack of an error type made from a function, as follow-redirects makes one, on %s', (_name, runtime, flags, header) => {
+    const { stack } = run(root, runtime, flags, { STACK_CASE: 'custom' })
+
+    expect(stack.split('\n')[0]).toBe(header)
+    expect(frames(stack).thrower?.[0]).toBe(source('main.ts'))
+  })
+
+  it.each([
+    ['Node', 'node', [] as string[]],
+    ['Bun', bun, ['--no-install']],
+  ])('gives the same stack each time it is read, on %s', (_name, runtime, flags) => {
+    const { stack } = run(root, runtime, flags, { STACK_CASE: 'twice' })
+
+    expect(stack.split('\n')[0]).toBe('Error: twice')
+    expect(frames(stack).thrower?.slice(0, 2)).toEqual([source('main.ts'), lineOf("new Error('twice')")])
+  })
+
+  it.each([
+    ['Node', 'node', ['--import', pathToFileURL(path.join(root, 'throwing.mjs')).href]],
+    ['Bun', bun, ['--no-install', '--preload', path.join(root, 'throwing.mjs')]],
+  ])('writes the stack itself when a hook set before it throws, on %s', (_name, runtime, flags) => {
+    const { stack } = run(root, runtime, flags)
+
+    expect(stack.split('\n')[0]).toBe('Error: boom')
+    expect(frames(stack).thrower?.slice(0, 2)).toEqual([source('boom.ts'), '2'])
   })
 
   it('stays in the chain under a hook set after it that calls the one it found', () => {
