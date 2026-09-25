@@ -31,19 +31,22 @@ import {
   InteractionType,
   Message,
   MessageFlagsBitField,
-  MessageManager,
   MessageMentions,
   Role,
   RoleManager,
   TextChannel,
   ThreadChannel,
-  ThreadManager,
   ThreadMemberManager,
   User,
   UserManager,
   type CacheType,
-  type Channel,
   type CommandInteractionOption,
+  DMChannel,
+  ForumChannel,
+  GuildForumThreadManager,
+  GuildTextThreadManager,
+  MediaChannel,
+  NewsChannel,
 } from 'discord.js'
 
 // ---------------------------------------------------------------------------
@@ -557,32 +560,34 @@ export function createMockGuild(): DeepMocked<Guild> {
 }
 
 /**
- * Creates a mock channel of the given class, such as `TextChannel` or `DMChannel`, with its
- * `messages` manager ready to stub, plus `threads` on guild text channels and `members` on threads.
+ * Creates a mock channel of the given class, such as `TextChannel`, `ThreadChannel` or `DMChannel`,
+ * with the managers that class has ready to stub: `messages`, `threads` on text, announcement, forum
+ * and media channels, and `members` on threads. A subclass gets the managers of the class it extends.
  * @param Class - The discord.js channel class to mock.
  */
-export function createMockChannel<T extends Channel>(Class: InteractionClass<T>): DeepMocked<T> {
+export function createMockChannel<T extends BaseChannel>(Class: InteractionClass<T>): DeepMocked<T> {
   const instance = Object.create(Class.prototype) as Record<string, unknown>
+  const is = (Base: { prototype: object }) => Base.prototype.isPrototypeOf(Class.prototype) || Class === Base
 
-  // Guild text channels (TextChannel, NewsChannel) — messages & threads
-  // assigned in BaseGuildTextChannel constructor
-  if ('messages' in Class.prototype || Class.name === 'TextChannel' || Class.name === 'NewsChannel') {
+  // Text and announcement channels: messages, and threads made in the channel
+  if (is(TextChannel) || is(NewsChannel)) {
     instance.messages = stubDeep(Object.create(GuildMessageManager.prototype))
-    instance.threads = stubDeep(Object.create(ThreadManager.prototype))
+    instance.threads = stubDeep(Object.create(GuildTextThreadManager.prototype))
   }
-  // DMChannel — messages assigned in DMChannel constructor
-  if (Class.name === 'DMChannel') {
+  // Forum and media channels hold posts, each a thread started with its first message
+  if (is(ForumChannel) || is(MediaChannel)) {
+    instance.threads = stubDeep(Object.create(GuildForumThreadManager.prototype))
+  }
+  if (is(DMChannel)) {
     instance.messages = stubDeep(Object.create(DMMessageManager.prototype))
   }
-  // ThreadChannel — messages & members assigned in ThreadChannel constructor
-  if (Class.name === 'ThreadChannel') {
-    instance.messages = stubDeep(Object.create(MessageManager.prototype))
+  if (is(ThreadChannel)) {
+    instance.messages = stubDeep(Object.create(GuildMessageManager.prototype))
     instance.members = stubDeep(Object.create(ThreadMemberManager.prototype))
   }
 
   return stubDeep(instance) as DeepMocked<T>
 }
-
 
 /** The guild a mock message carries: a guild with the same stubbed managers as createMockGuild. */
 function createMockGuildForMessage(): object {

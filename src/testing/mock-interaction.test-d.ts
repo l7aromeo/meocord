@@ -7,16 +7,19 @@ import {
   ComponentType,
   EmbedBuilder,
   MessageFlags,
+  TextChannel,
   TextInputStyle,
   ChatInputCommandInteraction,
   ModalSubmitInteraction,
   StringSelectMenuInteraction,
+  ThreadChannel,
   User,
   UserContextMenuCommandInteraction,
 } from 'discord.js'
 import {
   createChatInputOptions,
   createMock,
+  createMockChannel,
   createMockInteraction,
   createMockMessage,
   createMockUser,
@@ -197,5 +200,21 @@ describe('createMockMessage', () => {
     createMockMessage({ content: 42 })
     // @ts-expect-error an option the mock does not take
     createMockMessage({ author: 'someone' })
+  })
+})
+
+describe('createMockChannel', () => {
+  it('takes a thread channel, whose class discord.js types apart from the Channel union', () => {
+    const thread = createMockChannel(ThreadChannel)
+    expectTypeOf(thread).toMatchTypeOf<ThreadChannel>()
+    expectTypeOf(thread.members.add).toBeFunction()
+  })
+
+  it('lets a text channel create a mocked thread, as the README shows', () => {
+    const channel = createMockChannel(TextChannel)
+    const thread = createMockChannel(ThreadChannel)
+    // discord.js types a created thread as public or private, not as the ThreadChannel class
+    channel.threads.create.mockResolvedValue(thread as never)
+    expectTypeOf(channel.threads.create).toBeFunction()
   })
 })

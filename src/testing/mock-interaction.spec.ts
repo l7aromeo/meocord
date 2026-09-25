@@ -24,6 +24,9 @@ import {
   StringSelectMenuInteraction,
   AutocompleteInteraction,
   DMChannel,
+  ForumChannel,
+  MediaChannel,
+  NewsChannel,
   TextChannel,
   ThreadChannel,
   User,
@@ -1336,6 +1339,20 @@ describe('createMockChannel', () => {
   it('channel.members.fetch is a vi.fn() by default (ThreadChannel)', () => {
     const channel = createMockChannel(ThreadChannel as any)
     expect(vi.isMockFunction((channel as any).members.fetch)).toBe(true)
+  })
+
+  // A text or announcement channel's threads come from GuildTextThreadManager, whose create() the
+  // ThreadManager base lacks; a forum or media channel's from GuildForumThreadManager
+  it.each([TextChannel, NewsChannel, ForumChannel, MediaChannel])('threads.create is a vi.fn() (%o)', Class => {
+    const channel = createMockChannel(Class as typeof TextChannel) as unknown as { threads: { create: unknown } }
+    expect(vi.isMockFunction(channel.threads.create)).toBe(true)
+  })
+
+  it('gives a subclass the managers of the class it extends', () => {
+    class StaffChannel extends TextChannel {}
+    const channel = createMockChannel(StaffChannel)
+    expect(vi.isMockFunction(channel.messages.fetch)).toBe(true)
+    expect(vi.isMockFunction(channel.threads.create)).toBe(true)
   })
 
   it('channel.messages.fetch.mockResolvedValue works (TextChannel)', async () => {
