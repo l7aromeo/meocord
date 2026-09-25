@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { originalPositionFor, TraceMap } from '@jridgewell/trace-mapping'
@@ -14,7 +14,7 @@ export function installStackRemapper(bundle: string): boolean {
   if (process.sourceMapsEnabled) return false
   if (!existsSync(`${bundle}.map`)) return false
 
-  const directory = path.dirname(bundle)
+  const directory = canonical(path.dirname(bundle))
   // Windows paths compare without case: a drive letter can come back upper or lower
   const inDirectory = (file: string) =>
     process.platform === 'win32'
@@ -27,8 +27,9 @@ export function installStackRemapper(bundle: string): boolean {
     if (cached !== undefined) return cached
     // Set first, so an error while reading the map formats its own stack without reading it again
     maps.set(file, null)
-    if (!inDirectory(file) || !existsSync(`${file}.map`)) return null
-    const map = new TraceMap(readFileSync(`${file}.map`, 'utf8'))
+    const real = canonical(file)
+    if (!inDirectory(real) || !existsSync(`${real}.map`)) return null
+    const map = new TraceMap(readFileSync(`${real}.map`, 'utf8'))
     maps.set(file, map)
     return map
   }
@@ -46,6 +47,18 @@ export function installStackRemapper(bundle: string): boolean {
   }
   Error.prepareStackTrace = meocordSourceMappedStackTrace
   return true
+}
+
+/**
+ * The path with links resolved and, on Windows, 8.3 short names such as RUNNER~1 expanded, as the OS
+ * resolves it; runtimes name one directory either way. The path itself when it cannot be resolved.
+ */
+function canonical(file: string): string {
+  try {
+    return realpathSync.native(file)
+  } catch {
+    return file
+  }
 }
 
 /** A call site at its source position, or the site itself when its file has no map or the map no entry. */
