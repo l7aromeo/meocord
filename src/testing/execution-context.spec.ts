@@ -23,6 +23,16 @@ describe('createExecutionContext', () => {
     expect(context.getHandler()).toBe(ProfileController.prototype.show)
   })
 
+  it('gives an interceptor under test the handler params it is given, or the second argument of an interaction', () => {
+    const interaction = createMockInteraction(ButtonInteraction)
+
+    expect(createExecutionContext(ProfileController, 'show', { args: [interaction], handlerParams: { uid: '1' } }).getHandlerParams()).toEqual({
+      uid: '1',
+    })
+    expect(createExecutionContext(ProfileController, 'show', { args: [interaction, { uid: '2' }] }).getHandlerParams()).toEqual({ uid: '2' })
+    expect(createExecutionContext(ProfileController, 'show', { args: [createMockMessage()] }).getHandlerParams()).toBeUndefined()
+  })
+
   it('takes the type when the arguments do not show it', () => {
     expect(createExecutionContext(ProfileController, 'show', { type: 'event' }).getType()).toBe('event')
     expect(createExecutionContext(ProfileController, 'show').getArgs()).toEqual([])

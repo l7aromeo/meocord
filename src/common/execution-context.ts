@@ -66,7 +66,12 @@ export abstract class ExecutionContext {
   abstract getAll<T>(metadata: MetadataDecorator<T>): T[]
   abstract getAll<T = unknown>(key: string | symbol): T[]
 
-  /** The arguments the handler is called with. */
+  /**
+   * The arguments the handler is called with, as they stand when the stage asks: raw in a guard, and
+   * validated and piped once the handler's arguments are prepared, so in an interceptor after
+   * `next.handle()` and in a filter for an error the handler threw. The second is what
+   * {@link ExecutionContext.getHandlerParams} returns.
+   */
   abstract getArgs(): readonly unknown[]
 
   /** The interaction being handled, or `undefined` for a message, reaction or event. */
@@ -98,11 +103,49 @@ export abstract class ExecutionContext {
   abstract getHandlerName(): string | undefined
 
   /**
-   * The `params` of the running guard's, interceptor's or filter's `{ provide, params }` entry.
+   * The `params` of the running guard's, interceptor's or filter's own `{ provide, params }` entry: how
+   * that stage was configured. For the call's input, the handler's second argument, see
+   * {@link ExecutionContext.getHandlerParams}.
    *
    * @returns The params, or `undefined` for one applied by class alone.
    */
   abstract getParams<P extends Record<string, unknown> = Record<string, unknown>>(): Readonly<P> | undefined
+
+  /**
+   * The handler's params, its second argument: a command's options, a component's customId params or a
+   * modal's fields. They are read as they stand when the stage asks. A guard sees them raw. An
+   * interceptor sees them raw before `next.handle()` and validated and piped after it. A filter sees
+   * them as they were when the error was thrown. Not the same as {@link ExecutionContext.getParams},
+   * which is the running stage's own configuration.
+   *
+   * @typeParam P - The params' type, such as the handler's own second parameter type.
+   * @returns The params, or `undefined` where the handler takes none: a message, reaction or gateway
+   *   event handler, or a call no handler was reached for.
+   *
+   * @example
+   * ```typescript
+   * @Interceptor()
+   * export class AuditInterceptor implements InterceptorInterface {
+   *   async intercept(context: ExecutionContext, next: CallHandler) {
+   *     const result = await next.handle()
+   *     // Validated and piped by now, as the handler received them
+   *     audit.record(context.getHandlerName(), context.getHandlerParams<{ uid: string }>()?.uid)
+   *     return result
+   *   }
+   * }
+   * ```
+   */
+  abstract getHandlerParams<P = Record<string, unknown>>(): Readonly<P> | undefined
+}
+
+/** A call's arguments as they stand, replaced in place once validation and pipes have prepared them. */
+export interface CurrentArgs {
+  current: readonly unknown[]
+}
+
+/** Whether a call of this type passes the handler params as its second argument. */
+export function takesHandlerParams(type: ExecutionContextType): boolean {
+  return type === 'interaction' || type === 'autocomplete'
 }
 
 /** What a {@link HandlerExecutionContext} describes. */
@@ -112,6 +155,8 @@ export interface HandlerCall {
   args: readonly unknown[]
   type?: ExecutionContextType
   params?: Record<string, unknown>
+  /** The arguments as they stand, shared by every stage of the call; without it, `args`. */
+  currentArgs?: CurrentArgs
 }
 
 /** The type of a call, read from its first argument when the caller does not say. */
@@ -156,7 +201,7 @@ export class HandlerExecutionContext extends ExecutionContext {
   }
 
   getArgs(): readonly unknown[] {
-    return this.call.args
+    return this.call.currentArgs?.current ?? this.call.args
   }
 
   getInteraction(): Interaction | undefined {
@@ -192,6 +237,10 @@ export class HandlerExecutionContext extends ExecutionContext {
 
   getParams<P extends Record<string, unknown> = Record<string, unknown>>(): Readonly<P> | undefined {
     return this.call.params as Readonly<P> | undefined
+  }
+
+  getHandlerParams<P = Record<string, unknown>>(): Readonly<P> | undefined {
+    return takesHandlerParams(this.type) ? (this.getArgs()[1] as Readonly<P> | undefined) : undefined
   }
 }
 
@@ -260,5 +309,9 @@ export class UnroutedExecutionContext extends ExecutionContext {
 
   getParams<P extends Record<string, unknown> = Record<string, unknown>>(): Readonly<P> | undefined {
     return this.params as Readonly<P> | undefined
+  }
+
+  getHandlerParams(): undefined {
+    return undefined
   }
 }

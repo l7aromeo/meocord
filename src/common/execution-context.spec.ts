@@ -1,7 +1,7 @@
 import { AutocompleteInteraction, ButtonInteraction, Message, MessageReaction } from 'discord.js'
 import { createMetadata } from '@src/common/metadata.js'
 import { SetMetadata } from '@src/common/decorator.js'
-import { HandlerExecutionContext } from '@src/common/execution-context.js'
+import { HandlerExecutionContext, UnroutedExecutionContext } from '@src/common/execution-context.js'
 import { createMockInteraction, createMockMessage } from '@src/testing/index.js'
 
 const Roles = createMetadata<string[]>('roles')
@@ -55,6 +55,24 @@ describe('ExecutionContext', () => {
       expect(contextFor(ChildController, 'warn').get<string>('legacy')).toBe('method')
       expect(contextFor(ChildController, 'kick').get('legacy')).toBeUndefined()
       expect(contextFor(ChildController, 'kick').getAll('legacy')).toEqual([])
+    })
+  })
+
+  describe('getHandlerParams', () => {
+    it('reads an interaction’s second argument, and nothing for a message, a reaction or an event', () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      const reaction = Object.create(MessageReaction.prototype) as MessageReaction
+
+      expect(contextFor(BaseController, 'ban', [interaction, { uid: '1' }]).getHandlerParams()).toEqual({ uid: '1' })
+      expect(contextFor(BaseController, 'ban', [createMockMessage()]).getHandlerParams()).toBeUndefined()
+      expect(contextFor(BaseController, 'ban', [reaction, { user: {}, action: 'add' }]).getHandlerParams()).toBeUndefined()
+      expect(contextFor(BaseController, 'ban', [{ id: 'member' }, { id: 'other' }]).getHandlerParams()).toBeUndefined()
+    })
+
+    it('is undefined for a call no handler was reached for', () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+
+      expect(new UnroutedExecutionContext([interaction, { uid: '1' }]).getHandlerParams()).toBeUndefined()
     })
   })
 

@@ -988,6 +988,14 @@ async ban(interaction: ChatInputCommandInteraction) { ... }
 
 Use params for configuring one guard (`{ provide, params }`, [above](#passing-options-to-a-guard)), and `createMetadata` for facts about a handler that any guard can read. `ExecutionContext` is injected only into guards: each call gets its own, so a controller or service, which is shared across calls, cannot inject it. The context also gives the handler's arguments (`getArgs()`, `getInteraction()`, `getMessage()`, `getReaction()`), what it is handling (`getType()`), the controller and method (`getController()`, `getHandlerName()`), and the guard's own params (`getParams()`). Values declared with `SetMetadata` are read with their key: `this.context.get<string[]>('roles')`.
 
+`getHandlerParams<P>()` is the handler's params, its second argument: a command's options, a component's customId params or a modal's fields. It is not `getParams()`, which is the running stage's own `{ provide, params }` configuration. The value is read as it stands when a stage asks:
+
+- A guard sees the params raw.
+- An interceptor sees them raw before `next.handle()`, and validated and piped after it, as the handler received them.
+- A filter sees them as they were when the error was thrown.
+
+`getArgs()` follows the same stages, so its second argument is always the value `getHandlerParams()` returns. It is `undefined` for message, reaction and event handlers, which take no params, and for a call no handler was reached for. In a unit test, `createExecutionContext(Controller, 'method', { handlerParams })` sets it.
+
 In a unit test, build the context with `createExecutionContext` from `meocord/testing`:
 
 ```typescript
@@ -1043,7 +1051,7 @@ export class ProfileController { ... }
 
 Apply them like guards: on a method, on a controller, or to every handler with `@MeoCord({ interceptors })`. Global interceptors are outermost, then the controller's, then the method's; within one decorator, the first listed is outermost. A class-level `@UseInterceptor` also covers the handlers a controller inherits.
 
-One instance of an interceptor serves every call, so it can hold a cache or counters; keep per-call state in local variables. For per-use options, pass `{ provide, params }` and read them with `context.getParams()` — they are never assigned onto the shared instance. For the same reason an interceptor cannot inject `ExecutionContext`; the bot refuses to start if one does.
+One instance of an interceptor serves every call, so it can hold a cache or counters; keep per-call state in local variables. For per-use options, pass `{ provide, params }` and read them with `context.getParams()` — they are never assigned onto the shared instance. The call's own input is `context.getHandlerParams()`, validated and piped once `next.handle()` has run. For the same reason an interceptor cannot inject `ExecutionContext`; the bot refuses to start if one does.
 
 Interceptors run when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke) in a test. A controller method called directly runs its guards but no interceptors. Autocomplete handlers run none.
 

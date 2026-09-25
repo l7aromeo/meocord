@@ -16,6 +16,7 @@ import {
 import {
   type ExecutionContextType,
   HandlerExecutionContext,
+  type CurrentArgs,
   inferContextType,
   UnroutedExecutionContext,
 } from '@src/common/execution-context.js'
@@ -273,8 +274,10 @@ export async function runHandler(
     globalStagesOf(container),
   )
   const type = options.type ?? inferContextType(args[0])
+  // One cell for the whole call, so every stage's context reads the arguments as they stand now
+  const currentArgs: CurrentArgs = { current: args }
   let context: HandlerExecutionContext | undefined
-  const contextOf = () => (context ??= new HandlerExecutionContext({ controller, methodName, args, type }))
+  const contextOf = () => (context ??= new HandlerExecutionContext({ controller, methodName, args, type, currentArgs }))
   const receivedAt = Date.now()
   const defer = type === 'interaction' ? handlerDefer(Object.getPrototypeOf(instance), methodName) : undefined
   const [first] = args as [{ isRepliable?: () => boolean } | undefined]
@@ -285,7 +288,7 @@ export async function runHandler(
   try {
     // @Defer's first step, inside the filters so a failed acknowledgement reaches them.
     if (response) await startDefer(response, defer!, receivedAt)
-    if (!(await runGuards(guards, { container, controller, methodName, args, type }))) {
+    if (!(await runGuards(guards, { container, controller, methodName, args, type, currentArgs }))) {
       await response?.abandon()
       return { ran: false }
     }
@@ -293,6 +296,7 @@ export async function runHandler(
     const handler = async () => {
       // Inside the interceptors, so they see a validation failure as the handler's error.
       const handlerArgs = await prepareHandlerArgs(container, Object.getPrototypeOf(instance), methodName, contextOf, args)
+      currentArgs.current = handlerArgs
       // @Defer's second step, only once the call will run: a denied or invalid call never touches the message.
       await response?.lock({ disable: defer!.disable })
       ran = true
