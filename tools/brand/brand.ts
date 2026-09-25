@@ -4,7 +4,17 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { Box, Column, ease, Path, Root, Row, Text } from 'meo-canvas'
-import { EAR_VALLEY_X, earsPath, MARK_DARK, MARK_PATHS, MARK_TILE_RADIUS, MARK_TINT, MARK_VIEWBOX } from './mark.js'
+import {
+  EAR_FLICK,
+  EAR_VALLEY_X,
+  earsPath,
+  flickAngles,
+  MARK_DARK,
+  MARK_PATHS,
+  MARK_TILE_RADIUS,
+  MARK_TINT,
+  MARK_VIEWBOX,
+} from './mark.js'
 import type { MarkColours } from './mark.js'
 
 const HERE = import.meta.dirname
@@ -191,6 +201,106 @@ function ears(theme: Theme, tip: number) {
       }),
     ],
   })
+}
+
+/** `rgba(r,g,b,a)` over an opaque `#rrggbb`, as the opaque colour it shows. */
+function flatten(rgba: string, background: string): string {
+  const [r, g, b, a] = /rgba\(([^)]+)\)/.exec(rgba)![1].split(',').map(Number)
+  const bg = [1, 3, 5].map(i => parseInt(background.slice(i, i + 2), 16))
+  return `#${[r, g, b].map((c, i) => Math.round(c * a + bg[i] * (1 - a)).toString(16).padStart(2, '0')).join('')}`
+}
+
+/**
+ * The mark with its ears at the given angles, for the animated logo and avatar: each ear clipped to its
+ * half and turned about its pivot, the cord drawn last so it covers their bases, as on the still mark.
+ * The ink is made opaque against `behind`, the colour it sits on, so the halves' overlap is not drawn twice.
+ */
+function animatedMark(
+  size: number,
+  colours: MarkColours,
+  angles: { near: number; far: number },
+  radius = MARK_TILE_RADIUS,
+  behind = colours.tile,
+) {
+  const unit = size / 16
+  const ink = flatten(colours.ink, behind)
+  const layer = (left: number, d: string, fill: string, fillRule: 'nonzero' | 'evenodd') =>
+    Path({ positionType: 'absolute', position: { top: 0, left }, width: size, height: size, viewBox: [...MARK_VIEWBOX], d, fill, fillRule })
+  const { pivot } = EAR_FLICK
+  // One ear: its rectangles of the ears path, turned together about the valley
+  const ear = (regions: readonly (readonly number[])[], angle: number) =>
+    Box({
+      positionType: 'absolute',
+      position: { top: 0, left: 0 },
+      width: size,
+      height: size,
+      transform: { rotate: angle, originX: pivot.x * unit, originY: pivot.y * unit },
+      children: regions.map(([x, y, width, height]) =>
+        Box({
+          positionType: 'absolute',
+          position: { top: y * unit, left: x * unit },
+          width: width * unit,
+          height: height * unit,
+          overflow: 'hidden',
+          children: [
+            Path({
+              positionType: 'absolute',
+              position: { top: -y * unit, left: -x * unit },
+              width: size,
+              height: size,
+              viewBox: [...MARK_VIEWBOX],
+              d: earsPath(size),
+              fill: ink,
+              fillRule: 'evenodd',
+            }),
+          ],
+        }),
+      ),
+    })
+  return Box({
+    width: size,
+    height: size,
+    positionType: 'relative',
+    overflow: 'hidden',
+    backgroundColor: colours.tile,
+    borderRadius: (radius * size) / 16,
+    children: [
+      ear(EAR_FLICK.near, angles.near),
+      ear(EAR_FLICK.far, angles.far),
+      layer(0, MARK_PATHS.cord, colours.accent, 'nonzero'),
+    ],
+  })
+}
+
+/** Frames of the flick: a long rest, then the flick every 30 ms, looping seamlessly from still to still. */
+const REST_MS = 2200
+const FLICK_FRAME_MS = 30
+const FLICK_FRAMES = Math.round((EAR_FLICK.duration * 1000) / FLICK_FRAME_MS)
+const flickFrameDelays = [REST_MS, ...Array.from({ length: FLICK_FRAMES }, () => FLICK_FRAME_MS)]
+const flickAnglesAt = (page: number) => (page === 0 ? { near: 0, far: 0 } : flickAngles(((page - 1) * FLICK_FRAME_MS) / 1000))
+
+/** Renders `mark` for every frame of the flick, in `formats`, on a transparent or given background. */
+async function animatedMarkFiles(
+  size: number,
+  background: string,
+  mark: (angles: { near: number; far: number }) => ReturnType<typeof Box>,
+  files: [string, 'gif' | 'webp'][],
+): Promise<string[]> {
+  const canvas = await Root({
+    width: size,
+    height: size,
+    // One page per frame; each frame's own delay sets the timing
+    duration: flickFrameDelays.length,
+    fps: 1,
+    backgroundColor: background,
+    children: page => mark(flickAnglesAt(page.index)),
+  })
+  const written: string[] = []
+  for (const [file, format] of files) {
+    written.push(await write(file, await canvas.toBuffer(format, { frameDelays: flickFrameDelays, loop: 0 })))
+  }
+  canvas.release()
+  return written
 }
 
 /** One line of code, coloured by token. Spaces at a run's ends become margins, since Text trims them. */
@@ -380,6 +490,13 @@ if (process.env.BRAND_FRAME) {
   process.exit(0)
 }
 
+// One moment of the flick, for looking at the ears: BRAND_FLICK=<seconds> BRAND_OUT=frame.png BRAND_SCALE=2
+if (process.env.BRAND_FLICK) {
+  const node = animatedMark(512, MARK_DARK, flickAngles(Number(process.env.BRAND_FLICK)))
+  writeFileSync(process.env.BRAND_OUT ?? 'frame.png', await still(512, 512, 'rgba(0,0,0,0)', node, Number(process.env.BRAND_SCALE ?? 1)))
+  process.exit(0)
+}
+
 mkdirSync(OUT, { recursive: true })
 const written: string[] = []
 
@@ -411,5 +528,29 @@ written.push(await write('logo.svg', logoSvg()))
 for (const size of [512, 1024])
   written.push(await write(`logo-${size}.png`, await still(size, size, 'rgba(0,0,0,0)', markNode(size, MARK_DARK))))
 written.push(await write('avatar.png', await still(1024, 1024, MARK_TINT.tile, avatar(1024))))
+
+// The same files with the ears flicking once in a three-second loop
+const inset = Math.round(1024 * 0.18)
+written.push(
+  ...(await animatedMarkFiles(
+    1024,
+    MARK_TINT.tile,
+    angles =>
+      Box({
+        width: 1024,
+        height: 1024,
+        padding: inset,
+        backgroundColor: MARK_TINT.tile,
+        children: [animatedMark(1024 - inset * 2, { ...MARK_TINT, tile: 'rgba(0,0,0,0)' }, angles, 0, MARK_TINT.tile)],
+      }),
+    [['avatar-animated.gif', 'gif']],
+  )),
+)
+written.push(
+  ...(await animatedMarkFiles(512, 'rgba(0,0,0,0)', angles => animatedMark(512, MARK_DARK, angles), [
+    ['logo-animated.webp', 'webp'],
+    ['logo-animated.gif', 'gif'],
+  ])),
+)
 
 process.stderr.write(`${written.join('\n')}\n${DURATION * FPS} frames, ${DURATION}s at ${FPS}fps\n`)
