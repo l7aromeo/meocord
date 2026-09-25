@@ -1,6 +1,7 @@
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { type RsbuildConfig } from '@rsbuild/core'
+import { RunnableBundlePlugin } from '@src/build/runnable-bundle.js'
 import { prepareModifiedTsConfig } from '@src/util/tsconfig.util.js'
 
 /**
@@ -100,13 +101,16 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
       tsconfigPath: prepareModifiedTsConfig(),
     },
     tools: {
-      // The pre-entry records the bundle's own path from import.meta.url, which the bundler would
-      // otherwise fix at build time to the pre-entry's source file. Production only: development's eval
-      // source maps cannot run import.meta. Set here, not in tools.rspack, which an app's hook may replace.
+      // Set here, not in tools.rspack, which an app's hook may replace.
       bundlerChain: chain => {
+        // The pre-entry records the bundle's own path from import.meta.url, which the bundler would
+        // otherwise fix at build time to the pre-entry's source file. Production only: a development
+        // build keeps the fixed path, and bundleEntry() goes by process.argv there.
         if (mode === 'production') {
           chain.module.rule('meocord-pre-entry').test(CONFIG_PRE_ENTRY).parser({ importMeta: false })
         }
+        // Keeps the bundle starting under Node and Bun alike, whatever devtool or dependencies it has.
+        chain.plugin('meocord-runnable-bundle').use(RunnableBundlePlugin)
       },
       swc: {
         jsc: {
@@ -156,7 +160,8 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
       dataUriLimit: 0,
       // Rsbuild emits no source maps in production by default, which would leave a crashed
       // bot's stack trace pointing into the bundle instead of the source.
-      sourceMap: { js: mode === 'production' ? 'source-map' : 'eval-source-map' },
+      // Not an eval devtool in development: an ESM bundle reads import.meta, which an eval'd module cannot.
+      sourceMap: { js: mode === 'production' ? 'source-map' : 'cheap-module-source-map' },
       // Rsbuild empties dist before building by default. MeoCord runs two builds into the same
       // directory -- the application, and meocord.config.ts into dist/meocord.config.mjs -- so
       // cleaning would let whichever runs second erase the other.
