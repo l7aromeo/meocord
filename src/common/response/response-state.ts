@@ -49,7 +49,17 @@ export type ResponseEditFlags = BitFieldResolvable<
 >
 
 /** A message sent with `send()` or `followUp()`: text, or reply options with the flags it can take. */
-export type ResponsePayload = string | (Omit<InteractionReplyOptions, 'flags' | 'withResponse'> & { flags?: ResponseFlags })
+export type ResponsePayload =
+  | string
+  | (Omit<InteractionReplyOptions, 'flags' | 'withResponse' | 'ephemeral'> & {
+      flags?: ResponseFlags
+      /**
+       * Whether the message is private, read as the `MessageFlags.Ephemeral` flag.
+       *
+       * @deprecated Use `flags: MessageFlags.Ephemeral`.
+       */
+      ephemeral?: boolean
+    })
 
 /** An edit made with `edit()`: text, or edit options with the flags an edit can take. */
 export type ResponseEditPayload = string | (Omit<InteractionEditReplyOptions, 'flags'> & { flags?: ResponseEditFlags })
@@ -123,7 +133,12 @@ type Body = Record<string, unknown> & {
 }
 
 function toBody(payload: ResponsePayload | ResponseEditPayload): Body {
-  return typeof payload === 'string' ? { content: payload } : { ...(payload as Body) }
+  if (typeof payload === 'string') return { content: payload }
+  // discord.js's deprecated option, read as the flag it stands for before anything decides on flags, and
+  // kept out of the call, where discord.js would add Ephemeral back to an edit or an update
+  const { ephemeral, ...body } = payload as Body & { ephemeral?: boolean }
+  if (ephemeral) body.flags = Number(MessageFlagsBitField.resolve(body.flags ?? 0)) | MessageFlags.Ephemeral
+  return body
 }
 
 /** Drops what a Components V2 message cannot carry. */

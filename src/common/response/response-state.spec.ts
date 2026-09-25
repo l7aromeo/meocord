@@ -158,6 +158,70 @@ describe('respond()', () => {
     })
   })
 
+  // discord.js's deprecated reply option; respond() reads it as the Ephemeral flag before deciding anything
+  describe('the deprecated ephemeral option', () => {
+    it('keeps a private follow-up on a public deferral private: delete, then follow up, never an edit', async () => {
+      const interaction = command()
+      await respond(interaction).acknowledge()
+      const steps: string[] = []
+      interaction.deleteReply.mockImplementation(async () => void steps.push('delete'))
+      interaction.followUp.mockImplementation(async () => {
+        steps.push('followUp')
+        return createMockMessage() as never
+      })
+
+      await respond(interaction).followUp({ content: 'secret', ephemeral: true })
+
+      expect(steps).toEqual(['delete', 'followUp'])
+      expect(interaction.editReply).not.toHaveBeenCalled()
+      expect(sent(interaction.followUp)).toEqual({ content: 'secret', flags: Ephemeral })
+    })
+
+    it('makes a first reply private, as its records and the mock show', async () => {
+      const interaction = command()
+
+      await respond(interaction).send({ content: 'private', ephemeral: true })
+
+      expect(sent(interaction.reply)).toMatchObject({ content: 'private', flags: Ephemeral })
+      expect(sent(interaction.reply)).not.toHaveProperty('ephemeral')
+      expect(getResponse(interaction).calls[0].payload).toMatchObject({ flags: Ephemeral })
+      expect(interaction.ephemeral).toBe(true)
+    })
+
+    it('makes a follow-up after a reply private', async () => {
+      const interaction = command()
+      await respond(interaction).send('public')
+
+      await respond(interaction).followUp({ content: 'private', ephemeral: true })
+
+      expect(sent(interaction.followUp)).toEqual({ content: 'private', flags: Ephemeral })
+    })
+
+    it('leaves out of an update and an edit what they cannot change', async () => {
+      const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      const clicked = button()
+      const deferred = command()
+      await respond(deferred).acknowledge()
+
+      await respond(clicked).send({ content: 'updated', ephemeral: true })
+      await respond(deferred).send({ content: 'edited', ephemeral: true })
+
+      for (const payload of [sent(clicked.update), sent(deferred.editReply)]) {
+        expect(payload).not.toHaveProperty('ephemeral')
+        expect(Number(payload.flags ?? 0) & Ephemeral).toBe(0)
+      }
+      warn.mockRestore()
+    })
+
+    it('drops ephemeral: false without making anything private', async () => {
+      const interaction = command()
+
+      await respond(interaction).send({ content: 'public', ephemeral: false })
+
+      expect(sent(interaction.reply)).toEqual({ content: 'public', flags: 0, withResponse: true })
+    })
+  })
+
   describe('followUp()', () => {
     it('is the first reply before any answer', async () => {
       const interaction = button()
