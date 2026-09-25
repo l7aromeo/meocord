@@ -98,6 +98,15 @@ const INVALID_TOKEN_ENV = 'DISCORD_TOKEN=not-a-real-token\n'
 
 const templateMain = readFileSync(path.join(import.meta.dirname, '..', 'src', 'bin', 'app-template', 'src', 'main.ts.template'), 'utf8')
 
+/** The template's configuration with its dependencies bundled, and an eval devtool set as a hook sets one. */
+const evalBundledConfig = configWith('bundleDependencies: true,').replace(
+  '    return config',
+  "    config.output = { ...config.output, sourceMap: { js: 'eval-source-map' } }\n    return config",
+)
+
+/** The template's entry, first using lodash-es, an ES module that probes for CommonJS with `typeof exports`. */
+const lodashMain = `import { camelCase } from 'lodash-es'\nconsole.log(\`lodash-es: \${camelCase('bundled module')}\`)\n${templateMain}`
+
 /** Where the stalled API listens: it accepts requests and never answers them. */
 const STALLED_API_ENV = 'MEOCORD_SCENARIO_STALLED_API'
 
@@ -605,6 +614,37 @@ const scenarios: Scenario[] = [
     command: ['node', 'dist/main.js'],
     expect: { code: 1, says: ['Starting bot', 'An invalid token was provided'], never: ['ERR_MODULE_NOT_FOUND', 'Cannot find'] },
   },
+  ...(['node', 'bun'] as const).map(
+    (runtime): Scenario => ({
+      name: `with bundleDependencies and an eval devtool from the hook, a bundle using lodash-es starts on ${runtime}`,
+      tier: 'slow',
+      files: { '.env': INVALID_TOKEN_ENV, 'src/main.ts': lodashMain, 'meocord.config.ts': evalBundledConfig, dist: null },
+      before: [['build', '--prod']],
+      hides: ['node_modules'],
+      command: runtime === 'bun' ? [runtimeBinary('bun'), '--no-install', 'dist/main.js'] : ['node', 'dist/main.js'],
+      expect: {
+        code: 1,
+        says: ['lodash-es: bundledModule', 'Starting bot', 'An invalid token was provided'],
+        never: ['SyntaxError', 'CommonJS'],
+      },
+    }),
+  ),
+  {
+    name: 'with bundleDependencies, a development build starts on bun',
+    tier: 'slow',
+    files: { '.env': INVALID_TOKEN_ENV, 'src/main.ts': lodashMain, 'meocord.config.ts': configWith('bundleDependencies: true,'), dist: null },
+    before: [['build', '--dev']],
+    hides: ['node_modules'],
+    command: [runtimeBinary('bun'), '--no-install', 'dist/main.js'],
+    expect: { code: 1, says: ['lodash-es: bundledModule', 'An invalid token was provided'], never: ['SyntaxError', 'CommonJS'] },
+  },
+  {
+    name: 'an eval devtool from the hook is built as its non-eval twin, with a warning saying why',
+    tier: 'slow',
+    files: { 'meocord.config.ts': evalBundledConfig, dist: null },
+    argv: ['build', '--prod'],
+    expect: { code: 0, says: ['"eval-source-map" devtool', 'import.meta', '"source-map" instead'], creates: ['dist/main.js.map'] },
+  },
   {
     name: 'an optionalExternals package that is installed is copied into dist and found there',
     tier: 'slow',
@@ -769,6 +809,8 @@ async function main(): Promise<void> {
     mkdirSync(emptyDir)
     const tarball = pack(workDir)
     renderApp(appDir, tarball)
+    // lodash-es, for the bundled scenarios: an ES module that probes for CommonJS, as many do.
+    mustRun('add lodash-es to the application', process.execPath, ['add', 'lodash-es@^4.18.1'], appDir)
     mustRun('install the application', process.execPath, ['install'], appDir)
     cpSync(path.join(appDir, '.env.example'), path.join(appDir, '.env'))
     if (selected.some(scenario => scenario.cwd === 'npm-app')) {

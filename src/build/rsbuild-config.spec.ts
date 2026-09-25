@@ -104,9 +104,10 @@ describe('createRsbuildConfig', () => {
       expect(config.output?.cleanDistPath).toBe(false)
     })
 
-    it('matches the source maps the webpack build emitted', () => {
+    // An ESM bundle reads import.meta, which a module evaluated from a string cannot.
+    it('emits source maps in both modes, never through eval', () => {
       expect(createRsbuildConfig({ mode: 'production' }).output?.sourceMap).toEqual({ js: 'source-map' })
-      expect(createRsbuildConfig({ mode: 'development' }).output?.sourceMap).toEqual({ js: 'eval-source-map' })
+      expect(createRsbuildConfig({ mode: 'development' }).output?.sourceMap).toEqual({ js: 'cheap-module-source-map' })
     })
   })
 

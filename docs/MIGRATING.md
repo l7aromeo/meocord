@@ -152,8 +152,9 @@ You do not need to check these; they are listed so you know what was kept:
   `dist/meocord.config.mjs`.
 - Asset imports resolve to absolute paths on disk, ready for `fs`, canvas, or a Discord attachment. No asset
   is ever inlined as a data URI, whatever its size.
-- Source map types: `source-map` in production, `eval-source-map` in development. Where a production map
-  points is different; see [Build and start](#4-build-and-start).
+- Source map types: `source-map` in production. Development builds use `cheap-module-source-map` from
+  4.1; see [Smaller changes](#smaller-changes). Where a production map points is different; see
+  [Build and start](#4-build-and-start).
 - Production builds are minified and keep class and function names, which dependency injection relies on.
 
 ## 3. Replace `MeoCordWebpackConfig`
@@ -436,6 +437,13 @@ export const Guards = createMetadata<string[]>('guards')
 - A controller, service or guard that extends another decorated class gets its own constructor's
   dependencies injected, and a base controller no longer lists, or routes to, the handlers a subclass
   declares.
+- Builds no longer use an `eval` devtool. Development builds emit `cheap-module-source-map` rather than
+  `eval-source-map`, and an `eval-*` devtool set through `output.sourceMap` or `tools.rspack` in your
+  `rsbuild` hook is built as its non-eval equivalent, with a warning: an eval'd module cannot read
+  `import.meta`, so with `bundleDependencies` such a bundle stopped at startup with a SyntaxError.
+- A `bundleDependencies` build starts under Bun. A bundled ES module that probes for CommonJS, as
+  lodash-es does with `typeof exports`, made Bun read the whole bundle as CommonJS and refuse its
+  `import` statements; those probes now see `undefined`, as they do under Node.
 
 ## Adopting 4.1 patterns
 
