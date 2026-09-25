@@ -1524,6 +1524,8 @@ Creates a smart mock instance of any discord.js class. The full prototype chain 
 
 **Type guards run real logic** — `isButton()`, `isRepliable()`, `isChatInputCommand()`, etc. are backed by the actual discord.js prototype methods. The right fields (`type`, `componentType`, `commandType`) are set based on the class you pass in, so no manual `.mockReturnValue(true)` setup is needed. All type guard methods are still mock functions and can be overridden per test.
 
+**Guild checks read the mock's data** — `inGuild()`, `inCachedGuild()` and `inRawGuild()` answer from the `guildId` and `guild` the mock is given, as discord.js does: a `guildId` means a guild, a `guildId` with a `guild` (such as `createMockGuild()`) a cached one, and a mock created without a `guildId` is a DM, where all three return `false`. A `member` set to `null` or `undefined` makes all three `false` too.
+
 **Reply state machine** — for repliable interactions, `replied` and `deferred` start as `false`. Calling `reply()` or `deferReply()` twice throws, just like a real interaction. `followUp()`, `editReply()`, and `deleteReply()` throw if called before any reply. The ephemeral flag is tracked on `interaction.ephemeral`, read from `flags` only — the deprecated `ephemeral: true` reply option is not honoured. All reply methods are still mock functions so call assertions work normally.
 
 Autocomplete interactions are not repliable but get the equivalent for their own single-shot response: `responded` starts as `false`, `respond()` sets it, and a second call throws.
@@ -1546,6 +1548,10 @@ expect(interaction).toBeInstanceOf(BaseInteraction) // true
 interaction.isChatInputCommand() // → true
 interaction.isRepliable() // → true
 interaction.isButton() // → false
+
+// created without a guildId, the mock is a DM
+interaction.inGuild() // → false
+interaction.inCachedGuild() // → false
 
 // reply state machine
 interaction.replied // → false
