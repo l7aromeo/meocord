@@ -1736,6 +1736,17 @@ await (client.users as any).fetch('user-123')
 expect((client.users as any).fetch).toHaveBeenCalledWith('user-123')
 ```
 
+`createMockChannel` sets up the managers each channel class has: `messages`; `threads` on text, announcement, forum and media channels; and `members` on a `ThreadChannel`. A subclass gets those of the class it extends.
+
+```typescript
+import { TextChannel, ThreadChannel } from 'discord.js'
+
+const text = createMockChannel(TextChannel)
+const thread = createMockChannel(ThreadChannel)
+// discord.js types a created thread as public or private, not as the ThreadChannel class
+text.threads.create.mockResolvedValue(thread as never)
+```
+
 </details>
 
 <details>
