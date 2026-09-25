@@ -1,5 +1,7 @@
 import { vi } from 'vitest'
-import { createMockFn, isMockFunction } from './mock-fn.js'
+import { clearAllMocks, createMockFn, isMockFunction, resetAllMocks } from './mock-fn.js'
+import { createMockClient, createMockInteraction } from './mock-interaction.js'
+import { ButtonInteraction } from 'discord.js'
 
 /**
  * These assert parity with jest and vitest, which is the whole promise of this
@@ -176,5 +178,52 @@ describe('createMockFn', () => {
       expect(isMockFunction(mock)).toBe(true)
       expect(vi.isMockFunction(mock)).toBe(true)
     })
+  })
+})
+
+describe('clearAllMocks and resetAllMocks', () => {
+  it('clearAllMocks forgets every mock’s calls and keeps what each was told to do', () => {
+    const first = createMockFn((x: number) => x + 1)
+    const second = createMockFn().mockReturnValue('set')
+    first(1)
+    second()
+
+    clearAllMocks()
+
+    expect(first.mock.calls).toEqual([])
+    expect(second.mock.calls).toEqual([])
+    expect(second()).toBe('set')
+  })
+
+  it('resetAllMocks also puts each mock back to the implementation it was created with', () => {
+    const fn = createMockFn((x: number) => x + 1).mockReturnValue(99)
+    fn(1)
+
+    resetAllMocks()
+
+    expect(fn.mock.calls).toEqual([])
+    expect(fn(1)).toBe(2)
+  })
+
+  it('reaches the mocks inside discord.js mocks, which keep their own behaviour', async () => {
+    const client = createMockClient()
+    client.users.fetch.mockRejectedValue(new Error('set by a test'))
+    const interaction = createMockInteraction(ButtonInteraction)
+    await interaction.reply({ content: 'hi' })
+
+    resetAllMocks()
+
+    await expect(client.users.fetch('1')).resolves.toBeDefined()
+    expect(interaction.reply.mock.calls).toEqual([])
+    // Only the recorded calls and set behaviour go: the interaction has still been replied to
+    await expect(interaction.reply({ content: 'again' })).rejects.toThrow('already been sent')
+  })
+
+  it('leaves vi.fn mocks to vitest', () => {
+    const native = vi.fn().mockReturnValue('kept')
+
+    resetAllMocks()
+
+    expect(native()).toBe('kept')
   })
 })

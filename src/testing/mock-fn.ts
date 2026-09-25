@@ -59,6 +59,45 @@ export function isMockFunction(fn: unknown): fn is MockInstance {
   )
 }
 
+// Every mock createMockFn made, held weakly so the mocks of a finished test can still be collected
+const created = new Set<WeakRef<MockInstance>>()
+const collected = new FinalizationRegistry<WeakRef<MockInstance>>(ref => created.delete(ref))
+
+/**
+ * Clears the calls every mock from `meocord/testing` has recorded, keeping what each was told to
+ * return. Vitest's `clearMocks` and jest's `clearAllMocks()` reach only their own `vi.fn()` and
+ * `jest.fn()` mocks; this covers `createMockFn` and everything built on it, such as
+ * `createMockInteraction` and `createMockClient`.
+ *
+ * @example
+ * ```ts
+ * import { clearAllMocks } from 'meocord/testing'
+ *
+ * afterEach(() => clearAllMocks())
+ * ```
+ */
+export function clearAllMocks(): void {
+  for (const ref of created) ref.deref()?.mockClear()
+}
+
+/**
+ * Clears every mock from `meocord/testing`, as {@link clearAllMocks} does, and puts each back to the
+ * implementation it was created with: `mockReturnValue`, `mockResolvedValue` and the rest a test set
+ * are undone, and a mock interaction's methods reply, defer and refuse a second reply as before.
+ * State a mock keeps outside its methods, such as whether an interaction was replied to, stays.
+ *
+ * @example
+ * ```ts
+ * import { resetAllMocks } from 'meocord/testing'
+ *
+ * // In a Vitest setup file: every test starts from mocks as they were created
+ * afterEach(() => resetAllMocks())
+ * ```
+ */
+export function resetAllMocks(): void {
+  for (const ref of created) ref.deref()?.mockReset()
+}
+
 /**
  * Creates a mock function that works with both jest's and vitest's `expect`.
  *
@@ -184,5 +223,8 @@ export function createMockFn<T extends (...args: any[]) => any = (...args: any[]
     return mockFn
   }) as MockInstance<T>['mockName']
 
+  const ref = new WeakRef<MockInstance>(mockFn as MockInstance)
+  created.add(ref)
+  collected.register(mockFn, ref)
   return mockFn
 }

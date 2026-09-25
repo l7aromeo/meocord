@@ -1598,6 +1598,8 @@ Autocomplete interactions are not repliable but get the equivalent for their own
 Guards discord.js has deprecated are deliberately left unwired — `isSelectMenu()` returns `undefined` rather than reproducing behaviour the library is removing. Use `isStringSelectMenu()`.
 
 > **Framework-agnostic** — the mocks returned here are plain mock functions that stamp `_isMockFunction` and expose `.mock.calls`, the exact contract both `jest` and `vitest` check. Use them with either framework's `expect(...).toHaveBeenCalledWith(...)` / `toHaveBeenCalledTimes(...)` — no jest or vitest import is required to produce them. For typed stubs in your own code, import `MockedFunction`, `createMockFn`, and `DeepMocked` from `meocord/testing`.
+>
+> **Resetting between tests** — Vitest's `clearMocks` and jest's `clearAllMocks()` reach only their own `vi.fn()` and `jest.fn()`. `clearAllMocks()` from `meocord/testing` clears the calls of every mock it made, and `resetAllMocks()` also undoes what a test set with `mockReturnValue`, `mockResolvedValue` and the rest, back to how each mock was created. Generated projects call `resetAllMocks()` after every test from `vitest.setup.ts`, so set a mock's behaviour in the test, or in `beforeEach`, that relies on it.
 
 ```typescript
 import { createMockInteraction } from 'meocord/testing'
