@@ -2,6 +2,8 @@
 
 ## 4.1.0-beta.2
 
+Not published to npm: these changes first ship in 4.1.0-beta.3.
+
 ### Minor Changes
 
 - [#123](https://github.com/meocord/meocord/pull/123) [`3924763`](https://github.com/meocord/meocord/commit/3924763805de2c1b6c44ca2d94e72e823956b67d) Thanks [@l7aromeo](https://github.com/l7aromeo)! - `@MeoCord({ providers })` provides values, classes and sync or async factories under a class, string, symbol or `createToken` token, injected with the new `@Inject(token)`, with their `onReady` and `onShutdown` hooks run in dependency order; `MeoCordTestingModule` takes the same providers.
