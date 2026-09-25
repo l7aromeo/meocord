@@ -1589,7 +1589,7 @@ Creates a smart mock instance of any discord.js class. The full prototype chain 
 
 **Type guards run real logic** — `isButton()`, `isRepliable()`, `isChatInputCommand()`, etc. are backed by the actual discord.js prototype methods. The right fields (`type`, `componentType`, `commandType`) are set based on the class you pass in, so no manual `.mockReturnValue(true)` setup is needed. All type guard methods are still mock functions and can be overridden per test.
 
-**Guild checks read the mock's data** — `inGuild()`, `inCachedGuild()` and `inRawGuild()` answer from the `guildId` and `guild` the mock is given, as discord.js does: a `guildId` means a guild, a `guildId` with a `guild` (such as `createMockGuild()`) a cached one, and a mock created without a `guildId` is a DM, where all three return `false`. A `member` set to `null` or `undefined` makes all three `false` too.
+**Guild checks read the mock's data** — `inGuild()`, `inCachedGuild()` and `inRawGuild()` answer from the `guildId` and `guild` the mock is given, as discord.js does: a `guildId` means a guild, a `guildId` with a `guild` (such as `createMockGuild()`) a cached one, and a mock created without a `guildId` is a DM, where all three return `false`. A `member` set to `null` or `undefined` makes all three `false` too. Its `locale` is `'en-US'`, and its `guildLocale` is `'en-US'` with a `guildId` and `null` without, as Discord sends them; pass either to change it.
 
 **Reply state machine** — for repliable interactions, `replied` and `deferred` start as `false`. Calling `reply()` or `deferReply()` twice throws, just like a real interaction. `followUp()`, `editReply()`, and `deleteReply()` throw if called before any reply. The ephemeral flag is tracked on `interaction.ephemeral`, read from `flags` only — the deprecated `ephemeral: true` reply option is not honoured. All reply methods are still mock functions so call assertions work normally.
 
@@ -1720,6 +1720,8 @@ All methods are mock functions — override any per test with `.mockReturnValue(
 <summary><b><code>createMockUser</code> / <code>createMockClient</code> / <code>createMockGuild</code> / <code>createMockChannel</code></b></summary>
 
 Convenience wrappers for common discord.js classes. All methods are auto-stubbed as mock functions. Nested managers (`client.users`, `guild.members`, etc.) are independent nested stubs.
+
+A method that returns a promise in discord.js resolves, so `await` and `.catch()` work without setup: `send()` and `reply()` to a mock `Message`, a manager's `fetch(id)`, `create()` and `edit()` to a mock of its item (`users.fetch(id)` to a `User`, `guild.members.fetch(id)` to a `GuildMember`), a list fetch such as `members.fetch()` to an empty `Collection`, `createDM()` to a `DMChannel`, and a structure's own `edit()`, `fetch()` and setters to the structure itself. Any other such method resolves to `undefined`. `mockResolvedValue` and `mockRejectedValue` still decide per test.
 
 ```typescript
 import { createMockFn, createMockUser, createMockClient, createMockGuild, createMockChannel } from 'meocord/testing'

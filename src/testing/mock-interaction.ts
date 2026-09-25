@@ -12,8 +12,12 @@ import {
   ApplicationCommandOptionType,
   ApplicationCommandType,
   Attachment,
+  ApplicationCommand,
   AuthorizingIntegrationOwners,
+  Base,
   BaseChannel,
+  BaseInteraction,
+  BaseManager,
   ChannelManager,
   Client,
   ClientUser,
@@ -22,6 +26,7 @@ import {
   ComponentType,
   DMMessageManager,
   Guild,
+  GuildBan,
   GuildBanManager,
   GuildChannelManager,
   GuildMember,
@@ -29,6 +34,7 @@ import {
   GuildMessageManager,
   GuildManager,
   InteractionType,
+  Locale,
   Message,
   MessageFlagsBitField,
   MessageMentions,
@@ -36,6 +42,7 @@ import {
   RoleManager,
   TextChannel,
   ThreadChannel,
+  ThreadMember,
   ThreadMemberManager,
   User,
   UserManager,
@@ -106,7 +113,7 @@ type StubValue = Mock | object
 function stubDeep(instance: object, externalStubs?: Map<string, StubValue>): object {
   const stubs = externalStubs ?? new Map<string, StubValue>()
 
-  return new Proxy(instance, {
+  const proxy: object = new Proxy(instance, {
     get(target, prop) {
       // Always pass through symbols
       if (typeof prop === 'symbol') {
@@ -143,7 +150,8 @@ function stubDeep(instance: object, externalStubs?: Map<string, StubValue>): obj
         proto = Object.getPrototypeOf(proto)
       }
 
-      const stub: StubValue = typeof protoValue === 'function' ? createMockFn() : stubDeep({})
+      const stub: StubValue =
+        typeof protoValue === 'function' ? methodStub(target, key, protoValue as (...args: unknown[]) => unknown, () => proxy) : stubDeep({})
       stubs.set(key, stub)
       return stub
     },
@@ -157,6 +165,103 @@ function stubDeep(instance: object, externalStubs?: Map<string, StubValue>): obj
       return true
     },
   })
+  return proxy
+}
+
+// ---------------------------------------------------------------------------
+// methodStub — what an auto-stubbed discord.js method returns
+// ---------------------------------------------------------------------------
+
+// discord.js methods not declared `async` that still return a promise; `set*` setters are matched by name
+const PROMISE_METHODS = new Set([
+  'ban',
+  'clone',
+  'createInvite',
+  'disableCommunicationUntil',
+  'edit',
+  'fetch',
+  'fetchFlags',
+  'fetchInvites',
+  'fetchMe',
+  'fetchReply',
+  'fetchWebhooks',
+  'fetchWidget',
+  'forward',
+  'pin',
+  'removeAttachments',
+  'suppressEmbeds',
+  'timeout',
+  'unpin',
+])
+
+// The client user's presence setters, which apply at once and return the presence
+const SYNC_SETTERS = new Set(['setActivity', 'setAFK', 'setPresence', 'setStatus'])
+
+// Methods that resolve to a message, wherever they are declared
+const MESSAGE_METHODS = new Set([
+  'crosspost',
+  'fetchReference',
+  'fetchReply',
+  'fetchStarterMessage',
+  'forward',
+  'reply',
+  'send',
+])
+
+// Methods of a structure that resolve to the structure itself, as discord.js patches and returns it
+const SELF_METHODS = new Set(['ban', 'delete', 'disableCommunicationUntil', 'edit', 'fetch', 'pin', 'timeout', 'unpin'])
+
+// The item each manager fetches, creates and edits
+const MANAGER_ITEMS: [{ prototype: object }, () => object][] = [
+  [UserManager, () => createMockUser()],
+  [GuildManager, () => createMockGuild()],
+  [GuildMemberManager, () => createMockInteraction(GuildMember)],
+  [RoleManager, () => createMockInteraction(Role)],
+  [GuildBanManager, () => createMockInteraction(GuildBan)],
+  [GuildMessageManager, () => createMockMessage()],
+  [DMMessageManager, () => createMockMessage()],
+  [GuildTextThreadManager, () => createMockChannel(ThreadChannel)],
+  [GuildForumThreadManager, () => createMockChannel(ThreadChannel)],
+  [ThreadMemberManager, () => createMockInteraction(ThreadMember)],
+  [ApplicationCommandManager, () => createMockInteraction(ApplicationCommand)],
+  [ChannelManager, () => createMockChannel(TextChannel)],
+  [GuildChannelManager, () => createMockChannel(TextChannel)],
+]
+
+const returnsPromise = (key: string, method: (...args: unknown[]) => unknown) =>
+  method.constructor.name === 'AsyncFunction' ||
+  PROMISE_METHODS.has(key) ||
+  (/^set[A-Z]/.test(key) && !SYNC_SETTERS.has(key))
+
+// A fetch for one item: an id, a discord.js object, or options naming one, such as `{ user: id }`
+function fetchesOne(args: unknown[]): boolean {
+  const [first] = args
+  if (typeof first === 'string' || first instanceof Base) return true
+  if (typeof first !== 'object' || first === null) return false
+  return ['user', 'member', 'message', 'guild', 'thread', 'id'].some(key => {
+    const value = (first as Record<string, unknown>)[key]
+    return typeof value === 'string' || value instanceof Base
+  })
+}
+
+/**
+ * The mock function for a method found on a discord.js prototype. A method that returns a promise in
+ * discord.js resolves: to a message for `send` and its kin, to the item for a manager's `fetch`,
+ * `create` and `edit` (an empty collection for a list fetch), to the structure itself for its own
+ * `edit`, `fetch` and setters, and to `undefined` otherwise. Any other method returns `undefined`.
+ */
+function methodStub(target: object, key: string, method: (...args: unknown[]) => unknown, receiver: () => object): Mock {
+  if (!returnsPromise(key, method)) return createMockFn()
+  if (key === 'createDM') return createMockFn(async () => createMockChannel(DMChannel))
+  if (MESSAGE_METHODS.has(key)) return createMockFn(async () => createMockMessage())
+  if (target instanceof BaseManager) {
+    const item = MANAGER_ITEMS.find(([Manager]) => Manager.prototype.isPrototypeOf(target))?.[1]
+    if (item && key === 'fetch') return createMockFn(async (...args: unknown[]) => (fetchesOne(args) ? item() : new Collection()))
+    if (item && (key === 'create' || key === 'edit')) return createMockFn(async () => item())
+  } else if (target instanceof Base && (SELF_METHODS.has(key) || /^set[A-Z]/.test(key))) {
+    return createMockFn(async () => receiver())
+  }
+  return createMockFn(async () => undefined)
 }
 
 // ---------------------------------------------------------------------------
@@ -247,9 +352,11 @@ function findPrototypeMethod(instance: object, name: string): ((...args: unknown
  *
  * Type guards such as `isButton()` run the real discord.js logic. `inGuild()`, `inCachedGuild()`
  * and `inRawGuild()` answer from the mock's own `guildId` and `guild`, so a mock created without
- * a `guildId` is a DM. Replies behave like a real
+ * a `guildId` is a DM. An interaction's `locale` is `'en-US'`, and its `guildLocale` is `'en-US'` with
+ * a `guildId` and `null` without, unless given. Replies behave like a real
  * interaction: `reply()` or `deferReply()` twice throws, and `followUp()`, `editReply()` and
- * `deleteReply()` throw before a reply. Every method is a mock function you can override.
+ * `deleteReply()` throw before a reply. Every method is a mock function you can override; one that
+ * returns a promise in discord.js resolves, such as `send()` to a mock message.
  *
  * @param Class - The discord.js class to mock.
  * @param props - Values for properties the class declares `readonly`; see {@link MockProps}.
@@ -427,6 +534,14 @@ export function createMockInteraction<T extends object>(
     }
   }
 
+  // Discord sends the user's locale with every interaction, and the server's with one made in a server
+  if (BaseInteraction.prototype.isPrototypeOf(instance)) {
+    if (own('locale') === undefined) instance.locale = Locale.EnglishUS
+    if (!Object.prototype.hasOwnProperty.call(instance, 'guildLocale')) {
+      instance.guildLocale = own('guildId') ? Locale.EnglishUS : null
+    }
+  }
+
   return stubDeep(instance, stubs) as DeepMocked<T>
 }
 
@@ -524,8 +639,9 @@ export function createMock<T extends object>(props?: MockProps<T>): DeepMocked<T
 export const createMockUser = (): DeepMocked<User> => createMockInteraction(User)
 
 /**
- * Creates a mock {@link Client}, with `users.fetch`, `channels.fetch`, `guilds.fetch` and
- * `application.commands.fetch` ready to stub.
+ * Creates a mock {@link Client}, with `users`, `channels`, `guilds` and `application.commands` ready to
+ * stub. Their methods resolve as discord.js's do: `users.send()` to a mock message, `users.fetch(id)`
+ * to a mock user, `channels.fetch(id)` to a mock text channel, and a list fetch to an empty collection.
  */
 export function createMockClient(): DeepMocked<Client> {
   const instance = Object.create(Client.prototype) as Record<string, unknown>
@@ -546,7 +662,8 @@ export function createMockClient(): DeepMocked<Client> {
 
 /**
  * Creates a mock {@link Guild}, with the `members`, `channels`, `roles` and `bans` managers ready
- * to stub.
+ * to stub. A manager's `fetch(id)`, `create()` and `edit()` resolve to a mock of its item, and a list
+ * fetch to an empty collection.
  */
 export function createMockGuild(): DeepMocked<Guild> {
   const instance = Object.create(Guild.prototype) as Record<string, unknown>
