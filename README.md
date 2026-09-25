@@ -327,6 +327,7 @@ MeoCord builds with [Rsbuild](https://rsbuild.rs). The hook receives its configu
 | `externals`          | `[]`    | Modules to keep out of the bundle. Native addons are found without being listed.                           |
 | `optionalExternals`  | `[]`    | Packages a dependency tries to load and runs without, such as `supports-color`; see below.                 |
 | `shutdownTimeout`    | `10000` | Milliseconds shutdown waits for the [`onShutdown` hooks](#lifecycle-hooks), all of them together.          |
+| `sourceMappedStacks` | `true`  | Stack traces name your source files — see [Stack traces](#stack-traces).                                   |
 | `commands`           | global  | Where commands are registered, and whether at startup — see [Command registration](#command-registration). |
 | `sharding`           | —       | Split the gateway connection into shards — see [Sharding](#sharding).                                      |
 
@@ -337,6 +338,17 @@ Some dependencies try to load a package and carry on without it: `debug`, which 
 ```typescript
 optionalExternals: ['supports-color'],
 ```
+
+### Stack traces
+
+A stack trace names your source, `src/services/profile.service.ts:42:11`, not the bundle, on Node and Bun alike. The build writes `dist/main.js.map` beside the bundle, in development and production, and:
+
+- `meocord start` runs node with `--enable-source-maps`, so Node maps each stack itself. Its shard processes inherit the flag.
+- A bundle started any other way — `node dist/main.js` in a Docker `CMD`, pm2, or bun, which applies no source map to a bundle — maps its stacks through `Error.prepareStackTrace`. The map is read the first time a stack needs it, and each frame keeps the runtime's format, `at fn (/abs/path/src/file.ts:line:col)`, so tools that parse `error.stack` read it as before.
+- A hook already set on `Error.prepareStackTrace`, such as a preloaded error tracker's, receives the mapped call sites. One set later replaces MeoCord's unless it calls the hook it found.
+- Bun reports a call's column further along than Node does. In a minified production bundle, a frame for a call can map to the statement just before it, one line up; the frame that threw maps exactly.
+
+Set `sourceMappedStacks: false` when an error tracker applies uploaded source maps to the bundle's own positions, or you ship a source mapper of your own. `meocord start` then passes no flag, and the bundle installs no hook.
 
 ### Environment variables
 

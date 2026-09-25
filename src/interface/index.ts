@@ -445,6 +445,17 @@ export interface MeoCordConfig {
    */
   rsbuild?: (config: RsbuildConfig) => RsbuildConfig | undefined
   /**
+   * Makes stack traces name your source files, lines and columns, from the source map the build writes
+   * beside `dist/main.js`. Under Node, `meocord start` passes `--enable-source-maps`; under Bun, or Node
+   * started without the flag, the bundle maps each stack through `Error.prepareStackTrace` itself.
+   *
+   * Set `false` for an error tracker that applies uploaded source maps to the bundle's positions, or a
+   * source mapper of your own.
+   *
+   * @defaultValue `true`
+   */
+  sourceMappedStacks?: boolean
+  /**
    * How long, in milliseconds, shutdown waits for the `onShutdown` hooks before destroying the client
    * anyway. The limit covers every hook together, not each one.
    *

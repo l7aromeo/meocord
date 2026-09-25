@@ -37,7 +37,7 @@ import {
   type NativePackage,
 } from '@src/build/native-addons.js'
 import { PLATFORM_MANIFEST, writePlatformManifest } from '@src/util/platform.util.js'
-import { loadMeoCordSourceConfig } from '@src/util/meocord-source-config.util.js'
+import { loadMeoCordCliConfig, loadMeoCordSourceConfig } from '@src/util/meocord-source-config.util.js'
 import { type MeoCordConfig } from '@src/interface/index.js'
 import { FORCE_REGISTER_ENV, REGISTER_GUILD_ENV, REGISTER_ONLY_ENV } from '@src/util/registration-mode.util.js'
 
@@ -621,7 +621,8 @@ copies or substantial portions of the Software.
 
   /** Runs the built application. Both start modes use it, so watch mode launches the bundle exactly as production does. */
   private spawnApp(): ChildProcess {
-    const { command, args } = buildAppCommand(this.runtime, this.mainJSPath)
+    const sourceMaps = loadMeoCordCliConfig()?.sourceMappedStacks !== false
+    const { command, args } = buildAppCommand(this.runtime, this.mainJSPath, { sourceMaps })
 
     return spawn(command, args, {
       cwd: this.projectRoot,

@@ -107,6 +107,23 @@ describe('buildAppCommand', () => {
     expect(buildAppCommand('/usr/bin/node', '/app/dist/main.js').args).toEqual(['/app/dist/main.js'])
   })
 
+  // Node maps a stack through dist/main.js.map only with the flag; Bun has none, and the bundle maps its own
+  it('asks node, and only node, to apply source maps when they are wanted', () => {
+    expect(buildAppCommand('/usr/bin/node', '/app/dist/main.js', { sourceMaps: true }).args).toEqual([
+      '--enable-source-maps',
+      '/app/dist/main.js',
+    ])
+    expect(buildAppCommand('C:\\node\\node.exe', 'C:\\app\\dist\\main.js', { sourceMaps: true }).args[0]).toBe(
+      '--enable-source-maps',
+    )
+    expect(buildAppCommand('/usr/local/bin/bun', '/app/dist/main.js', { sourceMaps: true }).args).toEqual([
+      '--no-install',
+      '/app/dist/main.js',
+    ])
+    // A binary set with MEOCORD_RUNTIME that is neither may not know the flag
+    expect(buildAppCommand('/opt/deno', '/app/dist/main.js', { sourceMaps: true }).args).toEqual(['/app/dist/main.js'])
+  })
+
   // Concatenating the two into one string is what a shell would then have to re-split,
   // and it splits on the space in a path like `/Users/a b/app`.
   it('keeps a path containing spaces in a single argument', () => {

@@ -23,12 +23,18 @@ vi.mock('node:fs', async importOriginal => {
   return { ...actual, default: { ...actual }, existsSync: vi.fn().mockReturnValue(true) }
 })
 
+vi.mock('@src/util/meocord-source-config.util.js', async importOriginal => {
+  const actual = await importOriginal<typeof import('@src/util/meocord-source-config.util.js')>()
+  return { ...actual, loadMeoCordCliConfig: vi.fn(actual.loadMeoCordCliConfig) }
+})
+
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { FORCE_STOP_GRACE_MS, MeoCordCLI } from '@src/bin/meocord.js'
 import { REPEAT_SIGNAL_WINDOW_MS } from '@src/util/stop-request.util.js'
 import { namePathProblem } from '@src/bin/generator.js'
 import { RUNTIME_OVERRIDE_ENV } from '@src/util/runtime.util.js'
+import { loadMeoCordCliConfig } from '@src/util/meocord-source-config.util.js'
 
 /** Stands in for the spawned application; `.on` is chained straight off `spawn`. */
 const createChild = () => ({
@@ -41,6 +47,9 @@ const createChild = () => ({
 })
 
 const spawnMock = vi.mocked(spawn)
+
+/** The arguments that are not runtime flags, such as node's --enable-source-maps. */
+const entryArgs = (args: string[]) => args.filter(arg => !arg.startsWith('--'))
 
 const lastSpawn = () => {
   const call = spawnMock.mock.calls.at(-1)
@@ -87,7 +96,7 @@ describe('spawning the application', () => {
 
       const { command, args } = lastSpawn()
       expect(command).toBe(process.execPath)
-      expect(args).toEqual([expect.stringContaining('main.js')])
+      expect(entryArgs(args)).toEqual([expect.stringContaining('main.js')])
     })
 
     it('honours the runtime override', async () => {
@@ -105,7 +114,25 @@ describe('spawning the application', () => {
 
       const { command, args } = lastSpawn()
       expect(command).not.toContain('main.js')
-      expect(args).toHaveLength(1)
+      expect(entryArgs(args)).toHaveLength(1)
+    })
+
+    // Node maps a stack through dist/main.js.map only with the flag; shard processes inherit it
+    it('runs node with --enable-source-maps', async () => {
+      process.env[RUNTIME_OVERRIDE_ENV] = '/usr/bin/node'
+
+      await new MeoCordCLI().startProd()
+
+      expect(lastSpawn().args).toEqual(['--enable-source-maps', expect.stringContaining('main.js')])
+    })
+
+    it('passes node no source-map flag when the config sets sourceMappedStacks: false', async () => {
+      process.env[RUNTIME_OVERRIDE_ENV] = '/usr/bin/node'
+      vi.mocked(loadMeoCordCliConfig).mockReturnValueOnce({ discordToken: 't', sourceMappedStacks: false })
+
+      await new MeoCordCLI().startProd()
+
+      expect(lastSpawn().args).toEqual([expect.stringContaining('main.js')])
     })
 
     it('does not run through a shell', async () => {
@@ -212,7 +239,7 @@ describe('spawning the application', () => {
       await new MeoCordCLI().register()
 
       const { args, options } = lastSpawn()
-      expect(args).toEqual([expect.stringContaining('main.js')])
+      expect(entryArgs(args)).toEqual([expect.stringContaining('main.js')])
       expect(registerEnv(options.env)).toEqual({ MEOCORD_REGISTER_ONLY: '1', MEOCORD_FORCE_REGISTER: '1' })
     })
 
@@ -282,7 +309,7 @@ describe('spawning the application', () => {
 
       const { command, args } = lastSpawn()
       expect(command).toBe(process.execPath)
-      expect(args).toEqual([expect.stringContaining('main.js')])
+      expect(entryArgs(args)).toEqual([expect.stringContaining('main.js')])
     })
 
     it('honours the runtime override', () => {
