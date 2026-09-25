@@ -5,10 +5,15 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { Box, Column, ease, Path, Root, Row, Text } from 'meo-canvas'
 import {
+  computeKeyframes,
   EAR_FLICK,
   EAR_VALLEY_X,
+  earPath,
   earsPath,
+  FLICK_KEYFRAMES,
   flickAngles,
+  formatMarkJson,
+  MARK,
   MARK_DARK,
   MARK_PATHS,
   MARK_TILE_RADIUS,
@@ -211,9 +216,10 @@ function flatten(rgba: string, background: string): string {
 }
 
 /**
- * The mark with its ears at the given angles, for the animated logo and avatar: each ear clipped to its
- * half and turned about its pivot, the cord drawn last so it covers their bases, as on the still mark.
- * The ink is made opaque against `behind`, the colour it sits on, so the halves' overlap is not drawn twice.
+ * The mark with its ears at the given angles, for the animated logo and avatar: each ear's own path,
+ * split from the crown at the valley, turned about the valley, and the cord drawn last so it covers
+ * their bases, as on the still mark. The ink is made opaque against `behind`, the colour it sits on, so
+ * the ears' overlap below the valley is not drawn twice.
  */
 function animatedMark(
   size: number,
@@ -224,38 +230,17 @@ function animatedMark(
 ) {
   const unit = size / 16
   const ink = flatten(colours.ink, behind)
-  const layer = (left: number, d: string, fill: string, fillRule: 'nonzero' | 'evenodd') =>
-    Path({ positionType: 'absolute', position: { top: 0, left }, width: size, height: size, viewBox: [...MARK_VIEWBOX], d, fill, fillRule })
-  const { pivot } = EAR_FLICK
-  // One ear: its rectangles of the ears path, turned together about the valley
-  const ear = (regions: readonly (readonly number[])[], angle: number) =>
-    Box({
+  const layer = (d: string, fill: string, fillRule: 'nonzero' | 'evenodd', rotate = 0) =>
+    Path({
       positionType: 'absolute',
       position: { top: 0, left: 0 },
       width: size,
       height: size,
-      transform: { rotate: angle, originX: pivot.x * unit, originY: pivot.y * unit },
-      children: regions.map(([x, y, width, height]) =>
-        Box({
-          positionType: 'absolute',
-          position: { top: y * unit, left: x * unit },
-          width: width * unit,
-          height: height * unit,
-          overflow: 'hidden',
-          children: [
-            Path({
-              positionType: 'absolute',
-              position: { top: -y * unit, left: -x * unit },
-              width: size,
-              height: size,
-              viewBox: [...MARK_VIEWBOX],
-              d: earsPath(size),
-              fill: ink,
-              fillRule: 'evenodd',
-            }),
-          ],
-        }),
-      ),
+      viewBox: [...MARK_VIEWBOX],
+      d,
+      fill,
+      fillRule,
+      transform: { rotate, originX: EAR_FLICK.pivot.x * unit, originY: EAR_FLICK.pivot.y * unit },
     })
   return Box({
     width: size,
@@ -265,19 +250,20 @@ function animatedMark(
     backgroundColor: colours.tile,
     borderRadius: (radius * size) / 16,
     children: [
-      ear(EAR_FLICK.near, angles.near),
-      ear(EAR_FLICK.far, angles.far),
-      layer(0, MARK_PATHS.cord, colours.accent, 'nonzero'),
+      layer(earPath('near', size), ink, 'evenodd', angles.near),
+      layer(earPath('far', size), ink, 'evenodd', angles.far),
+      layer(MARK_PATHS.cord, colours.accent, 'nonzero'),
     ],
   })
 }
 
-/** Frames of the flick: a long rest, then the flick every 30 ms, looping seamlessly from still to still. */
-const REST_MS = 2200
-const FLICK_FRAME_MS = 30
-const FLICK_FRAMES = Math.round((EAR_FLICK.duration * 1000) / FLICK_FRAME_MS)
-const flickFrameDelays = [REST_MS, ...Array.from({ length: FLICK_FRAMES }, () => FLICK_FRAME_MS)]
-const flickAnglesAt = (page: number) => (page === 0 ? { near: 0, far: 0 } : flickAngles(((page - 1) * FLICK_FRAME_MS) / 1000))
+/** Frames of the flick: a long rest, then mark.json's keyframes, looping seamlessly from still to still. */
+const flickFrameDelays = [EAR_FLICK.restMs, ...FLICK_KEYFRAMES.map(() => EAR_FLICK.stepMs)]
+const flickAnglesAt = (page: number) => {
+  if (page === 0) return { near: 0, far: 0 }
+  const [, far, near] = FLICK_KEYFRAMES[page - 1]
+  return { far, near }
+}
 
 /** Renders `mark` for every frame of the flick, in `formats`, on a transparent or given background. */
 async function animatedMarkFiles(
@@ -495,6 +481,14 @@ if (process.env.BRAND_FLICK) {
   const node = animatedMark(512, MARK_DARK, flickAngles(Number(process.env.BRAND_FLICK)))
   writeFileSync(process.env.BRAND_OUT ?? 'frame.png', await still(512, 512, 'rgba(0,0,0,0)', node, Number(process.env.BRAND_SCALE ?? 1)))
   process.exit(0)
+}
+
+// The keyframes every copy plays are written into mark.json from its springs, so they never disagree
+if (JSON.stringify(computeKeyframes()) !== JSON.stringify(FLICK_KEYFRAMES)) {
+  const markJson = { ...MARK, flick: { ...MARK.flick, keyframes: computeKeyframes() } }
+  writeFileSync(path.join(HERE, 'mark.json'), formatMarkJson(markJson))
+  process.stderr.write('mark.json: keyframes rewritten from its springs; run `bun run brand` again to draw with them\n')
+  process.exit(1)
 }
 
 mkdirSync(OUT, { recursive: true })
