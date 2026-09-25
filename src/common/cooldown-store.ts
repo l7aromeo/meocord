@@ -14,9 +14,9 @@ export interface CooldownVerdict {
 }
 
 /**
- * Where `@Cooldown` counts calls. The default keeps them in memory, in this process; bind another, such
- * as one backed by Redis, with `@MeoCord({ cooldownStore })` so shards or several processes share one
- * count.
+ * Where `@Cooldown` counts calls. The default keeps them in memory, in this process; bind another with
+ * `@MeoCord({ cooldownStore })` so shards or several processes share one count: `RedisCooldownStore`, or
+ * one of your own.
  *
  * `consume` must check and record a call as one step: two calls at the limit must not both pass. Check a
  * store of your own with `testCooldownStore` from `meocord/testing`.
@@ -24,14 +24,14 @@ export interface CooldownVerdict {
  * @example
  * ```ts
  * @Service()
- * export class RedisCooldownStore extends CooldownStore {
- *   constructor(private readonly redis: RedisService) {
+ * export class PostgresCooldownStore extends CooldownStore {
+ *   constructor(private readonly db: DatabaseService) {
  *     super()
  *   }
  *
  *   consume(key: string, limit: CooldownLimit): Promise<CooldownVerdict> {
- *     // A sorted set of call times per key, trimmed and counted in one Lua script
- *     return this.redis.slidingWindow(key, limit.uses, limit.windowMs)
+ *     // Trims, counts and records the key's calls in one transaction that locks the key
+ *     return this.db.consumeCooldown(key, limit.uses, limit.windowMs)
  *   }
  * }
  * ```

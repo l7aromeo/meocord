@@ -1228,26 +1228,29 @@ async checkIn(interaction: ButtonInteraction, { uid }: { ownerId: string; uid: s
 
 By default in this process's memory: one count per bot, which drops keys whose calls have all expired. With [process sharding](#sharding), each shard counts on its own, so `'user'` and `'global'` cooldowns allow more than they say — the bot warns at startup. `'guild'` and `'channel'` stay exact, since a server lives on one shard.
 
-To share one count, extend `CooldownStore` and pass it to `@MeoCord({ cooldownStore })`. It is resolved like a service, so it can inject its client, and its `consume` must check and record a call in one step, so two calls at the limit cannot both pass:
+To keep counts across restarts, or share them between shards and processes, bind a shared store with `@MeoCord({ cooldownStore })`.
+
+**Redis, and servers that speak its protocol.** `RedisCooldownStore` from `meocord/common` counts each key in a sorted set, trimmed, counted and added to by one Lua script, timed by the server's `TIME` so every process counts by one clock, with every key set to expire. MeoCord depends on no Redis client: give `RedisCooldownStore.using` a function that runs a script with the one you have.
 
 ```typescript
-import { CooldownStore, type CooldownLimit, type CooldownVerdict } from 'meocord/common'
-import { RedisService } from '@src/services/redis.service.js'
+import { RedisCooldownStore } from 'meocord/common'
+import { createClient } from 'redis'
 
-@Service()
-export class RedisCooldownStore extends CooldownStore {
-  constructor(private readonly redis: RedisService) {
-    super()
-  }
+const redis = await createClient({ url: process.env.REDIS_URL }).connect()
 
-  consume(key: string, { uses, windowMs }: CooldownLimit): Promise<CooldownVerdict> {
-    return this.redis.slidingWindow(key, uses, windowMs) // a sorted set trimmed and counted in one Lua script
-  }
-}
-
-@MeoCord({ controllers: [...], clientOptions: {...}, cooldownStore: RedisCooldownStore })
+@MeoCord({
+  controllers: [...],
+  clientOptions: {...},
+  cooldownStore: RedisCooldownStore.using((script, keys, args) => redis.eval(script, { keys, arguments: args })),
+})
 export default class App {}
 ```
+
+With ioredis, run it as `(script, keys, args) => redis.eval(script, keys.length, ...keys, ...args)`. Keys start with `meocord:cooldown:`; pass `{ prefix }` for your own. Pass `{ evalsha }`, such as `(sha, keys, args) => redis.evalSha(sha, { keys, arguments: args })`, to send the script by its SHA1, and in full only when the server answers `NOSCRIPT`.
+
+The same script runs on Redis 5 and later, Valkey, KeyDB, Dragonfly and Upstash, which runs `EVAL`. Garnet runs Lua only in part: check it with [`testCooldownStore`](#checking-a-store) before relying on it.
+
+**Any other database.** Extend `CooldownStore`. It is resolved like a service, so it can inject its client, and its `consume` must check and record a call in one step, so two calls at the limit cannot both pass. See [Store recipes](#store-recipes) for Postgres, SQLite and MongoDB, and check yours with [`testCooldownStore`](#checking-a-store).
 
 In tests, each `MeoCordTestingModule` counts in a fresh in-memory store; provide `{ provide: CooldownStore, useValue }` to use another. `inspectHandler(Controller, 'method').cooldowns` lists a handler's cooldowns with their defaults.
 
