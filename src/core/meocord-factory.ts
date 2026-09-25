@@ -79,7 +79,7 @@ function warnPerShardCooldowns(controllers: readonly (new (...args: any[]) => un
 
   logger.warn(
     `Each shard counts 'user' and 'global' cooldowns in its own memory, so they allow more calls than they ` +
-      `say: ${loose.join(', ')}. Bind a shared store with @MeoCord({ cooldownStore }), such as RedisCooldownStore from meocord/common.`,
+      `say: ${loose.join(', ')}. Bind a shared store with @MeoCord({ cooldownStore }): ShardedCooldownStore counts in the shard manager, RedisCooldownStore on Redis.`,
   )
 }
 

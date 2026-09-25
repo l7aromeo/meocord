@@ -290,6 +290,20 @@ describe('ShardManager', () => {
     expect(exit).toHaveBeenCalledWith(0)
   })
 
+  it("counts every shard's cooldown calls in one store, and answers each shard under its call's id", async () => {
+    const { manager, shards } = setup({ shards: 2 })
+    await manager.start()
+    const limit = { uses: 1, windowMs: 60_000 }
+
+    shards[0].emit('message', { meocord: 'cooldown', id: 'zero:0', key: 'Ping.run#0:per:user:1', limit })
+    await vi.waitFor(() => expect(shards[0].sent).toHaveLength(1))
+    shards[1].emit('message', { meocord: 'cooldown', id: 'one:0', key: 'Ping.run#0:per:user:1', limit })
+    await vi.waitFor(() => expect(shards[1].sent).toHaveLength(1))
+
+    expect(shards[0].sent[0]).toEqual({ meocord: 'cooldown-verdict', id: 'zero:0', verdict: { allowed: true, retryAfterMs: 0 } })
+    expect(shards[1].sent[0]).toMatchObject({ meocord: 'cooldown-verdict', id: 'one:0', verdict: { allowed: false } })
+  })
+
   it('ignores messages that are not its own', async () => {
     const { manager, shards, exit } = setup({ shards: 1 })
     await manager.start()

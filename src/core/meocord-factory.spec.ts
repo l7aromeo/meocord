@@ -28,6 +28,7 @@ const { injectable } = await import('inversify')
 const { createTranslator, Translator } = await import('@src/common/translator.js')
 const { CooldownStore, MemoryCooldownStore } = await import('@src/common/cooldown-store.js')
 const { RedisCooldownStore: SharedRedisStore } = await import('@src/common/redis-cooldown-store.js')
+const { ShardedCooldownStore } = await import('@src/common/sharded-cooldown-store.js')
 const { Command, Controller, Cooldown, Guard } = await import('@src/decorator/index.js')
 const { CommandType } = await import('@src/enum/index.js')
 const { runHandler } = await import('@src/core/handler-pipeline.js')
@@ -285,6 +286,14 @@ describe('MeoCordFactory.create()', () => {
       await runStartup(MeoCordFactory.create(appWith()))
 
       expect(warn()).toHaveBeenCalledWith(expect.stringContaining('DailyController.daily'))
+    })
+
+    it('does not warn a shard that counts in the shard manager', async () => {
+      process.env.SHARDING_MANAGER = 'true'
+
+      await runStartup(MeoCordFactory.create(appWith(ShardedCooldownStore)))
+
+      expect(warn()).not.toHaveBeenCalledWith(expect.stringContaining('cooldowns'))
     })
 
     it('does not warn a shard with a shared store', async () => {
