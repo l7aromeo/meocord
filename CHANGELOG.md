@@ -1,5 +1,23 @@
 # meocord
 
+## 4.1.0-beta.2
+
+### Minor Changes
+
+- [#123](https://github.com/meocord/meocord/pull/123) [`3924763`](https://github.com/meocord/meocord/commit/3924763805de2c1b6c44ca2d94e72e823956b67d) Thanks [@l7aromeo](https://github.com/l7aromeo)! - `@MeoCord({ providers })` provides values, classes and sync or async factories under a class, string, symbol or `createToken` token, injected with the new `@Inject(token)`, with their `onReady` and `onShutdown` hooks run in dependency order; `MeoCordTestingModule` takes the same providers.
+
+- [#132](https://github.com/meocord/meocord/pull/132) [`9dcfec5`](https://github.com/meocord/meocord/commit/9dcfec5d37b7a2f0e13a8fdf9193be80f39e994f) Thanks [@l7aromeo](https://github.com/l7aromeo)! - `meocord/testing` exports `clearAllMocks()` and `resetAllMocks()`, which reach every mock it made: `createMockFn`, and the mocks inside `createMockInteraction`, `createMockClient` and the rest. Vitest's `clearMocks` and jest's `clearAllMocks()` only reach their own `vi.fn()` and `jest.fn()`. New projects call `resetAllMocks()` after every test from `vitest.setup.ts`. To do the same in an existing project, add `afterEach(() => resetAllMocks())` to a Vitest setup file, and set what a mock returns in the test, or in `beforeEach`, that relies on it.
+
+### Patch Changes
+
+- [#125](https://github.com/meocord/meocord/pull/125) [`c8584a6`](https://github.com/meocord/meocord/commit/c8584a63e9b9d0a4db629338c137bf26a96fa765) Thanks [@l7aromeo](https://github.com/l7aromeo)! - `createMockChannel` takes `ThreadChannel`, stubs `threads.create` on text, announcement, forum and media channels, and gives a subclass the managers of the channel class it extends.
+
+- [#130](https://github.com/meocord/meocord/pull/130) [`1b81e6d`](https://github.com/meocord/meocord/commit/1b81e6d4035e41a02d5b2cabaed503927c8e09af) Thanks [@l7aromeo](https://github.com/l7aromeo)! - Mocks from `meocord/testing` behave more like discord.js. An interaction mock has a `locale` of `'en-US'`, and a `guildLocale` of `'en-US'` with a `guildId` and `null` without, so `t.for(interaction, { public: true })` works on a default mock. A method that returns a promise in discord.js now resolves instead of returning `undefined`, so `await` and `.catch()` work without setup. `send()` and `reply()` resolve to a mock message. A manager's `fetch(id)`, `create()` and `edit()` resolve to a mock of its item, and a list fetch to an empty `Collection`. `createDM()` resolves to a DM channel, and a structure's own `edit()`, `fetch()` and setters to the structure itself. `mockResolvedValue` and `mockRejectedValue` still override them.
+
+- [#126](https://github.com/meocord/meocord/pull/126) [`8cee75d`](https://github.com/meocord/meocord/commit/8cee75d56a250cc86ced77325cdffa20557431eb) Thanks [@l7aromeo](https://github.com/l7aromeo)! - `respond()` reads discord.js's deprecated `ephemeral: true` as `flags: MessageFlags.Ephemeral`, so a private follow-up on a public deferred reply is no longer shown to everyone as an edit of that reply, and tests see the privacy the bot sends; `flags: MessageFlags.Ephemeral` is the supported form.
+
+- [#131](https://github.com/meocord/meocord/pull/131) [`b5e7e63`](https://github.com/meocord/meocord/commit/b5e7e6358bdb325fac4a21b0415922a50ec1727a) Thanks [@l7aromeo](https://github.com/l7aromeo)! - A controller or service whose constructor parameter has no runtime type now stops `MeoCordFactory.create`, and the testing module, before anything is bound. The error names the class, the parameter and the classes that inject it, and says how to fix it. This happens when two services import each other, or a parameter is typed with an interface or an `import type`; the error inversify raised before pointed at the compiler options instead. `meocord/eslint` now warns on import cycles (`import-x/no-cycle`, type-only imports ignored) in projects that have `eslint-import-resolver-typescript`, which it needs to follow imports through `@src`. New projects include it; in a project without it the check stays off and lint is unchanged. Add it with `npm i -D eslint-import-resolver-typescript` to get the warning.
+
 ## 4.1.0-beta.1
 
 ### Minor Changes
