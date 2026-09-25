@@ -1181,12 +1181,13 @@ async daily(interaction: ChatInputCommandInteraction) {}
 
 Stacked cooldowns are counted in the order they read, a controller's first, and a call blocked by one has already spent those above it. Put the short one first, as here: a call made 1 second after the last is refused by the 3-second cooldown before it reaches the per-minute one. Written the other way round, each such call would spend one of the 5 before being refused.
 
-| Option    | Default  | Description                                                                                                                             |
-| --------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `seconds` | —        | The window's length.                                                                                                                    |
-| `uses`    | `1`      | Calls allowed within the window.                                                                                                        |
-| `per`     | `'user'` | Whose calls count together: `'user'`, `'guild'`, `'channel'` or `'global'`. Outside a server, `'guild'` and `'channel'` count per user. |
-| `bypass`  | —        | `(context) => boolean`: exempts a call without counting it, such as one from an owner.                                                  |
+| Option    | Default  | Description                                                                                                                               |
+| --------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `seconds` | —        | The window's length.                                                                                                                      |
+| `uses`    | `1`      | Calls allowed within the window.                                                                                                          |
+| `per`     | `'user'` | Whose calls count together: `'user'`, `'guild'`, `'channel'` or `'global'`. Outside a server, `'guild'` and `'channel'` count per user.   |
+| `bypass`  | —        | `(context) => boolean`: exempts a call without counting it, such as one from an owner.                                                    |
+| `by`      | —        | `(context, params) => string \| number \| undefined`: counts calls apart by a value of the call, within the scope `per` names. See below. |
 
 A blocked call throws `CooldownError` (from `meocord/common`, with `retryAfterMs` and `per`), which the built-in fallback answers only to the caller: "Slow down: try again in 12s." `cooldownMessage(retryAfterMs)` builds that text; an [exception filter](#exception-filters) catching `CooldownError` can say it another way, or in the user's language.
 
@@ -1195,6 +1196,23 @@ The cooldown is the [last stage](#how-a-handler-runs) before the handler: guards
 Cooldowns are counted under the controller's class name, so the bot refuses to start when two classes share a name and either has a cooldown; rename one of them.
 
 For a reusable exemption, compose it: `const Limited = (seconds: number) => applyDecorators(Cooldown({ seconds, bypass: isOwner }))`.
+
+### Counting per resource
+
+`per` decides whose calls count together; `by` splits that count by a value of the call, such as the account a button acts on. A user with three game accounts can then check each of them in once an hour:
+
+```typescript
+@Command('check-in/{ownerId}/{uid}', CommandType.BUTTON)
+@UseGuard(OwnerGuard)
+@Cooldown({ seconds: 3600, by: (_context, { uid }: { uid: string }) => uid })
+async checkIn(interaction: ButtonInteraction, { uid }: { ownerId: string; uid: string }) {}
+```
+
+- `by` receives the call's `ExecutionContext` and the handler's params as the handler receives them: a component's customId params, a command's options, a modal's fields, after `@Validate` and pipes. For a piped object, return a stable id from it, such as `({ account }) => account.uid`.
+- Declare the params `by` reads, or pass them as the type argument, `@Cooldown<{ uid: string }>({ … })`, and a key the handler does not receive, or receives as another type, fails to compile. Undeclared, they are `Record<string, unknown>`.
+- With `per: 'global'`, the limit is per resource across every user.
+- Returning `undefined` counts the call as though there were no `by`. An error `by` throws goes to the [exception filters](#exception-filters), and no cooldown on the handler counts the call.
+- The value is added to the key the store counts under, `Controller.method#index:per:<scope>:by:<value>`, encoded so a value holding `:` cannot count under another's key. `inspectHandler(...).cooldowns` reports `by: true` for a cooldown that has one.
 
 ### Where calls are counted
 

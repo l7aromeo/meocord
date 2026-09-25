@@ -1,5 +1,28 @@
 import 'reflect-metadata'
 import { CLASS_COOLDOWNS, type CooldownOptions, METHOD_COOLDOWNS, type StoredCooldown } from '@src/core/cooldown-runner.js'
+import { type Handler, type NoInput, type ParamsOf } from '@src/decorator/validation.decorator.js'
+
+/**
+ * Allows the descriptor when the handler's params give `by` what it reads. Params `by` leaves
+ * undeclared are unknown values of any handler, so they are not checked.
+ */
+type AcceptsBy<Params, P> = [Params] extends [NoInput]
+  ? unknown
+  : Record<string, unknown> extends P
+  ? unknown
+  : [Params] extends [P]
+  ? unknown
+  : { 'The handler params do not give by what it reads': P }
+
+/** `@Cooldown` with a `by`: on a controller, or on a handler whose params fit what `by` reads. */
+export interface CooldownByDecorator<P> {
+  (target: abstract new (...args: any[]) => unknown): void
+  <M extends Handler>(
+    target: object,
+    propertyKey: string | symbol,
+    descriptor: TypedPropertyDescriptor<M> & AcceptsBy<ParamsOf<M>, P>,
+  ): void
+}
 
 /**
  * Limits how often a handler runs: at most `uses` calls within `seconds`, counted per user, server,
@@ -18,6 +41,12 @@ import { CLASS_COOLDOWNS, type CooldownOptions, METHOD_COOLDOWNS, type StoredCoo
  * @param options.per - `'user'` (the default), `'guild'`, `'channel'` or `'global'`. Outside a server,
  *   `'guild'` and `'channel'` count per user.
  * @param options.bypass - Exempts a call without counting it, such as one from an owner.
+ * @param options.by - Counts calls apart by a value of the call, such as the account a button acts on,
+ *   within the scope `per` names. It receives the call's context and the handler's params, as the
+ *   handler receives them, and returns a string or number, or `undefined` to count the call as though
+ *   there were no `by`. Declare the params it reads, or pass them as the type argument, and the
+ *   handler's own params are checked against them. An error it throws goes to the exception filters,
+ *   and no cooldown counts the call.
  *
  * @example
  * ```ts
@@ -25,14 +54,26 @@ import { CLASS_COOLDOWNS, type CooldownOptions, METHOD_COOLDOWNS, type StoredCoo
  * @Cooldown({ seconds: 3 })
  * @Cooldown({ uses: 5, seconds: 60, bypass: context => OWNERS.has(context.getInteraction()?.user.id ?? '') })
  * async daily(interaction: ChatInputCommandInteraction) {}
+ *
+ * // Once an hour per user, for each game account the button checks in
+ * @Command('check-in/{ownerId}/{uid}', CommandType.BUTTON)
+ * @Cooldown({ seconds: 3600, by: (_context, { uid }: { uid: string }) => uid })
+ * async checkIn(interaction: ButtonInteraction, { uid }: { ownerId: string; uid: string }) {}
  * ```
  */
-export function Cooldown(options: CooldownOptions): ClassDecorator & MethodDecorator {
-  const { seconds, uses = 1, per = 'user' } = options
+export function Cooldown(options: CooldownOptions & { by?: undefined }): ClassDecorator & MethodDecorator
+export function Cooldown<P extends object = Record<string, unknown>>(
+  options: CooldownOptions<P> & { by: NonNullable<CooldownOptions<P>['by']> },
+): CooldownByDecorator<P>
+export function Cooldown(options: CooldownOptions<any>): ClassDecorator & MethodDecorator {
+  const { seconds, uses = 1, per = 'user', by } = options
   if (!(seconds > 0)) throw new Error(`@Cooldown needs a positive number of seconds, not ${seconds}.`)
   if (!Number.isInteger(uses) || uses < 1) throw new Error(`@Cooldown needs a whole number of uses of at least 1, not ${uses}.`)
   if (!['user', 'guild', 'channel', 'global'].includes(per)) {
     throw new Error(`@Cooldown counts per 'user', 'guild', 'channel' or 'global', not '${String(per)}'.`)
+  }
+  if (by !== undefined && typeof by !== 'function') {
+    throw new Error('@Cooldown takes by as a function of the call, returning the value to count by.')
   }
   const cooldown: StoredCooldown = { ...options, uses, per }
 

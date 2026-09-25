@@ -70,6 +70,8 @@ export interface InspectedCooldown {
   readonly per: CooldownScope
   /** Whether it exempts some callers. */
   readonly bypass: boolean
+  /** Whether it counts calls apart by a value of the call. */
+  readonly by: boolean
 }
 
 /** What {@link inspectHandler} includes besides the handler's own metadata. */
@@ -115,8 +117,8 @@ export function inspectHandler<C extends new (...args: any[]) => unknown>(
     interceptors: Object.freeze([...interceptors]),
     filters: Object.freeze(filters.flat()),
     cooldowns: Object.freeze(
-      handlerCooldowns(controller.prototype as object, methodName).map(({ seconds, uses, per, bypass }) =>
-        Object.freeze({ seconds, uses, per, bypass: bypass !== undefined }),
+      handlerCooldowns(controller.prototype as object, methodName).map(({ seconds, uses, per, bypass, by }) =>
+        Object.freeze({ seconds, uses, per, bypass: bypass !== undefined, by: by !== undefined }),
       ),
     ),
     get: (metadata: MetadataDecorator<unknown> | string | symbol) => context.get(metadata as string),

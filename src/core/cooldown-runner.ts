@@ -6,8 +6,13 @@ import { CooldownStore, MemoryCooldownStore } from '@src/common/cooldown-store.j
 import { type ExecutionContext, type HandlerExecutionContext } from '@src/common/execution-context.js'
 import { sourcePrototype } from '@src/core/guard-runner.js'
 
-/** What `@Cooldown` takes. */
-export interface CooldownOptions {
+/** A value `@Cooldown`'s `by` counts under: calls with different values are counted apart. */
+export type CooldownKey = string | number
+
+/**
+ * What `@Cooldown` takes. `P` is the handler's second parameter, as `by` receives it.
+ */
+export interface CooldownOptions<P = Record<string, unknown>> {
   /** The window's length. */
   seconds: number
   /** Calls allowed within the window. @defaultValue `1` */
@@ -16,10 +21,16 @@ export interface CooldownOptions {
   per?: CooldownScope
   /** Exempts a call, such as one from an owner, without counting it. */
   bypass?: (context: ExecutionContext) => boolean | Promise<boolean>
+  /**
+   * Counts calls apart by a value of the call, such as the account a button acts on, within the
+   * scope `per` names. It receives the handler's params as the handler does, after validation and
+   * pipes. Returning `undefined` counts the call as though there were no `by`.
+   */
+  by?: (context: ExecutionContext, params: P) => CooldownKey | undefined | Promise<CooldownKey | undefined>
 }
 
 /** A `@Cooldown` as the decorator stores it, with its defaults filled in. */
-export type StoredCooldown = CooldownOptions & { uses: number; per: CooldownScope }
+export type StoredCooldown = CooldownOptions<any> & { uses: number; per: CooldownScope }
 
 /** Private metadata: a controller's class-level `@Cooldown`s. */
 export const CLASS_COOLDOWNS = Symbol('class_cooldowns')
@@ -71,8 +82,10 @@ export function cooldownStoreOf(container: Container): CooldownStore {
 /**
  * Counts the call against each of the handler's cooldowns in order, and throws at the first that is
  * exhausted. A call a later cooldown blocks has still counted against the earlier ones, as any burst
- * of calls would; each store call stays one atomic step.
+ * of calls would; each store call stays one atomic step. Every key is worked out first, so a `bypass`
+ * or `by` that throws leaves every count untouched.
  *
+ * @param params - The handler's second argument, as the handler receives it, for `by`.
  * @throws CooldownError with the time until the blocking cooldown allows another call.
  */
 export async function consumeCooldowns(
@@ -81,6 +94,7 @@ export async function consumeCooldowns(
   methodName: string,
   cooldowns: readonly StoredCooldown[],
   contextOf: () => HandlerExecutionContext,
+  params: unknown,
 ): Promise<void> {
   if (cooldowns.length === 0) return
   // Only a controller's own cooldowns reach other handlers, and those are not counted there.
@@ -90,10 +104,17 @@ export async function consumeCooldowns(
   const store = cooldownStoreOf(container)
   const first = contextOf().getArgs()[0]
 
-  for (const [index, { seconds, uses, per, bypass }] of cooldowns.entries()) {
+  const counted: { key: string; seconds: number; uses: number; per: CooldownScope }[] = []
+  for (const [index, { seconds, uses, per, bypass, by }] of cooldowns.entries()) {
     if (bypass && (await bypass(contextOf()))) continue
 
-    const key = `${controller.name}.${methodName}#${index}:${per}:${scopeId(per, first)}`
+    const value = by ? await by(contextOf(), params) : undefined
+    // Encoded, so a value holding a colon cannot count under another value's key
+    const suffix = value === undefined ? '' : `:by:${encodeURIComponent(String(value))}`
+    counted.push({ key: `${controller.name}.${methodName}#${index}:${per}:${scopeId(per, first)}${suffix}`, seconds, uses, per })
+  }
+
+  for (const { key, seconds, uses, per } of counted) {
     const { allowed, retryAfterMs } = await store.consume(key, { uses, windowMs: seconds * 1000 })
     if (!allowed) throw new CooldownError(retryAfterMs, per)
   }

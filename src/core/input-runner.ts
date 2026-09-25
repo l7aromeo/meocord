@@ -74,10 +74,12 @@ export async function prepareHandlerArgs(
   const { schema, pipes } = handlerInputStages(prototype, methodName)
   // Counted last, so input that fails validation or a pipe never uses up a cooldown.
   const cooldowns = handlerCooldowns(prototype, methodName)
-  const consume = () => consumeCooldowns(container, prototype.constructor, methodName, cooldowns, contextOf)
+  // `by` reads the params as the handler will receive them
+  const consume = (params: unknown) =>
+    consumeCooldowns(container, prototype.constructor, methodName, cooldowns, contextOf, params ?? {})
 
   if (!schema && pipes.length === 0) {
-    await consume()
+    await consume(args[1])
     return [...args]
   }
 
@@ -102,6 +104,6 @@ export async function prepareHandlerArgs(
     }
   }
 
-  await consume()
+  await consume(input)
   return [args[0], input, ...args.slice(2)]
 }

@@ -227,12 +227,13 @@ describe('@Cooldown', () => {
     expect(() => Cooldown({ seconds: 0 })).toThrow('positive number of seconds')
     expect(() => Cooldown({ seconds: 5, uses: 1.5 })).toThrow('whole number of uses')
     expect(() => Cooldown({ seconds: 5, per: 'server' as never })).toThrow("not 'server'")
+    expect(() => Cooldown({ seconds: 5, by: 'uid' as never })).toThrow('@Cooldown takes by as a function of the call')
   })
 
   it('is reported by inspectHandler, with its defaults', () => {
     expect(inspectHandler(DailyController, 'burst').cooldowns).toEqual([
-      { seconds: 3, uses: 1, per: 'user', bypass: false },
-      { seconds: 60, uses: 3, per: 'user', bypass: false },
+      { seconds: 3, uses: 1, per: 'user', bypass: false, by: false },
+      { seconds: 60, uses: 3, per: 'user', bypass: false, by: false },
     ])
     expect(inspectHandler(DailyController, 'admin').cooldowns[0].bypass).toBe(true)
   })
