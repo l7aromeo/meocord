@@ -12,6 +12,8 @@ import { makeInjectable } from '@src/util/injectable.util.js'
 import { assertStageEntries } from '@src/core/stage-scope.js'
 import { type Translator } from '@src/common/translator.js'
 import { type CooldownStore } from '@src/common/cooldown-store.js'
+import { type Provider } from '@src/interface/provider.interface.js'
+import { providerMap } from '@src/core/providers.js'
 
 /**
  * Declares the MeoCord application class: its controllers, services, client options and activities.
@@ -22,6 +24,10 @@ import { type CooldownStore } from '@src/common/cooldown-store.js'
  * @param options.clientOptions - Options for the discord.js `Client`.
  * @param options.activities - Activities the bot rotates through, if any.
  * @param options.services - Services to register that no controller depends on.
+ * @param options.providers - Values classes inject by token with `@Inject`: `{ provide, useValue }`,
+ *   `{ provide, useClass }`, or `{ provide, useFactory, inject? }`, whose factory may return a promise,
+ *   awaited before login. A token is a class, a string, a symbol or a `createToken` token. Provided
+ *   values run their `onReady` and `onShutdown` hooks, in dependency order with the services.
  * @param options.guards - Guards run before every dispatched handler, ahead of the controller's and
  *   the method's own guards: guard classes, or `{ provide, params? }`. A controller method called
  *   directly runs only its own guards.
@@ -47,6 +53,7 @@ import { type CooldownStore } from '@src/common/cooldown-store.js'
  *   guards: [BlocklistGuard],
  *   interceptors: [TimingInterceptor],
  *   filters: [ReportingFilter],
+ *   providers: [{ provide: DATABASE, useFactory: () => new Pool({ connectionString: process.env.DATABASE_URL }) }],
  * })
  * class App {}
  * ```
@@ -56,6 +63,7 @@ export function MeoCord(options: {
   clientOptions: ClientOptions
   activities?: ActivityOptions[]
   services?: ServiceIdentifier[]
+  providers?: Provider[]
   guards?: (
     | (new (...args: any[]) => GuardInterface)
     | { provide: new (...args: any[]) => GuardInterface; params?: Record<string, any> }
@@ -76,6 +84,8 @@ export function MeoCord(options: {
     assertStageEntries('@MeoCord({ guards })', 'guard', target.name, options.guards ?? [])
     assertStageEntries('@MeoCord({ interceptors })', 'interceptor', target.name, options.interceptors ?? [])
     assertStageEntries('@MeoCord({ filters })', 'filter', target.name, options.filters ?? [])
+    // Checked where the app is declared, so a malformed provider fails at import rather than at start
+    providerMap(options.providers ?? [], '@MeoCord({ providers })')
     makeInjectable(target)
 
     Reflect.defineMetadata(MetadataKey.AppOptions, options, target)

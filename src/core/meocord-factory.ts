@@ -15,7 +15,18 @@ import { getCommandMap, getMessageHandlers } from '@src/decorator/controller.dec
 import { GUARD_CLASS, injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import { appStages, bindAppPresenter, bindGlobalStages, prepareHandlerStages } from '@src/core/handler-pipeline.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
-import { dependencyOrder, isAppClassToken } from '@src/core/lifecycle-order.js'
+import { isAppClassToken, type LifecycleUnit } from '@src/core/lifecycle-order.js'
+import {
+  assertProvided,
+  bindProvider,
+  isClassProvider,
+  providerMap,
+  resolutionOrder,
+  resolveProviders,
+  tokenDependencies,
+  tokenName,
+} from '@src/core/providers.js'
+import { markExplained } from '@src/common/explained-error.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
 import { type MeoCordApplication } from '@src/interface/index.js'
 import { ShardManager } from '@src/core/shard-manager.js'
@@ -121,6 +132,7 @@ export class MeoCordFactory {
     // one built for another platform would otherwise fail there with a linker error.
     assertBuiltForThisPlatform()
 
+    const providers = providerMap(options.providers ?? [], '@MeoCord({ providers })')
     const container = new Container()
     bindGlobalStages(container, appStages(target as object))
 
@@ -148,6 +160,15 @@ export class MeoCordFactory {
       container.bind(CooldownStore).toConstantValue(new MemoryCooldownStore())
     }
 
+    // After MeoCord's own tokens, which a provider may not replace, and before the app's classes, so
+    // a class token that is provided is not also bound as itself
+    for (const [token, provider] of providers) {
+      if (container.isBound(token as ServiceIdentifier)) {
+        throw new Error(`${tokenName(token)} is bound by MeoCord, so @MeoCord({ providers }) cannot provide it.`)
+      }
+      bindProvider(container, provider, cls => bindDependencies(container, cls))
+    }
+
     // Bind all controllers and their transitive dependencies
     for (const ctrl of options.controllers as any[]) {
       bindDependencies(container, ctrl)
@@ -155,7 +176,25 @@ export class MeoCordFactory {
     for (const svc of (options.services ?? []) as any[]) {
       bindDependencies(container, svc)
     }
-    appClasses.push(...dependencyOrder(container, [...(options.services ?? []), ...options.controllers]))
+    // Providers first, then the services, then the controllers, each after what it depends on
+    const order = resolutionOrder(container, providers, [...providers.keys(), ...(options.services ?? []), ...options.controllers])
+    appClasses.push(
+      ...order.filter((token): token is new (...args: any[]) => unknown => {
+        const provider = providers.get(token)
+        return isAppClassToken(token) && (!provider || (isClassProvider(provider) && provider.useClass === token))
+      }),
+    )
+    assertProvided(
+      container,
+      providers,
+      [...appClasses, ...(options.cooldownStore ? [options.cooldownStore] : [])],
+      '@MeoCord({ providers })',
+    )
+    const lifecycle: LifecycleUnit[] = order.map(token => ({
+      token,
+      name: tokenName(token),
+      dependencies: tokenDependencies(container, providers, token),
+    }))
 
     // ShardContext.call reaches a service in another shard by its class name
     const byName = new Map<string, new (...args: any[]) => unknown>()
@@ -193,18 +232,29 @@ export class MeoCordFactory {
       )
     }
 
-    // Eagerly instantiate standalone services so their constructors run.
-    // This is critical for event-driven services that register Discord event
-    // listeners (or connect to external systems) inside their constructor.
-    for (const svc of (options.services ?? []) as any[]) {
-      container.get(svc)
-    }
-
     prepareHandlerStages(container, appClasses)
-    if (shardingRole(meocordConfig) === 'shard' && container.get(CooldownStore) instanceof MemoryCooldownStore) {
-      warnPerShardCooldowns(options.controllers, this.logger)
+
+    // Run by start() before it logs in: what may inject a provided value is resolved once every factory
+    // has made its value, including those that return a promise
+    const logger = this.logger
+    const startup = async () => {
+      try {
+        await resolveProviders(container, providers, order)
+      } catch (error) {
+        logger.error(`${(error as Error).message}. The bot cannot start without it.`)
+        logger.debug('Provider failure:', (error as Error).cause)
+        markExplained(error)
+        throw error
+      }
+      // The listed services are made now, so constructors that attach listeners or connect run before login
+      for (const svc of (options.services ?? []) as any[]) {
+        container.get(svc)
+      }
+      if (shardingRole(meocordConfig) === 'shard' && container.get(CooldownStore) instanceof MemoryCooldownStore) {
+        warnPerShardCooldowns(options.controllers, logger)
+      }
+      bindAppPresenter(container, target as object, discordClient)
     }
-    bindAppPresenter(container, target as object, discordClient)
 
     return new MeoCordApp(
       options.controllers,
@@ -214,6 +264,8 @@ export class MeoCordFactory {
       options.activities,
       appClasses,
       meocordConfig.shutdownTimeout,
+      startup,
+      lifecycle,
     )
   }
 }

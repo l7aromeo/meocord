@@ -32,6 +32,9 @@ const { CommandType } = await import('@src/enum/index.js')
 const { runHandler } = await import('@src/core/handler-pipeline.js')
 const { presenterFor } = await import('@src/common/response/presenter.js')
 
+/** What start() runs before login: providers resolved, listed services made, the presenter bound. */
+const runStartup = (app: unknown) => (Reflect.get(app as object, 'startup') as () => Promise<void>)()
+
 describe('MeoCordFactory.create()', () => {
   afterEach(() => {
     vi.clearAllMocks()
@@ -108,7 +111,7 @@ describe('MeoCordFactory.create()', () => {
     expect(() => MeoCordFactory.create(MyApp)).toThrow('ContextInterceptor is resolved once and shared')
   })
 
-  it('makes the @MeoCord({ presenter }) the one respond() uses for the bot client', () => {
+  it('makes the @MeoCord({ presenter }) the one respond() uses for the bot client, before login', async () => {
     mockLoadConfig.mockReturnValue({ discordToken: 'test-token' })
 
     class Presenter {
@@ -126,7 +129,9 @@ describe('MeoCordFactory.create()', () => {
       MyApp,
     )
 
-    const client = Reflect.get(MeoCordFactory.create(MyApp), 'discordClient') as object
+    const app = MeoCordFactory.create(MyApp)
+    await runStartup(app)
+    const client = Reflect.get(app, 'discordClient') as object
 
     expect(presenterFor(client)).toBeInstanceOf(Presenter)
   })
@@ -264,18 +269,18 @@ describe('MeoCordFactory.create()', () => {
       expect(store.redis).toBeInstanceOf(RedisClient)
     })
 
-    it("warns a shard that in-memory 'user' and 'global' cooldowns count per shard", () => {
+    it("warns a shard that in-memory 'user' and 'global' cooldowns count per shard", async () => {
       process.env.SHARDING_MANAGER = 'true'
 
-      MeoCordFactory.create(appWith())
+      await runStartup(MeoCordFactory.create(appWith()))
 
       expect(warn()).toHaveBeenCalledWith(expect.stringContaining('DailyController.daily'))
     })
 
-    it('does not warn a shard with a shared store', () => {
+    it('does not warn a shard with a shared store', async () => {
       process.env.SHARDING_MANAGER = 'true'
 
-      MeoCordFactory.create(appWith(RedisCooldownStore))
+      await runStartup(MeoCordFactory.create(appWith(RedisCooldownStore)))
 
       expect(warn()).not.toHaveBeenCalledWith(expect.stringContaining('cooldowns'))
     })

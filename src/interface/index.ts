@@ -64,10 +64,12 @@ export interface GuardInterface {
  */
 export interface MeoCordApplication {
   /**
-   * Starts the bot: logs in, or with process sharding, spawns the shards.
+   * Starts the bot: resolves its providers and logs in, or with process sharding, spawns the shards,
+   * each of which does so.
    *
    * @returns A promise that resolves once the bot is logged in, or every shard has been spawned.
-   * @throws The login error, such as an invalid token, for a bot in one process.
+   * @throws For a bot in one process, the error of a provider's factory that failed, or the login
+   *   error, such as an invalid token.
    */
   start(): Promise<void>
 
@@ -89,11 +91,11 @@ export interface ReadyInfo {
 }
 
 /**
- * A controller or service that does work once the bot is online, such as starting timers or
- * warming a cache.
+ * A controller, service or provided value that does work once the bot is online, such as starting
+ * timers or warming a cache.
  *
  * Called on every controller and service the app binds, including services no handler has used
- * yet, after the client is ready. Hooks run one at a time in dependency order, so a service's hook
+ * yet, and on every value `@MeoCord({ providers })` provides, after the client is ready. Hooks run one at a time in dependency order, so a service's hook
  * runs after the hooks of the services it injects. Command registration runs alongside and never
  * delays them. A hook that throws is logged and the next one still runs.
  *
@@ -118,8 +120,8 @@ export interface OnReady {
 }
 
 /**
- * A controller or service that cleans up before the bot stops, such as stopping timers or flushing
- * writes.
+ * A controller, service or provided value that cleans up before the bot stops, such as stopping
+ * timers, flushing writes or closing a connection.
  *
  * Called on SIGINT or SIGTERM, before the client is destroyed, and only if `onReady` hooks ran. Hooks
  * run one at a time in reverse dependency order, so a service stops before the services it injects.
@@ -540,3 +542,11 @@ export type {
   CommandInteractionType,
   CommandMetadata,
 } from './command-decorator.interface.js'
+export type {
+  ClassProvider,
+  FactoryProvider,
+  Provider,
+  ProviderToken,
+  Token,
+  ValueProvider,
+} from '@src/interface/provider.interface.js'

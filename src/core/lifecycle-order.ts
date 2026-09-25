@@ -26,20 +26,14 @@ export function lifecycleDependencies(container: Container, cls: LifecycleClass)
   )
 }
 
-/**
- * The bound classes reachable from `roots`, each after everything it injects: the order lifecycle
- * hooks run in. Roots are the listed services, then the controllers, so classes with no dependency
- * between them keep that declaration order.
- */
-export function dependencyOrder(container: Container, roots: LifecycleClass[]): LifecycleClass[] {
-  const ordered: LifecycleClass[] = []
-  const seen = new Set<LifecycleClass>()
-  const visit = (cls: LifecycleClass) => {
-    if (seen.has(cls)) return
-    seen.add(cls)
-    lifecycleDependencies(container, cls).forEach(visit)
-    ordered.push(cls)
-  }
-  roots.forEach(visit)
-  return ordered
+/** One thing whose lifecycle hooks run: a class or a provided token, its name for logs, and what it depends on. */
+export interface LifecycleUnit {
+  token: unknown
+  name: string
+  dependencies: unknown[]
+}
+
+/** The units for a list of classes already in dependency order, as the app runs them without providers. */
+export function classUnits(container: Container, classes: readonly LifecycleClass[]): LifecycleUnit[] {
+  return classes.map(cls => ({ token: cls, name: cls.name, dependencies: lifecycleDependencies(container, cls) }))
 }
