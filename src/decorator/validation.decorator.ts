@@ -5,14 +5,14 @@ import { METHOD_PIPES, METHOD_VALIDATION, type PipeEntry, type ValidationMetadat
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { assertStageEntries } from '@src/core/stage-scope.js'
 
-type Handler = (interaction: any, params: any, ...rest: any[]) => unknown
+export type Handler = (interaction: any, params: any, ...rest: any[]) => unknown
 
 /** Stands for the input parameter of a handler that declares none, which accepts any input. */
 declare const _noInput: unique symbol
-type NoInput = typeof _noInput
+export type NoInput = typeof _noInput
 
 /** A handler's second parameter, or `NoInput` when it takes fewer than two. */
-type ParamsOf<M extends Handler> = Parameters<M> extends [unknown, ...infer Rest] ? (Rest extends [] ? NoInput : Parameters<M>[1]) : NoInput
+export type ParamsOf<M extends Handler> = Parameters<M> extends [unknown, ...infer Rest] ? (Rest extends [] ? NoInput : Parameters<M>[1]) : NoInput
 
 type PipeClassOf<E> = E extends { provide: infer C } ? C : E
 type PipeOutput<E> = PipeClassOf<E> extends new (...args: any[]) => PipeInterface<any, infer O> ? Awaited<O> : never
