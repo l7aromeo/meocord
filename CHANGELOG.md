@@ -1,5 +1,11 @@
 # meocord
 
+## 4.1.0-beta.3
+
+### Patch Changes
+
+- [#133](https://github.com/meocord/meocord/pull/133) [`9153786`](https://github.com/meocord/meocord/commit/9153786e695a7d98c5d6b777e77cc07381e2c22e) Thanks [@l7aromeo](https://github.com/l7aromeo)! - Ships every change listed under 4.1.0-beta.2, which was not published on its own. Providers in `@MeoCord({ providers })` and in the testing module's `providers` can be listed in any order: a class listed there is bound once, even when a provider earlier in the list injects it.
+
 ## 4.1.0-beta.2
 
 Not published to npm: these changes first ship in 4.1.0-beta.3.
