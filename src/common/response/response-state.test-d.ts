@@ -24,6 +24,13 @@ describe('respond()', () => {
     void respond(interaction).send({ content: 'x', withResponse: true })
   })
 
+  it('still takes the deprecated ephemeral option, read as the Ephemeral flag', () => {
+    void respond(interaction).send({ content: 'x', ephemeral: true })
+    void respond(interaction).followUp({ content: 'x', ephemeral: false })
+    // @ts-expect-error ephemeral is a boolean
+    void respond(interaction).send({ content: 'x', ephemeral: 'yes' })
+  })
+
   it('refuses making an existing message ephemeral with edit()', () => {
     void respond(interaction).edit({ content: 'x', flags: MessageFlags.SuppressEmbeds })
     // @ts-expect-error an edit cannot change who sees the message
