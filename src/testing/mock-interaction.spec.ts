@@ -1,7 +1,14 @@
 import 'reflect-metadata'
 import { vi } from 'vitest'
 import {
+  ActionRowBuilder,
+  type APIActionRowComponent,
+  type APIComponentInMessageActionRow,
   ApplicationIntegrationType,
+  ButtonBuilder,
+  ButtonStyle,
+  ComponentType,
+  EmbedBuilder,
   AuthorizingIntegrationOwners,
   BaseInteraction,
   ButtonInteraction,
@@ -991,6 +998,68 @@ describe('createMockMessage', () => {
     const msg = createMockMessage()
     ;(msg.thread as any).fetch.mockRejectedValue(new Error('not found'))
     await expect((msg.thread as any).fetch()).rejects.toThrow('not found')
+  })
+
+  describe('overrides', () => {
+    const row: APIActionRowComponent<APIComponentInMessageActionRow> = {
+      type: ComponentType.ActionRow,
+      components: [{ type: ComponentType.Button, style: ButtonStyle.Primary, custom_id: 'card/refresh', label: 'Refresh' }],
+    }
+
+    it('takes the id and content', () => {
+      const msg = createMockMessage({ id: '123456789012345678', content: 'Hello' })
+
+      expect(msg.id).toBe('123456789012345678')
+      expect(msg.content).toBe('Hello')
+    })
+
+    it('gives components from API JSON or builders the API JSON as their toJSON()', () => {
+      const built = new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId('card/refresh').setLabel('Refresh').setStyle(ButtonStyle.Primary),
+      )
+      const msg = createMockMessage({ components: [row, built] })
+
+      expect(msg.components.map(component => component.toJSON())).toEqual([row, row])
+    })
+
+    it('gives embeds from API JSON or builders the API JSON as their toJSON()', () => {
+      const msg = createMockMessage({ embeds: [{ title: 'Card' }, new EmbedBuilder().setTitle('Built')] })
+
+      expect(msg.embeds.map(embed => embed.toJSON())).toEqual([{ title: 'Card' }, { title: 'Built' }])
+    })
+
+    it('keeps discord.js components and embeds as they are', () => {
+      const original = createMockMessage({ components: [row], embeds: [{ title: 'Card' }] })
+      const msg = createMockMessage({ components: original.components, embeds: original.embeds })
+
+      expect(msg.components[0].toJSON()).toEqual(row)
+      expect(msg.embeds[0].toJSON()).toEqual({ title: 'Card' })
+    })
+
+    it('reads flags as a number, flag names or a bitfield', () => {
+      expect(createMockMessage({ flags: MessageFlags.Ephemeral }).flags.has(MessageFlags.Ephemeral)).toBe(true)
+      expect(createMockMessage({ flags: ['IsComponentsV2'] }).flags.has(MessageFlags.IsComponentsV2)).toBe(true)
+      expect(createMockMessage({ flags: MessageFlags.Ephemeral | MessageFlags.SuppressEmbeds }).flags.toArray()).toEqual([
+        'SuppressEmbeds',
+        'Ephemeral',
+      ])
+    })
+
+    it('copies what it is given, so changing the array afterwards leaves the message alone', () => {
+      const components = [row]
+      const msg = createMockMessage({ components })
+      components.pop()
+
+      expect(msg.components).toHaveLength(1)
+    })
+
+    it('leaves the rest of the message as the default call does', () => {
+      const msg = createMockMessage({ content: 'Hello' })
+
+      expect(msg.flags.bitfield).toBe(0)
+      expect(msg.embeds).toEqual([])
+      expect(vi.isMockFunction(msg.edit)).toBe(true)
+    })
   })
 })
 
