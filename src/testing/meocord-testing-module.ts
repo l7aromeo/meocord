@@ -1,6 +1,6 @@
 import 'reflect-metadata'
 import { Container, type ServiceIdentifier } from 'inversify'
-import { BaseInteraction, type ClientEvents, type Interaction } from 'discord.js'
+import { BaseInteraction, type ClientEvents, type Interaction, Message } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { missingTranslatorError, Translator } from '@src/common/translator.js'
@@ -15,7 +15,13 @@ import {
 } from '@src/core/handler-pipeline.js'
 import { setPresenter } from '@src/common/response/presenter.js'
 import { handlerInput, routeMismatch, routeParamsFor } from '@src/core/handler-input.js'
-import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } from '@src/interface/index.js'
+import {
+  type ExceptionFilter,
+  type GuardInterface,
+  type InterceptorInterface,
+  type MessageCommandOptions,
+} from '@src/interface/index.js'
+import { buildMessageRoutes, messageParamsFor } from '@src/core/message-routes.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
 import { ShardContext } from '@src/core/shard-context.js'
@@ -83,6 +89,7 @@ export class TestingModule {
     private readonly eventClasses: readonly (new (...args: any[]) => unknown)[] = [],
     private readonly providers: ProviderMap = new Map(),
     private readonly order: readonly unknown[] = [],
+    private readonly messageOptions: MessageCommandOptions = {},
   ) {}
 
   private resolving?: Promise<void>
@@ -148,11 +155,13 @@ export class TestingModule {
    *   handler's params. With an interaction alone, the params are built as dispatch builds them: a
    *   command's or an autocomplete's options, or the handler's customId params and a modal's fields.
    *   An interaction's customId or command name must be one dispatch could route to the handler; a mock
-   *   built without one is not checked.
+   *   built without one is not checked. With a message alone, a patterned `@MessageHandler` gets the
+   *   params its pattern captures from the content, after the prefix of the module's `app`; a message
+   *   without content gets `{}`.
    * @returns Whether the handler ran, and the error a filter handled, if any. Rejects with an error no
    *   filter handles, or with the error a filter throws: the built-in fallback, which answers such
-   *   errors in the bot, does not run here. Rejects before running anything with an interaction the
-   *   handler's routes do not match, naming both.
+   *   errors in the bot, does not run here. Rejects before running anything with an interaction or a
+   *   message the handler's route does not match, naming both.
    *
    * @example
    * ```ts
@@ -180,10 +189,15 @@ export class TestingModule {
     const [first] = args as unknown[]
     const mismatch = first instanceof BaseInteraction ? routeMismatch(controller, methodName, first as Interaction) : undefined
     if (mismatch) throw new Error(mismatch)
-    const callArgs =
+    let callArgs =
       args.length === 1 && first instanceof BaseInteraction
         ? [first, handlerInput(first as Interaction, routeParamsFor(controller.prototype as object, methodName, first as Interaction)).params]
         : (args as unknown[])
+    if (args.length === 1 && first instanceof Message) {
+      const input = await messageParamsFor(controller, methodName, first, this.messageOptions)
+      if (input && 'mismatch' in input) throw new Error(input.mismatch)
+      if (input) callArgs = [first, input.params]
+    }
     const presenter = appPresenterOf(this.container)
     const client = first instanceof BaseInteraction ? first.client : undefined
     if (presenter && client) setPresenter(client, presenter)
@@ -419,9 +433,12 @@ export class TestingModuleBuilder {
     assertProvided(container, providers, appClasses, "the testing module's providers")
     for (const cls of appClasses) Reflect.defineMetadata(MetadataKey.Container, container, cls)
     prepareHandlerStages(container, appClasses)
+    const messages = this.options.app && (Reflect.getMetadata(MetadataKey.AppOptions, this.options.app) as { messages?: MessageCommandOptions })?.messages
+    // As the app would at startup, refuses a message pattern that cannot be read or two that match the same messages
+    buildMessageRoutes(this.options.controllers ?? [], messages)
     if (this.options.app) bindAppPresenter(container, this.options.app)
 
-    return new TestingModule(container, [...(this.options.controllers ?? [])], appClasses, providers, order)
+    return new TestingModule(container, [...(this.options.controllers ?? [])], appClasses, providers, order, messages)
   }
 }
 

@@ -273,6 +273,7 @@ export class MeoCordFactory {
       meocordConfig.shutdownTimeout,
       startup,
       lifecycle,
+      options.messages,
     )
   }
 }

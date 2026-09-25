@@ -1,9 +1,9 @@
-import { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js'
-import { Command, Controller, Guard, Service, UseGuard } from '@src/decorator/index.js'
+import { ButtonInteraction, ChatInputCommandInteraction, type Message } from 'discord.js'
+import { Command, Controller, Guard, MeoCord, MessageHandler, Service, UseGuard } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { type GuardInterface } from '@src/interface/index.js'
 import { createMetadata, ExecutionContext } from '@src/common/index.js'
-import { createChatInputOptions, createMockInteraction, MeoCordTestingModule } from '@src/testing/index.js'
+import { createChatInputOptions, createMockInteraction, createMockMessage, MeoCordTestingModule } from '@src/testing/index.js'
 
 const log: string[] = []
 const Label = createMetadata<string>('label')
@@ -249,3 +249,61 @@ describe('TestingModule.invoke', () => {
   })
 })
 
+
+describe('TestingModule.invoke with a message', () => {
+  const received: unknown[] = []
+
+  @Controller()
+  class DiceController {
+    @MessageHandler('roll {sides} {note...?}')
+    async roll(_message: Message, params: { sides: string; note?: string }) {
+      received.push(params)
+    }
+
+    @MessageHandler()
+    async everything(_message: Message) {
+      received.push('listener')
+    }
+  }
+
+  beforeEach(() => {
+    received.length = 0
+  })
+
+  it("parses the params from the message's content, as dispatch would", async () => {
+    const module = MeoCordTestingModule.create({ controllers: [DiceController] }).compile()
+
+    await module.invoke(DiceController, 'roll', createMockMessage({ content: 'roll 20 for luck' }))
+
+    expect(received).toEqual([{ sides: '20', note: 'for luck' }])
+  })
+
+  it("strips the app's prefix first, awaiting a prefix function", async () => {
+    @MeoCord({ controllers: [DiceController], clientOptions: { intents: [] }, messages: { prefix: async () => ['!', '?'] } })
+    class App {}
+    const module = MeoCordTestingModule.create({ controllers: [DiceController], app: App }).compile()
+
+    await module.invoke(DiceController, 'roll', createMockMessage({ content: '?roll 6' }))
+
+    expect(received).toEqual([{ sides: '6' }])
+  })
+
+  it("rejects content the handler's pattern does not match, naming both", async () => {
+    const module = MeoCordTestingModule.create({ controllers: [DiceController] }).compile()
+
+    await expect(module.invoke(DiceController, 'roll', createMockMessage({ content: 'flip' }))).rejects.toThrow(
+      "message 'flip' does not match DiceController.roll's pattern 'roll {sides} {note...?}'.",
+    )
+    expect(received).toEqual([])
+  })
+
+  it('uses params given explicitly, and leaves a message without content or a listener unchecked', async () => {
+    const module = MeoCordTestingModule.create({ controllers: [DiceController] }).compile()
+
+    await module.invoke(DiceController, 'roll', createMockMessage({ content: 'flip' }), { sides: '4' })
+    await module.invoke(DiceController, 'roll', createMockMessage())
+    await module.invoke(DiceController, 'everything', createMockMessage({ content: 'anything' }))
+
+    expect(received).toEqual([{ sides: '4' }, {}, 'listener'])
+  })
+})

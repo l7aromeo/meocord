@@ -27,7 +27,7 @@ import { createMockInteraction } from '@src/testing/index.js'
 import { buildComponentRoutes } from '@src/core/component-routes.js'
 
 describe('@MessageHandler', () => {
-  it('registers a handler with a keyword', () => {
+  it('registers a handler with a pattern and its options', () => {
     class TestController {
       @MessageHandler('hello')
       handleHello(..._args: any[]) {}
@@ -35,17 +35,17 @@ describe('@MessageHandler', () => {
 
     const handlers = getMessageHandlers(TestController.prototype)
     expect(handlers).toHaveLength(1)
-    expect(handlers[0]).toEqual({ keyword: 'hello', method: 'handleHello' })
+    expect(handlers[0]).toEqual({ pattern: 'hello', method: 'handleHello', options: {} })
   })
 
-  it('registers a handler without a keyword', () => {
+  it('registers a handler without a pattern', () => {
     class TestController {
       @MessageHandler()
       handleAny(..._args: any[]) {}
     }
 
     const handlers = getMessageHandlers(TestController.prototype)
-    expect(handlers[0].keyword).toBeUndefined()
+    expect(handlers[0].pattern).toBeUndefined()
     expect(handlers[0].method).toBe('handleAny')
   })
 

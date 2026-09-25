@@ -4,6 +4,7 @@ import { HandlerExecutionContext } from '@src/common/execution-context.js'
 import { type MetadataDecorator } from '@src/common/metadata.js'
 import { appStages, handlerStages } from '@src/core/handler-pipeline.js'
 import { handlerCooldowns } from '@src/core/cooldown-runner.js'
+import { getMessageHandlers } from '@src/decorator/controller.decorator.js'
 import { type CooldownScope } from '@src/common/errors.js'
 
 /** A guard as `@UseGuard` declares it: the class, or the class with the params set on its instance. */
@@ -43,6 +44,9 @@ export interface HandlerInspection {
 
   /** The handler's cooldowns, the controller's first, with their defaults filled in. */
   readonly cooldowns: readonly InspectedCooldown[]
+
+  /** The `@MessageHandler` pattern, or `undefined` for a listener and for any other kind of handler. */
+  readonly pattern: string | undefined
 
   /**
    * Reads a metadata value as `ExecutionContext.get` does: the method's value, else the controller's.
@@ -88,8 +92,8 @@ export interface InspectHandlerOptions {
  * @param controller - The controller class declaring the handler.
  * @param methodName - The handler method's name.
  * @param options - `app` to include the global guards, interceptors and filters `@MeoCord` declares.
- * @returns The handler's guards, interceptors, filters and cooldowns, in the order they apply, and a
- *   reader for its metadata.
+ * @returns The handler's guards, interceptors, filters and cooldowns, in the order they apply, its
+ *   message pattern, and a reader for its metadata.
  *
  * @example
  * ```ts
@@ -121,6 +125,7 @@ export function inspectHandler<C extends new (...args: any[]) => unknown>(
         Object.freeze({ seconds, uses, per, bypass: bypass !== undefined, by: by !== undefined }),
       ),
     ),
+    pattern: getMessageHandlers(controller.prototype).find(handler => handler.method === methodName)?.pattern,
     get: (metadata: MetadataDecorator<unknown> | string | symbol) => context.get(metadata as string),
     getAll: (metadata: MetadataDecorator<unknown> | string | symbol) => context.getAll(metadata as string),
   } as HandlerInspection

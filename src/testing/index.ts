@@ -22,7 +22,7 @@ export { clearAllMocks, createMockFn, isMockFunction, resetAllMocks } from './mo
 export type { Mock, MockedFunction, MockInstance, MockResult, MockState } from './mock-fn.js'
 
 export { resolveRoute, findRouteConflicts } from './routing.js'
-export type { ComponentCommandType, ResolvedRoute, RouteConflict } from './routing.js'
+export type { ComponentCommandType, MessageToResolve, ResolvedRoute, RouteConflict } from './routing.js'
 
 export { createModalFields } from './modal-fields.js'
 

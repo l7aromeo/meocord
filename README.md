@@ -35,6 +35,9 @@
 - [Command Parameters](#command-parameters)
 - [Subcommands](#subcommands)
 - [Autocomplete](#autocomplete)
+- [Message commands](#message-commands)
+  - [Prefixes](#prefixes)
+  - [Which handler runs](#which-handler-runs)
 - [Interaction responses](#interaction-responses)
   - [Where the interaction happened](#where-the-interaction-happened)
   - [Presenters](#presenters)
@@ -737,6 +740,89 @@ If no handler claims an option, MeoCord answers with an empty list and logs whic
 
 ---
 
+## Message commands
+
+`@MessageHandler` handles messages: every message, or those matching a pattern. A pattern uses the same `{name}` params as a component's customId, matched word by word:
+
+```typescript
+import { type Message } from 'discord.js'
+import { Controller, MessageHandler } from 'meocord/decorator'
+
+@Controller()
+export class DiceController {
+  // !roll 20 for initiative  ->  { sides: '20', note: 'for initiative' }
+  @MessageHandler('roll {sides} {note...?}')
+  async roll(message: Message, { sides, note }: { sides: string; note?: string }) {
+    const result = 1 + Math.floor(Math.random() * Number(sides))
+    await message.reply(note ? `${result} (${note})` : String(result))
+  }
+
+  // Runs for every message a user sends, after any pattern it matched
+  @MessageHandler()
+  async log(message: Message) {
+    console.log(message.content)
+  }
+}
+```
+
+| In a pattern | Matches                                                                                             |
+| ------------ | --------------------------------------------------------------------------------------------------- |
+| `roll`       | The word `roll`, in any case unless `caseSensitive` is set                                          |
+| `{name}`     | One word. Words in quotes, `"like this"` or `“like this”`, count as one, and the quotes are removed |
+| `{name...}`  | The rest of the message, as typed. Only last                                                        |
+| `{name?}`    | One word, or nothing. Only last; `{name...?}` is the optional rest                                  |
+
+A pattern without params, such as `'hello'`, matches exactly that message. The params arrive as the handler's second argument, so [`@Validate`](#validation-and-pipes), pipes and [`@Cooldown({ by })`](#counting-per-resource) work on them as they do on a component's, and stages read them with `getHandlerParams()`:
+
+```typescript
+@MessageHandler('roll {sides}')
+@Validate(z.object({ sides: z.coerce.number().int().min(2).max(100) }))
+async roll(message: Message, { sides }: { sides: number }) {}
+```
+
+A pattern that cannot be read — `{rest...}` before another word, a name used twice — and two handlers whose patterns match exactly the same messages stop the bot at startup, naming the handlers.
+
+### Prefixes
+
+Set the prefix once, for the whole app, in `@MeoCord({ messages })`:
+
+```typescript
+@MeoCord({
+  controllers: [DiceController],
+  clientOptions: {
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  },
+  messages: { prefix: '!', mention: true },
+})
+class App {}
+```
+
+- `prefix` is a string, a list such as `['!', '?']`, or a function of the message returning either, which may be async — a server's own prefix, say. Without one, a pattern matches the message as it is. The longest prefix that fits is used, and a space after it is allowed: `! roll 20` works too.
+- `mention: true` also accepts a mention of the bot, `@Bot roll 20`, in place of the prefix.
+- `caseSensitive: true` matches the prefix and a pattern's literal words in the case written. It is off by default. Param values always keep the case they were typed in.
+
+A handler can set its own `prefix` and `caseSensitive`. Its prefix replaces the app's; a mention still counts. `prefix: false` matches the message as it is:
+
+```typescript
+@MessageHandler('ping', { prefix: ['?', '??'] })   // ?ping, ??ping, @Bot ping
+@MessageHandler('good morning', { prefix: false }) // good morning, as typed
+```
+
+### Which handler runs
+
+Only one patterned handler runs for a message, the most specific that matches, across every controller:
+
+1. More literal words win: `roll 20` beats `roll {sides}`, which beats `{anything...}`.
+2. Then a fixed number of words beats a rest: `roll {a} {b}` beats `roll {rest...}`.
+3. Then a pattern without an optional param beats one with it, and fewer params beat more.
+4. Patterns still equal go to the one whose first differing word is literal: `roll {x}` beats `{verb} 6`.
+
+The table is built once at startup, so declaration order and file layout never decide it. Then every `@MessageHandler()` listener runs. Messages from bots, and empty messages, reach no handler. A prefix function that throws goes to the global [exception filters](#exception-filters), then the fallback, and the listeners still run.
+
+To check routing in a test, `resolveRoute(App, { content: '!roll 20' })` returns the handler a message reaches, and `invoke(DiceController, 'roll', createMockMessage({ content: '!roll 20' }))` runs it with the params its pattern captures — see [Testing](#testing).
+
+---
+
 ## Interaction responses
 
 `respond(interaction)` from `meocord/common` is the one place an interaction is answered. It remembers where the answer stands and picks the right Discord call each time, so a handler says what to send, not how:
@@ -849,7 +935,7 @@ Every handler — a command, a component, an autocomplete, a message, a reaction
 
 **Exception filters** surround all of it: an error from any stage or the handler reaches them, and one no filter handles goes to the built-in fallback. The handler, its interceptors and filters, and the fallback all answer through [`respond()`](#interaction-responses), so each sees where the others left the answer.
 
-Validation and pipes apply to command, component and modal handlers, whose options, customId params and fields they check. Cooldowns apply to those and to message handlers. An autocomplete handler, which must answer within three seconds, runs its guards and filters but no interceptors. `@Defer` applies to command, component and modal handlers only.
+Validation and pipes apply to command, component and modal handlers, and to message handlers with a pattern, whose options, customId params, fields and pattern params they check. Cooldowns apply to those and to every message handler. An autocomplete handler, which must answer within three seconds, runs its guards and filters but no interceptors. `@Defer` applies to command, component and modal handlers only.
 
 Guards, interceptors and filters apply at three levels, which run in this order: globally, from `@MeoCord({ guards, interceptors, filters })`; on a controller, for every handler it declares or inherits; and on a method. Cooldowns apply on a controller or a method. A stage also sees what it is running for through `ExecutionContext`, whose `getType()` is `'interaction'`, `'autocomplete'`, `'message'`, `'reaction'` or `'event'`; a guard or interceptor declared with `types` runs only for those, and a subclass inherits them unless it declares its own. A `types` list that can match nothing — empty, or `['autocomplete']` on an interceptor, since interceptors skip autocomplete — throws when the class is decorated.
 
@@ -1136,11 +1222,11 @@ import { Command, Validate } from 'meocord/decorator'
 async remind(interaction: ChatInputCommandInteraction, { minutes, note }: { minutes: number; note: string }) {}
 ```
 
-The input is one object: a chat command's options, or a component's customId params together with a modal's fields — what the handler's second argument holds anyway. The handler receives the schema's output, so defaults and coercions apply, and its second parameter is type-checked against it: `{ minutes: string }` above fails to compile.
+The input is one object: a chat command's options, a component's customId params together with a modal's fields, or a [message pattern's](#message-commands) params — what the handler's second argument holds anyway. The handler receives the schema's output, so defaults and coercions apply, and its second parameter is type-checked against it: `{ minutes: string }` above fails to compile.
 
 Invalid input stops the call with a `ValidationError` (from `meocord/common`) whose `issues` list each problem and where it is. The user gets a private reply with them. Schema libraries write their messages in English; an exception filter that maps issues to your own words is the place to localise them.
 
-Validation runs after guards and inside interceptors, so a timing or logging interceptor sees a failure as the handler's error. It applies to command, component and modal handlers only; the bot refuses to start with `@Validate` or `@UsePipe` on a message, reaction, autocomplete or event handler. A handler takes one `@Validate`; a second throws, so combine the schemas into one.
+Validation runs after guards and inside interceptors, so a timing or logging interceptor sees a failure as the handler's error. It applies to command, component and modal handlers, and to message handlers with a pattern; the bot refuses to start with `@Validate` or `@UsePipe` on a message handler without one, or on a reaction, autocomplete or event handler. A handler takes one `@Validate`; a second throws, so combine the schemas into one.
 
 ### Pipes
 
@@ -1463,7 +1549,7 @@ export class HelpService {
 | `component`    | The customId pattern, such as `profile/{uid}`  | `commandType`                                                 |
 | `modal`        | The customId pattern                           | `commandType`                                                 |
 | `autocomplete` | The command path, then the option it completes |                                                               |
-| `message`      | The keyword, or `undefined` for every message  |                                                               |
+| `message`      | The pattern, or `undefined` for every message  |                                                               |
 | `reaction`     | The emoji, or `undefined` for every reaction   |                                                               |
 | `event`        | The client event                               | `once`                                                        |
 
@@ -1676,7 +1762,7 @@ const controller = module.get(GreetingSlashController)
 
 ### Running a handler with `invoke`
 
-`module.invoke(Controller, 'method', ...args)` runs a handler through the [pipeline](#how-a-handler-runs) dispatch runs: `@Defer`, its guards, class guards first and each once, then its interceptors around validation, pipes, cooldowns and the handler, all inside its exception filters. Guards resolve from the module, so `overrideGuard` stubs and injected `ExecutionContext` work as they do in the bot. Pass the arguments dispatch would: the interaction, message or reaction, then the handler's params. An interaction must be one dispatch could route to the handler: a customId its pattern matches, or the command or subcommand path it handles. One that could not, such as `'something/else'` for `'profile/{id}'`, rejects with a message naming both, so a typo in a test does not pass silently. A mock built without a customId or command name is not checked.
+`module.invoke(Controller, 'method', ...args)` runs a handler through the [pipeline](#how-a-handler-runs) dispatch runs: `@Defer`, its guards, class guards first and each once, then its interceptors around validation, pipes, cooldowns and the handler, all inside its exception filters. Guards resolve from the module, so `overrideGuard` stubs and injected `ExecutionContext` work as they do in the bot. Pass the arguments dispatch would: the interaction, message or reaction, then the handler's params. An interaction must be one dispatch could route to the handler: a customId its pattern matches, or the command or subcommand path it handles. One that could not, such as `'something/else'` for `'profile/{id}'`, rejects with a message naming both, so a typo in a test does not pass silently. A mock built without a customId or command name is not checked. A message passed alone to a [patterned `@MessageHandler`](#message-commands) is checked the same way, and the handler gets the params its pattern captures, after the prefix of the module's `app`: `invoke(DiceController, 'roll', createMockMessage({ content: '!roll 20' }))`.
 
 ```typescript
 import { ButtonInteraction } from 'discord.js'
@@ -1707,7 +1793,7 @@ Pass the interaction alone and `invoke` builds the params as dispatch does: a co
 
 To send a client event to the module's `@On` and `@Once` handlers, use [`emit`](#gateway-events).
 
-To check what a handler is set up with, without running it, use `inspectHandler`. It lists the guards, interceptors, filters and cooldowns dispatch applies, in order, and reads the handler's metadata as `ExecutionContext` does:
+To check what a handler is set up with, without running it, use `inspectHandler`. It lists the guards, interceptors, filters and cooldowns dispatch applies, in order, gives a message handler's `pattern`, and reads the handler's metadata as `ExecutionContext` does:
 
 ```typescript
 import { inspectHandler } from 'meocord/testing'
@@ -1916,7 +2002,7 @@ edited.delete // → a mock fn
 expect(msg.delete).toHaveBeenCalledTimes(1)
 ```
 
-Without arguments the message is empty. Give it an `id`, `content`, `components`, `embeds` and `flags` to test code that reads them, such as a button on a message whose controls `@Defer` locks. Components and embeds may be API JSON, builders or discord.js instances, and `flags` a number, flag names or a `MessageFlagsBitField`:
+Without arguments the message is empty, and its author is a user rather than a bot, so dispatch and `invoke` handle it. Give it an `id`, `content`, `components`, `embeds` and `flags` to test code that reads them, such as a button on a message whose controls `@Defer` locks. Components and embeds may be API JSON, builders or discord.js instances, and `flags` a number, flag names or a `MessageFlagsBitField`:
 
 ```typescript
 const message = createMockMessage({
@@ -1938,8 +2024,8 @@ API JSON and builders are kept as their JSON behind `toJSON()`, which is what `r
 <details>
 <summary><b><code>resolveRoute</code> / <code>findRouteConflicts</code></b></summary>
 
-Tests which handler a component's customId reaches — the same answer dispatch gives, across every
-controller your app registers, most specific pattern first. They read decorator metadata only, so
+Tests which handler a component's customId or a message's content reaches — the same answer dispatch
+gives, across every controller your app registers, most specific pattern first. They read decorator metadata only, so
 they need no Discord client, config or container. They check routing alone: guards are not run, and
 whether a controller's dependencies are bound is for `MeoCordTestingModule` to test.
 
@@ -1957,6 +2043,11 @@ it('routes the profile button to its handler', () => {
   expect(route?.params).toEqual({ ownerId: '111', uid: '8000' })
 })
 
+// A message, after the prefix @MeoCord({ messages }) configures
+it('routes !roll to the dice handler', () => {
+  expect(resolveRoute(App, { content: '!roll 20 for luck' })?.params).toEqual({ sides: '20', note: 'for luck' })
+})
+
 // Patterns that can match the same customId, as a failing test rather than a startup warning.
 it('has no overlapping component patterns', () => {
   expect(findRouteConflicts(App)).toEqual([])
@@ -1964,7 +2055,10 @@ it('has no overlapping component patterns', () => {
 ```
 
 `resolveRoute` returns the `controller`, the `handler` method and its name as `method`, and the
-`params` the pattern captured — or `undefined` when no route handles the customId.
+`params` the pattern captured — or `undefined` when no route handles the customId or message. A
+message never resolves to a `@MessageHandler()` listener, which runs for every message. For an app
+that reads prefixes from a function, pass the one the message has, `{ content, prefix: '?' }`, and
+pass `botId` for a message that mentions the bot.
 
 </details>
 

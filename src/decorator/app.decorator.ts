@@ -4,6 +4,7 @@ import { type ActivityOptions, type ClientOptions } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
 import {
   type ExceptionFilter,
+  type MessageCommandOptions,
   type GuardInterface,
   type InterceptorInterface,
   type ResponsePresenter,
@@ -14,6 +15,19 @@ import { type Translator } from '@src/common/translator.js'
 import { type CooldownStore } from '@src/common/cooldown-store.js'
 import { type Provider } from '@src/interface/provider.interface.js'
 import { providerMap } from '@src/core/providers.js'
+
+/** Refuses a `messages` option of the wrong type where the app is declared, rather than at the first message. */
+function assertMessageOptions(messages: MessageCommandOptions | undefined): void {
+  if (!messages) return
+  const { prefix, mention, caseSensitive } = messages
+  const isText = (value: unknown) => typeof value === 'string'
+  if (prefix !== undefined && !isText(prefix) && typeof prefix !== 'function' && !(Array.isArray(prefix) && prefix.every(isText))) {
+    throw new TypeError('@MeoCord({ messages: { prefix } }) takes a string, a list of strings, or a function of the message returning them.')
+  }
+  for (const [name, value] of Object.entries({ mention, caseSensitive })) {
+    if (value !== undefined && typeof value !== 'boolean') throw new TypeError(`@MeoCord({ messages: { ${name} } }) takes true or false.`)
+  }
+}
 
 /**
  * Declares the MeoCord application class: its controllers, services, client options and activities.
@@ -41,6 +55,9 @@ import { providerMap } from '@src/core/providers.js'
  *   asks for one.
  * @param options.presenter - The `ResponsePresenter` that styles loading and error views, resolved once
  *   from the container. Without one, MeoCord's own styling is used.
+ * @param options.messages - How `@MessageHandler` patterns match: the `prefix` a message starts with,
+ *   a list of them or a function of the message returning them; `mention` to accept a mention of the
+ *   bot as well; and `caseSensitive` for the prefix and literal words.
  *
  * @example
  * ```typescript
@@ -54,6 +71,7 @@ import { providerMap } from '@src/core/providers.js'
  *   interceptors: [TimingInterceptor],
  *   filters: [ReportingFilter],
  *   providers: [{ provide: DATABASE, useFactory: () => new Pool({ connectionString: process.env.DATABASE_URL }) }],
+ *   messages: { prefix: '!', mention: true },
  * })
  * class App {}
  * ```
@@ -79,6 +97,7 @@ export function MeoCord(options: {
   i18n?: Translator<any>
   cooldownStore?: new (...args: any[]) => CooldownStore
   presenter?: new (...args: any[]) => ResponsePresenter
+  messages?: MessageCommandOptions
 }): (target: any) => void {
   return (target: any): void => {
     assertStageEntries('@MeoCord({ guards })', 'guard', target.name, options.guards ?? [])
@@ -86,6 +105,7 @@ export function MeoCord(options: {
     assertStageEntries('@MeoCord({ filters })', 'filter', target.name, options.filters ?? [])
     // Checked where the app is declared, so a malformed provider fails at import rather than at start
     providerMap(options.providers ?? [], '@MeoCord({ providers })')
+    assertMessageOptions(options.messages)
     makeInjectable(target)
 
     Reflect.defineMetadata(MetadataKey.AppOptions, options, target)

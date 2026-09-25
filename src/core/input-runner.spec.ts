@@ -330,20 +330,20 @@ describe('where they apply', () => {
     }).toThrow('TwiceController.twice has more than one @Validate; one @Validate per handler: combine the schemas into one.')
   })
 
-  it('refuses @Validate on a message handler at startup', () => {
+  it('refuses @Validate on a message handler without a pattern at startup', () => {
     @Controller()
     class MessageController {
-      @MessageHandler('ping')
+      @MessageHandler()
       async ping(_message: unknown, _params?: unknown) {
         void _params
       }
     }
 
-    // Applied by hand: @MessageHandler's one-argument signature already rejects @Validate at compile time.
+    // Applied by hand: a listener's one-argument signature already rejects @Validate at compile time.
     Validate(reminder)(MessageController.prototype, 'ping', Object.getOwnPropertyDescriptor(MessageController.prototype, 'ping') as never)
 
     expect(() => MeoCordTestingModule.create({ controllers: [MessageController] }).compile()).toThrow(
-      'MessageController.ping is a message handler; @Validate and @UsePipe apply only to interaction handlers',
+      'MessageController.ping is a message handler without a pattern; @Validate and @UsePipe apply only to interaction and patterned message handlers',
     )
   })
 })

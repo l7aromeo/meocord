@@ -118,7 +118,7 @@ describe('stages checked at startup', () => {
 })
 
 describe('input stages on handlers without interaction input', () => {
-  it('refuse @UsePipe alone on a message handler', () => {
+  it('refuse @UsePipe alone on a message handler without a pattern', () => {
     @Pipe()
     class Trim implements PipeInterface<string, string> {
       transform(value: string) {
@@ -127,13 +127,15 @@ describe('input stages on handlers without interaction input', () => {
     }
     @Controller()
     class Messages {
-      @MessageHandler('ping')
+      @MessageHandler()
       async ping(_message: Message) {}
     }
-    // Applied by hand: @MessageHandler's one-argument signature already rejects @UsePipe at compile time.
+    // Applied by hand: a listener's one-argument signature already rejects @UsePipe at compile time.
     UsePipe('text', Trim)(Messages.prototype, 'ping', Object.getOwnPropertyDescriptor(Messages.prototype, 'ping') as never)
 
-    expect(compile(Messages)).toThrow('Messages.ping is a message handler; @Validate and @UsePipe apply only to interaction handlers')
+    expect(compile(Messages)).toThrow(
+      'Messages.ping is a message handler without a pattern; @Validate and @UsePipe apply only to interaction and patterned message handlers',
+    )
   })
 
   it('name an event handler as one when refusing @Validate or @Cooldown on it', () => {
@@ -153,7 +155,9 @@ describe('input stages on handlers without interaction input', () => {
       async joined() {}
     }
 
-    expect(compile(Validated)).toThrow('Validated.joined is an event handler; @Validate and @UsePipe apply only to interaction handlers')
+    expect(compile(Validated)).toThrow(
+      'Validated.joined is an event handler; @Validate and @UsePipe apply only to interaction and patterned message handlers',
+    )
     expect(compile(Limited)).toThrow('Limited.joined is an event handler; @Cooldown applies only to interaction and message handlers.')
   })
 

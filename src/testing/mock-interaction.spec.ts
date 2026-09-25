@@ -932,6 +932,13 @@ describe('createMockMessage', () => {
     expect(createMockMessage()).toBeInstanceOf(Message)
   })
 
+  it('comes from a user rather than a bot, with the content given, so dispatch handles it', () => {
+    const msg = createMockMessage({ content: '!roll 20' })
+
+    expect(msg.content).toBe('!roll 20')
+    expect(msg.author.bot).toBe(false)
+  })
+
   it('starts as an empty message: no flags, components, embeds or attachments', () => {
     const msg = createMockMessage()
 

@@ -783,8 +783,8 @@ export function createMockMessage(overrides: MockMessageOverrides = {}): DeepMoc
 
   instance.deleted = false
 
-  // Constructor-assigned — set as prototype-based stubs
-  instance.author = stubDeep(Object.create(User.prototype))
+  // Constructor-assigned — set as prototype-based stubs; a user rather than a bot, as dispatch handles only those
+  instance.author = stubDeep(Object.assign(Object.create(User.prototype), { bot: false }))
 
   // Getters on the prototype — the proxy sees them as functions and returns
   // a mock fn, which is wrong. Pre-initialize as own properties to shadow
