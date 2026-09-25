@@ -48,6 +48,8 @@
 - [Validation and Pipes](#validation-and-pipes)
 - [Cooldowns](#cooldowns)
   - [Where calls are counted](#where-calls-are-counted)
+  - [Checking a store](#checking-a-store)
+  - [Store recipes](#store-recipes)
 - [Custom Decorators](#custom-decorators)
 - [Gateway Events](#gateway-events)
 - [Handler Discovery](#handler-discovery)
@@ -1240,6 +1242,96 @@ export default class App {}
 ```
 
 In tests, each `MeoCordTestingModule` counts in a fresh in-memory store; provide `{ provide: CooldownStore, useValue }` to use another. `inspectHandler(Controller, 'method').cooldowns` lists a handler's cooldowns with their defaults.
+
+### Checking a store
+
+A shared store is easy to get subtly wrong. `testCooldownStore` from `meocord/testing` runs the behaviour `MemoryCooldownStore` defines against yours, under Vitest, Jest or any runner with `describe`, `it` and `expect`:
+
+```typescript
+import { testCooldownStore } from 'meocord/testing'
+import { PostgresCooldownStore } from '@src/stores/postgres-cooldown.store.js'
+
+testCooldownStore('PostgresCooldownStore', () => new PostgresCooldownStore(sql), { describe, it, expect })
+```
+
+It checks calls within a window, that the window slides rather than resetting in buckets, that `retryAfterMs` counts from the oldest call still in the window — so "try again in 12s" means the same whatever the store — that each key counts on its own, that calls in the same millisecond stay distinct, and that of several concurrent calls at the limit exactly one passes. It uses real time with short windows, so it takes a few seconds, and each case counts under keys of its own, so it can run against a database that outlives the test. What it cannot see is whether every key expires: a store should give each one an expiry, or clear keys whose calls have all left their window.
+
+### Store recipes
+
+Stores for other databases, each checked with `testCooldownStore`. A store is resolved like a service, so inject your client, and keep the check and the record in one step: a transaction holding a lock on the key, or a single atomic update.
+
+**Postgres** ([postgres.js](https://github.com/porsager/postgres)): a row per call, counted in a transaction that holds an advisory lock on the key, with the database's clock throughout.
+
+```sql
+CREATE TABLE cooldown_calls (key text NOT NULL, at timestamptz NOT NULL DEFAULT clock_timestamp(), id bigserial PRIMARY KEY);
+CREATE INDEX ON cooldown_calls (key, at);
+```
+
+```typescript
+consume(key: string, { uses, windowMs }: CooldownLimit): Promise<CooldownVerdict> {
+  return this.sql.begin(async sql => {
+    await sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`
+    const window = sql`${windowMs} * interval '1 millisecond'`
+    await sql`DELETE FROM cooldown_calls WHERE key = ${key} AND at <= clock_timestamp() - ${window}`
+    const [{ count, retry }] = await sql`
+      SELECT count(*)::int AS count,
+             ceil(extract(epoch FROM min(at) + ${window} - clock_timestamp()) * 1000)::int AS retry
+      FROM cooldown_calls WHERE key = ${key}`
+    if (count >= uses) return { allowed: false, retryAfterMs: retry }
+    await sql`INSERT INTO cooldown_calls (key) VALUES (${key})`
+    return { allowed: true, retryAfterMs: 0 }
+  })
+}
+```
+
+A key's rows go when it is next used; clear the rest from time to time with `DELETE FROM cooldown_calls WHERE at < now() - interval '1 day'`, or whatever your longest window is.
+
+**SQLite** ([better-sqlite3](https://github.com/WiseLibs/better-sqlite3)): the same rows in an `IMMEDIATE` transaction, which takes the write lock before reading, so two processes on one database file cannot both take the last use. SQLite shares one host, so `Date.now()` is one clock.
+
+```typescript
+consume(key: string, { uses, windowMs }: CooldownLimit): Promise<CooldownVerdict> {
+  const now = Date.now()
+  const consumeOne = this.db.transaction((): CooldownVerdict => {
+    this.db.prepare('DELETE FROM cooldown_calls WHERE key = ? AND at <= ?').run(key, now - windowMs)
+    const { count, oldest } = this.db
+      .prepare('SELECT count(*) AS count, min(at) AS oldest FROM cooldown_calls WHERE key = ?')
+      .get(key) as { count: number; oldest: number | null }
+    if (count >= uses) return { allowed: false, retryAfterMs: oldest! + windowMs - now }
+    this.db.prepare('INSERT INTO cooldown_calls (key, at) VALUES (?, ?)').run(key, now)
+    return { allowed: true, retryAfterMs: 0 }
+  })
+  return Promise.resolve(consumeOne.immediate())
+}
+```
+
+with `CREATE TABLE cooldown_calls (id INTEGER PRIMARY KEY, key TEXT NOT NULL, at INTEGER NOT NULL)` and an index on `(key, at)`.
+
+**MongoDB**: one document per key, trimmed, counted and appended to by a single `findOneAndUpdate` with an update pipeline, so the check and the record are one atomic write, timed by the server's `$$NOW`. A TTL index on `expiresAt` removes a key once its window has passed.
+
+```typescript
+async consume(key: string, { uses, windowMs }: CooldownLimit): Promise<CooldownVerdict> {
+  const id = randomUUID() // tells this call apart from one in the same millisecond
+  const kept = { $filter: { input: { $ifNull: ['$calls', []] }, cond: { $gt: ['$$this.at', { $subtract: ['$$NOW', windowMs] }] } } }
+  const doc = await this.cooldowns.findOneAndUpdate(
+    { _id: key },
+    [
+      { $set: { calls: kept } },
+      {
+        $set: {
+          calls: { $cond: [{ $lt: [{ $size: '$calls' }, uses] }, { $concatArrays: ['$calls', [{ at: '$$NOW', id }]] }, '$calls'] },
+          expiresAt: { $add: ['$$NOW', windowMs] },
+          now: '$$NOW',
+        },
+      },
+    ],
+    { upsert: true, returnDocument: 'after' },
+  )
+  if (doc!.calls.some((call: { id: string }) => call.id === id)) return { allowed: true, retryAfterMs: 0 }
+  return { allowed: false, retryAfterMs: doc!.calls[0].at.getTime() + windowMs - doc!.now.getTime() }
+}
+```
+
+with `db.cooldowns.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })`.
 
 ---
 

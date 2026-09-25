@@ -80,6 +80,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'isMockFunction',
     'resetAllMocks',
     'resolveRoute',
+    'testCooldownStore',
   ],
 }
 

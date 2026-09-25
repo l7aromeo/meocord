@@ -28,6 +28,9 @@ export { createModalFields } from './modal-fields.js'
 
 export { expectCompleteCatalog } from './catalog.js'
 
+export { testCooldownStore } from './cooldown-store-suite.js'
+export type { CooldownStoreSuiteFramework } from './cooldown-store-suite.js'
+
 export { createExecutionContext } from './execution-context.js'
 export type { ExecutionContextOptions } from './execution-context.js'
 
