@@ -1,0 +1,15 @@
+import { Observer } from 'meocord/decorator'
+import { type ExecutionContext, Logger } from 'meocord/common'
+import { type DispatchObserver, type DispatchResult } from 'meocord/interface'
+
+@Observer()
+export class {{className}}Observer implements DispatchObserver {
+  private readonly logger = new Logger('{{className}}Observer')
+
+  // Told about every call once it has been answered; the call never waits for it
+  onSettled(context: ExecutionContext, { outcome, durationMs }: DispatchResult): void {
+    // TODO: Record the call, in metrics or an audit log
+    const handler = context.getHandlerName() ?? 'unrouted'
+    this.logger.log(`${context.getType()} ${handler}: ${outcome} in ${Math.round(durationMs)} ms`)
+  }
+}

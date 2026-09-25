@@ -93,6 +93,7 @@ function generateComponents(): void {
     ['g', 'i', name],
     ['g', 'f', name],
     ['g', 'pi', name],
+    ['g', 'ob', name],
   ])
   generate('components in the application', appDir, commands)
   run('install the application', process.execPath, ['install'], appDir)

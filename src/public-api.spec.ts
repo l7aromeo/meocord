@@ -22,6 +22,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'Interceptor',
     'MeoCord',
     'MessageHandler',
+    'Observer',
     'On',
     'Once',
     'Pipe',

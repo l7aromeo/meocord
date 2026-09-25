@@ -3,6 +3,7 @@ import { type ServiceIdentifier } from 'inversify'
 import { type ActivityOptions, type ClientOptions } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
 import {
+  type DispatchObserver,
   type ExceptionFilter,
   type MessageCommandOptions,
   type GuardInterface,
@@ -15,6 +16,7 @@ import { type Translator } from '@src/common/translator.js'
 import { type CooldownStore } from '@src/common/cooldown-store.js'
 import { type Provider } from '@src/interface/provider.interface.js'
 import { providerMap } from '@src/core/providers.js'
+import { assertObservers } from '@src/core/observer-runner.js'
 
 /** Refuses a `messages` option of the wrong type where the app is declared, rather than at the first message. */
 function assertMessageOptions(messages: MessageCommandOptions | undefined): void {
@@ -58,6 +60,8 @@ function assertMessageOptions(messages: MessageCommandOptions | undefined): void
  * @param options.messages - How `@MessageHandler` patterns match: the `prefix` a message starts with,
  *   a list of them or a function of the message returning them; `mention` to accept a mention of the
  *   bot as well; and `caseSensitive` for the prefix and literal words.
+ * @param options.observers - `@Observer` classes told about every dispatched call once it has settled,
+ *   with its outcome and duration, in the order listed. The call never waits for them.
  *
  * @example
  * ```typescript
@@ -98,11 +102,13 @@ export function MeoCord(options: {
   cooldownStore?: new (...args: any[]) => CooldownStore
   presenter?: new (...args: any[]) => ResponsePresenter
   messages?: MessageCommandOptions
+  observers?: (new (...args: any[]) => DispatchObserver)[]
 }): (target: any) => void {
   return (target: any): void => {
     assertStageEntries('@MeoCord({ guards })', 'guard', target.name, options.guards ?? [])
     assertStageEntries('@MeoCord({ interceptors })', 'interceptor', target.name, options.interceptors ?? [])
     assertStageEntries('@MeoCord({ filters })', 'filter', target.name, options.filters ?? [])
+    assertObservers(`@MeoCord({ observers }) on ${target.name}`, options.observers ?? [])
     // Checked where the app is declared, so a malformed provider fails at import rather than at start
     providerMap(options.providers ?? [], '@MeoCord({ providers })')
     assertMessageOptions(options.messages)

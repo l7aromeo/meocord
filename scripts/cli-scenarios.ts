@@ -352,7 +352,7 @@ const scenarios: Scenario[] = [
     ['register'],
     ['show'],
     ['generate'],
-    ...['controller', 'service', 'guard', 'interceptor', 'filter', 'pipe'].map(kind => ['generate', kind]),
+    ...['controller', 'service', 'guard', 'interceptor', 'filter', 'pipe', 'observer'].map(kind => ['generate', kind]),
   ].map(
     (command): Scenario => ({
       name: `${['meocord', ...command].join(' ')} --help describes every command and argument`,
@@ -464,6 +464,7 @@ const scenarios: Scenario[] = [
     ['interceptor', 'i', 'interceptor'],
     ['filter', 'f', 'filter'],
     ['pipe', 'pi', 'pipe'],
+    ['observer', 'ob', 'observer'],
   ].flatMap(([command, alias, kind]): Scenario[] => [
     {
       name: `generate ${command} writes the file and its spec`,

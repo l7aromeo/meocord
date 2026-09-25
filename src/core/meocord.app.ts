@@ -37,7 +37,7 @@ import {
   findComponentRouteConflicts,
   matchComponentRoute,
 } from '@src/core/component-routes.js'
-import { globalStagesOf, handleUnroutedError, runHandler } from '@src/core/handler-pipeline.js'
+import { globalStagesOf, handleUnroutedError, observeUnclaimed, runHandler } from '@src/core/handler-pipeline.js'
 import { closeAutocomplete, createFallback, type Fallback } from '@src/core/fallback.js'
 import { handlerInput } from '@src/core/handler-input.js'
 import { buildMessageRoutes, matchMessageRoute, type MessageRoute, messageStarts, usesAppPrefix } from '@src/core/message-routes.js'
@@ -429,19 +429,21 @@ export class MeoCordApp implements MeoCordApplication {
    * the controller, goes to the global filters, then the fallback.
    */
   private async handleInteraction(interaction: Interaction<CacheType>): Promise<void> {
+    // From the moment it arrives, so an observer's duration includes routing
+    const startedAt = performance.now()
     try {
-      await this.dispatchInteraction(interaction)
+      await this.dispatchInteraction(interaction, startedAt)
     } catch (error) {
-      await handleUnroutedError(this.container, [interaction], error, { fallback: this.fallback })
+      await handleUnroutedError(this.container, [interaction], error, { fallback: this.fallback, startedAt })
     }
   }
 
-  private async dispatchInteraction(interaction: Interaction<CacheType>) {
+  private async dispatchInteraction(interaction: Interaction<CacheType>, startedAt: number) {
     // Autocomplete first, and on its own path: it is answered with `respond()` rather
     // than a reply, it has no customId to route on, and the "Command not found!" reply
     // the other paths end in cannot be sent to it at all.
     if (interaction.isAutocomplete()) {
-      await this.handleAutocomplete(interaction)
+      await this.handleAutocomplete(interaction, startedAt)
       return
     }
 
@@ -454,7 +456,7 @@ export class MeoCordApp implements MeoCordApplication {
       if (matched) {
         const { route, params } = matched
         ;(interaction as Interaction & { dynamicParams: Record<string, string> }).dynamicParams = params
-        await this.executeCommand(this.getInstance(route.controllerClass), route.meta, interaction)
+        await this.executeCommand(this.getInstance(route.controllerClass), route.meta, interaction, startedAt)
         return
       }
     }
@@ -468,7 +470,7 @@ export class MeoCordApp implements MeoCordApplication {
         const commandMetadata = commandMap?.[path]?.find(meta => matchesCommandType(meta.type, interaction))
         if (!commandMetadata) continue
 
-        await this.executeCommand(controllerInstance, commandMetadata, interaction)
+        await this.executeCommand(controllerInstance, commandMetadata, interaction, startedAt)
         return
       }
     }
@@ -502,7 +504,7 @@ export class MeoCordApp implements MeoCordApplication {
    * Answers an autocomplete interaction from the `@Autocomplete` handler that claims it. An unclaimed
    * option gets an empty list and a warning, rather than a menu stuck loading until Discord times out.
    */
-  private async handleAutocomplete(interaction: AutocompleteInteraction<CacheType>): Promise<void> {
+  private async handleAutocomplete(interaction: AutocompleteInteraction<CacheType>, startedAt: number): Promise<void> {
     const focusedName = focusedOptionName(interaction)
 
     for (const path of resolveCommandPaths(interaction)) {
@@ -513,7 +515,7 @@ export class MeoCordApp implements MeoCordApplication {
         const controllerInstance = this.getInstance(controllerClass)
         this.logger.log('[AUTOCOMPLETE]', `[${path}]`, `[${meta.methodName}]`)
         const params = resolveOptionParams(interaction)
-        const ran = await this.invokeHandler(controllerInstance, meta.methodName, [interaction, params])
+        const ran = await this.invokeHandler(controllerInstance, meta.methodName, [interaction, params], startedAt)
         if (!ran) await closeAutocomplete(interaction, this.logger)
         return
       }
@@ -524,6 +526,7 @@ export class MeoCordApp implements MeoCordApplication {
         `or drop setAutocomplete(true) from the option.`,
     )
     await closeAutocomplete(interaction, this.logger)
+    await observeUnclaimed(this.container, [interaction], { startedAt })
   }
 
   /** Handler and name pairs already warned about, so a colliding modal warns once rather than per submit. */
@@ -552,6 +555,7 @@ export class MeoCordApp implements MeoCordApplication {
     controllerInstance: Record<string, (...args: unknown[]) => Promise<void>>,
     commandMetadata: CommandMetadata<string>,
     interaction: Interaction<CacheType>,
+    startedAt: number,
   ): Promise<void> {
     const { methodName, type } = commandMetadata
 
@@ -564,7 +568,7 @@ export class MeoCordApp implements MeoCordApplication {
     const { params, collisions } = handlerInput(interaction, routeParams)
     this.warnCollisions(methodName, collisions)
 
-    await this.invokeHandler(controllerInstance, methodName, [interaction, params])
+    await this.invokeHandler(controllerInstance, methodName, [interaction, params], startedAt)
   }
 
   /**
@@ -651,8 +655,9 @@ export class MeoCordApp implements MeoCordApplication {
     instance: Record<string, (...args: unknown[]) => unknown>,
     methodName: string,
     args: unknown[],
+    startedAt?: number,
   ): Promise<boolean> {
-    const { ran } = await runHandler(this.container, instance, methodName, args, { fallback: this.fallback })
+    const { ran } = await runHandler(this.container, instance, methodName, args, { fallback: this.fallback, startedAt })
     return ran
   }
 

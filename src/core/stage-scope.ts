@@ -1,7 +1,7 @@
 import 'reflect-metadata'
 import { type ExecutionContextType } from '@src/common/execution-context.js'
 
-/** The context types a guard or interceptor class declared it runs for, with `@Guard({ types })`. */
+/** The context types a guard, interceptor or observer class declared it runs for, such as `@Guard({ types })`. */
 const STAGE_TYPES = Symbol('stage_types')
 
 /** A stage entry as the pipeline lists it: a class, or `{ provide, params? }`. */
@@ -14,7 +14,7 @@ type StageEntry = (new (...args: any[]) => unknown) | { provide: new (...args: a
 export function defineStageTypes(
   cls: { name: string },
   types: readonly ExecutionContextType[] | undefined,
-  decorator: 'Guard' | 'Interceptor',
+  decorator: 'Guard' | 'Interceptor' | 'Observer',
 ): void {
   if (!types) return
   if (types.length === 0) {
