@@ -43,6 +43,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'MemoryCooldownStore',
     'RedisCooldownStore',
     'SetMetadata',
+    'ShardedCooldownStore',
     'Theme',
     'Translator',
     'ValidationError',

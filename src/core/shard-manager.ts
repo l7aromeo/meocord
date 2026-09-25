@@ -1,6 +1,8 @@
 import { fetchRecommendedShardCount, REST, Routes, type Shard, ShardingManager, type ShardingManagerOptions } from 'discord.js'
 import { type ChildProcess } from 'node:child_process'
 import { Logger } from '@src/common/index.js'
+import { MemoryCooldownStore } from '@src/common/cooldown-store.js'
+import { answerCooldown } from '@src/common/sharded-cooldown-store.js'
 import { registerCommands, type RegistrationRest } from '@src/core/command-registration.js'
 import { type MeoCordApplication } from '@src/interface/index.js'
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from '@src/core/meocord.app.js'
@@ -52,6 +54,8 @@ const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, m
 export class ShardManager implements MeoCordApplication {
   private readonly logger = new Logger('ShardManager')
   private readonly shards = new Map<Shard, ShardState>()
+  /** Every shard's cooldown calls, for an app whose store is ShardedCooldownStore. */
+  private readonly cooldowns = new MemoryCooldownStore()
   private stopping = false
   private fatal = false
   private readonly exit: (code: number) => void
@@ -137,6 +141,7 @@ export class ShardManager implements MeoCordApplication {
   private watch(shard: Shard): void {
     this.shards.set(shard, { attempts: 0, spawnedAt: 0 })
     shard.on('message', (message: unknown) => {
+      if (answerCooldown(this.cooldowns, message, reply => shard.send(reply).catch(() => undefined))) return
       if (isShardMessage(message) && message.meocord === 'fatal') this.stopForFatal(shard, message)
     })
     shard.on('death', child => this.handleDeath(shard, child as ChildProcess))

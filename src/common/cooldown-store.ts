@@ -15,8 +15,8 @@ export interface CooldownVerdict {
 
 /**
  * Where `@Cooldown` counts calls. The default keeps them in memory, in this process; bind another with
- * `@MeoCord({ cooldownStore })` so shards or several processes share one count: `RedisCooldownStore`, or
- * one of your own.
+ * `@MeoCord({ cooldownStore })` so shards or several processes share one count: `ShardedCooldownStore`,
+ * `RedisCooldownStore`, or one of your own.
  *
  * `consume` must check and record a call as one step: two calls at the limit must not both pass. Check a
  * store of your own with `testCooldownStore` from `meocord/testing`.

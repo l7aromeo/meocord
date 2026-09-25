@@ -1226,9 +1226,27 @@ async checkIn(interaction: ButtonInteraction, { uid }: { ownerId: string; uid: s
 
 ### Where calls are counted
 
-By default in this process's memory: one count per bot, which drops keys whose calls have all expired. With [process sharding](#sharding), each shard counts on its own, so `'user'` and `'global'` cooldowns allow more than they say — the bot warns at startup. `'guild'` and `'channel'` stay exact, since a server lives on one shard.
+By default in this process's memory: one count per bot, which drops keys whose calls have all expired. With [process sharding](#sharding), each shard counts on its own, so `'user'` and `'global'` cooldowns allow more than they say — the bot warns at startup, unless it binds a shared store. `'guild'` and `'channel'` stay exact, since a server lives on one shard.
+
+| Store                               | Counts                                            | Survives a restart               | Across hosts         |
+| ----------------------------------- | ------------------------------------------------- | -------------------------------- | -------------------- |
+| `MemoryCooldownStore` (the default) | In this process; per shard with process sharding  | No                               | No                   |
+| `ShardedCooldownStore`              | In the shard manager, for every shard on the host | A shard's restart, not the bot's | No                   |
+| `RedisCooldownStore`                | On the Redis server                               | Yes                              | Yes                  |
+| Your own `CooldownStore`            | Where it keeps them                               | As its database does             | As its database does |
 
 To keep counts across restarts, or share them between shards and processes, bind a shared store with `@MeoCord({ cooldownStore })`.
+
+**Process sharding on one host.** `ShardedCooldownStore` from `meocord/common` needs no database: each shard asks the shard manager, which counts every shard's calls in its memory over the IPC the shards already use, so `'user'` and `'global'` cooldowns are exact across them.
+
+```typescript
+import { ShardedCooldownStore } from 'meocord/common'
+
+@MeoCord({ controllers: [...], clientOptions: {...}, cooldownStore: ShardedCooldownStore })
+export default class App {}
+```
+
+The manager's counts are kept while it runs: a shard that restarts keeps them, but they start again when the whole bot restarts, as the default store's do. If the manager does not answer within a second, a shard counts the call itself and logs a warning, once. Without process sharding it counts in the one process, which is exact there too.
 
 **Redis, and servers that speak its protocol.** `RedisCooldownStore` from `meocord/common` counts each key in a sorted set, trimmed, counted and added to by one Lua script, timed by the server's `TIME` so every process counts by one clock, with every key set to expire. MeoCord depends on no Redis client: give `RedisCooldownStore.using` a function that runs a script with the one you have.
 
