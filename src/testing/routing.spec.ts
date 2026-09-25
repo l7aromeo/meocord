@@ -1,5 +1,5 @@
 import 'reflect-metadata'
-import { Command, Controller, Guard, MeoCord, UseGuard } from '@src/decorator/index.js'
+import { Command, Controller, Guard, MeoCord, MessageHandler, UseGuard } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { findRouteConflicts, resolveRoute } from '@src/testing/index.js'
 
@@ -112,5 +112,56 @@ describe('findRouteConflicts', () => {
     class OverlappingApp {}
 
     expect(findRouteConflicts(OverlappingApp)).toEqual([{ type: CommandType.BUTTON, patterns: ['a/{x}/c', 'a/b/{y}'] }])
+  })
+})
+
+describe('resolveRoute for messages', () => {
+  @Controller()
+  class DiceController {
+    @MessageHandler('roll {sides} {note...?}')
+    async roll(_message: unknown, _params: Record<string, string>) {}
+
+    @MessageHandler('roll 20')
+    async rollTwenty() {}
+
+    @MessageHandler('hello', { prefix: false })
+    async hello() {}
+
+    @MessageHandler()
+    async everything() {}
+  }
+
+  @MeoCord({ controllers: [DiceController], clientOptions: { intents: [] }, messages: { prefix: '!', mention: true } })
+  class DiceApp {}
+
+  it('resolves message content to the handler dispatch runs, with its params', () => {
+    expect(resolveRoute(DiceApp, { content: '!roll 6 for luck' })).toEqual({
+      controller: DiceController,
+      method: 'roll',
+      handler: DiceController.prototype.roll,
+      params: { sides: '6', note: 'for luck' },
+    })
+    expect(resolveRoute(DiceApp, { content: '!ROLL 20' })?.method).toBe('rollTwenty')
+    expect(resolveRoute(DiceApp, { content: 'hello' })?.method).toBe('hello')
+  })
+
+  it('never resolves to a listener, and resolves nothing the prefix rules out', () => {
+    expect(resolveRoute(DiceApp, { content: 'roll 6' })).toBeUndefined()
+    expect(resolveRoute(DiceApp, { content: '!unknown' })).toBeUndefined()
+  })
+
+  it('accepts a mention of the bot when given its id', () => {
+    expect(resolveRoute(DiceApp, { content: '<@111> roll 6', botId: '111' })?.method).toBe('roll')
+    expect(resolveRoute(DiceApp, { content: '<@111> roll 6' })).toBeUndefined()
+  })
+
+  it('takes the prefix a message has when the app reads prefixes from a function', () => {
+    @MeoCord({ controllers: [DiceController], clientOptions: { intents: [] }, messages: { prefix: () => '?' } })
+    class PerGuildApp {}
+
+    expect(resolveRoute(PerGuildApp, { content: '?roll 6', prefix: '?' })?.method).toBe('roll')
+    expect(() => resolveRoute(PerGuildApp, { content: '?roll 6' })).toThrow(
+      /reads its prefixes from a function; pass the prefix this message has/,
+    )
   })
 })

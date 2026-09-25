@@ -7,7 +7,7 @@ import {
   type PartialMessageReaction,
 } from 'discord.js'
 import { CommandType, MetadataKey } from '@src/enum/index.js'
-import { type ReactionHandlerOptions } from '@src/interface/index.js'
+import { type MessageHandlerOptions, type ReactionHandlerOptions } from '@src/interface/index.js'
 import {
   type AutocompleteMetadata,
   type BuildableCommandType,
@@ -19,6 +19,7 @@ import {
 import { isCustomIdRouted, matchesCommandType } from '@src/util/interaction.util.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { BUILDER_GUILDS } from '@src/decorator/command-builder.decorator.js'
+import { routeSpecificity } from '@src/core/route-specificity.js'
 
 const COMMAND_METADATA_KEY = Symbol('commands')
 const MESSAGE_HANDLER_METADATA_KEY = Symbol('message_handlers')
@@ -42,35 +43,78 @@ function ownCommandMap(target: object): Record<string, CommandMetadata[]> {
   return Object.fromEntries(Object.entries(inherited).map(([name, metas]) => [name, [...metas]]))
 }
 
+/** A `@MessageHandler` as the decorator stores it. */
+export interface MessageHandlerMetadata {
+  /** The pattern, or `undefined` for a listener that takes every message. */
+  pattern: string | undefined
+  method: string
+  options: MessageHandlerOptions
+}
+
 /**
- * Decorator to register message handlers in the controller.
- *
- * @param keyword - An optional keyword to filter messages this handler should respond to.
+ * Registers a listener for every message not sent by a bot. It runs after the patterned handler the
+ * message matched, if any; see the overload taking a pattern for message commands.
  *
  * @example
  * ```typescript
- * @MessageHandler('hello')
- * async handleHelloMessage(message: Message) {
- *   await message.reply('Hello! How can I help you?');
- * }
- *
  * @MessageHandler()
  * async handleAnyMessage(message: Message) {
- *   console.log(`Received a message: ${message.content}`);
+ *   console.log(`Received a message: ${message.content}`)
+ * }
+ * ```
+ */
+export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boolean>>, R extends void | Promise<void>>(): (
+  target: object,
+  propertyKey: string,
+  // A handler may take fewer parameters than dispatch passes; the descriptor type is invariant, so each arity is listed.
+  _descriptor: TypedPropertyDescriptor<(message: T) => R> | TypedPropertyDescriptor<() => R>,
+) => void
+/**
+ * Registers a handler for messages matching a pattern, after the prefix `@MeoCord({ messages })`
+ * configures.
+ *
+ * A pattern is matched word by word. A literal word matches itself, in any case unless
+ * `caseSensitive` is set. `{name}` captures one word, and words in quotes count as one. `{name...}`
+ * captures the rest of the message as typed. `{name?}` and `{name...?}` are optional. The last three
+ * come only at the end. The params arrive as the handler's second argument, where `@Validate`, pipes
+ * and `@Cooldown({ by })` see them too.
+ *
+ * Only the most specific matching pattern runs, across every controller: more literal words first,
+ * then a fixed number of words before a rest, then fewer params.
+ *
+ * @param pattern - The words to match, such as `'roll {sides} {note...?}'`.
+ * @param options - The handler's own `prefix`, in place of the app's, or `false` for none; and
+ *   `caseSensitive`, over the app's.
+ *
+ * @example
+ * ```typescript
+ * @MessageHandler('roll {sides} {note...?}')
+ * async roll(message: Message, { sides, note }: { sides: string; note?: string }) {
+ *   await message.reply(`Rolling d${sides}${note ? ` (${note})` : ''}`)
+ * }
+ *
+ * @MessageHandler('hello', { prefix: false })
+ * async hello(message: Message) {
+ *   await message.reply('Hello! How can I help you?')
  * }
  * ```
  */
 export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boolean>>, R extends void | Promise<void>>(
-  keyword?: string,
-) {
-  // A handler may take fewer parameters than dispatch passes; the descriptor type is invariant, so each arity is listed.
-  return function (
-    target: object,
-    propertyKey: string,
-    _descriptor: TypedPropertyDescriptor<(message: T) => R> | TypedPropertyDescriptor<() => R>,
-  ) {
-    const handlers = ownHandlerList(MESSAGE_HANDLER_METADATA_KEY, target)
-    handlers.push({ keyword, method: propertyKey.toString() })
+  pattern: string,
+  options?: MessageHandlerOptions,
+): <P extends Record<string, any>>(
+  target: object,
+  propertyKey: string,
+  _descriptor:
+    | TypedPropertyDescriptor<(message: T, params: P) => R>
+    | TypedPropertyDescriptor<(message: T) => R>
+    | TypedPropertyDescriptor<() => R>,
+) => void
+export function MessageHandler(pattern?: string, options: MessageHandlerOptions = {}) {
+  return function (target: object, propertyKey: string) {
+    const handlers = ownHandlerList<MessageHandlerMetadata>(MESSAGE_HANDLER_METADATA_KEY, target)
+    // An empty pattern means every message, as no pattern does
+    handlers.push({ pattern: pattern || undefined, method: propertyKey.toString(), options })
     Reflect.defineMetadata(MESSAGE_HANDLER_METADATA_KEY, handlers, target)
   }
 }
@@ -124,9 +168,9 @@ export function getReactionHandlers(controller: any): { emoji: string | undefine
  * Retrieves message handlers metadata from a given controller.
  *
  * @param controller - The controller class instance.
- * @returns An array of message handler method names.
+ * @returns The message handlers, with their patterns and options.
  */
-export function getMessageHandlers(controller: any): { keyword: string | undefined; method: string }[] {
+export function getMessageHandlers(controller: any): MessageHandlerMetadata[] {
   return Reflect.getMetadata(MESSAGE_HANDLER_METADATA_KEY, controller) || []
 }
 
@@ -185,7 +229,7 @@ function createRegexFromPattern(pattern: string): { regex: RegExp; params: strin
   // more exactly than one leaving it to a parameter. Fewer parameters breaks a tie
   // between equal-length patterns, so the ranking is total and never falls back to
   // declaration order.
-  const specificity = literalLength * 1_000 - params.length
+  const specificity = routeSpecificity({ literals: literalLength, params: params.length })
   return { regex, params, specificity }
 }
 

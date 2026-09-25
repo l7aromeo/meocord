@@ -316,6 +316,7 @@ what a bot does at runtime; each says what to check. Everything else in 4.1 is n
 - [ ] Fix any `meocord.config.ts` option of the wrong type, since it now stops `build`, `start` and `register`
 - [ ] Fix or replace the generated `src/guards/rate-limit.guard.ts`, if your app still has it
 - [ ] Rename any `SetMetadata` key that MeoCord reserves, such as `'guards'`
+- [ ] Check `@MessageHandler` keywords, which match in any case, and of which only one runs
 - [ ] Rebuild
 
 ### Class guards now cover inherited handlers
@@ -415,6 +416,34 @@ export const Guards = (...names: string[]) => SetMetadata('guards', names)
 
 // 4.1
 export const Guards = createMetadata<string[]>('guards')
+```
+
+### Message keywords match in any case, and only one runs
+
+`@MessageHandler` takes a pattern now, with params, prefixes and a ranking across controllers (see
+[Adopting 4.1 patterns](#adopting-41-patterns)). A 4.0 keyword is a pattern without params and still
+matches the whole message, with three differences:
+
+- **Case.** `@MessageHandler('hello')` also matches `Hello` and `HELLO`. Set
+  `@MeoCord({ messages: { caseSensitive: true } })`, or `{ caseSensitive: true }` on the handler, to
+  match the case written.
+- **Words, not characters.** A keyword is compared word by word, so `'hello there'` also matches
+  `hello   there`.
+- **One handler per message.** When two patterns match, only the most specific runs: `'roll 20'` wins
+  over `'roll {sides}'`. Two handlers with the same keyword, which both ran in 4.0, now stop the bot at
+  startup, naming both; merge them into one handler. One handler declared under two spellings, such as
+  the generated `@MessageHandler('baka')` and `@MessageHandler('Baka')`, is one route and keeps working;
+  the second decorator can go. A keyword with `{` or `}` in a word is read as a
+  param, and stops the bot if it is not a whole word, such as `'a{b}'`.
+
+`@MessageHandler()` without a keyword still runs for every message, after the patterned handler.
+
+A prefix you configure in `@MeoCord({ messages: { prefix: '!' } })` applies to every patterned handler,
+existing keywords included, so `'ping'` then needs `!ping`. Give a handler that should keep matching
+the bare message `{ prefix: false }`:
+
+```typescript
+@MessageHandler('good morning', { prefix: false })
 ```
 
 ### Smaller changes
@@ -544,6 +573,12 @@ an `@Interceptor`, which runs around the handler and sees what it returns or thr
 can become a schema: the handler receives typed, valid values, and invalid input gets a private reply
 listing each issue. A pipe turns a valid value into what the handler works with, such as a record loaded
 by its id.
+
+**Message commands: patterns and prefixes.** A `@MessageHandler()` that checked
+`message.content.startsWith('!')` and split the rest into words can become
+`@MessageHandler('roll {sides} {note...?}')` with `@MeoCord({ messages: { prefix: '!' } })`: the handler
+receives `{ sides, note }`, quoted words count as one, and `@Validate` and `@Cooldown({ by })` see the
+params. Only the most specific pattern runs, across controllers.
 
 **Client events: `@On` and `@Once`.** A service that injected `Client` and called `client.on(...)` in its
 constructor can declare `@On('guildMemberAdd')` on a method instead. The arguments are typed, the

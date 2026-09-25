@@ -29,7 +29,7 @@ import {
   resolveOptionParams,
 } from '@src/util/interaction.util.js'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
-import { type OnReady, type OnShutdown, type ReactionHandlerOptions } from '@src/interface/index.js'
+import { type MessageCommandOptions, type OnReady, type OnShutdown, type ReactionHandlerOptions } from '@src/interface/index.js'
 import { type AutocompleteMetadata, type CommandMetadata } from '@src/interface/command-decorator.interface.js'
 import {
   buildComponentRoutes,
@@ -40,6 +40,7 @@ import {
 import { globalStagesOf, handleUnroutedError, runHandler } from '@src/core/handler-pipeline.js'
 import { closeAutocomplete, createFallback, type Fallback } from '@src/core/fallback.js'
 import { handlerInput } from '@src/core/handler-input.js'
+import { buildMessageRoutes, matchMessageRoute, type MessageRoute, messageStarts, usesAppPrefix } from '@src/core/message-routes.js'
 import { CommandNotFoundError } from '@src/common/errors.js'
 import { stageClass, stageTypes } from '@src/core/stage-scope.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
@@ -144,8 +145,16 @@ export class MeoCordApp implements MeoCordApplication {
     shutdownTimeout?: number,
     private readonly startup?: () => Promise<void>,
     lifecycleUnits?: LifecycleUnit[],
+    private readonly messageOptions: MessageCommandOptions = {},
   ) {
     this.lifecycleUnits = lifecycleUnits ?? classUnits(container, lifecycleClasses)
+    // Built now, so a pattern that cannot be read or two that match the same messages stop the bot before login
+    this.messageRoutes = buildMessageRoutes(controllerClasses, messageOptions)
+    this.messageListeners = controllerClasses.flatMap(controllerClass =>
+      getMessageHandlers(controllerClass.prototype)
+        .filter(handler => handler.pattern === undefined)
+        .map(({ method }) => ({ controllerClass, method })),
+    )
     this.bot = this.discordClient
     this.shutdownTimeout =
       typeof shutdownTimeout === 'number' && shutdownTimeout >= 0 ? shutdownTimeout : DEFAULT_SHUTDOWN_TIMEOUT_MS
@@ -153,6 +162,12 @@ export class MeoCordApp implements MeoCordApplication {
 
   /** Everything whose lifecycle hooks run, classes and provided values, in dependency order. */
   private readonly lifecycleUnits: LifecycleUnit[]
+
+  /** Every patterned `@MessageHandler`, most specific first. */
+  private readonly messageRoutes: MessageRoute[]
+
+  /** Every `@MessageHandler()` without a pattern, in controller order. */
+  private readonly messageListeners: { controllerClass: new (...args: any[]) => any; method: string }[]
 
   /** Whether shutdown has begun, so the ready hooks start no more. */
   private closing = false
@@ -615,8 +630,8 @@ export class MeoCordApp implements MeoCordApplication {
           requirements: eventRequirements(event),
         })
       }
-      for (const { keyword, method } of getMessageHandlers(prototype)) {
-        const decorator = keyword === undefined ? '@MessageHandler()' : `@MessageHandler('${keyword}')`
+      for (const { pattern, method } of getMessageHandlers(prototype)) {
+        const decorator = pattern === undefined ? '@MessageHandler()' : `@MessageHandler('${pattern}')`
         handlers.push({ label: `${decorator} in ${lifecycleClass.name}.${method}`, requirements: MESSAGE_HANDLER_REQUIREMENTS })
       }
       for (const { emoji, method } of getReactionHandlers(prototype)) {
@@ -641,35 +656,31 @@ export class MeoCordApp implements MeoCordApplication {
     return ran
   }
 
+  /**
+   * Runs the most specific patterned handler the message matches, then every listener. A failure to
+   * read the prefixes goes to the global filters, then the fallback; the listeners still run.
+   */
   private async handleMessage(message: Message) {
     if (message.author.bot || !message.content?.trim()) return
 
-    const messageContent = message.content.trim()
-
-    const relevantControllers = this.controllerClasses.filter(controllerClass => {
-      const instance = this.getInstance(controllerClass)
-      const messageHandlers = getMessageHandlers(instance)
-      return messageHandlers.some(handler => !handler.keyword || handler.keyword === messageContent)
-    })
-
-    for (const controllerClass of relevantControllers) {
-      const controllerInstance = this.getInstance(controllerClass)
-
-      let messageHandlers = getMessageHandlers(controllerInstance)
-
-      messageHandlers = messageHandlers.sort((a, b) => {
-        if (a.keyword && !b.keyword) return -1
-        if (!a.keyword && b.keyword) return 1
-        return 0
-      })
-
-      for (const handler of messageHandlers) {
-        const { keyword, method } = handler
-
-        if (!keyword || keyword === messageContent) {
-          await this.invokeHandler(controllerInstance, method, [message])
-        }
+    let matched: ReturnType<typeof matchMessageRoute>
+    try {
+      if (this.messageRoutes.length > 0) {
+        const starts = usesAppPrefix(this.messageRoutes)
+          ? await messageStarts(this.messageOptions, message, this.bot.user?.id)
+          : { prefixes: [] }
+        matched = matchMessageRoute(this.messageRoutes, message.content, starts)
       }
+    } catch (error) {
+      await handleUnroutedError(this.container, [message], error, { fallback: this.fallback })
+    }
+    if (matched) {
+      const { route, params } = matched
+      await this.invokeHandler(this.getInstance(route.controllerClass), route.method, [message, params])
+    }
+
+    for (const { controllerClass, method } of this.messageListeners) {
+      await this.invokeHandler(this.getInstance(controllerClass), method, [message])
     }
   }
 

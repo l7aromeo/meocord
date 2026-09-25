@@ -85,7 +85,7 @@ class ProfileController {
     throw new Boom()
   }
 
-  @MessageHandler('!hi')
+  @MessageHandler()
   @UseInterceptor(RecordingInterceptor)
   async hi(_message: Message) {}
 
@@ -140,7 +140,7 @@ describe('ExecutionContext.getHandlerParams()', () => {
     ])
   })
 
-  it('is undefined where the handler takes no params: messages and gateway events', async () => {
+  it('is undefined where the handler takes no params: message listeners and gateway events', async () => {
     const message = Object.assign(Object.create(Message.prototype) as Message, { content: '!hi', author: { id: 'ada', bot: false } })
 
     await module.invoke(ProfileController, 'hi', message)

@@ -191,10 +191,12 @@ function assertDistinctNamesWhereKeyed(classes: readonly (new (...args: any[]) =
   }
 }
 
-/** Refuses `@Validate` and `@UsePipe` on handlers that have no interaction input to check. */
+/** Refuses `@Validate` and `@UsePipe` on handlers that have no params to check. */
 function assertInputStagesOnInteractions(controller: new (...args: any[]) => unknown, prototype: object): void {
   const others: [string, string][] = [
-    ...getMessageHandlers(prototype).map(handler => [handler.method, 'message'] as [string, string]),
+    ...getMessageHandlers(prototype)
+      .filter(handler => handler.pattern === undefined)
+      .map(handler => [handler.method, 'message'] as [string, string]),
     ...getReactionHandlers(prototype).map(handler => [handler.method, 'reaction'] as [string, string]),
     ...getAutocompleteHandlers(prototype).map(handler => [handler.methodName, 'autocomplete'] as [string, string]),
     ...getEventHandlers(prototype).map(handler => [handler.method, 'event'] as [string, string]),
@@ -202,9 +204,13 @@ function assertInputStagesOnInteractions(controller: new (...args: any[]) => unk
   for (const [method, kind] of others) {
     const { schema, pipes } = handlerInputStages(prototype, method)
     if (schema || pipes.length > 0) {
+      const handler =
+        kind === 'message'
+          ? 'a message handler without a pattern'
+          : `${kind === 'autocomplete' || kind === 'event' ? 'an' : 'a'} ${kind} handler`
       throw new Error(
-        `${controller.name}.${method} is ${kind === 'autocomplete' || kind === 'event' ? 'an' : 'a'} ${kind} handler; @Validate and @UsePipe apply only to interaction ` +
-          `handlers, whose options, customId params and modal fields they check.`,
+        `${controller.name}.${method} is ${handler}; @Validate and @UsePipe apply only to interaction and patterned ` +
+          `message handlers, whose options, customId params, modal fields and pattern params they check.`,
       )
     }
     // A controller's own @Cooldown skips these handlers; one on the method itself is a mistake.

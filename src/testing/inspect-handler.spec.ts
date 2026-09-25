@@ -1,5 +1,5 @@
 import { ChatInputCommandInteraction } from 'discord.js'
-import { Command, Controller, Guard, UseGuard } from '@src/decorator/index.js'
+import { Command, Controller, Guard, MessageHandler, UseGuard } from '@src/decorator/index.js'
 import { CommandType, MetadataKey } from '@src/enum/index.js'
 import { type GuardInterface } from '@src/interface/index.js'
 import { createMetadata, SetMetadata } from '@src/common/index.js'
@@ -34,6 +34,12 @@ class ModerationController {
   @Command('warn', CommandType.SLASH)
   async warn(_interaction: ChatInputCommandInteraction) {}
 
+  @MessageHandler('warn {user} {reason...?}')
+  async warnByMessage() {}
+
+  @MessageHandler()
+  async everything() {}
+
   helper() {}
 }
 
@@ -59,6 +65,12 @@ describe('inspectHandler', () => {
   it('names the handler it describes', () => {
     const { controller, methodName } = inspectHandler(ModerationController, 'ban')
     expect([controller, methodName]).toEqual([ModerationController, 'ban'])
+  })
+
+  it('reports the pattern of a message handler, and none for other handlers or a listener', () => {
+    expect(inspectHandler(ModerationController, 'warnByMessage').pattern).toBe('warn {user} {reason...?}')
+    expect(inspectHandler(ModerationController, 'everything').pattern).toBeUndefined()
+    expect(inspectHandler(ModerationController, 'ban').pattern).toBeUndefined()
   })
 
   it('returns a copy, so a test cannot change the guards dispatch runs', () => {

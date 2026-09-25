@@ -112,15 +112,15 @@ export abstract class ExecutionContext {
   abstract getParams<P extends Record<string, unknown> = Record<string, unknown>>(): Readonly<P> | undefined
 
   /**
-   * The handler's params, its second argument: a command's options, a component's customId params or a
-   * modal's fields. They are read as they stand when the stage asks. A guard sees them raw. An
+   * The handler's params, its second argument: a command's options, a component's customId params, a
+   * modal's fields or a message pattern's params. They are read as they stand when the stage asks. A guard sees them raw. An
    * interceptor sees them raw before `next.handle()` and validated and piped after it. A filter sees
    * them as they were when the error was thrown. Not the same as {@link ExecutionContext.getParams},
    * which is the running stage's own configuration.
    *
    * @typeParam P - The params' type, such as the handler's own second parameter type.
-   * @returns The params, or `undefined` where the handler takes none: a message, reaction or gateway
-   *   event handler, or a call no handler was reached for.
+   * @returns The params, or `undefined` where the handler takes none: a message handler without a
+   *   pattern, a reaction or gateway event handler, or a call no handler was reached for.
    *
    * @example
    * ```typescript
@@ -145,7 +145,7 @@ export interface CurrentArgs {
 
 /** Whether a call of this type passes the handler params as its second argument. */
 export function takesHandlerParams(type: ExecutionContextType): boolean {
-  return type === 'interaction' || type === 'autocomplete'
+  return type === 'interaction' || type === 'autocomplete' || type === 'message'
 }
 
 /** What a {@link HandlerExecutionContext} describes. */

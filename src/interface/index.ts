@@ -342,6 +342,46 @@ export interface ReactionHandlerOptions {
   action: ReactionHandlerAction
 }
 
+/** One prefix or several, such as `'!'` or `['!', '?']`. `''` stands for no prefix. */
+export type MessagePrefix = string | readonly string[]
+
+/**
+ * How `@MessageHandler` patterns are matched across the app, set with `@MeoCord({ messages })`.
+ *
+ * @example
+ * ```ts
+ * @MeoCord({
+ *   controllers: [DiceController],
+ *   clientOptions: { intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] },
+ *   messages: { prefix: '!', mention: true },
+ * })
+ * class App {}
+ * ```
+ */
+export interface MessageCommandOptions {
+  /**
+   * What a message starts with to reach a patterned handler: a prefix, a list of them, or a function
+   * of the message returning them, such as a server's own prefix. Without one, a pattern matches the
+   * message as it is. A handler's own `prefix` replaces it.
+   */
+  prefix?: MessagePrefix | ((message: Message) => MessagePrefix | Promise<MessagePrefix>)
+  /** Also accepts a mention of the bot, `<@id>` or `<@!id>`, where a prefix goes. @defaultValue `false` */
+  mention?: boolean
+  /** Matches the prefix and a pattern's literal words in the case written; param values always are. @defaultValue `false` */
+  caseSensitive?: boolean
+}
+
+/** What a patterned `@MessageHandler` sets for itself, over the app's `messages` options. */
+export interface MessageHandlerOptions {
+  /**
+   * The handler's own prefixes, in place of the app's; a mention of the bot still counts when the app
+   * accepts one. `false` matches the message as it is, with no prefix or mention.
+   */
+  prefix?: false | MessagePrefix
+  /** Overrides the app's `caseSensitive` for this handler. */
+  caseSensitive?: boolean
+}
+
 /**
  * The configuration `meocord.config.ts` exports.
  *

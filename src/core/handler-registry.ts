@@ -72,7 +72,7 @@ export interface AutocompleteHandlerEntry extends HandlerEntryBase {
 /** A `@MessageHandler`. */
 export interface MessageHandlerEntry extends HandlerEntryBase {
   kind: 'message'
-  /** The keyword, or `undefined` for a handler that takes every message. */
+  /** The pattern, or `undefined` for a handler that takes every message. */
   name: string | undefined
 }
 
@@ -224,8 +224,8 @@ export class HandlerRegistry {
         const name = optionName === undefined ? commandPath : `${commandPath} ${optionName}`
         entries.push({ ...base(methodName), kind: 'autocomplete', name })
       }
-      for (const { keyword, method } of getMessageHandlers(prototype)) {
-        entries.push({ ...base(method), kind: 'message', name: keyword })
+      for (const { pattern, method } of getMessageHandlers(prototype)) {
+        entries.push({ ...base(method), kind: 'message', name: pattern })
       }
       for (const { emoji, method } of getReactionHandlers(prototype)) {
         entries.push({ ...base(method), kind: 'reaction', name: emoji })

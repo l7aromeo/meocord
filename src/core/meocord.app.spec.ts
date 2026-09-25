@@ -35,7 +35,7 @@ import {
 } from 'discord.js'
 import { Logger } from '@src/common/index.js'
 import { createChatInputOptions, createMockInteraction, createModalFields, resolveRoute } from '@src/testing/index.js'
-import { Autocomplete, Command, Controller, MeoCord, ReactionHandler, Validate } from '@src/decorator/index.js'
+import { Autocomplete, Command, Controller, MeoCord, MessageHandler, ReactionHandler, Validate } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { MeoCordApp, shutdownAndExit } from '@src/core/meocord.app.js'
 
@@ -1003,6 +1003,9 @@ describe('MeoCordApp', () => {
 
       @ReactionHandler()
       async react(..._args: any[]) {}
+
+      @MessageHandler()
+      async listen(..._args: any[]) {}
     }
 
     const startWithBrokenContainer = async () => {

@@ -16,7 +16,12 @@ const minutes: StandardSchemaV1<unknown, { minutes: number }> = {
 @Controller()
 class ArgumentsController {
   @MessageHandler('hi')
-  async hi(...args: [Message]) {
+  async hi(...args: [Message, Record<string, string>]) {
+    received.push(args)
+  }
+
+  @MessageHandler()
+  async everything(...args: [Message]) {
     received.push(args)
   }
 
@@ -30,11 +35,18 @@ class ArgumentsController {
 const module = () => MeoCordTestingModule.create({ controllers: [ArgumentsController] }).compile()
 
 describe('a handler receives', () => {
-  it('only the message, when it has no schema or pipes', async () => {
-    const message = createMockMessage()
-    await module().invoke(ArgumentsController, 'hi', message as never)
+  it('only the message, when it is a listener', async () => {
+    const message = createMockMessage({ content: 'anything' })
+    await module().invoke(ArgumentsController, 'everything', message as never)
 
     expect(received).toEqual([[message]])
+  })
+
+  it("the message and its pattern's params, when it has a pattern", async () => {
+    const message = createMockMessage({ content: 'hi' })
+    await module().invoke(ArgumentsController, 'hi', message as never)
+
+    expect(received).toEqual([[message, {}]])
   })
 
   it('the interaction and its validated input, and nothing more', async () => {
