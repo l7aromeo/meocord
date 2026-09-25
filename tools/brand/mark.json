@@ -1,0 +1,94 @@
+{
+  "$comment": "The MeoCord mark, the one source for every copy: meocord/docs keeps a verbatim copy in src/lib/brand/mark.json, which its CI checks against this file. Edit here, run `bun run brand`, then `bun run brand:sync` in the docs.",
+  "viewBox": [0, 0, 16, 16],
+  "notchMinSize": 48,
+  "paths": {
+    "crown": "M2.4 12Q1.9 7.2 3.4 4.1Q4.1 2.8 5 3.8Q6.4 5.6 7.3 8Q8.4 7.6 9.6 8.4Q11 6.9 12.9 6.1Q13.9 5.3 14.1 6.4Q14.3 9.3 13.4 12Z",
+    "inner": "M3.7 9.6Q3.6 7 4.3 5.6Q5.6 7.4 6.2 9.6ZM10.8 9.8Q11.8 8.3 12.9 7.6Q13.1 8.8 12.8 9.8Z",
+    "cord": "M2.25 10.5H13.75Q15 10.5 15 11.75Q15 13 13.75 13H2.25Q1 13 1 11.75Q1 10.5 2.25 10.5Z",
+    "ears": {
+      "near": {
+        "crown": "M2.4 12Q1.9 7.2 3.4 4.1Q4.1 2.8 5 3.8Q6.4 5.6 7.3 8Q8.4 7.6 9.6 8.4L9.8 8.5V12Z",
+        "inner": "M3.7 9.6Q3.6 7 4.3 5.6Q5.6 7.4 6.2 9.6Z"
+      },
+      "far": {
+        "crown": "M9.6 8.4Q11 6.9 12.9 6.1Q13.9 5.3 14.1 6.4Q14.3 9.3 13.4 12H9.4V8.5Z",
+        "inner": "M10.8 9.8Q11.8 8.3 12.9 7.6Q13.1 8.8 12.8 9.8Z"
+      }
+    }
+  },
+  "tileRadius": 3.5,
+  "colours": {
+    "dark": {
+      "tile": "#1E1E21",
+      "ink": "rgba(255,255,255,0.88)",
+      "accent": "#8C98FF"
+    },
+    "tint": {
+      "tile": "#262A45",
+      "ink": "rgba(255,255,255,0.92)",
+      "accent": "#8C98FF"
+    },
+    "scheme": {
+      "light": {
+        "ink": "#161618",
+        "inkOpacity": 0.88,
+        "accent": "#4B5BD7"
+      },
+      "dark": {
+        "ink": "#FFFFFF",
+        "inkOpacity": 1,
+        "accent": "#8C98FF"
+      }
+    }
+  },
+  "flick": {
+    "pivot": [9.6, 8.4],
+    "durationMs": 800,
+    "stepMs": 30,
+    "restMs": 2200,
+    "springs": {
+      "far": {
+        "amplitude": 17.5,
+        "decay": 0.1,
+        "period": 0.3,
+        "delayMs": 0
+      },
+      "near": {
+        "amplitude": -7,
+        "decay": 0.1,
+        "period": 0.3,
+        "delayMs": 80
+      }
+    },
+    "keyframes": [
+      [0, 0, 0],
+      [30, 7.6, 0],
+      [60, 9.1, 0],
+      [90, 6.8, -1.3],
+      [120, 3.1, -3.5],
+      [150, 0, -3.5],
+      [180, -1.7, -2.2],
+      [210, -2, -0.8],
+      [240, -1.5, 0.3],
+      [270, -0.7, 0.8],
+      [300, 0, 0.8],
+      [330, 0.4, 0.5],
+      [360, 0.5, 0.2],
+      [390, 0.3, -0.1],
+      [420, 0.2, -0.2],
+      [450, 0, -0.2],
+      [480, -0.1, -0.1],
+      [510, -0.1, 0],
+      [540, -0.1, 0],
+      [570, 0, 0],
+      [600, 0, 0],
+      [630, 0, 0],
+      [660, 0, 0],
+      [690, 0, 0],
+      [720, 0, 0],
+      [750, 0, 0],
+      [780, 0, 0]
+    ]
+  }
+}

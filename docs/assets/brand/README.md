@@ -37,7 +37,7 @@ BRAND_FRAME=1.55 BRAND_THEME=light BRAND_OUT=frame.png bun tools/brand/brand.ts
 
 The animated logo and avatar hold still for 2.2 s, then the far ear tips outward about 9° and springs back with one small overshoot, while the near ear answers a beat later, about 3.5° the other way; both settle within 0.4 s and are still again by the end of the 0.8 s flick, as on the first frame, so the loop has no seam. Each frame carries its own delay, so the long rest is one frame and the files stay small, all under 60 KiB.
 
-Both ears turn about the valley between them, (9.6, 8.4) on the mark's 16-unit grid. Each is drawn in rectangles that meet at the valley and overlap only in the solid crown below it, so no seam or notch shows at any angle, and their bases swing under the cord. The ink is drawn opaque, the colour it shows on its tile, so the overlap is not drawn twice. `EAR_FLICK` and `flickAngles` in `tools/brand/mark.ts` hold the geometry and the curve; the docs site animates the same mark with them. To look at one moment of the flick:
+Both ears turn about the valley between them, (9.6, 8.4) on the mark's 16-unit grid. Each ear is its own path, split from the crown at the valley, and the two overlap only in the solid crown below it, so no seam or notch shows at any angle, and their bases swing under the cord. The ink is drawn opaque, the colour it shows on its tile, so the overlap is not drawn twice. To look at one moment of the flick:
 
 ```bash
 BRAND_FLICK=0.06 BRAND_OUT=frame.png bun tools/brand/brand.ts
@@ -45,7 +45,13 @@ BRAND_FLICK=0.06 BRAND_OUT=frame.png bun tools/brand/brand.ts
 
 ## The mark
 
-The mark's paths live in `tools/brand/mark.ts`, the twin of `src/lib/brand/mark-paths.ts` in [meocord/docs](https://github.com/meocord/docs); change both together. From 48 px up the inner ears are cut out; below that the crown is drawn plain.
+Everything about the mark lives in `tools/brand/mark.json`: the viewBox, the crown, the two ears split at the valley, the inner ears and the cord, the tile and colour-scheme colours, and the flick's pivot, springs, timing and keyframes. From 48 px up the inner ears are cut out; below that the crown is drawn plain.
+
+It is the one source. `tools/brand/mark.ts` reads it for these files, and [meocord/docs](https://github.com/meocord/docs) keeps a verbatim copy that its CI checks against this repository's `main`, so the mark on the site cannot drift from it. To change the mark:
+
+1. Edit `mark.json`. For the flick, change `springs`; the keyframes are derived from them.
+2. Run `bun run brand`. When the springs changed, it rewrites the keyframes and stops; run it again to draw with them.
+3. Once merged, run `bun run brand:sync` in meocord/docs, whose CI fails until it does.
 
 ## Fonts
 
