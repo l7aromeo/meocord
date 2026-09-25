@@ -5,6 +5,7 @@ import { MetadataKey } from '@src/enum/index.js'
 import {
   ExecutionContext,
   type ExecutionContextType,
+  type CurrentArgs,
   HandlerExecutionContext,
   inferContextType,
 } from '@src/common/execution-context.js'
@@ -121,6 +122,7 @@ export interface GuardedCall {
   methodName: string
   args: readonly unknown[]
   type?: ExecutionContextType
+  currentArgs?: CurrentArgs
 }
 
 /**

@@ -10,10 +10,17 @@ export interface ExecutionContextOptions {
 
   /** What is being handled. Read from the first argument when omitted. */
   type?: ExecutionContextType
+
+  /**
+   * The handler's params, returned by `getHandlerParams()` and as `getArgs()`'s second argument, such as
+   * the validated and piped params an interceptor reads after `next.handle()`. Without it, `args`'
+   * second argument.
+   */
+  handlerParams?: Record<string, unknown>
 }
 
 /**
- * Builds the `ExecutionContext` a guard receives for one handler, so a guard can be constructed and
+ * Builds the `ExecutionContext` a guard, interceptor or filter receives for one handler, so it can be
  * tested on its own. Metadata is read from the real controller, as it is at runtime.
  *
  * @param controller - The controller class declaring the handler.
@@ -34,6 +41,14 @@ export function createExecutionContext<C extends new (...args: any[]) => unknown
   methodName: keyof InstanceType<C> & string,
   options: ExecutionContextOptions = {},
 ): ExecutionContext {
-  const { args = [], params, type } = options
-  return new HandlerExecutionContext({ controller, methodName, args, params, type })
+  const { args = [], params, type, handlerParams } = options
+  return new HandlerExecutionContext({
+    controller,
+    methodName,
+    args,
+    params,
+    type,
+    // The handler params stand in as the second argument, so getArgs() and getHandlerParams() agree
+    currentArgs: handlerParams === undefined ? undefined : { current: [args[0], handlerParams, ...args.slice(2)] },
+  })
 }
