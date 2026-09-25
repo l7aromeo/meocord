@@ -154,7 +154,7 @@ Releases happen only on the maintainer's explicit go-ahead, performed by the sup
 - Conventional commit subjects (`fix(scope): …`, `feat(testing): …`, `!` for breaking), with a body
   explaining what was wrong, what changed and how it was verified.
 - Open a PR against `main` using the PR template; link the issue it closes (`Closes #n`).
-- Branch protection: linear history, required checks `Lint`, `Test`, `Build`, `Coverage`, `Windows`.
+- Branch protection: linear history, required checks `Lint`, `Test`, `Build`, `Coverage`, `Windows`, `Redis`.
   PRs land through the merge queue, which rebases them onto `main`, re-runs the checks and merges.
 - No AI residue — see below.
 - Commits, PRs and code say nothing about how the work was organised — see section 9.
