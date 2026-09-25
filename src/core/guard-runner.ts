@@ -54,6 +54,22 @@ export function injectedTokens(cls: object): unknown[] {
 }
 
 /**
+ * The position of the first constructor parameter with no runtime type and no `@Inject` token, or -1.
+ * Such a parameter reads as `Object` when it is typed with an interface or an `import type`, and as
+ * `Object` or `undefined` when its class's module had not finished loading, as when two classes
+ * import each other.
+ */
+export function untypedParameter(cls: object): number {
+  const types = (Reflect.getMetadata(MetadataKey.ParamTypes, cls) as unknown[] | undefined) ?? []
+  const metadata = Reflect.getMetadata(INVERSIFY_CLASS_METADATA, cls) as
+    | { constructorArguments?: (InjectedElement | null | undefined)[] }
+    | undefined
+  // Once bound, inversify records each parameter here too: an @Inject token, or the parameter's type
+  const tokens = types.map((type, index) => metadata?.constructorArguments?.[index]?.value ?? type)
+  return tokens.findIndex(token => token === undefined || token === Object)
+}
+
+/**
  * The error for a class resolved once and shared that asks for the per-call `ExecutionContext`,
  * which would keep the first call's context for every later one.
  */

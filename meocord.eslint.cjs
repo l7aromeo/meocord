@@ -4,8 +4,21 @@ const tsParser = require('@typescript-eslint/parser')
 const eslintTs = require('typescript-eslint')
 const eslintConfigPrettier = require('eslint-config-prettier')
 const eslintPluginPrettier = require('eslint-plugin-prettier')
+const { createRequire } = require('module')
+const path = require('path')
 
 const tsFiles = ['**/*.ts']
+
+// The cycle check needs the TypeScript resolver, which projects created before it was added lack;
+// without it every import would warn that it cannot be resolved, so the check is left out instead
+const hasTypeScriptResolver = (() => {
+  try {
+    createRequire(path.join(process.cwd(), 'package.json')).resolve('eslint-import-resolver-typescript')
+    return true
+  } catch {
+    return false
+  }
+})()
 
 const languageOptions = {
   globals: {
@@ -33,15 +46,19 @@ const typescriptConfig = {
     'import-x/parsers': {
       '@typescript-eslint/parser': ['.ts'],
     },
-    'import-x/resolver': {
-      typescript: {
-        alwaysTryTypes: true,
-        project: ['./tsconfig.json', './tsconfig.test.json', './tsconfig.eslint.json'],
+    ...(hasTypeScriptResolver && {
+      'import-x/resolver': {
+        typescript: {
+          alwaysTryTypes: true,
+          project: ['./tsconfig.json', './tsconfig.test.json', './tsconfig.eslint.json'],
+        },
       },
-    },
+    }),
   },
   rules: {
     'prettier/prettier': 'error',
+    // Classes that import each other lose the constructor types injection reads; type-only imports are skipped
+    ...(hasTypeScriptResolver && { 'import-x/no-cycle': ['warn', { maxDepth: 10, ignoreExternal: true }] }),
     '@typescript-eslint/no-explicit-any': 'off',
     '@typescript-eslint/ban-ts-comment': 'off',
     '@typescript-eslint/no-var-requires': 'warn',

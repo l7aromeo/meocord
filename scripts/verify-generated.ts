@@ -143,6 +143,45 @@ function runAppScripts(): void {
 }
 
 /**
+ * Plants two services that import each other through `@src` and checks the application's lint warns on
+ * both, with no error: the resolver has to follow the alias for the cycle to be seen at all.
+ */
+function verifyCycleWarning(): void {
+  const dir = path.join(appDir, 'src', 'services', 'cycle')
+  const service = (name: string, other: string) =>
+    `import { Service } from 'meocord/decorator'\nimport { ${other} } from '@src/services/cycle/${other.toLowerCase()}.service'\n\n` +
+    `@Service()\nexport class ${name} {\n  constructor(readonly ${other.toLowerCase()}: ${other}) {}\n}\n`
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(path.join(dir, 'first.service.ts'), service('First', 'Second'))
+  writeFileSync(path.join(dir, 'second.service.ts'), service('Second', 'First'))
+  try {
+    const result = spawnSync(process.execPath, ['run', 'eslint', '--format', 'json', 'src/services/cycle'], {
+      cwd: appDir,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      env: stepEnv,
+    })
+    const messages = (JSON.parse(result.stdout) as { messages: { ruleId: string | null; severity: number; message: string }[] }[])
+      .flatMap(report => report.messages)
+    // By its text too: the rule reports an import it cannot resolve under its own name
+    const cycles = messages.filter(
+      message =>
+        message.ruleId === 'import-x/no-cycle' && message.severity === 1 && message.message.startsWith('Dependency cycle'),
+    )
+    const others = messages.filter(message => !cycles.includes(message))
+    if (cycles.length !== 2 || others.length > 0) {
+      throw new Error(
+        `eslint should warn once per file on two services that import each other, and nothing else:\n` +
+          messages.map(message => `  ${message.ruleId}: ${message.message}`).join('\n'),
+      )
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+  console.log('  ok  eslint warns on two services that import each other')
+}
+
+/**
  * Checks the CLI's interpreter line is `#!/usr/bin/env <prog>`, the only form npm's `cmd-shim`
  * turns into a `.cmd` that Windows can run.
  */
@@ -182,6 +221,7 @@ function main(): void {
     generateComponents()
     console.log('')
     runAppScripts()
+    verifyCycleWarning()
     console.log('')
     // A nested name moves the controller and its builder together, so the import
     // between them has to move with them.

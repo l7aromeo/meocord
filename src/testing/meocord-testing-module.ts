@@ -22,6 +22,8 @@ import { ShardContext } from '@src/core/shard-context.js'
 import { isAppClassToken } from '@src/core/lifecycle-order.js'
 import {
   assertProvided,
+  assertTypedParameters,
+  reachableClasses,
   bindProvider,
   isClassProvider,
   providerMap,
@@ -361,6 +363,7 @@ export class TestingModuleBuilder {
     // Checked as the app checks its own, then merged with the overrides, which win
     const providers = providerMap(this.options.providers ?? [], "the testing module's providers")
     for (const [token, override] of this.overrides) providers.set(token, override)
+    assertTypedParameters(reachableClasses(this.options.controllers ?? [], providers))
 
     // Bind guard overrides — prevents inversify from auto-wiring guard dependencies
     for (const [guardClass, stub] of this.guardOverrides) {
