@@ -1,5 +1,61 @@
 # meocord
 
+## 4.1.0-beta.4
+
+### Minor Changes
+
+- [#137](https://github.com/meocord/meocord/pull/137) [`c778561`](https://github.com/meocord/meocord/commit/c778561f583a1246570881c56348c3b850bc8330) Thanks [@l7aromeo](https://github.com/l7aromeo)! - `@Cooldown` takes `by`, a function of the call that counts calls apart by a value, such as the account a button acts on: `@Cooldown({ seconds: 3600, by: (_context, { uid }: { uid: string }) => uid })` lets a user check each of their accounts in once an hour, where before the first check-in blocked the rest. `by` receives the handler's params as the handler does, after validation and pipes, and the handler's params are checked against the ones `by` declares at compile time. With `per: 'global'`, the limit is per resource across every user. Returning `undefined` counts as before; an error `by` throws goes to the exception filters, and nothing is counted. `inspectHandler(...).cooldowns` now reports `by` alongside `bypass`.
+
+- [#143](https://github.com/meocord/meocord/pull/143) [`add425d`](https://github.com/meocord/meocord/commit/add425d6d37171828d23fb8d6e07532eec349d7f) Thanks [@l7aromeo](https://github.com/l7aromeo)! - `testCooldownStore` in `meocord/testing` checks a `CooldownStore` you write yourself, over Postgres, SQLite, MongoDB or anything else, against the behaviour `MemoryCooldownStore` defines. It registers its cases with your test framework's `describe`, `it` and `expect`, so it runs under Vitest or Jest:
+
+  ```typescript
+  import { testCooldownStore } from 'meocord/testing'
+
+  testCooldownStore('PostgresCooldownStore', () => new PostgresCooldownStore(sql), { describe, it, expect })
+  ```
+
+  It covers calls within a window, a sliding window, `retryAfterMs` counted from the oldest call still in the window, each key counted on its own, calls in the same millisecond kept distinct, and several concurrent calls at the limit where exactly one passes. It uses real time with short windows and takes a few seconds. The README's [Store recipes](https://github.com/meocord/meocord/blob/main/README.md#store-recipes) show stores for Postgres, SQLite and MongoDB.
+
+- [#140](https://github.com/meocord/meocord/pull/140) [`28f0f0a`](https://github.com/meocord/meocord/commit/28f0f0ae8bd660f3dccc332d87f657b1a069c49b) Thanks [@l7aromeo](https://github.com/l7aromeo)! - `ExecutionContext.getHandlerParams<P>()` returns the handler's params, its second argument, to any stage: a command's options, a component's customId params, a modal's fields or a message pattern's params. A guard sees them raw, an interceptor raw before `next.handle()` and validated and piped after it, and a filter as they were when the error was thrown. It returns a patterned `@MessageHandler`'s params too, and is `undefined` for message listeners, reaction and event handlers, and a call no handler was reached for. It is separate from `getParams()`, which stays the running stage's own `{ provide, params }`. `createExecutionContext` takes `handlerParams` for unit tests. `getArgs()` now returns the arguments as they stand too, so after validation and pipes its second argument is the validated and piped params, the same value `getHandlerParams()` returns; in 4.1.0-beta.1 to beta.3 it kept returning the raw arguments.
+
+- [#148](https://github.com/meocord/meocord/pull/148) [`abf9fd8`](https://github.com/meocord/meocord/commit/abf9fd8ba1769ac1cdd2f0c9b1dd1df6de81ff5e) Thanks [@l7aromeo](https://github.com/l7aromeo)! - `@MessageHandler` takes patterns with params, using the `{name}` syntax of customId routes: `@MessageHandler('roll {sides} {note...?}')` gives the handler `{ sides, note }` as its second argument. `{name}` is one word, and words in quotes count as one; `{name...}` takes the rest of the message as typed; `{name?}` and `{name...?}` are optional; the last three come only at the end. `@Validate`, pipes, `@Cooldown({ by })` and `ExecutionContext.getHandlerParams()` see a patterned message handler's params as they do a component's. `@MeoCord({ messages: { prefix, mention, caseSensitive } })` sets the prefix, a string, a list or a function of the message, accepts a mention of the bot when `mention` is on, and matches the prefix and literal words in any case unless `caseSensitive` is set; a handler overrides them with `@MessageHandler('ping', { prefix: false | '?' | ['?', '??'], caseSensitive })`. Only the most specific matching pattern runs, across every controller: more literal words first, then a fixed number of words before a rest, then fewer params. `@MessageHandler()` without a pattern still runs for every message. A pattern that cannot be read, and two that match the same messages, stop the bot at startup. In `meocord/testing`, `resolveRoute(App, { content })` resolves a message, `invoke(Controller, 'method', message)` passes the params the pattern captures, `inspectHandler(...).pattern` reports the pattern, and `createMockMessage()` comes from a user rather than a bot.
+
+  A 4.0 keyword now matches in any case and word by word, only the most specific of two matching patterns runs, two handlers with the same keyword stop the bot at startup, and a configured prefix applies to existing keywords unless they set `prefix: false`. See [Message keywords match in any case, and only one runs](https://github.com/meocord/meocord/blob/main/docs/MIGRATING.md#message-keywords-match-in-any-case-and-only-one-runs).
+
+- [#147](https://github.com/meocord/meocord/pull/147) [`5a2813f`](https://github.com/meocord/meocord/commit/5a2813f72b9d8afc9e0797ee266929b98433ad5c) Thanks [@l7aromeo](https://github.com/l7aromeo)! - Observers see every call MeoCord dispatches once it has settled, for metrics and audit logs. Mark a class `@Observer()`, implement `DispatchObserver`'s `onSettled(context, result)`, and list it in `@MeoCord({ observers })`. It is told about commands, components, modals, autocomplete, message, reaction and event handlers, and interactions no handler matches. The `DispatchResult` carries an `outcome` (`'ran'`, `'denied'`, `'cooldown'`, `'invalid'`, `'error'` or `'not-found'`), `startedAt` in epoch milliseconds, a `durationMs` covering the whole call through the filters and the fallback, the guard that denied it as `deniedBy`, where an interaction's answer stood as `response` (`'replied'`, `'deferred'` or `'unanswered'`), the `error`, and whether a filter or the fallback `handled` it. An optional `onStart(context)` sees the call begin, before the guards, with the same context object `onSettled` later receives, so a `WeakMap` pairs them into a span. Observers run in the order listed, and the call never waits for them: one that is slow never delays a handler, and one that throws is logged while the rest still run. `@Observer({ types })` limits one to some kinds of call. They are services, so they inject dependencies and their `onReady` and `onShutdown` hooks run in dependency order. A message no handler matches is not reported. In `meocord/testing`, `invoke` and `emit` wait for the module's observers, the testing module takes `observers`, and `inspectHandler(...).observers` lists an app's. `npx meocord g ob <name>` generates one with its spec.
+
+- [#144](https://github.com/meocord/meocord/pull/144) [`6798abd`](https://github.com/meocord/meocord/commit/6798abd830f3f4b62b073413ca663d48b062f4b7) Thanks [@l7aromeo](https://github.com/l7aromeo)! - `RedisCooldownStore` in `meocord/common` keeps `@Cooldown` counts on Redis, so they survive a restart and are shared by every shard and process that uses the same server, which keeps `'user'` and `'global'` cooldowns exact under process sharding. MeoCord adds no Redis dependency: give `RedisCooldownStore.using` a function that runs a script with your client, and pass what it returns to `@MeoCord({ cooldownStore })`:
+
+  ```typescript
+  import { RedisCooldownStore } from 'meocord/common'
+
+  // node-redis
+  cooldownStore: RedisCooldownStore.using((script, keys, args) => redis.eval(script, { keys, arguments: args }))
+  // ioredis
+  cooldownStore: RedisCooldownStore.using((script, keys, args) => redis.eval(script, keys.length, ...keys, ...args))
+  ```
+
+  One Lua script checks and records each call as one step, timed by the server's `TIME`, with calls in the same millisecond kept apart and every key set to expire. Keys start with `meocord:cooldown:`, or `{ prefix }`; pass `{ evalsha }` to send the script by its SHA1, in full only when the server answers `NOSCRIPT`. It runs on Redis 5 and later, Valkey, KeyDB, Dragonfly and Upstash; Garnet runs Lua only in part, so check it with `testCooldownStore` first. See [Where calls are counted](https://github.com/meocord/meocord/blob/main/README.md#where-calls-are-counted).
+
+- [#145](https://github.com/meocord/meocord/pull/145) [`8f8690c`](https://github.com/meocord/meocord/commit/8f8690c84bc4e6b2676e86842b0ae3e51129c620) Thanks [@l7aromeo](https://github.com/l7aromeo)! - `ShardedCooldownStore` in `meocord/common` makes `'user'` and `'global'` cooldowns exact under process sharding without a database. Each shard asks the shard manager, which counts every shard's calls in its memory over the IPC the shards already use:
+
+  ```typescript
+  import { ShardedCooldownStore } from 'meocord/common'
+
+  @MeoCord({ controllers: [...], clientOptions: {...}, cooldownStore: ShardedCooldownStore })
+  export default class App {}
+  ```
+
+  Counts are kept while the manager runs, so a shard that restarts keeps them, but they start again when the whole bot restarts. For counts that outlive a restart, or a bot on several hosts, use `RedisCooldownStore`. If the manager does not answer within a second, a shard counts the call itself and warns once. The startup warning about per-shard cooldowns stays silent with this store, and now names both shared stores. See [Where calls are counted](https://github.com/meocord/meocord/blob/main/README.md#where-calls-are-counted).
+
+### Patch Changes
+
+- [#142](https://github.com/meocord/meocord/pull/142) [`400f903`](https://github.com/meocord/meocord/commit/400f903510961d7b181352586f2c693f5039eabc) Thanks [@l7aromeo](https://github.com/l7aromeo)! - A `bundleDependencies` build starts under Bun, and under any devtool.
+
+  - **Bun.** A bundled ES module that probes for CommonJS, as lodash-es does with `typeof exports`, left `module` and `exports` in the bundle's top scope. Bun then read the whole bundle as CommonJS and stopped at startup with `Cannot use import statement with CommonJS-only features`, while Node ran it. Those probes now see `undefined`, as they do in any ES module, so `bun dist/main.js` starts. CommonJS dependencies keep their own `module` and `exports`. Rebuild to pick this up; nothing else changes.
+  - **Eval devtools.** An `eval-*` devtool, set through `output.sourceMap` or `tools.rspack` in the `rsbuild` hook, is built as its non-eval equivalent (`eval-source-map` as `source-map`, plain `eval` as no source map), with a warning at build time. A module evaluated from a string cannot read `import.meta`, so with `bundleDependencies` such a bundle stopped at startup with `SyntaxError: import.meta is only valid inside modules`. To silence the warning, set `output.sourceMap.js` to the non-eval devtool yourself.
+  - Development builds emit `cheap-module-source-map` rather than `eval-source-map`. See [Smaller changes](https://github.com/meocord/meocord/blob/main/docs/MIGRATING.md#smaller-changes) in the upgrade guide.
+
 ## 4.1.0-beta.3
 
 ### Patch Changes
