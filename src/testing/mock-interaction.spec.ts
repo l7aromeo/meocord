@@ -37,6 +37,10 @@ import {
   UserContextMenuCommandInteraction,
   MessageContextMenuCommandInteraction,
   PrimaryEntryPointCommandInteraction,
+  Collection,
+  GuildMember,
+  Locale,
+  Role,
 } from 'discord.js'
 import {
   createMockInteraction,
@@ -49,6 +53,7 @@ import {
   createMockMessage,
 } from './mock-interaction.js'
 import { MeoCordTestingModule } from './meocord-testing-module.js'
+import { createTranslator } from '@src/common/translator.js'
 import { Guard, UseGuard } from '@src/decorator/guard.decorator.js'
 import { type GuardInterface } from '@src/interface/index.js'
 
@@ -597,6 +602,38 @@ describe('createMockInteraction', () => {
   // These assert a compile-time contract, so the gate is `tsc --noEmit -p
   // tsconfig.test.json`, not the runtime assertion. A mock that cannot be handed
   // to the code under test without a cast pushes one cast into every call site.
+  describe('locales', () => {
+    it('has the user’s locale, and no server locale without a guildId, as in a DM', () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      expect(interaction.locale).toBe(Locale.EnglishUS)
+      expect(interaction.guildLocale).toBeNull()
+    })
+
+    it('has a server locale with a guildId', () => {
+      const interaction = createMockInteraction(ButtonInteraction, { guildId: '100' })
+      expect(interaction.guildLocale).toBe(Locale.EnglishUS)
+    })
+
+    it('keeps the locales it is given', () => {
+      const interaction = createMockInteraction(ModalSubmitInteraction, {
+        guildId: '100',
+        locale: Locale.Indonesian,
+        guildLocale: Locale.Japanese,
+      })
+      expect([interaction.locale, interaction.guildLocale]).toEqual([Locale.Indonesian, Locale.Japanese])
+    })
+
+    it('lets a translator pick the server’s language on a default mock', () => {
+      const t = createTranslator({ default: 'en-US', locales: { 'en-US': { hi: 'Hello' }, id: { hi: 'Halo' } } })
+      expect(t.for(createMockInteraction(ChatInputCommandInteraction), { public: true })('hi')).toBe('Hello')
+      expect(t.for(createMockInteraction(ChatInputCommandInteraction, { guildId: '100', guildLocale: Locale.Indonesian }), { public: true })('hi')).toBe('Halo')
+    })
+
+    it('adds no locale to a mock that is not an interaction', () => {
+      expect(Object.prototype.hasOwnProperty.call(createMockInteraction(User), 'locale')).toBe(false)
+    })
+  })
+
   describe('assignability to the real discord.js class', () => {
     it('is accepted where the real class is expected, without a cast', () => {
       const interaction = createMockInteraction(ButtonInteraction, { customId: 'gi-profile-1-2' })
@@ -1454,5 +1491,78 @@ describe('createMock', () => {
 
     expect(a.notify).toHaveBeenCalledTimes(1)
     expect(b.notify).not.toHaveBeenCalled()
+  })
+})
+
+describe('methods that return a promise in discord.js', () => {
+  it('resolves send to a message, so a .catch() chain works', async () => {
+    const client = createMockClient()
+    const channel = createMockChannel(TextChannel)
+
+    await expect(client.users.send('1', { content: 'hi' }).catch(() => undefined)).resolves.toBeInstanceOf(Message)
+    await expect(channel.send({ content: 'hi' })).resolves.toBeInstanceOf(Message)
+    await expect(createMockUser().send('hi')).resolves.toBeInstanceOf(Message)
+    await expect(createMockInteraction(GuildMember).send('hi')).resolves.toBeInstanceOf(Message)
+  })
+
+  it('resolves a manager’s fetch by one id to that item, and a list fetch to an empty collection', async () => {
+    const client = createMockClient()
+    const guild = createMockGuild()
+    const channel = createMockChannel(TextChannel)
+
+    await expect(client.users.fetch('1')).resolves.toBeInstanceOf(User)
+    await expect(client.guilds.fetch('1')).resolves.toBeInstanceOf(Guild)
+    await expect(client.channels.fetch('1')).resolves.toBeInstanceOf(TextChannel)
+    await expect(guild.members.fetch('1')).resolves.toBeInstanceOf(GuildMember)
+    await expect(guild.members.fetch({ user: '1' })).resolves.toBeInstanceOf(GuildMember)
+    await expect(guild.roles.fetch('1')).resolves.toBeInstanceOf(Role)
+    await expect(channel.messages.fetch('1')).resolves.toBeInstanceOf(Message)
+
+    const members = await guild.members.fetch()
+    expect(members).toBeInstanceOf(Collection)
+    expect(members.size).toBe(0)
+    expect(await channel.messages.fetch({ limit: 10 })).toEqual(new Collection())
+  })
+
+  it('resolves what a manager creates to a mock of it', async () => {
+    const client = createMockClient()
+    const guild = createMockGuild()
+
+    await expect(createMockChannel(TextChannel).threads.create({ name: 't' })).resolves.toBeInstanceOf(ThreadChannel)
+    await expect(guild.roles.create({ name: 'r' })).resolves.toBeInstanceOf(Role)
+    await expect(guild.channels.create({ name: 'c' })).resolves.toBeInstanceOf(TextChannel)
+    await expect(client.users.createDM('1')).resolves.toBeInstanceOf(DMChannel)
+  })
+
+  it('resolves an edit or a setter on a structure to the structure itself', async () => {
+    const thread = createMockChannel(ThreadChannel)
+    const member = createMockInteraction(GuildMember)
+
+    await expect(thread.setLocked(true)).resolves.toBe(thread)
+    await expect(thread.setArchived(true)).resolves.toBe(thread)
+    await expect(member.edit({ nick: 'n' })).resolves.toBe(member)
+    await expect(member.fetch()).resolves.toBe(member)
+  })
+
+  it('returns a promise from every other method discord.js declares async', async () => {
+    const typing = createMockChannel(TextChannel).sendTyping()
+
+    expect(typing).toBeInstanceOf(Promise)
+    await expect(typing).resolves.toBeUndefined()
+  })
+
+  it('leaves methods that return a value synchronously alone', () => {
+    const client = createMockClient()
+
+    expect(createMockUser().avatarURL()).toBeUndefined()
+    expect(client.user?.setPresence({ status: 'idle' })).toBeUndefined()
+  })
+
+  it('still lets a test choose what a method resolves to', async () => {
+    const client = createMockClient()
+    client.users.fetch.mockResolvedValue(createMockUser())
+    client.users.send.mockRejectedValue(new Error('Cannot send messages to this user'))
+
+    await expect(client.users.send('1', 'hi')).rejects.toThrow('Cannot send messages to this user')
   })
 })
