@@ -51,6 +51,7 @@
 - [Custom Decorators](#custom-decorators)
 - [Gateway Events](#gateway-events)
 - [Handler Discovery](#handler-discovery)
+- [Providers](#providers)
 - [Lifecycle Hooks](#lifecycle-hooks)
 - [Localisation](#localisation)
 - [Testing](#testing)
@@ -70,7 +71,7 @@
 ## Features
 
 - **Decorator-based controllers** — Handle every Discord interaction type — slash commands and their subcommands, autocomplete, buttons, modals, all five select menus, context menus, activity entry points, messages, and reactions — with `@Command`, `@Autocomplete`, `@MessageHandler` and `@ReactionHandler`. No routing boilerplate.
-- **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators.
+- **Dependency injection** — Built on Inversify. Services are wired into controllers automatically; no manual instantiation or service locators. Providers add values, classes and async factories under any token, injected with `@Inject`.
 - **A request pipeline** — [Guards](#guards) decide whether a handler runs, [interceptors](#interceptors) wrap it, [validation and pipes](#validation-and-pipes) check and transform its input, [cooldowns](#cooldowns) limit how often it runs, and [exception filters](#exception-filters) decide what the user is told when something throws. Each applies to a method, a controller, or the whole bot.
 - **Interaction responses** — `respond(interaction)` answers every interaction type correctly from any state, deferred or replied, wherever a user-installed app is used; a presenter styles MeoCord's own answers.
 - **Cooldowns** — `@Cooldown` limits how often a handler runs, per user, server, channel or for everyone, with a pluggable store to share the count across shards.
@@ -1329,6 +1330,62 @@ export class HelpService {
 
 ---
 
+## Providers
+
+A class that a controller or service injects by its type is bound for you. For anything else — a database pool, a configured client, settings, or the implementation behind an abstract class — list a provider in `@MeoCord({ providers })`, and inject it with `@Inject(token)`:
+
+```typescript
+import { createToken } from 'meocord/common'
+import { Inject, MeoCord, Service } from 'meocord/decorator'
+import { GatewayIntentBits } from 'discord.js'
+import pg from 'pg'
+
+export const DATABASE = createToken<pg.Pool>('Database')
+
+@Service()
+export class NotesStore {
+  constructor(@Inject(DATABASE) private readonly db: pg.Pool) {}
+
+  async list(userId: string) {
+    const { rows } = await this.db.query('SELECT text FROM notes WHERE user_id = $1', [userId])
+    return rows
+  }
+}
+
+@MeoCord({
+  controllers: [NotesController],
+  providers: [
+    { provide: 'databaseUrl', useValue: process.env.DATABASE_URL },
+    {
+      provide: DATABASE,
+      useFactory: async (url: string) => {
+        const pool = new pg.Pool({ connectionString: url })
+        await pool.query('SELECT 1') // fail at startup, not at the first command
+        return pool
+      },
+      inject: ['databaseUrl'],
+    },
+  ],
+  clientOptions: { intents: [GatewayIntentBits.Guilds] },
+})
+export default class App {}
+```
+
+| Provider                           | Provides                                                                               |
+| ---------------------------------- | -------------------------------------------------------------------------------------- |
+| `{ provide, useValue }`            | The value, as it is.                                                                   |
+| `{ provide, useClass }`            | One instance of the class, with its own constructor dependencies injected.             |
+| `{ provide, useFactory, inject? }` | What the function returns, called once with the values of `inject`. It may be `async`. |
+
+- **Tokens** are a class, a string, a symbol, or a token from `createToken<T>(description)`: a symbol whose description names it in errors, and whose type `TestingModule.get` returns. A parameter typed as a class needs no `@Inject`; `{ provide: Storage, useClass: RedisStorage }` makes every `Storage` parameter a `RedisStorage`.
+- **When**: every factory runs once, in dependency order, when `app.start()` begins, before the listed services are made and before login, awaiting those that return a promise. Anything that injects the value gets the resolved one.
+- **Lifecycle**: a provided value that implements `onReady` or `onShutdown` gets them called like a service's, in dependency order, so it closes after the services that use it. `pg.Pool` has no such hook; end it from the `onShutdown` of the service that owns it, or provide a class that wraps it.
+- **Failures**: a factory that throws or rejects stops the bot before it logs in. The log names the token and the cause, `app.start()` rejects with an error `isExplainedError` recognises, and the exit code is 1. A class or factory that injects a token nothing provides stops `MeoCordFactory.create()`, naming both. A token may be provided once, and the tokens MeoCord binds itself, such as `Client`, cannot be provided.
+
+In a test, `MeoCordTestingModule` takes the same providers, and `overrideProvider(token)` replaces one under any token. `invoke` and `emit` resolve asynchronous factories first; before calling `get` on something that depends on one, `await module.init()`.
+
+---
+
 ## Lifecycle Hooks
 
 A controller or service can do work once the bot is online, and clean up before it stops, by implementing `OnReady` and `OnShutdown` from `meocord/interface`:
@@ -1360,7 +1417,7 @@ export class ReminderScheduler implements OnReady, OnShutdown {
 }
 ```
 
-- **Which classes**: every controller and every service the app binds — the ones listed in `@MeoCord({ controllers, services })` and everything they depend on — including a service no handler has used yet. Guards are created per call and get no hooks.
+- **Which classes**: every controller and every service the app binds — the ones listed in `@MeoCord({ controllers, services })` and everything they depend on — including a service no handler has used yet, and every [provided](#providers) value that implements a hook. Guards are created per call and get no hooks.
 - **`onReady`** runs once the client is ready. It receives the client and `{ primary }`, which says whether this process should do one-off work: `true` for a bot running in one process, and with [process sharding](#sharding) only in the process running shard 0.
 - **Dependency order.** `onReady` hooks run one at a time, each class after the classes it injects: a `DatabaseService` is ready before the `ReminderScheduler` that injects it. Classes with no dependency between them run in declaration order, the `services` first, then the `controllers`. Command registration runs alongside and never delays the hooks. A hook still running after 10 seconds is named in a warning, and the hooks after it wait for it.
 - **`onShutdown`** runs on SIGINT or SIGTERM, before the client is destroyed, in reverse order, so a class stops before the classes it uses. The bot waits for the whole sequence up to `shutdownTimeout` from `meocord.config.ts` (10 seconds by default), then shuts down whether or not it finished. A second signal more than a second after the first exits at once; one sooner is taken as the same request, since a terminal's Ctrl+C can arrive twice. If the bot never became ready, for example because the login failed, no `onShutdown` hook runs. A signal that arrives while the `onReady` hooks are still running shuts down only the classes whose `onReady` finished, and those without one; the class still starting, and those after it, are skipped, and no further `onReady` starts.
@@ -1475,6 +1532,8 @@ const module = MeoCordTestingModule.create({
 
 const controller = module.get(GreetingSlashController)
 ```
+
+`providers` takes the same shapes as `@MeoCord({ providers })`: `useValue`, `useClass` and `useFactory`, under a class, string, symbol or `createToken` token. A factory that returns a promise is resolved by `await module.init()`, which `invoke` and `emit` call for you.
 
 ### Running a handler with `invoke`
 

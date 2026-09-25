@@ -19,20 +19,19 @@ import { type ExceptionFilter, type GuardInterface, type InterceptorInterface } 
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
 import { ShardContext } from '@src/core/shard-context.js'
-import { dependencyOrder, isAppClassToken } from '@src/core/lifecycle-order.js'
+import { isAppClassToken } from '@src/core/lifecycle-order.js'
+import {
+  assertProvided,
+  bindProvider,
+  isClassProvider,
+  providerMap,
+  type ProviderMap,
+  resolutionOrder,
+  resolveProviders,
+  tokenName,
+} from '@src/core/providers.js'
+import { type Provider, type ProviderToken } from '@src/interface/provider.interface.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
-
-export interface ValueProvider<T = any> {
-  provide: ServiceIdentifier<T>
-  useValue: T
-}
-
-export interface ClassProvider<T = any> {
-  provide: ServiceIdentifier<T>
-  useClass: new (...args: any[]) => T
-}
-
-export type Provider<T = any> = ValueProvider<T> | ClassProvider<T>
 
 export interface TestingModuleOptions {
   controllers?: (new (...args: any[]) => any)[]
@@ -45,10 +44,6 @@ export interface TestingModuleOptions {
    * them here.
    */
   app?: new (...args: any[]) => unknown
-}
-
-function isValueProvider(p: Provider): p is ValueProvider {
-  return 'useValue' in p
 }
 
 /** The names of a class's instance methods. */
@@ -84,7 +79,33 @@ export class TestingModule {
     private readonly container: Container,
     private readonly controllers: readonly (new (...args: any[]) => unknown)[] = [],
     private readonly eventClasses: readonly (new (...args: any[]) => unknown)[] = [],
+    private readonly providers: ProviderMap = new Map(),
+    private readonly order: readonly unknown[] = [],
   ) {}
+
+  private resolving?: Promise<void>
+
+  /**
+   * Resolves the module's `useFactory` providers, awaiting those that return a promise, in dependency
+   * order. `invoke` and `emit` call it first; call it yourself before `get` resolves anything that
+   * depends on an asynchronous factory. Calling it again does nothing more.
+   *
+   * @returns The module, once every factory has made its value.
+   *
+   * @example
+   * ```ts
+   * const module = await MeoCordTestingModule.create({
+   *   providers: [{ provide: DATABASE, useFactory: async () => createTestDatabase() }, NotesStore],
+   * })
+   *   .compile()
+   *   .init()
+   * ```
+   */
+  async init(): Promise<this> {
+    this.resolving ??= resolveProviders(this.container, this.providers, this.order)
+    await this.resolving
+    return this
+  }
 
   /** The `@Once` handlers that have already handled their event, as a client forgets its once listeners. */
   private readonly firedOnce = new Set<string>()
@@ -92,11 +113,20 @@ export class TestingModule {
   /**
    * Resolves an instance from the module, as the bot would inject it.
    *
-   * @param token - A controller, provider or other bound class or token.
+   * @param token - A controller, a provided token, or another bound class.
    * @returns The instance, with its dependencies and overrides applied.
+   * @throws When the instance depends on a factory that returns a promise and `init()` has not run.
    */
-  get<T>(token: ServiceIdentifier<T>): T {
-    return this.container.get<T>(token)
+  get<T>(token: ProviderToken<T> | ServiceIdentifier<T>): T {
+    try {
+      return this.container.get<T>(token as ServiceIdentifier<T>)
+    } catch (error) {
+      if (!/asynchronous/i.test(String((error as Error)?.message))) throw error
+      throw new Error(
+        `${tokenName(token)} depends on a factory that returns a promise: await module.init() before get().`,
+        { cause: error },
+      )
+    }
   }
 
   /**
@@ -138,6 +168,7 @@ export class TestingModule {
     methodName: M,
     ...args: HandlerArgs<C, M>
   ): Promise<InvocationResult> {
+    await this.init()
     if (!this.controllers.includes(controller)) {
       throw new Error(`${controller.name} is not a controller of this testing module. Add it to \`controllers\`.`)
     }
@@ -180,6 +211,7 @@ export class TestingModule {
    * ```
    */
   async emit<E extends keyof ClientEvents>(event: E, ...args: ClientEvents[E]): Promise<EmitResult> {
+    await this.init()
     const calls: Promise<boolean>[] = []
     for (const cls of this.eventClasses) {
       for (const handler of getEventHandlers(cls.prototype)) {
@@ -212,7 +244,7 @@ export class TestingModule {
  * Call `.compile()` to get the resolved `TestingModule`.
  */
 export class TestingModuleBuilder {
-  private readonly overrides = new Map<ServiceIdentifier, Provider>()
+  private readonly overrides = new Map<unknown, Provider>()
   private readonly guardOverrides = new Map<new (...args: any[]) => GuardInterface, Partial<GuardInterface>>()
   private readonly filterOverrides = new Map<new (...args: any[]) => ExceptionFilter<any>, Partial<ExceptionFilter<any>>>()
   private readonly interceptorOverrides = new Map<
@@ -233,7 +265,7 @@ export class TestingModuleBuilder {
    * builder.overrideProvider(UserService).useValue({ findUser: vi.fn() })
    * ```
    */
-  overrideProvider<T>(token: ServiceIdentifier<T>): { useValue: (value: Partial<T>) => TestingModuleBuilder } {
+  overrideProvider<T>(token: ProviderToken<T> | ServiceIdentifier<T>): { useValue: (value: Partial<T>) => TestingModuleBuilder } {
     return {
       useValue: (value: Partial<T>) => {
         this.overrides.set(token, { provide: token, useValue: value })
@@ -326,26 +358,9 @@ export class TestingModuleBuilder {
       }),
     )
 
-    // Merge explicit providers with overrides (overrides win)
-    const providers = new Map<ServiceIdentifier, Provider>()
-    for (const p of this.options.providers ?? []) {
-      providers.set(p.provide, p)
-    }
-    for (const [token, override] of this.overrides) {
-      providers.set(token, override)
-    }
-
-    // Bind explicit providers
-    for (const provider of providers.values()) {
-      if (isValueProvider(provider)) {
-        container.bind(provider.provide).toConstantValue(provider.useValue)
-      } else {
-        const cls = provider.useClass
-        if (injectedTokens(cls).includes(ExecutionContext)) throw singletonContextError(cls)
-        makeInjectable(cls)
-        container.bind(provider.provide).to(cls).inSingletonScope()
-      }
-    }
+    // Checked as the app checks its own, then merged with the overrides, which win
+    const providers = providerMap(this.options.providers ?? [], "the testing module's providers")
+    for (const [token, override] of this.overrides) providers.set(token, override)
 
     // Bind guard overrides — prevents inversify from auto-wiring guard dependencies
     for (const [guardClass, stub] of this.guardOverrides) {
@@ -360,9 +375,9 @@ export class TestingModuleBuilder {
       container.bind(interceptorClass).toConstantValue(stub as InterceptorInterface)
     }
 
-    // The app's translator, unless a provider already stands in for it
+    // The app's translator, unless a provider stands in for it
     const i18n = this.options.app && (Reflect.getMetadata(MetadataKey.AppOptions, this.options.app) as { i18n?: Translator })?.i18n
-    if (i18n && !container.isBound(Translator)) container.bind(Translator).toConstantValue(i18n)
+    if (i18n && !providers.has(Translator)) container.bind(Translator).toConstantValue(i18n)
 
     // Recursively bind controllers and their dependencies, skipping already-bound tokens
     const bindClass = (cls: new (...args: any[]) => any) => {
@@ -379,6 +394,9 @@ export class TestingModuleBuilder {
       }
     }
 
+    // Before the controllers, so a class token that is provided is not also bound as itself
+    for (const provider of providers.values()) bindProvider(container, provider, bindClass)
+
     for (const ctrl of this.options.controllers ?? []) {
       bindClass(ctrl)
       // Stamp container on controller class so @UseGuard works in tests too
@@ -386,16 +404,20 @@ export class TestingModuleBuilder {
     }
 
     // The classes whose @On and @Once handlers emit reaches: class providers bound as themselves, the
-    // controllers, and what they inject
-    const selfProviders = [...providers.values()].flatMap(provider =>
-      !isValueProvider(provider) && provider.useClass === provider.provide ? [provider.useClass] : [],
+    // controllers, and what they inject; factories resolve in the same order
+    const order = resolutionOrder(container, providers, [...providers.keys(), ...(this.options.controllers ?? [])])
+    appClasses.push(
+      ...order.filter((token): token is new (...args: any[]) => unknown => {
+        const provider = providers.get(token)
+        return isAppClassToken(token) && (!provider || (isClassProvider(provider) && provider.useClass === token))
+      }),
     )
-    appClasses.push(...dependencyOrder(container, [...selfProviders, ...(this.options.controllers ?? [])]))
+    assertProvided(container, providers, appClasses, "the testing module's providers")
     for (const cls of appClasses) Reflect.defineMetadata(MetadataKey.Container, container, cls)
     prepareHandlerStages(container, appClasses)
     if (this.options.app) bindAppPresenter(container, this.options.app)
 
-    return new TestingModule(container, [...(this.options.controllers ?? [])], appClasses)
+    return new TestingModule(container, [...(this.options.controllers ?? [])], appClasses, providers, order)
   }
 }
 

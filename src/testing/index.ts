@@ -1,8 +1,5 @@
 export { MeoCordTestingModule, TestingModule, TestingModuleBuilder } from './meocord-testing-module.js'
 export type {
-  Provider,
-  ValueProvider,
-  ClassProvider,
   TestingModuleOptions,
   HandlerName,
   InvocationResult,
@@ -46,3 +43,11 @@ export type {
 
 export { createDiscordError, getResponse } from './response.js'
 export type { ResponseReport } from './response.js'
+// The provider shapes the app takes, so a test lists what the app lists
+export type {
+  ClassProvider,
+  FactoryProvider,
+  Provider,
+  ProviderToken,
+  ValueProvider,
+} from '@src/interface/provider.interface.js'
