@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { createRequire } from 'module'
 import { tmpdir } from 'os'
 import path from 'path'
@@ -10,7 +10,8 @@ import { createRsbuildConfig } from '@src/build/rsbuild-config.js'
 import { installStackRemapper } from '@src/build/stack-remap.js'
 
 describe('installStackRemapper', () => {
-  const directory = realpathSync(mkdtempSync(path.join(tmpdir(), 'meocord-remap-')))
+  // The long form: os.tmpdir() can be a Windows 8.3 short path, such as RUNNER~1, where Bun names the long one
+  const directory = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'meocord-remap-')))
   // CommonJS, so Node's own loader runs it rather than the test runner's, which rewrites what it loads
   const bundle = path.join(directory, 'main.cjs')
   const load = createRequire(import.meta.url)
@@ -106,6 +107,20 @@ describe('installStackRemapper', () => {
     expect((await explode()).stack![0]).toBe(`${path.join(directory, 'boom.ts')}:4`)
   })
 
+  // As with a Windows 8.3 short path: the bundle is named one way and the runtime names its frames another
+  it('maps frames when the bundle path names its directory another way than the runtime does', async () => {
+    compile()
+    const alias = path.join(realpathSync.native(tmpdir()), `meocord-remap-alias-${process.pid}`)
+    symlinkSync(directory, alias, process.platform === 'win32' ? 'junction' : 'dir')
+    try {
+      installStackRemapper(path.join(alias, 'main.cjs'))
+
+      expect((await explode()).stack!.split('\n')[1]).toContain(`${path.join(directory, 'boom.ts')}:4:`)
+    } finally {
+      rmSync(alias, { recursive: true, force: true })
+    }
+  })
+
   it('keeps the bundle positions when the map cannot be read', async () => {
     compile()
     writeFileSync(`${bundle}.map`, '{ not json')
@@ -169,7 +184,7 @@ interface Run {
 }
 
 function fixtureApp() {
-  const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'meocord-stacks-')))
+  const root = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'meocord-stacks-')))
   const write = (file: string, content: string) => {
     mkdirSync(path.dirname(path.join(root, file)), { recursive: true })
     writeFileSync(path.join(root, file), content)
