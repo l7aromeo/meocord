@@ -1,5 +1,11 @@
 # MeoCord Framework
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/meocord/meocord/main/docs/assets/brand/banner-dark.webp">
+  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/meocord/meocord/main/docs/assets/brand/banner-light.webp">
+  <img alt="MeoCord: a controller method with @Command, @UseGuard and @Cooldown, answering with respond()" src="https://raw.githubusercontent.com/meocord/meocord/main/docs/assets/brand/banner.webp" width="1280">
+</picture>
+
 [![npm version](https://img.shields.io/npm/v/meocord.svg)](https://www.npmjs.com/package/meocord)
 [![CI](https://github.com/meocord/meocord/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/meocord/meocord/actions/workflows/release.yml)
 [![node](https://img.shields.io/node/v/meocord)](https://www.npmjs.com/package/meocord)

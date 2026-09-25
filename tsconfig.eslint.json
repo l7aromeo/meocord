@@ -6,7 +6,8 @@
     "vitest.setup.ts",
     "eslint.config.ts",
     "meocord.eslint.d.ts",
-    "scripts/**/*.ts"
+    "scripts/**/*.ts",
+    "tools/**/*.ts"
   ],
   "exclude": [
     "node_modules"
