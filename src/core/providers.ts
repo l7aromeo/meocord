@@ -1,6 +1,6 @@
 import { type Container, type ServiceIdentifier } from 'inversify'
 import { ExecutionContext } from '@src/common/execution-context.js'
-import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
+import { injectedTokens, singletonContextError, untypedParameter } from '@src/core/guard-runner.js'
 import { isAppClassToken } from '@src/core/lifecycle-order.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import {
@@ -115,6 +115,53 @@ export function assertProvided(container: Container, providers: ProviderMap, cla
         `The provider for ${tokenName(provided)} injects ${tokenName(token)}, which nothing provides: add a provider for it to ${where}.`,
       )
     }
+  }
+}
+
+/**
+ * The classes the app constructs, found from `roots` through what each injects, before anything is
+ * bound: a token a provider stands in for is not constructed as itself, so it is only followed when
+ * it is its own `useClass`. Providers' classes and factory dependencies are roots too.
+ */
+export function reachableClasses(roots: readonly unknown[], providers: ProviderMap): AnyClass[] {
+  const found: AnyClass[] = []
+  const visit = (token: unknown) => {
+    if (!isAppClassToken(token) || found.includes(token)) return
+    const provider = providers.get(token)
+    if (provider && !(isClassProvider(provider) && provider.useClass === token)) return
+    found.push(token)
+    injectedTokens(token).forEach(visit)
+  }
+  for (const provider of providers.values()) {
+    if (isClassProvider(provider)) visit(provider.useClass)
+    if (isFactoryProvider(provider)) (provider.inject ?? []).forEach(visit)
+  }
+  roots.forEach(visit)
+  return found
+}
+
+/**
+ * Throws for the first of `classes` with a constructor parameter nothing can inject: one with no
+ * runtime type and no `@Inject` token. It names the classes among `classes` that inject it, the likely
+ * other half when two classes import each other, rather than leaving inversify's error to point at
+ * the compiler options.
+ */
+export function assertTypedParameters(classes: readonly AnyClass[]): void {
+  for (const cls of classes) {
+    const index = untypedParameter(cls)
+    if (index === -1) continue
+    const injectors = classes.filter(other => other !== cls && injectedTokens(other).includes(cls)).map(other => other.name)
+    const injectedBy =
+      injectors.length === 0
+        ? ''
+        : ` (${injectors.length === 1 ? injectors[0] : `${injectors.slice(0, -1).join(', ')} and ${injectors.at(-1)}`} ` +
+          `inject${injectors.length === 1 ? 's' : ''} ${cls.name})`
+    throw new Error(
+      `${cls.name} cannot be created: parameter ${index + 1} of its constructor has no runtime type. Usually ` +
+        `${cls.name} and a class it injects import each other${injectedBy}, or the parameter is typed with an ` +
+        'interface or an `import type`. Move what they both need into a third service, or inject the parameter ' +
+        'with @Inject(token).',
+    )
   }
 }
 

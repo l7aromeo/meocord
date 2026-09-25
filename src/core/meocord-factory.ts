@@ -18,6 +18,8 @@ import { makeInjectable } from '@src/util/injectable.util.js'
 import { isAppClassToken, type LifecycleUnit } from '@src/core/lifecycle-order.js'
 import {
   assertProvided,
+  assertTypedParameters,
+  reachableClasses,
   bindProvider,
   isClassProvider,
   providerMap,
@@ -133,6 +135,9 @@ export class MeoCordFactory {
     assertBuiltForThisPlatform()
 
     const providers = providerMap(options.providers ?? [], '@MeoCord({ providers })')
+    // Before binding, where inversify would otherwise fail first with an error about compiler options
+    const roots = [...options.controllers, ...(options.services ?? []), ...(options.cooldownStore ? [options.cooldownStore] : [])]
+    assertTypedParameters(reachableClasses(roots, providers))
     const container = new Container()
     bindGlobalStages(container, appStages(target as object))
 
