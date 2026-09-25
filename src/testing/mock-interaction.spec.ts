@@ -531,6 +531,66 @@ describe('createMockInteraction', () => {
     })
   })
 
+  describe('guild checks', () => {
+    it('answers false to all three without a guildId, as in a DM', () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      expect(interaction.inGuild()).toBe(false)
+      expect(interaction.inCachedGuild()).toBe(false)
+      expect(interaction.inRawGuild()).toBe(false)
+    })
+
+    it('answers in a guild, but not a cached one, with a guildId alone', () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction, { guildId: '100' })
+      expect(interaction.inGuild()).toBe(true)
+      expect(interaction.inCachedGuild()).toBe(false)
+      expect(interaction.inRawGuild()).toBe(true)
+    })
+
+    it('answers in a cached guild with a guildId and a guild', () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction, {
+        guildId: '100',
+        guild: createMockGuild(),
+      })
+      expect(interaction.inGuild()).toBe(true)
+      expect(interaction.inCachedGuild()).toBe(true)
+      expect(interaction.inRawGuild()).toBe(false)
+    })
+
+    it('answers false to all three when member is null or undefined', () => {
+      for (const member of [null, undefined]) {
+        const interaction = createMockInteraction(ChatInputCommandInteraction, {
+          guildId: '100',
+          guild: createMockGuild(),
+          member: member as any,
+        })
+        expect(interaction.inGuild()).toBe(false)
+        expect(interaction.inCachedGuild()).toBe(false)
+        expect(interaction.inRawGuild()).toBe(false)
+      }
+    })
+
+    it('reads a guildId written after creation', () => {
+      const interaction = createMockInteraction(ButtonInteraction)
+      ;(interaction as any).guildId = '100'
+      expect(interaction.inGuild()).toBe(true)
+    })
+
+    it('keeps an explicit return value', () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+      interaction.inCachedGuild.mockReturnValue(true)
+      expect(interaction.inCachedGuild()).toBe(true)
+    })
+
+    it('lets a guard that requires a cached guild deny a DM with false', () => {
+      class StaffGuard {
+        canActivate(interaction: ChatInputCommandInteraction): boolean {
+          return interaction.inCachedGuild() && interaction.member.roles.cache.has('staff')
+        }
+      }
+      expect(new StaffGuard().canActivate(createMockInteraction(ChatInputCommandInteraction))).toBe(false)
+    })
+  })
+
   // These assert a compile-time contract, so the gate is `tsc --noEmit -p
   // tsconfig.test.json`, not the runtime assertion. A mock that cannot be handed
   // to the code under test without a cast pushes one cast into every call site.

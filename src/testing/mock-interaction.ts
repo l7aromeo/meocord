@@ -242,7 +242,9 @@ function findPrototypeMethod(instance: object, name: string): ((...args: unknown
 /**
  * Creates a mock instance of a discord.js class, keeping its prototype so `instanceof` holds.
  *
- * Type guards such as `isButton()` run the real discord.js logic. Replies behave like a real
+ * Type guards such as `isButton()` run the real discord.js logic. `inGuild()`, `inCachedGuild()`
+ * and `inRawGuild()` answer from the mock's own `guildId` and `guild`, so a mock created without
+ * a `guildId` is a DM. Replies behave like a real
  * interaction: `reply()` or `deferReply()` twice throws, and `followUp()`, `editReply()` and
  * `deleteReply()` throw before a reply. Every method is a mock function you can override.
  *
@@ -283,6 +285,20 @@ export function createMockInteraction<T extends object>(
         createMockFn().mockImplementation(() => method.call(instance)),
       )
     }
+  }
+
+  // Guild checks read the mock's own data, since discord.js resolves `guild` through a client the
+  // mock lacks: a guildId is a guild, a guild object with it a cached one, neither a DM. A member
+  // not given is the auto-stub, so only one set to null or undefined fails the check.
+  const own = (key: string) => (Object.prototype.hasOwnProperty.call(instance, key) ? instance[key] : undefined)
+  const hasMember = () => !Object.prototype.hasOwnProperty.call(instance, 'member') || Boolean(instance.member)
+  const guildChecks = {
+    inGuild: () => Boolean(own('guildId') && hasMember()),
+    inCachedGuild: () => Boolean(own('guildId') && own('guild') && hasMember()),
+    inRawGuild: () => Boolean(own('guildId') && !own('guild') && hasMember()),
+  }
+  for (const [name, check] of Object.entries(guildChecks)) {
+    if (findPrototypeMethod(instance, name) !== null) stubs.set(name, createMockFn().mockImplementation(check))
   }
 
   // Set up reply state machine for repliable interactions
