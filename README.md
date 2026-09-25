@@ -1691,6 +1691,23 @@ edited.delete // → a mock fn
 expect(msg.delete).toHaveBeenCalledTimes(1)
 ```
 
+Without arguments the message is empty. Give it an `id`, `content`, `components`, `embeds` and `flags` to test code that reads them, such as a button on a message whose controls `@Defer` locks. Components and embeds may be API JSON, builders or discord.js instances, and `flags` a number, flag names or a `MessageFlagsBitField`:
+
+```typescript
+const message = createMockMessage({
+  components: [
+    new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId('card/refresh').setLabel('Refresh').setStyle(ButtonStyle.Primary),
+    ),
+  ],
+  embeds: [{ title: 'Card' }],
+  flags: MessageFlags.Ephemeral,
+})
+const interaction = createMockInteraction(ButtonInteraction, { customId: 'card/refresh', message })
+```
+
+API JSON and builders are kept as their JSON behind `toJSON()`, which is what `respond()` and `@Defer` read; discord.js instances are kept as they are.
+
 </details>
 
 <details>

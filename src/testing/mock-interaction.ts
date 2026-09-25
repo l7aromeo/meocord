@@ -2,6 +2,12 @@ import 'reflect-metadata'
 import { createMockFn, type MockedFunction, type Mock } from './mock-fn.js'
 import {
   type APIAuthorizingIntegrationOwnersMap,
+  type APIEmbed,
+  type APIMessageTopLevelComponent,
+  Component,
+  Embed,
+  type JSONEncodable,
+  type MessageFlagsResolvable,
   ApplicationCommandManager,
   ApplicationCommandOptionType,
   ApplicationCommandType,
@@ -573,6 +579,35 @@ function createMockGuildForMessage(): object {
 }
 
 /**
+ * What {@link createMockMessage} builds a message with. Components and embeds may be API JSON,
+ * builders or discord.js instances.
+ */
+export interface MockMessageOverrides {
+  /** The message's id. */
+  id?: string
+  /** The message's text. */
+  content?: string
+  /** Its top-level components: action rows, or Components V2 such as a container. */
+  components?: readonly (APIMessageTopLevelComponent | JSONEncodable<APIMessageTopLevelComponent>)[]
+  /** Its embeds. */
+  embeds?: readonly (APIEmbed | JSONEncodable<APIEmbed>)[]
+  /** Its flags: a number, flag names or a `MessageFlagsBitField`. */
+  flags?: MessageFlagsResolvable
+}
+
+/**
+ * A component or embed as a message holds it: a discord.js instance as it is; anything else as
+ * its API JSON at the time of the call, behind `toJSON()`.
+ */
+function asHeld<T>(value: T | JSONEncodable<T>): JSONEncodable<T> {
+  if (value instanceof Component || value instanceof Embed) return value as JSONEncodable<T>
+  const json = structuredClone(
+    typeof (value as Partial<JSONEncodable<T>>).toJSON === 'function' ? (value as JSONEncodable<T>).toJSON() : (value as T),
+  )
+  return { toJSON: () => json }
+}
+
+/**
  * Creates a mock {@link Message} that tracks whether it has been deleted.
  *
  * `delete()`, `edit()`, `reply()`, `react()`, `pin()` and `unpin()` throw once the message is
@@ -580,14 +615,31 @@ function createMockGuildForMessage(): object {
  * `msg.author.send` and `msg.guild.members.fetch` are ready to use, and every method is a mock
  * function you can override per test.
  *
+ * Without overrides the message is empty: no flags, components, embeds or attachments. Components
+ * and embeds given as API JSON or builders keep that JSON behind `toJSON()`, which is what
+ * `respond()` and `@Defer` read, such as when `@Defer` locks the controls of the message a button
+ * sits on; discord.js instances are kept as they are.
+ *
+ * @param overrides - The message's id, content, components, embeds and flags.
+ * @returns The mock message.
+ *
  * @example
  * ```ts
- * const message = createMockMessage()
+ * const message = createMockMessage({
+ *   components: [
+ *     new ActionRowBuilder<ButtonBuilder>().addComponents(
+ *       new ButtonBuilder().setCustomId('card/refresh').setLabel('Refresh').setStyle(ButtonStyle.Primary),
+ *     ),
+ *   ],
+ *   embeds: [{ title: 'Card' }],
+ * })
+ * const interaction = createMockInteraction(ButtonInteraction, { customId: 'card/refresh', message })
+ *
  * await message.delete()
  * message.deleted // true
  * ```
  */
-export function createMockMessage(): DeepMocked<Message> & { deleted: boolean } {
+export function createMockMessage(overrides: MockMessageOverrides = {}): DeepMocked<Message> & { deleted: boolean } {
   const instance = Object.create(Message.prototype) as Record<string, unknown>
   const stubs = new Map<string, Mock>()
 
@@ -620,10 +672,12 @@ export function createMockMessage(): DeepMocked<Message> & { deleted: boolean } 
   instance.mentions = stubDeep(Object.create(MessageMentions.prototype))
 
   // Data a message always has, real rather than stubbed, so code reading it sees an empty message
-  instance.flags = new MessageFlagsBitField()
-  instance.components = []
-  instance.embeds = []
+  instance.flags = new MessageFlagsBitField(overrides.flags)
+  instance.components = (overrides.components ?? []).map(asHeld)
+  instance.embeds = (overrides.embeds ?? []).map(asHeld)
   instance.attachments = new Collection()
+  if (overrides.id !== undefined) instance.id = overrides.id
+  if (overrides.content !== undefined) instance.content = overrides.content
 
   const alreadyDeleted = () => new Error('This message has already been deleted.')
 

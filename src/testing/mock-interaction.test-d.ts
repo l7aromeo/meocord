@@ -1,6 +1,13 @@
 import { describe, it, expectTypeOf } from 'vitest'
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
   ButtonInteraction,
+  ButtonStyle,
+  ComponentType,
+  EmbedBuilder,
+  MessageFlags,
+  TextInputStyle,
   ChatInputCommandInteraction,
   ModalSubmitInteraction,
   StringSelectMenuInteraction,
@@ -14,6 +21,7 @@ import {
   createMockMessage,
   createMockUser,
   type DeepMocked,
+  type MockMessageOverrides,
   type MockProps,
 } from './mock-interaction.js'
 import type { MockedFunction } from './mock-fn.js'
@@ -157,5 +165,37 @@ describe('createMock', () => {
 describe('DeepMocked depth cap', () => {
   it('stops recursing at the cap and hands back the source type', () => {
     expectTypeOf<DeepMocked<{ a: 1 }, [0, 0, 0, 0, 0]>>().toEqualTypeOf<{ a: 1 }>()
+  })
+})
+
+describe('createMockMessage', () => {
+  it('takes typed overrides, or none', () => {
+    expectTypeOf(createMockMessage).parameter(0).toEqualTypeOf<MockMessageOverrides | undefined>()
+
+    createMockMessage()
+    createMockMessage({
+      id: '123456789012345678',
+      content: 'Hello',
+      components: [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId('a').setLabel('A').setStyle(ButtonStyle.Primary),
+        ),
+        { type: ComponentType.ActionRow, components: [{ type: ComponentType.Button, style: ButtonStyle.Secondary, custom_id: 'b', label: 'B' }] },
+      ],
+      embeds: [new EmbedBuilder().setTitle('Card'), { description: 'Plain JSON' }],
+      flags: MessageFlags.Ephemeral,
+    })
+    createMockMessage({ flags: ['IsComponentsV2', 'SuppressNotifications'] })
+  })
+
+  it('refuses shapes a message cannot hold', () => {
+    // @ts-expect-error a text input belongs in a modal, not a message
+    createMockMessage({ components: [{ type: ComponentType.TextInput, custom_id: 'x', style: TextInputStyle.Short, label: 'X' }] })
+    // @ts-expect-error an unknown flag name
+    createMockMessage({ flags: ['Loud'] })
+    // @ts-expect-error content is text
+    createMockMessage({ content: 42 })
+    // @ts-expect-error an option the mock does not take
+    createMockMessage({ author: 'someone' })
   })
 })

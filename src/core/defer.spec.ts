@@ -1,6 +1,7 @@
 import { Container } from 'inversify'
 import {
   type APIEmbed,
+  type APIMessageTopLevelComponent,
   ApplicationIntegrationType,
   AutocompleteInteraction,
   ButtonInteraction,
@@ -10,7 +11,6 @@ import {
   InteractionContextType,
   type Message,
   MessageFlags,
-  MessageFlagsBitField,
   ModalBuilder,
   ModalSubmitInteraction,
   type MessageReaction,
@@ -39,13 +39,11 @@ const row = (): Json => ({
 })
 
 function messageWith(options: { flags?: number; embeds?: APIEmbed[]; components?: Json[] } = {}): Message {
-  const message = createMockMessage()
-  Object.assign(message, {
-    flags: new MessageFlagsBitField(options.flags ?? 0),
-    embeds: (options.embeds ?? [{ description: 'card' }]).map(embed => ({ toJSON: () => embed })),
-    components: (options.components ?? [row()]).map(component => ({ toJSON: () => component })),
+  return createMockMessage({
+    flags: options.flags,
+    embeds: options.embeds ?? [{ description: 'card' }],
+    components: (options.components ?? [row()]) as unknown as APIMessageTopLevelComponent[],
   })
-  return message as unknown as Message
 }
 
 const loadingView = defaultPresenter.loading({} as never)
@@ -362,7 +360,9 @@ describe('@Defer', () => {
   it('does not restore over an edit something else made after the lock', async () => {
     const emit = await startApp()
     const interaction = click('card/refresh')
-    interaction.fetchReply.mockResolvedValue(Object.assign(createMockMessage(), { components: [{ toJSON: () => ({ type: 1, components: [] }) }] }) as never)
+    interaction.fetchReply.mockResolvedValue(
+      createMockMessage({ components: [{ type: ComponentType.ActionRow, components: [] }] }) as never,
+    )
 
     await emit(interaction)
 
