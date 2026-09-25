@@ -14,6 +14,7 @@ import { handlerCooldowns } from '@src/core/cooldown-runner.js'
 import { getCommandMap, getMessageHandlers } from '@src/decorator/controller.decorator.js'
 import { GUARD_CLASS, injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import { appStages, bindAppPresenter, bindGlobalStages, prepareHandlerStages } from '@src/core/handler-pipeline.js'
+import { appObservers, bindObservers } from '@src/core/observer-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { isAppClassToken, type LifecycleUnit } from '@src/core/lifecycle-order.js'
 import {
@@ -138,7 +139,12 @@ export class MeoCordFactory {
 
     const providers = providerMap(options.providers ?? [], '@MeoCord({ providers })')
     // Before binding, where inversify would otherwise fail first with an error about compiler options
-    const roots = [...options.controllers, ...(options.services ?? []), ...(options.cooldownStore ? [options.cooldownStore] : [])]
+    const roots = [
+      ...options.controllers,
+      ...(options.services ?? []),
+      ...(options.cooldownStore ? [options.cooldownStore] : []),
+      ...appObservers(target as object),
+    ]
     assertTypedParameters(reachableClasses(roots, providers))
     const container = new Container()
     bindGlobalStages(container, appStages(target as object))
@@ -183,8 +189,16 @@ export class MeoCordFactory {
     for (const svc of (options.services ?? []) as any[]) {
       bindDependencies(container, svc, providers)
     }
+    // Observers are services too: bound here so their lifecycle hooks run in dependency order
+    const observers = appObservers(target as object)
+    for (const observer of observers) bindDependencies(container, observer, providers)
     // Providers first, then the services, then the controllers, each after what it depends on
-    const order = resolutionOrder(container, providers, [...providers.keys(), ...(options.services ?? []), ...options.controllers])
+    const order = resolutionOrder(container, providers, [
+      ...providers.keys(),
+      ...(options.services ?? []),
+      ...options.controllers,
+      ...observers,
+    ])
     appClasses.push(
       ...order.filter((token): token is new (...args: any[]) => unknown => {
         const provider = providers.get(token)
@@ -240,6 +254,7 @@ export class MeoCordFactory {
     }
 
     prepareHandlerStages(container, appClasses)
+    bindObservers(container, observers)
 
     // Run by start() before it logs in: what may inject a provided value is resolved once every factory
     // has made its value, including those that return a promise

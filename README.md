@@ -50,6 +50,7 @@
 - [Exception filters](#exception-filters)
 - [Validation and Pipes](#validation-and-pipes)
 - [Cooldowns](#cooldowns)
+- [Observers](#observers)
   - [Where calls are counted](#where-calls-are-counted)
   - [Checking a store](#checking-a-store)
   - [Store recipes](#store-recipes)
@@ -80,6 +81,7 @@
 - **A request pipeline** — [Guards](#guards) decide whether a handler runs, [interceptors](#interceptors) wrap it, [validation and pipes](#validation-and-pipes) check and transform its input, [cooldowns](#cooldowns) limit how often it runs, and [exception filters](#exception-filters) decide what the user is told when something throws. Each applies to a method, a controller, or the whole bot.
 - **Interaction responses** — `respond(interaction)` answers every interaction type correctly from any state, deferred or replied, wherever a user-installed app is used; a presenter styles MeoCord's own answers.
 - **Cooldowns** — `@Cooldown` limits how often a handler runs, per user, server, channel or for everyone, with a pluggable store to share the count across shards.
+- **Observers** — `@Observer` classes hear about every dispatched call once it has settled, with its outcome and duration, for metrics and audit logs, without ever delaying one.
 - **Gateway events** — `@On` and `@Once` handle any discord.js client event on a controller or service, with typed arguments and the same pipeline. `HandlerRegistry` lists every handler for a `/help` command or generated docs.
 - **Lifecycle hooks** — `onReady` and `onShutdown` on any controller or service, in dependency order, for schedulers, cache warm-up and clean shutdown.
 - **Localisation** — One typed catalog per locale for command names, descriptions and replies, checked at compile time.
@@ -500,6 +502,7 @@ npx meocord start --build --prod  # production build + start
 | `interceptor` | `i`   | an interceptor and its spec         |
 | `filter`      | `f`   | an exception filter and its spec    |
 | `pipe`        | `pi`  | a pipe and its spec                 |
+| `observer`    | `ob`  | a dispatch observer and its spec    |
 
 #### Controllers
 
@@ -934,6 +937,8 @@ Every handler — a command, a component, an autocomplete, a message, a reaction
 7. **The handler** runs with what the stages produced.
 
 **Exception filters** surround all of it: an error from any stage or the handler reaches them, and one no filter handles goes to the built-in fallback. The handler, its interceptors and filters, and the fallback all answer through [`respond()`](#interaction-responses), so each sees where the others left the answer.
+
+**[Observers](#observers)** frame all of it: an observer's `onStart` is called as the call begins, before `@Defer` and the guards, and its `onSettled` once the call has settled and been answered, whatever the outcome, with how it ended and how long it took. The call waits for neither. They also hear about an interaction no handler matches.
 
 Validation and pipes apply to command, component and modal handlers, and to message handlers with a pattern, whose options, customId params, fields and pattern params they check. Cooldowns apply to those and to every message handler. An autocomplete handler, which must answer within three seconds, runs its guards and filters but no interceptors. `@Defer` applies to command, component and modal handlers only.
 
@@ -1447,6 +1452,99 @@ async consume(key: string, { uses, windowMs }: CooldownLimit): Promise<CooldownV
 ```
 
 with `db.cooldowns.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })`.
+
+---
+
+## Observers
+
+An observer is told about every call MeoCord dispatches, once it has settled: commands, components, modals, autocomplete, message, reaction and event handlers, and interactions no handler matches. It is where metrics and audit logs go, since no other stage sees every outcome. Guards run before anything is decided, interceptors never see a call a guard denied or autocomplete, and filters see only errors.
+
+```typescript
+import { Observer } from 'meocord/decorator'
+import { type ExecutionContext } from 'meocord/common'
+import { type DispatchObserver, type DispatchResult } from 'meocord/interface'
+
+@Observer()
+export class MetricsObserver implements DispatchObserver {
+  constructor(private readonly metrics: MetricsService) {}
+
+  onSettled(context: ExecutionContext, { outcome, durationMs }: DispatchResult) {
+    this.metrics.record(context.getType(), context.getHandlerName() ?? 'unrouted', outcome, durationMs)
+  }
+}
+
+@MeoCord({ controllers: [ShopController], observers: [MetricsObserver], clientOptions: { intents: [] } })
+class App {}
+```
+
+`DispatchResult` holds:
+
+| Field        | What it is                                                                                                                |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `outcome`    | `'ran'`, `'denied'`, `'cooldown'`, `'invalid'`, `'error'` or `'not-found'`; see below.                                    |
+| `startedAt`  | When dispatch received the call, in milliseconds since the Unix epoch.                                                    |
+| `durationMs` | From dispatch until the filters and the fallback had answered, from `performance.now()`.                                  |
+| `deniedBy`   | The guard class that denied the call, whether it returned `false` or threw `GuardDeniedError`.                            |
+| `response`   | For an interaction, where its answer stood: `'replied'`, `'deferred'` (deferred and never followed up) or `'unanswered'`. |
+| `error`      | The error the call ended with, when it ended with one.                                                                    |
+| `handled`    | Whether an exception filter or the built-in fallback answered the error; `false` without one.                             |
+
+| Outcome       | When                                                                                                                                   |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `'ran'`       | The call settled without an error. An interceptor that answers without calling `next.handle()`, from a cache for instance, counts too. |
+| `'denied'`    | A guard returned `false` (no `error`) or threw `GuardDeniedError`.                                                                     |
+| `'cooldown'`  | A `@Cooldown` refused it with `CooldownError`.                                                                                         |
+| `'invalid'`   | `@Validate` refused its input with `ValidationError`.                                                                                  |
+| `'error'`     | Anything else was thrown, by the handler, a pipe, an interceptor or a guard.                                                           |
+| `'not-found'` | No handler matches the interaction: `CommandNotFoundError`, or an autocomplete no `@Autocomplete` claims (no `error`).                 |
+
+`response` catches a handler that left an interaction hanging: `'deferred'` means the user still sees "thinking…".
+
+What is reported: every interaction, the ones no handler matches included; every message and reaction a handler runs for; and every event handler call. A message no handler matches is not reported: messages are not commands, and most of a server's traffic would reach the observers for nothing.
+
+- **Read-only.** An observer runs outside the call, and the call waits for none of its methods, so a slow observer never delays a handler. One that throws is logged through `Logger`, and the others still run.
+- **In order.** Observers are told one after another, in the order `observers` lists them.
+- **By type.** `@Observer({ types: ['interaction'] })` is told only about those calls, as `ExecutionContext.getType()` reports them. An empty list throws, and a subclass inherits the types unless it declares its own.
+- **A service.** One instance is resolved from the container, so an observer injects services, and its `onReady` and `onShutdown` hooks run in dependency order with the rest; an exporter flushes what it buffered in `onShutdown`, before the services it uses shut down. It cannot inject `ExecutionContext`; each call's context is passed in, and has no controller or handler for an interaction no handler matched.
+- **Testing.** `invoke` and `emit` wait for the module's observers before they resolve, so a test sees what they were told. The testing module takes an `app`'s observers, and `observers` of its own. `inspectHandler(Controller, 'method', { app }).observers` lists the app's.
+
+Generate one with `npx meocord g ob <name>`.
+
+### Tracing a call
+
+`onStart` receives the call as it begins, and `onSettled` for the same call receives the same context object, so a `WeakMap` pairs them: that gives a span for every call, a denied one or one no handler matched included. An observer sees the call from outside, though: a span for work inside the handler, such as a database query nested under the command, comes from an interceptor, which runs within the call. With OpenTelemetry, use both:
+
+```typescript
+// The call's own span, from the moment it arrives, whatever the outcome
+@Observer()
+export class CallSpanObserver implements DispatchObserver {
+  private readonly spans = new WeakMap<ExecutionContext, Span>()
+
+  onStart(context: ExecutionContext) {
+    this.spans.set(context, tracer.startSpan(`${context.getType()} ${context.getHandlerName()}`))
+  }
+
+  onSettled(context: ExecutionContext, { outcome }: DispatchResult) {
+    const span = this.spans.get(context)
+    span?.setAttribute('meocord.outcome', outcome)
+    span?.end()
+  }
+}
+
+// The handler's span, active while it runs, so the spans it starts nest under it
+@Interceptor()
+export class HandlerSpanInterceptor implements InterceptorInterface {
+  async intercept(context: ExecutionContext, next: CallHandler) {
+    return tracer.startActiveSpan(`handler ${context.getHandlerName()}`, async span => {
+      try {
+        return await next.handle()
+      } finally {
+        span.end()
+      }
+    })
+  }
+}
+```
 
 ---
 

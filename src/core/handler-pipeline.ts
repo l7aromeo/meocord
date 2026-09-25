@@ -14,6 +14,7 @@ import {
   runInterceptors,
 } from '@src/core/interceptor-runner.js'
 import {
+  type ExecutionContext,
   type ExecutionContextType,
   HandlerExecutionContext,
   type CurrentArgs,
@@ -30,6 +31,8 @@ import {
 } from '@src/core/filter-runner.js'
 import { type Fallback } from '@src/core/fallback.js'
 import { handlerInputStages, prepareHandlerArgs, preparePipe } from '@src/core/input-runner.js'
+import { hasObservers, notifyObservers, notifyStart, outcomeOf, responsePhaseOf } from '@src/core/observer-runner.js'
+import { type DispatchOutcome, type DispatchResult } from '@src/interface/observer.interface.js'
 import { handlerCooldowns, methodCooldowns } from '@src/core/cooldown-runner.js'
 import { Logger } from '@src/common/logger.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
@@ -229,6 +232,57 @@ export interface RunOptions {
   fallback?: Fallback
   /** What the call handles, when its first argument cannot say, as for an event whose first argument is a message. */
   type?: ExecutionContextType
+  /**
+   * Waits for the observers before the run settles, as the testing module does so a test sees what they
+   * were told. At runtime they are never waited for.
+   */
+  awaitObservers?: boolean
+  /** When dispatch received the call, from `performance.now()`, when it started before the pipeline. */
+  startedAt?: number
+}
+
+/**
+ * Reports a settled call to the observers: awaited when the run asks, else left to run on its own. The
+ * context is built only when there are observers to tell.
+ */
+async function observe(
+  container: Container,
+  contextOf: () => ExecutionContext,
+  settlement: Settlement,
+  { awaitObservers }: RunOptions,
+): Promise<void> {
+  if (!hasObservers(container)) return
+  const context = contextOf()
+  const reported = notifyObservers(container, context, settled(context, settlement))
+  if (awaitObservers) await reported
+}
+
+/** How a call settled, as the pipeline saw it. */
+interface Settlement {
+  outcome: DispatchOutcome
+  /** When the call started, from `performance.now()`. */
+  startedAt: number
+  handled: boolean
+  failure?: { error: unknown }
+  deniedBy?: abstract new (...args: any[]) => unknown
+}
+
+/**
+ * A call's result for the observers, each optional field only when it applies. The response is read
+ * from the interaction now, once the call has settled.
+ */
+function settled(context: ExecutionContext, { outcome, startedAt, handled, failure, deniedBy }: Settlement): DispatchResult {
+  const result: DispatchResult = {
+    outcome,
+    startedAt: performance.timeOrigin + startedAt,
+    durationMs: performance.now() - startedAt,
+    handled,
+  }
+  if (failure) result.error = failure.error
+  if (deniedBy) result.deniedBy = deniedBy
+  const response = responsePhaseOf(context)
+  if (response) result.response = response
+  return result
 }
 
 const logger = new Logger('ExceptionFilter')
@@ -290,11 +344,21 @@ export async function runHandler(
   const response: InteractionResponse | undefined =
     defer && first?.isRepliable?.() ? responseOf(first as Parameters<typeof responseOf>[0]) : undefined
 
+  // What the observers are told once the call has settled
+  const startedAt = options.startedAt ?? performance.now()
+  let outcome: DispatchOutcome = 'ran'
+  let failure: { error: unknown } | undefined
+  let handled = false
+  const denial: { by?: abstract new (...args: any[]) => unknown } = {}
+  // Told before anything runs, with the context onSettled will get; never waited for here
+  const starting = hasObservers(container) ? notifyStart(container, contextOf()) : undefined
+
   let ran = false
   try {
     // @Defer's first step, inside the filters so a failed acknowledgement reaches them.
     if (response) await startDefer(response, defer!, receivedAt)
-    if (!(await runGuards(guards, { container, controller, methodName, args, type, currentArgs }))) {
+    if (!(await runGuards(guards, { container, controller, methodName, args, type, currentArgs, denial }))) {
+      outcome = 'denied'
       await response?.abandon()
       return { ran: false }
     }
@@ -314,10 +378,16 @@ export async function runHandler(
     else await runInterceptors(applicable, container, contextOf(), handler)
     return { ran }
   } catch (error) {
+    outcome = outcomeOf(error)
+    failure = { error }
     await handleError(filters, container, contextOf(), error, options)
+    handled = true
     return { ran, error }
   } finally {
     await response?.release()
+    if (options.awaitObservers) await starting
+    // After the answer and the release, so the duration covers the whole call
+    await observe(container, contextOf, { outcome, startedAt, handled, failure, deniedBy: denial.by }, options)
   }
 }
 
@@ -331,6 +401,26 @@ export async function handleUnroutedError(
   error: unknown,
   options: RunOptions = {},
 ): Promise<void> {
+  const startedAt = options.startedAt ?? performance.now()
   const context = new UnroutedExecutionContext(args)
-  await handleError([[...globalStagesOf(container).filters]], container, context, error, options)
+  let handled = false
+  try {
+    await handleError([[...globalStagesOf(container).filters]], container, context, error, options)
+    handled = true
+  } finally {
+    await observe(container, () => context, { outcome: outcomeOf(error), startedAt, handled, failure: { error } }, options)
+  }
+}
+
+/**
+ * Reports an interaction no handler claimed and no error was raised for, such as an autocomplete no
+ * `@Autocomplete` handler answers, to the observers as `'not-found'`.
+ */
+export async function observeUnclaimed(
+  container: Container,
+  args: readonly unknown[],
+  options: RunOptions = {},
+): Promise<void> {
+  const startedAt = options.startedAt ?? performance.now()
+  await observe(container, () => new UnroutedExecutionContext(args), { outcome: 'not-found', startedAt, handled: false }, options)
 }

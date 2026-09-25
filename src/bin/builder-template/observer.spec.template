@@ -1,0 +1,39 @@
+import { ChatInputCommandInteraction } from 'discord.js'
+import { Command, Controller, Guard, UseGuard } from 'meocord/decorator'
+import { CommandType } from 'meocord/enum'
+import { type GuardInterface } from 'meocord/interface'
+import { createMockInteraction, MeoCordTestingModule } from 'meocord/testing'
+import { {{className}}Observer } from './{{kebabCaseName}}.observer.js'
+
+@Guard()
+class Deny implements GuardInterface {
+  canActivate(): boolean {
+    return false
+  }
+}
+
+@Controller()
+class SampleController {
+  @Command('sample', CommandType.SLASH)
+  async sample(_interaction: ChatInputCommandInteraction) {}
+
+  @Command('denied', CommandType.SLASH)
+  @UseGuard(Deny)
+  async denied(_interaction: ChatInputCommandInteraction) {}
+}
+
+describe('{{className}}Observer', () => {
+  const module = MeoCordTestingModule.create({
+    controllers: [SampleController],
+    observers: [{{className}}Observer],
+  }).compile()
+
+  it('is told how each call ended, once it has settled', async () => {
+    const onSettled = vi.spyOn({{className}}Observer.prototype, 'onSettled')
+
+    await module.invoke(SampleController, 'sample', createMockInteraction(ChatInputCommandInteraction))
+    await module.invoke(SampleController, 'denied', createMockInteraction(ChatInputCommandInteraction))
+
+    expect(onSettled.mock.calls.map(([, result]) => result.outcome)).toEqual(['ran', 'denied'])
+  })
+})

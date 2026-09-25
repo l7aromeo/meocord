@@ -16,12 +16,14 @@ import {
 import { setPresenter } from '@src/common/response/presenter.js'
 import { handlerInput, routeMismatch, routeParamsFor } from '@src/core/handler-input.js'
 import {
+  type DispatchObserver,
   type ExceptionFilter,
   type GuardInterface,
   type InterceptorInterface,
   type MessageCommandOptions,
 } from '@src/interface/index.js'
 import { buildMessageRoutes, messageParamsFor } from '@src/core/message-routes.js'
+import { appObservers, assertObservers, bindObservers } from '@src/core/observer-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
 import { ShardContext } from '@src/core/shard-context.js'
@@ -49,9 +51,15 @@ export interface TestingModuleOptions {
    * The `@MeoCord` application class, whose global `guards`, `interceptors` and `filters` `invoke`
    * applies with each handler's own, whose `i18n` translator is injected as `Translator`, and whose
    * `presenter` styles what `respond()` shows. Its controllers and services are not registered; list
-   * them here.
+   * them here. Its `observers` are told about each call.
    */
   app?: new (...args: any[]) => unknown
+
+  /**
+   * `@Observer` classes told about each call `invoke` and `emit` make, after the `app`'s own. The
+   * module waits for them before a call resolves, so a test sees what they were told.
+   */
+  observers?: (new (...args: any[]) => DispatchObserver)[]
 }
 
 /** The names of a class's instance methods. */
@@ -201,7 +209,7 @@ export class TestingModule {
     const presenter = appPresenterOf(this.container)
     const client = first instanceof BaseInteraction ? first.client : undefined
     if (presenter && client) setPresenter(client, presenter)
-    const { ran, error } = await runHandler(this.container, instance, methodName, callArgs)
+    const { ran, error } = await runHandler(this.container, instance, methodName, callArgs, { awaitObservers: true })
     return error === undefined ? { ran } : { ran, error }
   }
 
@@ -240,7 +248,7 @@ export class TestingModule {
         // Resolved inside the call, so a class that cannot be resolved fails as its handler would
         const run = async () => {
           const instance = this.container.get(cls) as Record<string, (...args: unknown[]) => unknown>
-          const { ran } = await runHandler(this.container, instance, handler.method, args, { type: 'event' })
+          const { ran } = await runHandler(this.container, instance, handler.method, args, { type: 'event', awaitObservers: true })
           return ran
         }
         calls.push(run())
@@ -377,7 +385,12 @@ export class TestingModuleBuilder {
     // Checked as the app checks its own, then merged with the overrides, which win
     const providers = providerMap(this.options.providers ?? [], "the testing module's providers")
     for (const [token, override] of this.overrides) providers.set(token, override)
-    assertTypedParameters(reachableClasses(this.options.controllers ?? [], providers))
+    assertTypedParameters(
+      reachableClasses(
+        [...(this.options.controllers ?? []), ...(this.options.app ? appObservers(this.options.app) : []), ...(this.options.observers ?? [])],
+        providers,
+      ),
+    )
 
     // Bind guard overrides — prevents inversify from auto-wiring guard dependencies
     for (const [guardClass, stub] of this.guardOverrides) {
@@ -437,6 +450,9 @@ export class TestingModuleBuilder {
     // As the app would at startup, refuses a message pattern that cannot be read or two that match the same messages
     buildMessageRoutes(this.options.controllers ?? [], messages)
     if (this.options.app) bindAppPresenter(container, this.options.app)
+    const observers = [...(this.options.app ? appObservers(this.options.app) : []), ...(this.options.observers ?? [])]
+    assertObservers("the testing module's observers", observers)
+    bindObservers(container, observers)
 
     return new TestingModule(container, [...(this.options.controllers ?? [])], appClasses, providers, order, messages)
   }

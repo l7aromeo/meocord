@@ -10,6 +10,7 @@ import {
   inferContextType,
 } from '@src/common/execution-context.js'
 import { appliesTo } from '@src/core/stage-scope.js'
+import { GuardDeniedError } from '@src/common/errors.js'
 
 export type GuardClass = new (...args: any[]) => GuardInterface
 
@@ -123,6 +124,8 @@ export interface GuardedCall {
   args: readonly unknown[]
   type?: ExecutionContextType
   currentArgs?: CurrentArgs
+  /** Filled with the guard that denied the call, by returning `false` or throwing `GuardDeniedError`. */
+  denial?: { by?: abstract new (...args: any[]) => unknown }
 }
 
 /**
@@ -152,7 +155,17 @@ export async function runGuards(guards: readonly GuardEntry[], call: GuardedCall
       )
     }
 
-    if (!(await guardInstance.canActivate(...(call.args as Parameters<GuardInterface['canActivate']>)))) return false
+    let allowed: boolean
+    try {
+      allowed = await guardInstance.canActivate(...(call.args as Parameters<GuardInterface['canActivate']>))
+    } catch (error) {
+      if (error instanceof GuardDeniedError && call.denial) call.denial.by = guardClass
+      throw error
+    }
+    if (!allowed) {
+      if (call.denial) call.denial.by = guardClass
+      return false
+    }
   }
   return true
 }

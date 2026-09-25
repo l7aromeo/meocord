@@ -9,6 +9,7 @@ import { GuardGeneratorHelper } from '@src/bin/helper/guard-generator.helper.js'
 import { InterceptorGeneratorHelper } from '@src/bin/helper/interceptor-generator.helper.js'
 import { FilterGeneratorHelper } from '@src/bin/helper/filter-generator.helper.js'
 import { PipeGeneratorHelper } from '@src/bin/helper/pipe-generator.helper.js'
+import { ObserverGeneratorHelper } from '@src/bin/helper/observer-generator.helper.js'
 import wait from '@src/util/wait.util.js'
 
 /**
@@ -30,6 +31,7 @@ export class GeneratorCLI {
   private interceptorGeneratorHelper: InterceptorGeneratorHelper
   private filterGeneratorHelper: FilterGeneratorHelper
   private pipeGeneratorHelper: PipeGeneratorHelper
+  private observerGeneratorHelper: ObserverGeneratorHelper
 
   constructor(private appName: string) {
     this.logger = new Logger(this.appName)
@@ -39,6 +41,7 @@ export class GeneratorCLI {
     this.interceptorGeneratorHelper = new InterceptorGeneratorHelper(this.appName)
     this.filterGeneratorHelper = new FilterGeneratorHelper(this.appName)
     this.pipeGeneratorHelper = new PipeGeneratorHelper(this.appName)
+    this.observerGeneratorHelper = new ObserverGeneratorHelper(this.appName)
   }
 
   register(program: Command): Command {
@@ -124,6 +127,18 @@ export class GeneratorCLI {
         })
       })
 
+    generatorCommand
+      .command('observer')
+      .alias('ob')
+      .addArgument(new Argument('<name>', 'Name of the observer.'))
+      .description('Generate a dispatch observer component')
+      .action(async name => {
+        await this.handleGenerateComponent({
+          component: 'observer',
+          name,
+        })
+      })
+
     return program
   }
 
@@ -186,6 +201,10 @@ export class GeneratorCLI {
 
       case 'pipe':
         this.pipeGeneratorHelper.generatePipe(name)
+        break
+
+      case 'observer':
+        this.observerGeneratorHelper.generateObserver(name)
         break
 
       default:
