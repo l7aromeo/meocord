@@ -20,7 +20,8 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    setupFiles: ['reflect-metadata'],
+    setupFiles: ['./vitest.setup.ts'],
+    // vi.fn() mocks only; vitest.setup.ts resets the mocks from meocord/testing
     clearMocks: true,
     include: ['src/**/*.spec.ts'],
     coverage: {

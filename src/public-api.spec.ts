@@ -60,6 +60,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'MeoCordTestingModule',
     'TestingModule',
     'TestingModuleBuilder',
+    'clearAllMocks',
     'createChatInputOptions',
     'createDiscordError',
     'createExecutionContext',
@@ -77,6 +78,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'getResponse',
     'inspectHandler',
     'isMockFunction',
+    'resetAllMocks',
     'resolveRoute',
   ],
 }
