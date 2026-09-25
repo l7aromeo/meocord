@@ -107,6 +107,21 @@ const evalBundledConfig = configWith('bundleDependencies: true,').replace(
 /** The template's entry, first using lodash-es, an ES module that probes for CommonJS with `typeof exports`. */
 const lodashMain = `import { camelCase } from 'lodash-es'\nconsole.log(\`lodash-es: \${camelCase('bundled module')}\`)\n${templateMain}`
 
+/**
+ * The template's entry, first using packages that make errors the way much of npm does: follow-redirects,
+ * which axios loads, and node-fetch 2 give Error.captureStackTrace an object built by a function rather than
+ * a class; ioredis's errors are classes; depd sets a stack hook of its own for a moment to find its caller.
+ */
+const errorMakersMain = `import axios from 'axios'
+import depd from 'depd'
+import { ReplyError } from 'ioredis'
+import { FetchError } from 'node-fetch'
+
+const firstLine = (error: Error) => error.stack?.split('\\n')[0]
+depd('stack-probe')('a deprecation, located through a stack hook of its own')
+console.log(\`error makers: axios \${typeof axios.get}, \${firstLine(new FetchError('probe', 'system'))}, \${firstLine(new ReplyError('ERR probe'))}\`)
+${templateMain}`
+
 /** Where the stalled API listens: it accepts requests and never answers them. */
 const STALLED_API_ENV = 'MEOCORD_SCENARIO_STALLED_API'
 
@@ -630,6 +645,34 @@ const scenarios: Scenario[] = [
       },
     }),
   ),
+  ...(['node', 'bun'] as const).flatMap(runtime =>
+    [true, false].map(
+      (bundled): Scenario => ({
+        name: `${bundled ? 'bundled' : 'unbundled'}, packages that make errors with Error.captureStackTrace load and the bot starts on ${runtime}`,
+        tier: 'slow',
+        files: {
+          '.env': INVALID_TOKEN_ENV,
+          'src/main.ts': errorMakersMain,
+          'meocord.config.ts': bundled ? configWith('bundleDependencies: true,') : validConfig,
+          dist: null,
+        },
+        before: [['build', '--prod']],
+        hides: bundled ? ['node_modules'] : [],
+        command: runtime === 'bun' ? [runtimeBinary('bun'), '--no-install', 'dist/main.js'] : ['node', 'dist/main.js'],
+        expect: {
+          code: 1,
+          // Bun heads such stacks "Error", with the hook or without it; Node names the error's type
+          says: [
+            'error makers: axios function',
+            ...(runtime === 'node' ? ['FetchError: probe', 'ReplyError: ERR probe'] : ['Error: ERR probe']),
+            'Starting bot',
+            'An invalid token was provided',
+          ],
+          never: ['First argument must be an Error object'],
+        },
+      }),
+    ),
+  ),
   {
     name: 'with bundleDependencies, a development build starts on bun',
     tier: 'slow',
@@ -812,6 +855,8 @@ async function main(): Promise<void> {
     renderApp(appDir, tarball)
     // lodash-es, for the bundled scenarios: an ES module that probes for CommonJS, as many do.
     mustRun('add lodash-es to the application', process.execPath, ['add', 'lodash-es@^4.18.1'], appDir)
+    // Packages that make errors with Error.captureStackTrace, for the scenarios that load them under the stack hook
+    mustRun('add error-making packages to the application', process.execPath, ['add', 'axios@^1.20.0', 'depd@^2.0.0', 'ioredis@^6.0.0', 'node-fetch@^2.7.0'], appDir)
     mustRun('install the application', process.execPath, ['install'], appDir)
     cpSync(path.join(appDir, '.env.example'), path.join(appDir, '.env'))
     if (selected.some(scenario => scenario.cwd === 'npm-app')) {

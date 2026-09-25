@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { types } from 'node:util'
 import { originalPositionFor, TraceMap } from '@jridgewell/trace-mapping'
 
 type PrepareStackTrace = (error: Error, sites: NodeJS.CallSite[]) => unknown
@@ -43,7 +44,16 @@ export function installStackRemapper(bundle: string): boolean {
     } catch {
       // A stack is never lost to a map that cannot be read: it keeps the bundle's positions.
     }
-    return previous ? previous(error, mapped) : formatStack(error, mapped)
+    // The runtime's own hook, which Node and Bun both name ErrorPrepareStackTrace, gets only native errors:
+    // Bun's throws on a plain object given to Error.captureStackTrace, as follow-redirects gives one
+    if (previous && (types.isNativeError(error) || previous.name !== 'ErrorPrepareStackTrace')) {
+      try {
+        return previous(error, mapped)
+      } catch {
+        // A hook that throws still leaves the call a stack, rather than failing the code that asked for it
+      }
+    }
+    return formatStack(error, mapped)
   }
   Error.prepareStackTrace = meocordSourceMappedStackTrace
   return true
@@ -118,11 +128,23 @@ function mappedSite(site: NodeJS.CallSite, name: string, source: string, line: n
 
 /** The stack as the runtime writes it with no hook: the error's own text, then a line per frame. */
 function formatStack(error: Error, sites: NodeJS.CallSite[]): string {
-  let header: string
+  return stackHeader(error) + sites.map(frameLine).join('')
+}
+
+/** The stack's first line: the error's own text, or under Bun just `Error` for a target that is no native error. */
+function stackHeader(error: Error): string {
+  if (process.versions.bun && !types.isNativeError(error)) return 'Error'
   try {
-    header = Error.prototype.toString.call(error)
+    return Error.prototype.toString.call(error)
   } catch {
-    header = '<error>'
+    return 'Error'
   }
-  return header + sites.map(site => `\n    at ${String(site)}`).join('')
+}
+
+function frameLine(site: NodeJS.CallSite): string {
+  try {
+    return `\n    at ${String(site)}`
+  } catch {
+    return ''
+  }
 }

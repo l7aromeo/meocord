@@ -345,7 +345,7 @@ A stack trace names your source, `src/services/profile.service.ts:42:11`, not th
 
 - `meocord start` runs node with `--enable-source-maps`, so Node maps each stack itself. Its shard processes inherit the flag.
 - A bundle started any other way — `node dist/main.js` in a Docker `CMD`, pm2, or bun, which applies no source map to a bundle — maps its stacks through `Error.prepareStackTrace`. The map is read the first time a stack needs it, and each frame keeps the runtime's format, `at fn (/abs/path/src/file.ts:line:col)`, so tools that parse `error.stack` read it as before.
-- A hook already set on `Error.prepareStackTrace`, such as a preloaded error tracker's, receives the mapped call sites. One set later replaces MeoCord's unless it calls the hook it found.
+- A hook already set on `Error.prepareStackTrace`, such as a preloaded error tracker's, receives the mapped call sites. One set later replaces MeoCord's unless it calls the hook it found. A hook that throws is passed over, and so is the runtime's own for an object `Error.captureStackTrace` is given that is not a native error, as some packages give it: that stack reads as it does with no hook.
 - Bun reports a call's column further along than Node does. In a minified production bundle, a frame for a call can map to the statement just before it, one line up; the frame that threw maps exactly.
 
 Set `sourceMappedStacks: false` when an error tracker applies uploaded source maps to the bundle's own positions, or you ship a source mapper of your own. `meocord start` then passes no flag, and the bundle installs no hook.
