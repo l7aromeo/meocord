@@ -49,12 +49,21 @@ export function resolveRuntime(env: NodeJS.ProcessEnv, execPath: string): string
   return launcherRuntime(env) ?? execPath
 }
 
-/** The command that runs the built entry file with `runtime`, adding `--no-install` for bun. */
-export function buildAppCommand(runtime: string, mainJsPath: string): RuntimeCommand {
+/**
+ * The command that runs the built entry file with `runtime`: with `--no-install` for bun, and with
+ * `--enable-source-maps` for node when `sourceMaps` is set, so its stack traces name the source.
+ */
+export function buildAppCommand(
+  runtime: string,
+  mainJsPath: string,
+  { sourceMaps = false }: { sourceMaps?: boolean } = {},
+): RuntimeCommand {
   // Without node_modules in reach, bun installs a missing package the moment something imports it;
   // `--no-install` keeps a bundled bot from downloading packages such as `zlib-sync` at startup.
-  const args = isBun(runtime) ? ['--no-install', mainJsPath] : [mainJsPath]
-  return { command: runtime, args }
+  if (isBun(runtime)) return { command: runtime, args: ['--no-install', mainJsPath] }
+  // Bun maps nothing, so there the bundle maps its own stacks; see build/stack-remap.ts
+  if (sourceMaps && isNode(runtime)) return { command: runtime, args: ['--enable-source-maps', mainJsPath] }
+  return { command: runtime, args: [mainJsPath] }
 }
 
 /**
@@ -65,5 +74,10 @@ export function buildAppCommand(runtime: string, mainJsPath: string): RuntimeCom
  */
 function isBun(runtime: string): boolean {
   return /^bun(\.exe)?$/i.test(runtime.split(/[\\/]/).pop() ?? '')
+}
+
+/** Whether a runtime binary is node, by the name it was resolved to, as {@link isBun} decides. */
+function isNode(runtime: string): boolean {
+  return /^node(\.exe)?$/i.test(runtime.split(/[\\/]/).pop() ?? '')
 }
 

@@ -22,8 +22,13 @@ const cliEntry = {
   'bin/meocord': 'src/bin/meocord.ts',
 }
 
+// Imported by the pre-entry, which is copied rather than compiled, so nothing else pulls it into the build
+const preEntryModules = {
+  'build/stack-remap': 'src/build/stack-remap.ts',
+}
 
-const allEntries = { ...libraryEntries, ...cliEntry }
+
+const allEntries = { ...libraryEntries, ...cliEntry, ...preEntryModules }
 
 const aliasPlugin = alias({
   entries: [{ find: /^@src\/(.*)/, replacement: path.resolve(__dirname, 'src/$1') }],

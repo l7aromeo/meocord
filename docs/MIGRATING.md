@@ -192,9 +192,8 @@ Five things behave differently:
   runtime. If you launch `dist/main.js` with bun directly — a Docker `CMD`, for example — add the flag
   yourself: `bun --no-install dist/main.js`.
 - **Production source maps name real paths.** `dist/main.js.map` lists each source relative to `dist`, as
-  `../src/app.ts`, where webpack wrote `webpack://<your-app>/./src/app.ts`. Node and bun resolve either, so
-  stack traces are unaffected. An error tracker that uploads source maps and rewrites or matches paths by the
-  `webpack://` prefix needs that rule updated.
+  `../src/app.ts`, where webpack wrote `webpack://<your-app>/./src/app.ts`. An error tracker that uploads
+  source maps and rewrites or matches paths by the `webpack://` prefix needs that rule updated.
 - **A failed login fails the start.** `app.start()` rejects when Discord refuses the token or cannot be
   reached, and the process exits with code 1. It used to log the error and resolve, so `main.ts` went on
   to log "Application started" and the process exited 0 — which Docker's `restart: on-failure`, systemd
@@ -470,6 +469,13 @@ the bare message `{ prefix: false }`:
   `eval-source-map`, and an `eval-*` devtool set through `output.sourceMap` or `tools.rspack` in your
   `rsbuild` hook is built as its non-eval equivalent, with a warning: an eval'd module cannot read
   `import.meta`, so with `bundleDependencies` such a bundle stopped at startup with a SyntaxError.
+- **Stack traces name your source on Node and Bun.** In 4.0, a development build's eval'd modules named
+  the source, and a production trace pointed into `dist/main.js` unless Node ran with
+  `--enable-source-maps`. 4.1.0-beta.4 dropped the eval, so development traces on Bun pointed into the
+  bundle too. Now `meocord start` runs node with `--enable-source-maps`, and a bundle started any other way,
+  bun included, maps its own stacks from `dist/main.js.map`. An error tracker that applies uploaded source
+  maps to the bundle's positions wants `sourceMappedStacks: false` in `meocord.config.ts`; see
+  [Stack traces](https://github.com/meocord/meocord/blob/main/README.md#stack-traces).
 - A `bundleDependencies` build starts under Bun. A bundled ES module that probes for CommonJS, as
   lodash-es does with `typeof exports`, made Bun read the whole bundle as CommonJS and refuse its
   `import` statements; those probes now see `undefined`, as they do under Node.

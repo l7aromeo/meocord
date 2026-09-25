@@ -84,6 +84,7 @@ function configShape(problems: ConfigProblems): Record<keyof MeoCordConfig, Chec
     ),
     optionalExternals: optional(stringList('package names')),
     rsbuild: optional(func),
+    sourceMappedStacks: optional(boolean),
     shutdownTimeout: optional((value, key) =>
       typeof value === 'number' && Number.isFinite(value) && value >= 0
         ? undefined
