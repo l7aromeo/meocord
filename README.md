@@ -857,7 +857,7 @@ To check routing in a test, `resolveRoute(App, { content: '!roll 20' })` returns
 
 ## Reactions
 
-`@ReactionHandler(emoji)` runs when that emoji is added to or removed from a message, and `@ReactionHandler()` for every emoji. The emoji is matched by name: the character for a standard emoji, the name for a custom one. The second argument says who reacted, and whether the reaction was added or removed:
+`@ReactionHandler(emoji)` runs when that emoji is added to or removed from a message, and `@ReactionHandler()` for every emoji. A standard emoji is its character, `'👍'`. A custom emoji is its id, `'1234567890123456789'`, the `<:party:1234567890123456789>` Discord shows when you send `\:party:`, or its name, `'party'`: an id matches that one emoji, while a name matches every custom emoji of that name, one from each server the bot is in. The second argument says who reacted, and whether the reaction was added or removed:
 
 ```typescript
 import { type MessageReaction } from 'discord.js'
