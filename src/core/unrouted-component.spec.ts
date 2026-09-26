@@ -3,14 +3,19 @@ import {
   ButtonInteraction,
   ChatInputCommandInteraction,
   Client,
+  type Interaction,
   InteractionCollector,
   InteractionType,
   ModalSubmitInteraction,
 } from 'discord.js'
-import { Command, Controller } from '@src/decorator/index.js'
+import { Command, Controller, MeoCord, On } from '@src/decorator/index.js'
 import { respond } from '@src/common/index.js'
 import { CommandType } from '@src/enum/index.js'
+import { MeoCordFactory } from '@src/core/meocord-factory.js'
 import { createDiscordError, createMockInteraction, getResponse, MeoCordTestingModule } from '@src/testing/index.js'
+
+vi.mock('@src/util/meocord-config-loader.util.js', () => ({ loadMeoCordConfig: () => ({ discordToken: 'token' }) }))
+vi.mock('@src/util/platform.util.js', () => ({ assertBuiltForThisPlatform: () => {} }))
 
 @Controller()
 class Routed {
@@ -97,6 +102,26 @@ describe('an unrouted component a collector answers', () => {
     expect(methods(click)).toEqual(['reply'])
   })
 
+  it('says nothing when another answer comes while the answer waits on an async step, such as a themeFor lookup', async () => {
+    @MeoCord({
+      controllers: [Routed],
+      clientOptions: { intents: [] },
+      themeFor: { guild: async () => void (await new Promise(resolve => setTimeout(resolve, 10))) },
+    })
+    class SlowTheme {}
+    const click = createMockInteraction(ButtonInteraction, { customId: 'late', client })
+    Object.assign(click, { guildId: '100000000000000001' })
+    // Answered directly with discord.js just after the grace, while MeoCord looks up the server's theme
+    client.on('interactionCreate', interaction => void setTimeout(() => void (interaction as ButtonInteraction).update({ content: 'late' }), 1_505))
+
+    const done = deliver(MeoCordTestingModule.create({ app: SlowTheme, controllers: [Routed] }).compile(), click)
+    await vi.advanceTimersByTimeAsync(3_000)
+    await done
+
+    // The late answer alone: no "Command not found!", as a reply or a follow-up
+    expect([click.update.mock.calls.length, click.reply.mock.calls.length, click.followUp.mock.calls.length]).toEqual([1, 0, 0])
+  })
+
   it('is answered at once when nothing else listens, as before', async () => {
     const click = createMockInteraction(ButtonInteraction, { customId: 'dead', client })
 
@@ -112,5 +137,34 @@ describe('an unrouted component a collector answers', () => {
     await compile().dispatch(command)
 
     expect(contents(command).join()).toContain('Command not found')
+  })
+})
+
+describe("an unrouted component an app's own @On('interactionCreate') answers", () => {
+  // Such a listener is another that may answer, so the click is left to it as to a collector
+  @Controller()
+  class OwnRouter {
+    @On('interactionCreate')
+    async route(interaction: Interaction) {
+      if (interaction.isButton() && interaction.customId === 'own/route') await respond(interaction).send({ content: 'routed by the app' })
+    }
+  }
+
+  @MeoCord({ controllers: [Routed, OwnRouter], clientOptions: { intents: [] } })
+  class App {}
+
+  it('gets that answer alone, as the bot delivers it', async () => {
+    vi.spyOn(Client.prototype, 'login').mockImplementation(function (this: Client) {
+      client = this as Client<true>
+      return Promise.resolve('token')
+    })
+    await MeoCordFactory.create(App).start()
+    const click = createMockInteraction(ButtonInteraction, { customId: 'own/route', client })
+
+    client.emit('interactionCreate', click)
+    await vi.advanceTimersByTimeAsync(3_000)
+
+    expect(methods(click)).toEqual(['update'])
+    expect(contents(click).join()).not.toContain('Command not found')
   })
 })
