@@ -55,6 +55,7 @@ import {
   GuildTextThreadManager,
   MediaChannel,
   NewsChannel,
+  SnowflakeUtil,
 } from 'discord.js'
 import { createDiscordError } from './response.js'
 
@@ -358,6 +359,34 @@ let lastSnowflake = 1_400_000_000_000_000_000n
 /** A snowflake-shaped id no other mock in this run has. */
 const nextSnowflake = (): string => String(++lastSnowflake)
 
+const isSnowflake = (id: unknown): id is string => typeof id === 'string' && /^\d{1,20}$/.test(id)
+
+/**
+ * Gives a mock the `createdTimestamp` and `createdAt` discord.js reads from its id: the time an id the test gave
+ * encodes, or the time the mock was made while it has the counted id it was generated with, which encodes none.
+ * A value the test sets replaces them.
+ */
+function defineCreatedTime(instance: object, generatedId: string | undefined): void {
+  const madeAt = Date.now()
+  const own = (key: string) => Object.prototype.hasOwnProperty.call(instance, key)
+  if (!own('createdTimestamp')) {
+    Object.defineProperty(instance, 'createdTimestamp', {
+      get(this: { id?: unknown }) {
+        return this.id !== generatedId && isSnowflake(this.id) ? SnowflakeUtil.timestampFrom(this.id) : madeAt
+      },
+      configurable: true,
+    })
+  }
+  if (!own('createdAt')) {
+    Object.defineProperty(instance, 'createdAt', {
+      get(this: { createdTimestamp: number }) {
+        return new Date(this.createdTimestamp)
+      },
+      configurable: true,
+    })
+  }
+}
+
 /** A mock user that is a person, with an id of its own unless given one. */
 const mockUser = (id = nextSnowflake()): object => stubDeep(Object.assign(Object.create(User.prototype), { id, bot: false }))
 
@@ -376,6 +405,8 @@ const MOCK_BOT_ID = '1300000000000000000'
  *
  * Type guards such as `isButton()` run the real discord.js logic. An interaction gets an `id`, a
  * `channelId` and a `user` with an `id`, each a snowflake no other mock in the run has, unless given.
+ * Its `createdTimestamp` and `createdAt` are the time an `id` the test gives encodes, as discord.js reads
+ * them; with the generated `id`, the time the mock was made; and a `createdTimestamp` the test gives wins.
  * `inGuild()`, `inCachedGuild()` and `inRawGuild()` answer from the mock's own `guildId` and `guild`,
  * so a mock created without a `guildId` is a DM, with `guildId`, `guild` and `member` `null`. An interaction's `locale` is `'en-US'`, and its `guildLocale` is `'en-US'` with
  * a `guildId` and `null` without, unless given. Replies behave like a real
@@ -566,7 +597,8 @@ export function createMockInteraction<T extends object>(
   // Ids and a user, as Discord always sends; no server unless the test names one, as in a direct message
   if (BaseInteraction.prototype.isPrototypeOf(instance)) {
     const unset = (key: string) => !Object.prototype.hasOwnProperty.call(instance, key)
-    if (unset('id')) instance.id = nextSnowflake()
+    const generatedId = unset('id') ? (instance.id = nextSnowflake()) : undefined
+    defineCreatedTime(instance, generatedId)
     if (unset('user')) instance.user = mockUser()
     if (unset('channelId')) instance.channelId = nextSnowflake()
     if (unset('guildId')) {
@@ -915,6 +947,9 @@ function asHeld<T>(value: T | JSONEncodable<T>): JSONEncodable<T> {
  * `users.cache` and, in a guild, a member in `guild.members.cache`; `<@&id>` a role; `<#id>` a
  * channel. Each is in `mentions` too. A bare id is not cached, as a bot has to fetch it.
  *
+ * Its `createdTimestamp` and `createdAt` are the time an `id` the test gives encodes, as discord.js reads
+ * them; with the generated `id`, the time the mock was made; and a `createdTimestamp` the test sets wins.
+ *
  * @param overrides - The message's id, content, components, embeds and flags; its guild, or `null`
  *   for a DM; the client it arrived on, a new mock client otherwise; and more users for that client's cache.
  * @returns The mock message.
@@ -977,7 +1012,9 @@ export function createMockMessage(overrides: MockMessageOverrides = {}): DeepMoc
   instance.components = (overrides.components ?? []).map(asHeld)
   instance.embeds = (overrides.embeds ?? []).map(asHeld)
   instance.attachments = new Collection()
-  instance.id = overrides.id ?? nextSnowflake()
+  const generatedId = overrides.id === undefined ? nextSnowflake() : undefined
+  instance.id = overrides.id ?? generatedId
+  defineCreatedTime(instance, generatedId)
   if (overrides.content !== undefined) instance.content = overrides.content
 
   const alreadyDeleted = () => new Error('This message has already been deleted.')

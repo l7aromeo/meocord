@@ -56,7 +56,8 @@ export function deferMisuseError(className: string, methodName: string, kind: st
 
 /**
  * `@Defer`'s first step: acknowledge now, or for `'auto'`, at the earlier of `receivedAt + after` and
- * `createdTimestamp + 2.5 s`, so a host clock running late can only acknowledge early.
+ * `createdTimestamp + 2.5 s`, so a host clock running late can only acknowledge early; at `receivedAt + after`
+ * for an interaction with no creation time.
  */
 export async function startDefer(state: InteractionResponse, options: DeferOptions, receivedAt: number): Promise<void> {
   state.configure(options)
@@ -64,6 +65,9 @@ export async function startDefer(state: InteractionResponse, options: DeferOptio
     await state.acknowledge({ ephemeral: options.ephemeral })
     return
   }
-  const deadline = Math.min(receivedAt + (options.after ?? AUTO_DEFER_AFTER_MS), state.interaction.createdTimestamp + AUTO_DEFER_LIMIT_MS)
+  // Without a creation time to count from, only the delay applies
+  const created = state.interaction.createdTimestamp
+  const limit = Number.isFinite(created) ? created + AUTO_DEFER_LIMIT_MS : Infinity
+  const deadline = Math.min(receivedAt + (options.after ?? AUTO_DEFER_AFTER_MS), limit)
   state.scheduleAcknowledge(Math.max(0, deadline - Date.now()), { ephemeral: options.ephemeral })
 }

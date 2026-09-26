@@ -572,6 +572,23 @@ describe('@Defer', () => {
       await done
     })
 
+    it('acknowledges after 1.5 s when the interaction has no creation time, rather than at once', async () => {
+      vi.useFakeTimers({ now: Date.now() })
+      const emit = await startApp()
+      let finish!: () => void
+      handlerBody = () => new Promise<void>(resolve => (finish = resolve))
+      const interaction = click('fast/go')
+      Object.defineProperty(interaction, 'createdTimestamp', { value: undefined, configurable: true })
+
+      const done = emit(interaction)
+      await vi.advanceTimersByTimeAsync(1_499)
+      expect(calls(interaction)).toEqual([])
+      await vi.advanceTimersByTimeAsync(1)
+      expect(calls(interaction)[0]).toBe('deferUpdate')
+      finish()
+      await done
+    })
+
     // Unacknowledged, Discord shows the user that the interaction failed
     it('acknowledges invisibly when a guard denies a click silently before the timer', async () => {
       vi.useFakeTimers({ now: Date.now() })
@@ -631,6 +648,7 @@ describe('@Defer', () => {
       const emit = await startApp()
       handlerBody = async interaction => void (await respond(interaction).followUp({ content: 'note' }))
       const interaction = click('fast/go')
+      Object.assign(interaction, { createdTimestamp: Date.now() })
 
       await emit(interaction)
 

@@ -41,6 +41,7 @@ import {
   GuildMember,
   Locale,
   Role,
+  SnowflakeUtil,
 } from 'discord.js'
 import {
   createMockInteraction,
@@ -533,6 +534,38 @@ describe('createMockInteraction', () => {
       expect(interaction.reply).toBeTypeOf('function')
     })
 
+    it('gives the time the mock was made with its generated id, the time an id the test gives encodes, and a set time', () => {
+      const before = Date.now()
+      const made = createMockInteraction(ButtonInteraction, { customId: 'x' })
+      const after = Date.now()
+      const given = createMockInteraction(ButtonInteraction, { customId: 'x', id: '1200000000000000000' })
+      const set = createMockInteraction(ButtonInteraction, { customId: 'x', createdTimestamp: 42 })
+
+      expect(made.createdTimestamp).toBeGreaterThanOrEqual(before)
+      expect(made.createdTimestamp).toBeLessThanOrEqual(after)
+      expect(made.createdAt).toEqual(new Date(made.createdTimestamp))
+      expect(given.createdTimestamp).toBe(SnowflakeUtil.timestampFrom('1200000000000000000'))
+      expect(set.createdTimestamp).toBe(42)
+    })
+
+    it('reads the time from an id the test sets later, and gives the time it was made without an id', () => {
+      const interaction = createMockInteraction(ButtonInteraction, { customId: 'x' })
+      interaction.id = '1200000000000000000'
+      const before = Date.now()
+      const withoutId = createMockInteraction(ButtonInteraction, { customId: 'x', id: undefined })
+
+      expect(interaction.createdTimestamp).toBe(SnowflakeUtil.timestampFrom('1200000000000000000'))
+      expect(withoutId.createdTimestamp).toBeGreaterThanOrEqual(before)
+    })
+
+    it('keeps generating ids that count up by one, so a test can rely on them', () => {
+      const first = createMockUser()
+      const second = createMockUser()
+
+      expect(first.id).toMatch(/^14000000000000\d{5}$/)
+      expect(BigInt(second.id)).toBe(BigInt(first.id) + 1n)
+    })
+
     it('does not disturb the type guards', () => {
       const interaction = createMockInteraction(ButtonInteraction, { customId: 'x' })
       expect(interaction.isButton()).toBe(true)
@@ -930,6 +963,19 @@ describe('overrideGuard()', () => {
 describe('createMockMessage', () => {
   it('returns a Message instance', () => {
     expect(createMockMessage()).toBeInstanceOf(Message)
+  })
+
+  it('gives the time it was made with its generated id, the time an id the test gives encodes, and a set time', () => {
+    const before = Date.now()
+    const made = createMockMessage()
+    const given = createMockMessage({ id: '1200000000000000000' })
+    const set = createMockMessage()
+    set.createdTimestamp = 42
+
+    expect(made.createdTimestamp).toBeGreaterThanOrEqual(before)
+    expect(made.createdAt).toEqual(new Date(made.createdTimestamp))
+    expect(given.createdTimestamp).toBe(SnowflakeUtil.timestampFrom('1200000000000000000'))
+    expect(set.createdTimestamp).toBe(42)
   })
 
   it('comes from a user rather than a bot, with the content given, so dispatch handles it', () => {
