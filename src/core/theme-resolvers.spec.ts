@@ -304,15 +304,17 @@ describe('a resolver that fails', () => {
       ['handler', DEFAULT_THEME.colors.primary, '#000022', DEFAULT_THEME.colors.success],
       ['handler', '#000021', '#000022', DEFAULT_THEME.colors.success],
     ])
-    // The first server on its own, then the second as one summary for the resolver; no recovery while one still fails
+    // The first server on its own, then the second as one summary for the resolver; the first answers on its own
     expect(errors.mock.calls.filter(([text]) => String(text).includes('themeFor.guild'))).toEqual([
       [expect.stringContaining(`themeFor.guild for guild ${GUILD} failed: database down. Its calls use the theme without it`)],
       [expect.stringContaining(`themeFor.guild is failing for more than one guild; the latest, guild ${OTHER_GUILD}, failed: database down`)],
     ])
-    expect(logs.mock.calls.filter(([text]) => String(text).includes('answers again'))).toEqual([])
+    expect(logs.mock.calls.filter(([text]) => String(text).includes('answers again'))).toEqual([
+      [expect.stringContaining(`themeFor.guild for guild ${GUILD} answers again, after 1 failed lookup(s) over 10s`)],
+    ])
   })
 
-  it('sums up many servers failing together in one line, and their recovery in one more', async () => {
+  it('sums up many servers failing together in one line after the first, and their answers the same way', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] })
     const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {})
     const logs = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => {})
@@ -335,7 +337,162 @@ describe('a resolver that fails', () => {
       expect.stringContaining(`themeFor.guild is failing for more than one guild; the latest, guild ${servers[1]}`),
     ])
     expect(logs.mock.calls.map(([text]) => String(text)).filter(text => text.includes('answers again'))).toEqual([
-      expect.stringContaining('themeFor.guild answers again for every guild that failed, after 100 failed lookup(s)'),
+      expect.stringContaining(`themeFor.guild for guild ${servers[0]} answers again`),
+      expect.stringContaining(`themeFor.guild answers again for more than one guild; the latest, guild ${servers[1]}`),
+    ])
+  })
+
+  it('logs an outage and its answers beside a server that failed and is never asked again, and the next outage', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] })
+    const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {})
+    const logs = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => {})
+    const down = new Set<string>()
+    const module = moduleWith({
+      guild: ({ guild }) => {
+        if (down.has(guild.id)) throw new Error('database down')
+        return undefined
+      },
+    })
+    const ask = (guildId: string) => module.invoke(Panel, 'panel', press('panel', { guildId }))
+    const lines = () => ({
+      errors: errors.mock.calls.map(([text]) => String(text)),
+      recoveries: logs.mock.calls.map(([text]) => String(text)).filter(text => text.includes('answers again')),
+    })
+
+    // A server fails once and is never asked again, as when the bot leaves it; then an outage comes and goes
+    down.add('G0')
+    await ask('G0')
+    down.add('G1').add('G2')
+    await ask('G1')
+    await ask('G2')
+    vi.advanceTimersByTime(10_001)
+    down.clear()
+    await ask('G1')
+    await ask('G2')
+    const first = lines()
+    vi.advanceTimersByTime(86_400_000)
+    errors.mockClear()
+    logs.mockClear()
+    down.add('G3').add('G4')
+    await ask('G3')
+    await ask('G4')
+
+    expect(first.errors).toEqual([
+      expect.stringContaining('themeFor.guild for guild G0 failed: database down'),
+      expect.stringContaining('themeFor.guild is failing for more than one guild; the latest, guild G1'),
+    ])
+    expect(first.recoveries).toEqual([
+      expect.stringContaining('themeFor.guild for guild G1 answers again'),
+      expect.stringContaining('themeFor.guild answers again for more than one guild; the latest, guild G2'),
+    ])
+    expect(lines().errors).toEqual([
+      expect.stringContaining('themeFor.guild for guild G3 failed: database down'),
+      expect.stringContaining('themeFor.guild is failing for more than one guild; the latest, guild G4'),
+    ])
+  })
+
+  it('logs an outage and its answers beside a server that keeps failing, and the next outage', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] })
+    const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {})
+    const logs = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => {})
+    let databaseDown = false
+    const module = moduleWith({
+      guild: ({ guild }) => {
+        if (guild.id === 'BAD') throw new Error('bad row')
+        if (databaseDown) throw new Error('database down')
+        return undefined
+      },
+    })
+    const ask = (guildId: string) => module.invoke(Panel, 'panel', press('panel', { guildId }))
+
+    await ask('BAD')
+    databaseDown = true
+    await ask('A')
+    await ask('B')
+    vi.advanceTimersByTime(10_001)
+    databaseDown = false
+    await ask('A')
+    await ask('B')
+    await ask('BAD')
+    const recoveries = logs.mock.calls.map(([text]) => String(text)).filter(text => text.includes('answers again'))
+    vi.advanceTimersByTime(3_600_000)
+    errors.mockClear()
+    databaseDown = true
+    await ask('C')
+    await ask('D')
+
+    expect(recoveries).toEqual([
+      expect.stringContaining('themeFor.guild for guild A answers again'),
+      expect.stringContaining('themeFor.guild answers again for more than one guild; the latest, guild B'),
+    ])
+    expect(errors.mock.calls.map(([text]) => String(text))).toEqual([
+      expect.stringContaining('themeFor.guild for guild C failed: database down'),
+      expect.stringContaining('themeFor.guild is failing for more than one guild; the latest, guild D'),
+    ])
+  })
+
+  it('logs the next outage after one whose last server is never asked again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] })
+    const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {})
+    const down = new Set(['G1', 'G2'])
+    const module = moduleWith({
+      guild: ({ guild }) => {
+        if (down.has(guild.id)) throw new Error('database down')
+        return undefined
+      },
+    })
+    const ask = (guildId: string) => module.invoke(Panel, 'panel', press('panel', { guildId }))
+
+    await ask('G1')
+    await ask('G2')
+    vi.advanceTimersByTime(10_001)
+    down.clear()
+    await ask('G1')
+    vi.advanceTimersByTime(3_600_000)
+    errors.mockClear()
+    down.add('G3').add('G4')
+    await ask('G3')
+    await ask('G4')
+
+    expect(errors.mock.calls.map(([text]) => String(text))).toEqual([
+      expect.stringContaining('themeFor.guild for guild G3 failed: database down'),
+      expect.stringContaining('themeFor.guild is failing for more than one guild; the latest, guild G4'),
+    ])
+  })
+
+  it('logs the next outage after two bad rows that fail on every backoff, and never the bad rows again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] })
+    const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {})
+    let databaseDown = false
+    const module = moduleWith({
+      guild: ({ guild }) => {
+        if (guild.id.startsWith('BAD')) throw new Error('bad row')
+        if (databaseDown) throw new Error('database down')
+        return undefined
+      },
+    })
+    const ask = (guildId: string) => module.invoke(Panel, 'panel', press('panel', { guildId }))
+
+    for (let round = 0; round < 60; round++) {
+      await ask('BAD1')
+      await ask('BAD2')
+      vi.advanceTimersByTime(10_001)
+    }
+    const early = errors.mock.calls.map(([text]) => String(text))
+    errors.mockClear()
+    databaseDown = true
+    await ask('C')
+    await ask('D')
+    await ask('BAD1')
+    await ask('BAD2')
+
+    expect(early).toEqual([
+      expect.stringContaining('themeFor.guild for guild BAD1 failed: bad row'),
+      expect.stringContaining('themeFor.guild is failing for more than one guild; the latest, guild BAD2'),
+    ])
+    expect(errors.mock.calls.map(([text]) => String(text))).toEqual([
+      expect.stringContaining('themeFor.guild for guild C failed: database down'),
+      expect.stringContaining('themeFor.guild is failing for more than one guild; the latest, guild D'),
     ])
   })
 
