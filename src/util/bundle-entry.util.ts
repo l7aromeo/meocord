@@ -13,3 +13,8 @@ export function bundleEntry(): string {
   if (typeof recorded === 'string' && !recorded.endsWith('load-config.pre-entry.js')) return recorded
   return realpathSync(process.argv[1])
 }
+
+/** Whether this process runs a built application, whose pre-entry records the bundle. */
+export function isBuiltApplication(): boolean {
+  return typeof (globalThis as Record<symbol, unknown>)[BUNDLE_ENTRY_KEY] === 'string'
+}

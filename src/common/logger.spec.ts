@@ -8,6 +8,7 @@ import { stripVTControlCharacters } from 'node:util'
 import { Logger } from '@src/common/logger.js'
 import { resetLogLevel } from '@src/common/log-level.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
+import { BUNDLE_ENTRY_KEY } from '@src/util/bundle-entry.util.js'
 import { type MeoCordConfig } from '@src/interface/index.js'
 
 describe('Logger', () => {
@@ -99,13 +100,30 @@ describe('Logger levels', () => {
     for (const method of ['debug', 'log', 'warn', 'error'] as const) vi.spyOn(console, method).mockImplementation(() => {})
     vi.mocked(loadMeoCordConfig).mockClear().mockReturnValue({ discordToken: 'token' })
     vi.stubEnv('MEOCORD_LOG_LEVEL', undefined)
+    // As the pre-entry of a built bot records it: the config's logLevel applies only there
+    Reflect.set(globalThis, BUNDLE_ENTRY_KEY, '/app/dist/main.js')
     resetLogLevel()
   })
 
   afterEach(() => {
     vi.unstubAllEnvs()
     vi.restoreAllMocks()
+    Reflect.deleteProperty(globalThis, BUNDLE_ENTRY_KEY)
     resetLogLevel()
+  })
+
+  it('leaves logLevel to the built bot: the CLI and tests go by MEOCORD_LOG_LEVEL and the default', () => {
+    Reflect.deleteProperty(globalThis, BUNDLE_ENTRY_KEY)
+    vi.mocked(loadMeoCordConfig).mockReturnValue({ discordToken: 'token', logLevel: 'silent' } as MeoCordConfig)
+
+    logEveryLevel()
+    expect(levelsShown()).toBe('LOG,LOG,LOG,WARN,ERROR')
+
+    resetLogLevel()
+    vi.stubEnv('MEOCORD_LOG_LEVEL', 'error')
+    for (const method of ['debug', 'log', 'warn', 'error'] as const) vi.mocked(console[method]).mockClear()
+    logEveryLevel()
+    expect(levelsShown()).toBe('ERROR')
   })
 
   it('shows debug in development, as under meocord start --dev', () => {
