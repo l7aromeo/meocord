@@ -49,6 +49,7 @@
   - [Guards on autocomplete, and denying with a reason](#guards-on-autocomplete-and-denying-with-a-reason)
 - [Interceptors](#interceptors)
 - [Exception filters](#exception-filters)
+  - [User errors](#user-errors)
 - [Validation and Pipes](#validation-and-pipes)
 - [Cooldowns](#cooldowns)
 - [Observers](#observers)
@@ -1250,11 +1251,54 @@ An error no filter handles goes to the built-in fallback. It logs the error, the
 | Autocomplete                                                                 | closes the menu with an empty list                      |
 | Expired (Discord error 10062)                                                | logs only                                               |
 
-It says "An error occurred while executing the command.", "Command not found!" for `CommandNotFoundError`, a `GuardDeniedError`'s own message, a `CooldownError`'s wait time, and a `ValidationError`'s list of issues — the last three kept private even on a deferred public command, by deleting the deferred reply and following up. Errors from message, reaction and event handlers are only logged, and the next handler still runs; a message blocked by a cooldown is ignored without an error log. The fallback never throws.
+It says "An error occurred while executing the command.", "Command not found!" for `CommandNotFoundError`, a `GuardDeniedError`'s or [`UserError`](#user-errors)'s own message, a `CooldownError`'s wait time, and a `ValidationError`'s list of issues — the last four kept private even on a deferred public command, by deleting the deferred reply and following up. Errors from message, reaction and event handlers are only logged, and the next handler still runs, except that a message gets a `UserError`'s message as a reply; a message blocked by a cooldown is ignored without an error log. The fallback never throws.
 
 Filters apply when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke); a controller method called directly throws as it would without them. Under `invoke` the fallback does not run: an error no filter handles rejects, so tests see it.
 
 Generate a filter with `npx meocord g f <name>`.
+
+### User errors
+
+Throw `UserError` from `meocord/common` for a mistake the user can fix, rather than a fault in the bot: too few coins, an account that does not exist, a date in the past. It works from a handler, a pipe, a service or a guard.
+
+```typescript
+import { UserError } from 'meocord/common'
+
+if (balance < price) {
+  throw new UserError(`You need ${price - balance} more coins.`, {
+    code: 'shop.poor',
+    context: { missing: price - balance },
+  })
+}
+```
+
+| Where it is thrown     | What the user sees                                                          |
+| ---------------------- | --------------------------------------------------------------------------- |
+| An interaction handler | Its message, privately, in the presenter's error style, even after `@Defer` |
+| A message handler      | Its message as a reply to their message, without pinging them               |
+| A reaction or an event | Nothing; there is no one to answer                                          |
+
+It is logged only at debug level, since nothing in the bot failed, and [observers](#observers) see the outcome `'refused'`, apart from `'error'`, so a dashboard can tell the user's mistakes from the bot's faults. `respond(interaction).error(userError)` shows its message privately too. Where `GuardDeniedError` says a guard turned the call away, `UserError` says the call itself could not go ahead.
+
+`code` names the error, and `context` holds the values its message is built from, both for a filter or a presenter to read. To answer in the user's language, translate by `code` in the [presenter](#presenters), which receives the error and the interaction:
+
+```typescript
+@Service()
+export class AppPresenter implements ResponsePresenter {
+  constructor(private readonly t: Translator<typeof en>) {}
+
+  error({ interaction }: ResponseContext, { message, error }: PresentedError): ResponseView {
+    const text =
+      error instanceof UserError && error.code === 'shop.poor'
+        ? this.t.for(interaction)('shop.poor', { missing: Number(error.context?.missing) })
+        : message
+    return { title: 'Oops!', text, color: Theme.errorColor }
+  }
+  // ...
+}
+```
+
+An exception filter with `@Catch(UserError)` can answer otherwise altogether, such as in a message's channel.
 
 ---
 
@@ -1561,6 +1605,7 @@ class App {}
 | `'denied'`    | A guard returned `false` (no `error`) or threw `GuardDeniedError`.                                                                     |
 | `'cooldown'`  | A `@Cooldown` refused it with `CooldownError`.                                                                                         |
 | `'invalid'`   | `@Validate` refused its input with `ValidationError`.                                                                                  |
+| `'refused'`   | A [`UserError`](#user-errors) told the user what to fix: their mistake, not the bot's fault.                                           |
 | `'error'`     | Anything else was thrown, by the handler, a pipe, an interceptor or a guard.                                                           |
 | `'not-found'` | No handler matches the interaction: `CommandNotFoundError`, or an autocomplete no `@Autocomplete` claims (no `error`).                 |
 

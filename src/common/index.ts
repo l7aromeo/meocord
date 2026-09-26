@@ -13,8 +13,10 @@ export {
   CooldownStoreError,
   cooldownStoreMessage,
   GuardDeniedError,
+  UserError,
   ValidationError,
 } from '@src/common/errors.js'
+export type { UserErrorOptions } from '@src/common/errors.js'
 export type { CooldownScope } from '@src/common/errors.js'
 export { CooldownStore, MemoryCooldownStore } from '@src/common/cooldown-store.js'
 export type { CooldownBatchVerdict, CooldownEntry, CooldownLimit, CooldownVerdict } from '@src/common/cooldown-store.js'

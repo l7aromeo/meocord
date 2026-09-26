@@ -48,6 +48,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'ShardedCooldownStore',
     'Theme',
     'Translator',
+    'UserError',
     'ValidationError',
     'applyDecorators',
     'cooldownMessage',

@@ -8,11 +8,13 @@ import { type ExecutionContext } from '@src/common/execution-context.js'
  * - `'denied'`: a guard returned `false` or threw `GuardDeniedError`.
  * - `'cooldown'`: a `@Cooldown` refused it with `CooldownError`.
  * - `'invalid'`: `@Validate` refused its input with `ValidationError`.
+ * - `'refused'`: a `UserError` told the user what to fix, such as too few coins: their mistake, not a
+ *   fault of the bot.
  * - `'error'`: anything else was thrown, by the handler, a pipe, an interceptor or a guard.
  * - `'not-found'`: an interaction no handler matches, such as a button whose customId no pattern
  *   routes, or an autocomplete no `@Autocomplete` claims.
  */
-export type DispatchOutcome = 'ran' | 'denied' | 'cooldown' | 'invalid' | 'error' | 'not-found'
+export type DispatchOutcome = 'ran' | 'denied' | 'cooldown' | 'invalid' | 'refused' | 'error' | 'not-found'
 
 /** What a {@link DispatchObserver} is told about a call once it has settled. */
 export interface DispatchResult {
@@ -36,7 +38,7 @@ export interface DispatchResult {
    * once it answered. Only for interactions; `undefined` for messages, reactions and events.
    */
   response?: 'replied' | 'deferred' | 'unanswered'
-  /** The error the call ended with, for `'denied'` by `GuardDeniedError`, `'cooldown'`, `'invalid'`, `'error'` and most `'not-found'`. */
+  /** The error the call ended with, for `'denied'` by `GuardDeniedError`, `'cooldown'`, `'invalid'`, `'refused'`, `'error'` and most `'not-found'`. */
   error?: unknown
   /** Whether an exception filter or the built-in fallback answered the error. `false` without an error. */
   handled: boolean
