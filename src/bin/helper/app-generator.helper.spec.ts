@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { Command } from 'commander'
 import os from 'node:os'
 import path from 'node:path'
 import {
@@ -6,6 +7,7 @@ import {
   runtimePrefixFor,
   type AppTemplateVariables,
 } from '@src/bin/helper/app-generator.helper.js'
+import { GeneratorCLI } from '@src/bin/generator.js'
 
 const VARIABLES: AppTemplateVariables = {
   appName: 'my-cool-bot',
@@ -61,6 +63,14 @@ describe('AppGeneratorHelper', () => {
   it('carries the readable name into the config and the readme', () => {
     expect(read('meocord.config.ts')).toContain("appName: 'My Cool Bot'")
     expect(read('README.md')).toContain('# My Cool Bot')
+  })
+
+  it('shows every generator in the readme, by its alias', () => {
+    const generate = new GeneratorCLI('MeoCord').register(new Command()).commands.find(command => command.name() === 'generate')!
+    const aliases = generate.commands.map(command => command.alias())
+
+    expect(aliases).toContain('ob')
+    for (const alias of aliases) expect(read('README.md')).toContain(`npx meocord g ${alias} `)
   })
 
   it('uses the chosen package manager in the readme', () => {
