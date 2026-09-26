@@ -310,6 +310,39 @@ describe('MemoryCooldownStore', () => {
     expect(verdicts.filter(verdict => verdict.allowed)).toHaveLength(3)
   })
 
+  // Against the plain definition: keep the calls younger than the window, and allow one while fewer than `uses`
+  it('decides every call as filtering all call times would, over thousands of calls and several windows', async () => {
+    const store = new MemoryCooldownStore()
+    const reference = new Map<string, number[]>()
+    let seed = 7
+    const random = () => (seed = (seed * 16_807) % 2_147_483_647) / 2_147_483_647
+
+    for (let step = 0; step < 5_000; step++) {
+      const key = `k${Math.floor(random() * 3)}`
+      const limit = { uses: 1 + Math.floor(random() * 40), windowMs: 200 + Math.floor(random() * 800) }
+      const now = Date.now()
+      const times = (reference.get(key) ?? []).filter(time => now - time < limit.windowMs)
+      const expected =
+        times.length < limit.uses
+          ? { allowed: true, retryAfterMs: 0 }
+          : { allowed: false, retryAfterMs: times[times.length - limit.uses] + limit.windowMs - now }
+      if (expected.allowed) times.push(now)
+      reference.set(key, times)
+
+      expect(await store.consume(key, limit)).toEqual(expected)
+      vi.advanceTimersByTime(Math.floor(random() * 12))
+    }
+  })
+
+  it('keeps counting when the clock steps back, rather than letting calls through twice', async () => {
+    const store = new MemoryCooldownStore()
+    const limit = { uses: 1, windowMs: 1_000 }
+    await store.consume('k', limit)
+    vi.setSystemTime(Date.now() - 5_000)
+
+    expect((await store.consume('k', limit)).allowed).toBe(false)
+  })
+
   it('drops keys whose calls have all left their window', async () => {
     const store = new MemoryCooldownStore()
     await store.consume('short', { uses: 1, windowMs: 1_000 })
