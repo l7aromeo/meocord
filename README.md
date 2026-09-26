@@ -987,7 +987,7 @@ A message that names a command, after a prefix or mention, but does not fit its 
                          amount is missing
 ```
 
-The reply is deleted after 10 seconds; `@MeoCord({ messages: { deleteUsageRepliesAfter } })` sets another number of seconds, and `0` keeps it. A reply the bot cannot send or delete, for a missing permission or a message already gone, is logged and left. A command with a `member`, `role` or `channel` param, sent in a DM, is answered that it works in a server only. A command that a guard denies with a reason, `throw new GuardDeniedError('Only moderators can do that.')`, or that `@Validate` refuses is answered the same way: a reply with the reason, deleted after the same time, and logged at debug level, not as an error. A guard on a listener, an unpatterned `@MessageHandler()` or an `@On` handler, only filters what it takes, so its denial gets no reply and is logged at debug level.
+The reply is deleted after 10 seconds; `@MeoCord({ messages: { deleteUsageRepliesAfter } })` sets another number of seconds, and `0` keeps it. A reply the bot cannot send or delete, for a missing permission or a message already gone, is logged and left. A command with a `member`, `role` or `channel` param, sent in a DM, is answered that it works in a server only. A command that a guard denies with a reason, `throw new GuardDeniedError('Only moderators can do that.')`, or that `@Validate` refuses is answered the same way: a reply with the reason, deleted after the same time, and logged at debug level, not as an error. A guard on a listener, an unpatterned `@MessageHandler()` or an `@On` handler, only filters what it takes, so its denial gets no reply and is logged at debug level. `@MeoCord({ messages: { replyEmoji: true } })` begins these replies with the theme's warning emoji; see [Replies to messages](#replies-to-messages).
 
 The error is a `MessageUsageError` from `meocord/common`, carrying `usage` and `issues`, and goes through the handler's [exception filters](#exception-filters) first, so a filter can answer it in the app's own words or language. A message with no prefix or mention is never taken for a command: in an app without a prefix, `pay @ana lots` is chat that happens to begin with a command's word, and gets no reply.
 
@@ -1322,6 +1322,15 @@ await respond(interaction).send({
 - **Outside any call,** such as in a scheduled job, it is the theme of the app the bot runs, or MeoCord's defaults before an app has started. It never throws.
 - **A theme is frozen,** since one theme is shared by every call it applies to. A colour is kept as written, so `useTheme().colors.primary` reads back what was set.
 - **A bot that sets no `@UseTheme` pays one check per call:** its handlers share the app's theme, which is built once at startup.
+
+### Replies to messages
+
+MeoCord answers a message in plain text: a command's [usage](#usage-errors), a guard's or validation's reason, and a `UserError`'s message. A theme leaves that text as it is, so a test that checks it keeps passing when the colours change. `@MeoCord({ messages: { replyEmoji: true } })` begins each of them with the call's `emojis.warning`, the app's or a handler's `@UseTheme`:
+
+```text
+⚠️ Usage: !roll <sides>
+sides: "lots" is not a whole number
+```
 
 ---
 

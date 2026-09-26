@@ -401,6 +401,12 @@ export interface MessageCommandOptions {
    * @defaultValue `10`
    */
   deleteUsageRepliesAfter?: number
+  /**
+   * Begins MeoCord's text replies to messages with the theme's `emojis.warning`: a command's usage, a guard's or
+   * validation's reason, and a `UserError`'s message. The emoji is the call's, so it follows `@UseTheme`.
+   * @defaultValue `false`
+   */
+  replyEmoji?: boolean
 }
 
 /**
