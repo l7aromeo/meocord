@@ -38,7 +38,7 @@ import {
   type ThemeResolvers,
 } from '@src/interface/index.js'
 import { ThemeCache } from '@src/core/theme-resolvers.js'
-import { claimAmbientAppTheme, releaseAmbientAppTheme } from '@src/core/theme-runtime.js'
+import { claimAmbientAppTheme, registerClientTheme, releaseAmbientAppTheme } from '@src/core/theme-runtime.js'
 import { copyLayer, mergeTheme, type ResolvedTheme } from '@src/core/theme-scope.js'
 import { assertValidTheme } from '@src/core/theme-validation.js'
 import { buildMessageRoutes, messageParamsFor } from '@src/core/message-routes.js'
@@ -392,8 +392,18 @@ export class TestingModule {
     const presenter = appPresenterOf(this.container)
     const client = first instanceof BaseInteraction ? first.client : undefined
     if (presenter && client) setPresenter(client, presenter)
+    this.registerClient(first)
     const { ran, error } = await runHandler(this.container, instance, methodName, callArgs, { awaitObservers: true, ...hooks })
     return error === undefined ? { ran } : { ran, error }
+  }
+
+  /**
+   * Makes this module the app of the input's client, as the bot is of its own, so `respond()` outside any call,
+   * as in a collector's callback on that client, answers in this module's theme.
+   */
+  private registerClient(input: unknown): void {
+    const client = (input as { client?: unknown } | undefined)?.client
+    if (client && typeof client === 'object') registerClientTheme(client, this.container)
   }
 
   private dispatcher?: Dispatcher
@@ -459,6 +469,7 @@ export class TestingModule {
     options?: { user: User | PartialUser; action?: ReactionHandlerAction },
   ): Promise<DispatchedCall> {
     await this.init()
+    this.registerClient(input)
     const dispatcher = this.dispatcherOf()
     const handlers: DispatchedHandler[] = []
     const unhandled: unknown[] = []

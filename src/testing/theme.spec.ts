@@ -1,12 +1,12 @@
 import { vi } from 'vitest'
-import { ButtonInteraction } from 'discord.js'
-import { Command, Controller, MeoCord, Service, UseTheme } from '@src/decorator/index.js'
-import { ThemeCache, useTheme } from '@src/common/index.js'
+import { ButtonInteraction, resolveColor } from 'discord.js'
+import { Command, Controller, MessageHandler, MeoCord, Service, UseTheme } from '@src/decorator/index.js'
+import { respond, ThemeCache, useTheme } from '@src/common/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { type ThemeOverride, type ThemeResolvers } from '@src/interface/index.js'
 import { DEFAULT_THEME } from '@src/core/theme-defaults.js'
 import { setLegacyThemeLayer } from '@src/core/theme-scope.js'
-import { createMockInteraction, createMockTheme, MeoCordTestingModule, withTheme } from '@src/testing/index.js'
+import { createMockInteraction, createMockMessage, createMockTheme, MeoCordTestingModule, withTheme } from '@src/testing/index.js'
 
 const GUILD = '100000000000000001'
 const seen: unknown[] = []
@@ -229,5 +229,66 @@ describe('withTheme', () => {
 
   it('checks a theme it is given', () => {
     expect(() => withTheme({ colors: { primary: '#GGG' } }, () => undefined)).toThrow(/^The theme has 1 problem:\n {2}withTheme: theme\.colors\.primary/)
+  })
+})
+
+describe('respond() outside a call, as in a collector\'s callback', () => {
+  // What a handler leaves to run after its call, as collector.on('collect', ...) does
+  let collect: ((click: ButtonInteraction) => Promise<unknown>) | undefined
+
+  @Controller()
+  class Collecting {
+    @Command('collect', CommandType.BUTTON)
+    collect() {
+      collect = click => respond(click).send({ embeds: [{ description: 'collected' }] })
+    }
+
+    @MessageHandler('collect')
+    collectFromMessage() {
+      collect = click => respond(click).send({ embeds: [{ description: 'collected' }] })
+    }
+  }
+
+  @MeoCord({
+    controllers: [Collecting],
+    clientOptions: { intents: [] },
+    theme: { colors: { primary: '#0000A4' } },
+    themeFor: { guild: () => ({ colors: { primary: '#0000A5' } }) },
+  })
+  class CollectingApp {}
+
+  /** A click the collector receives later, from the client the call came to. */
+  async function clickAfter(client: unknown, guildId?: string) {
+    const click = createMockInteraction(ButtonInteraction, { customId: 'picked', client: client as never })
+    Object.assign(click, { guildId: guildId ?? null })
+    await collect!(click)
+    return (click.update.mock.calls[0]?.[0] as { embeds: { color?: number }[] }).embeds[0].color
+  }
+
+  beforeEach(() => {
+    collect = undefined
+  })
+
+  it('takes the module\'s theme, with the server\'s over it, after dispatch and invoke', async () => {
+    const module = MeoCordTestingModule.create({ app: CollectingApp, controllers: [Collecting] }).compile()
+
+    const dispatched = press('collect')
+    await module.dispatch(dispatched)
+    const afterDispatch = await clickAfter(dispatched.client, GUILD)
+
+    const invoked = createMockInteraction(ButtonInteraction, { customId: 'collect' })
+    await module.invoke(Collecting, 'collect', invoked)
+    const afterInvoke = await clickAfter(invoked.client)
+
+    expect([afterDispatch, afterInvoke]).toEqual([resolveColor('#0000A5'), resolveColor('#0000A4')])
+  })
+
+  it('takes it after a message the module dispatched, whose client a collector on its reply shares', async () => {
+    const module = MeoCordTestingModule.create({ app: CollectingApp, controllers: [Collecting] }).compile()
+    const message = createMockMessage({ content: 'collect' })
+
+    await module.dispatch(message)
+
+    expect(await clickAfter(message.client)).toBe(resolveColor('#0000A4'))
   })
 })

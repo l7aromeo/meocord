@@ -2499,6 +2499,7 @@ it('formats a receipt in the theme it is given', async () => {
 - **`module.themeCache`** is the module's `ThemeCache`, the one its classes inject. Each module has its own, so a result never reaches another test.
 - **`createMockTheme(overrides?)`** returns a whole theme, frozen, with `overrides` merged over MeoCord's defaults, to pass where code takes a theme or to compare against. When the app adds tokens, `overrides` gives them, as the app's theme does.
 - **`withTheme(theme, fn)`** runs `fn` with `theme` as the call's theme: `useTheme()` reads it in `fn` and in everything `fn` awaits or starts. It takes a theme `createMockTheme` made, or the roles to change.
+- **A collector's callback** answers with `respond()` outside the call, and takes the module's theme, as in the bot, with the server's and user's over it: `invoke` and `dispatch` make the module the app of their input's client. Give the click the collector receives that client, as the gateway does, with `createMockInteraction(ButtonInteraction, { client: interaction.client })`.
 
 ### Running a handler with `invoke`
 
