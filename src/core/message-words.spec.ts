@@ -1,3 +1,4 @@
+import { vi } from 'vitest'
 import { restFrom, splitFlagWords, splitWords } from '@src/core/message-words.js'
 
 const values = (text: string) => splitFlagWords(text).words.map(word => word.value)
@@ -37,21 +38,22 @@ describe('splitFlagWords', () => {
 })
 
 describe('scanning cost', () => {
-  it('reads unclosed quotes in time that grows with the text, as it does for plain words', () => {
-    const fastest = (read: (text: string) => unknown, text: string) => {
-      let best = Infinity
-      for (let round = 0; round < 3; round++) {
-        const started = performance.now()
+  it('reads unclosed quotes in steps that grow with the text, as it does for plain words', () => {
+    // A step is a character code read; counting them measures the work, whatever else the machine is doing
+    const stepsOf = (read: (text: string) => unknown, text: string) => {
+      const reads = vi.spyOn(String.prototype, 'charCodeAt')
+      try {
         read(text)
-        best = Math.min(best, performance.now() - started)
+        return reads.mock.calls.length
+      } finally {
+        reads.mockRestore()
       }
-      return best
     }
-    const plain = 'a '.repeat(10_000)
-    const unclosed = '"a '.repeat(6_667)
     for (const read of [splitWords, splitFlagWords]) {
-      // Were each quote to look for its closer to the end, the second would cost thousands of times the first
-      expect(fastest(read, unclosed) / Math.max(fastest(read, plain), 0.05)).toBeLessThan(20)
+      const steps = stepsOf(read, '"a '.repeat(2_000))
+      // Were each quote to look for its closer to the end, doubling the text would four-fold the steps
+      expect(stepsOf(read, '"a '.repeat(4_000)) / steps).toBeLessThan(2.5)
+      expect(steps).toBeLessThan(4 * '"a '.repeat(2_000).length)
     }
   })
 })
