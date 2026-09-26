@@ -184,15 +184,21 @@ export function lockedMessageCount(): number {
 function withThemeColours(body: Body, theme: ResolvedTheme): Body {
   let primary: number | undefined
   const colour = () => (primary ??= resolveColor(theme.colors.primary))
-  const embeds = body.embeds?.map(embed => {
-    const json = toJson(embed)
-    return json.color === undefined ? { ...json, color: colour() } : embed
-  })
-  const components = body.components?.map(component => {
-    const json = toJson(component)
-    return json.type === ComponentType.Container && json.accent_color === undefined ? { ...json, accent_color: colour() } : component
-  })
+  // Read without toJSON: only an uncoloured embed or an unaccented container is converted, and everything else is
+  // passed on as the app gave it
+  const embeds = body.embeds?.map(embed => (field(embed, 'color') === undefined ? { ...toJson(embed), color: colour() } : embed))
+  const components = body.components?.map(component =>
+    field(component, 'type') === ComponentType.Container && field(component, 'accent_color') === undefined
+      ? { ...toJson(component), accent_color: colour() }
+      : component,
+  )
   return { ...body, ...(embeds && { embeds }), ...(components && { components }) }
+}
+
+/** A field of a payload part, from a builder's data or the plain object, without building its JSON. */
+function field(part: unknown, key: string): unknown {
+  const data = (part as { data?: Record<string, unknown> } | null)?.data
+  return typeof (part as { toJSON?: unknown } | null)?.toJSON === 'function' && data ? data[key] : (part as Record<string, unknown> | null)?.[key]
 }
 
 /** A view MeoCord renders, in the theme's primary colour when its presenter gave it none. */
