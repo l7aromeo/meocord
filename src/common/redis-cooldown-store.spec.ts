@@ -120,6 +120,54 @@ describe('RedisCooldownStore', () => {
     expect(evaluate.mock.calls).toHaveLength(1)
   })
 
+  it("peeks every cooldown of a call in one read-only script, with each key's limit and no nonce", async () => {
+    const evaluate = createMockFn<RedisEval>(() => Promise.resolve([0, 1200, 1]))
+
+    const peeked = await new RedisCooldownStore(evaluate, { hashTag: 'handler' }).peekMany([
+      { key: 'Ping.run#0:user:user:1', limit: { uses: 1, windowMs: 3_000 } },
+      { key: 'Ping.run#1:user:user:1', limit: { uses: 5, windowMs: 60_000 } },
+    ])
+
+    expect(peeked).toEqual({ allowed: false, retryAfterMs: 1200, blocked: 1 })
+    expect(evaluate).toHaveBeenCalledTimes(1)
+    const [script, keys, args] = evaluate.mock.calls[0]
+    expect(script).not.toMatch(/ZADD|ZREM|PEXPIRE|DEL/)
+    expect(keys).toEqual(['meocord:cooldown:{Ping.run}#0:user:user:1', 'meocord:cooldown:{Ping.run}#1:user:user:1'])
+    expect(args).toEqual(['1', '3000', '5', '60000'])
+  })
+
+  it('on Redis Cluster, peeks keys in other slots with a script each, and reports the longest wait', async () => {
+    const evaluate = createMockFn<RedisEval>((_script, keys) =>
+      keys.length > 1
+        ? Promise.reject(new Error("CROSSSLOT Keys in request don't hash to the same slot"))
+        : Promise.resolve(keys[0].endsWith('long') ? [0, 9000, 0] : keys[0].endsWith('short') ? [0, 800, 0] : [1, 0, -1]),
+    )
+
+    const peeked = await new RedisCooldownStore(evaluate).peekMany([
+      { key: 'free', limit },
+      { key: 'short', limit },
+      { key: 'long', limit },
+    ])
+
+    expect(peeked).toEqual({ allowed: false, retryAfterMs: 9000, blocked: 2 })
+    expect(evaluate).toHaveBeenCalledTimes(4)
+  })
+
+  it('peeks by its own SHA1 when given evalsha, and in full on NOSCRIPT', async () => {
+    const evaluate = createMockFn<RedisEval>(() => Promise.resolve([1, 0, -1]))
+    const evalsha = createMockFn<RedisEvalSha>(() => Promise.reject(new Error('NOSCRIPT No matching script. Please use EVAL.')))
+    const store = new RedisCooldownStore(evaluate, { evalsha })
+
+    await store.peekMany([{ key: 'k', limit }])
+    await store.consumeMany([{ key: 'k', limit }])
+
+    const [peekSha, consumeSha] = evalsha.mock.calls.map(([sha]) => sha)
+    const [[peekScript], [consumeScript]] = evaluate.mock.calls
+    expect(peekSha).toBe(sha1(peekScript))
+    expect(consumeSha).toBe(sha1(consumeScript))
+    expect(peekSha).not.toBe(consumeSha)
+  })
+
   it('passes on an error from evalsha that is not NOSCRIPT', async () => {
     const evaluate = createMockFn<RedisEval>(() => Promise.resolve([1, 0, -1]))
     const store = new RedisCooldownStore(evaluate, { evalsha: () => Promise.reject(new Error('READONLY replica')) })
