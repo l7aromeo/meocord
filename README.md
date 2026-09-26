@@ -1213,7 +1213,7 @@ The stages run when MeoCord dispatches a handler, and when a test runs one with 
 
 Guards run first, before anything else touches the handler. Each guard implements `canActivate` — return `true` to allow, `false` to block.
 
-A new guard instance is created for every call, so keep state that must outlast one call — such as rate-limit counts — outside the guard: at module level, or in a service registered in `@MeoCord({ services })`, which makes it a singleton. A guard bound once — listed in services or providers, or injected into a service — is one instance shared by every call, and reads each call's own `params`, even while calls overlap.
+A new guard instance is created for every call, so keep state that must outlast one call — such as rate-limit counts — outside the guard: at module level, or in a service registered in `@MeoCord({ services })`, which makes it a singleton. A guard bound once — listed in services or providers, or injected into a service — is one instance shared by every call, and reads each call's own `params`, even while calls overlap. Work it starts inside `canActivate` that outlives the call, such as a timer, keeps reading that call's params. A sealed instance, or a param the class takes through a setter, cannot be kept per call: its params are set on the one instance, and the bot warns once.
 
 A guard runs for every kind of handler it applies to — global guards from `@MeoCord({ guards })` included, which also run before [`@On` event handlers](#gateway-events). To limit one, declare the context types it runs for: `@Guard({ types: ['interaction'] })` skips messages, reactions and events.
 
