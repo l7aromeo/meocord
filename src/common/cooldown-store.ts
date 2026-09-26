@@ -102,8 +102,28 @@ const SWEEP_INTERVAL_MS = 60_000
  * With process sharding each shard has its own, so `per: 'user'` and `'global'` cooldowns count per
  * shard; bind a shared store for those.
  */
+/**
+ * A key's call times, oldest first. Those from `head` on are in the window; those before it have left, and
+ * are dropped from the array once they outnumber the rest, so trimming a call costs O(1) amortised.
+ */
+interface CallTimes {
+  times: number[]
+  head: number
+  windowMs: number
+}
+
+/** Moves `head` past the calls that have left the window, and drops them from the array now and then. */
+function trim(entry: CallTimes, now: number): void {
+  const { times, windowMs } = entry
+  while (entry.head < times.length && now - times[entry.head] >= windowMs) entry.head++
+  if (entry.head > 32 && entry.head * 2 > times.length) {
+    entry.times = times.slice(entry.head)
+    entry.head = 0
+  }
+}
+
 export class MemoryCooldownStore extends CooldownStore {
-  private readonly calls = new Map<string, { times: number[]; windowMs: number }>()
+  private readonly calls = new Map<string, CallTimes>()
   private sweeper?: ReturnType<typeof setInterval>
 
   async consume(key: string, limit: CooldownLimit): Promise<CooldownVerdict> {
@@ -115,23 +135,27 @@ export class MemoryCooldownStore extends CooldownStore {
   consumeMany(entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
     const now = Date.now()
     const counts = entries.map(({ key, limit: { windowMs } }) => {
-      const entry = this.calls.get(key) ?? { times: [], windowMs }
+      let entry = this.calls.get(key)
+      if (!entry) this.calls.set(key, (entry = { times: [], head: 0, windowMs }))
       entry.windowMs = windowMs
-      entry.times = entry.times.filter(time => now - time < windowMs)
-      this.calls.set(key, entry)
+      trim(entry, now)
       return entry
     })
     this.startSweeping()
 
     const verdicts = entries.map(({ limit: { uses, windowMs } }, index): CooldownVerdict => {
-      const { times } = counts[index]
-      return times.length < uses ? { allowed: true, retryAfterMs: 0 } : { allowed: false, retryAfterMs: times[times.length - uses] + windowMs - now }
+      const { times, head } = counts[index]
+      // A refused call is never recorded, so at most `uses` calls are ever in the window
+      return times.length - head < uses
+        ? { allowed: true, retryAfterMs: 0 }
+        : { allowed: false, retryAfterMs: times[times.length - uses] + windowMs - now }
     })
     const refusal = longestRefusal(verdicts)
     if (refusal) return Promise.resolve(refusal)
 
-    // Nothing awaited since the check, so no other call can take a use in between
-    for (const entry of counts) entry.times.push(now)
+    // Nothing awaited since the check, so no other call can take a use in between. A clock that steps back
+    // records the latest time again, keeping the times in order for trim()
+    for (const entry of counts) entry.times.push(Math.max(now, entry.times[entry.times.length - 1] ?? now))
     return Promise.resolve({ allowed: true, retryAfterMs: 0 })
   }
 
@@ -142,8 +166,9 @@ export class MemoryCooldownStore extends CooldownStore {
 
   /** Drops every key whose calls have all left their window. */
   sweep(now = Date.now()): void {
-    for (const [key, { times, windowMs }] of this.calls) {
-      if (times.every(time => now - time >= windowMs)) this.calls.delete(key)
+    for (const [key, entry] of this.calls) {
+      const newest = entry.times[entry.times.length - 1]
+      if (newest === undefined || now - newest >= entry.windowMs) this.calls.delete(key)
     }
   }
 
