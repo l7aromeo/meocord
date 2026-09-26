@@ -245,6 +245,28 @@ describe('message starts', () => {
     expect(match('<@111> ping', starts)).toEqual(['ping', {}])
   })
 
+  it("matches a handler whose own prefix is '' without one, beside handlers with and without prefixes", () => {
+    @Controller()
+    class Mixed {
+      @MessageHandler('ping')
+      ping() {}
+
+      @MessageHandler('echo {text...}', { prefix: '' })
+      echo() {}
+
+      @MessageHandler('roll', { prefix: ['?', ''] })
+      roll() {}
+
+      @MessageHandler('hello', { prefix: false })
+      hello() {}
+    }
+    const mixed = buildMessageRoutes([Mixed])
+    const reach = (content: string) => matchMessageRoute(mixed, content, { prefixes: ['!'], mention: '111' })?.route.method
+
+    expect(['!ping', 'echo hi', '<@111> echo hi', '?roll', 'roll', 'hello'].map(reach)).toEqual(['ping', 'echo', 'echo', 'roll', 'roll', 'hello'])
+    expect(['ping', '!echo hi', 'chat that matches nothing'].map(reach)).toEqual([undefined, undefined, undefined])
+  })
+
   it('matches a handler with prefix: false against the message as it is, never after a mention', () => {
     const starts: MessageStarts = { prefixes: ['!'], mention: '111' }
     expect(match('hello', starts)).toEqual(['hello', {}])

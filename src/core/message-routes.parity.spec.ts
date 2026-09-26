@@ -102,7 +102,7 @@ function random(seed: number) {
 }
 
 const WORDS = ['roll', 'Roll', 'ban', 'set', 'a', 'x', 'Émile', 'dé']
-const PREFIXES: (false | string[] | undefined)[] = [undefined, undefined, undefined, false, ['?'], ['$', '$$'], ['bot ']]
+const PREFIXES: (false | string[] | undefined)[] = [undefined, undefined, undefined, false, ['?'], ['$', '$$'], ['bot '], [''], ['?', '']]
 const APP_STARTS: MessageStarts[] = [
   { prefixes: ['!'] },
   { prefixes: ['!', '?'], mention: '111' },
