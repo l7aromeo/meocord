@@ -1,6 +1,6 @@
 import { type AutocompleteInteraction } from 'discord.js'
 import { type ExecutionContext } from '@src/common/execution-context.js'
-import { CommandNotFoundError, CooldownError, CooldownStoreError, GuardDeniedError, ValidationError } from '@src/common/errors.js'
+import { CommandNotFoundError, CooldownError, CooldownStoreError, GuardDeniedError, UserError, ValidationError } from '@src/common/errors.js'
 import { type Logger } from '@src/common/logger.js'
 import { respond } from '@src/common/response/response-state.js'
 import { describeInteraction } from '@src/util/interaction.util.js'
@@ -37,10 +37,22 @@ function describeCall(context: ExecutionContext): string {
   return handler ? `${subject} for method "${handler}"` : subject
 }
 
+/** Replies to the message a `UserError` came from, without pinging its author; only logs one from a reaction or event. */
+async function tellAuthor(context: ExecutionContext, error: UserError, logger: Logger): Promise<void> {
+  logger.debug(`Refused ${describeCall(context)}: ${error.message}`)
+  const message = context.getMessage()
+  if (!message) return
+  try {
+    await message.reply({ content: error.message, allowedMentions: { repliedUser: false } })
+  } catch (replyError) {
+    logger.debug(`Could not reply to the message: ${String(replyError)}`)
+  }
+}
+
 /**
  * The built-in fallback: logs an error no filter handled, then answers the interaction through
  * `respond(interaction).error()` if it can still take an answer. Messages, reactions and events are
- * only logged.
+ * only logged, except that a message gets a `UserError`'s message as a reply.
  */
 export function createFallback(logger: Logger): Fallback {
   return async (error, context) => {
@@ -50,6 +62,7 @@ export function createFallback(logger: Logger): Fallback {
       if (error instanceof CooldownError) logger.debug(`Cooldown (${error.per}) skipped ${describeCall(context)}`)
       // Logged once per outage where the store failed, rather than for every call it refused
       else if (error instanceof CooldownStoreError) logger.debug(`Cooldown store down; skipped ${describeCall(context)}`)
+      else if (error instanceof UserError) await tellAuthor(context, error, logger)
       else logger.error(`Error handling ${describeCall(context)}:`, error)
       return
     }
@@ -81,6 +94,10 @@ export function createFallback(logger: Logger): Fallback {
       await respond(interaction).error(error, { message: error.message, visibility: 'private' })
     } else if (error instanceof CooldownStoreError) {
       logger.debug(`Cooldown store down; refused ${describeInteraction(interaction)}`)
+      await respond(interaction).error(error, { message: error.message, visibility: 'private' })
+    } else if (error instanceof UserError) {
+      // The caller's own mistake, which only they need to see, and no fault to log
+      logger.debug(`Refused ${describeInteraction(interaction)}: ${error.message}`)
       await respond(interaction).error(error, { message: error.message, visibility: 'private' })
     } else if (error instanceof ValidationError) {
       // The caller's own input is wrong: only they need to see which part, and it is no fault to log.

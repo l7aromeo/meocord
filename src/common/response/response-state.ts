@@ -14,6 +14,7 @@ import {
   type RepliableInteraction,
 } from 'discord.js'
 import { Logger } from '@src/common/logger.js'
+import { UserError } from '@src/common/errors.js'
 import { getInstallContext, type InstallContext } from '@src/common/response/install-context.js'
 import {
   flagNames,
@@ -69,12 +70,12 @@ export type ResponsePhase = 'unanswered' | 'deferred' | 'replied'
 
 /** Options for {@link ResponseState.error}. */
 export interface ResponseErrorOptions {
-  /** What the user is told. Defaults to a generic sentence. */
+  /** What the user is told. Defaults to a `UserError`'s own message, or a generic sentence. */
   message?: string
 
   /**
-   * `'reply'` (default) may turn a public deferred reply into the error; `'private'` never shows it to
-   * anyone but the user who made the call.
+   * `'reply'` (default) may turn a public deferred reply into the error; `'private'` (the default for a
+   * `UserError`) never shows it to anyone but the user who made the call.
    */
   visibility?: 'reply' | 'private'
 }
@@ -266,6 +267,8 @@ export interface ResponseState {
    *   private deferral into it, and deletes a public one, then follows up privately.
    * - A component on a private (ephemeral) message: the error is added to that message, where it fits.
    * - Otherwise: a private follow-up, never an edit of the message the user clicked.
+   *
+   * A `UserError` shows its own message, privately, unless `options` say otherwise.
    *
    * @param error - The error, handed to the presenter so it can style it by kind.
    * @param options - What the user is told, and who sees it.
@@ -703,7 +706,10 @@ export class InteractionResponse implements ResponseState {
       : { embeds: [renderEmbed(view)] }
   }
 
-  async error(error: unknown, { message = DEFAULT_ERROR, visibility = 'reply' }: ResponseErrorOptions = {}): Promise<void> {
+  async error(error: unknown, options: ResponseErrorOptions = {}): Promise<void> {
+    // A UserError is the user's own mistake: its message, for them alone, unless told otherwise
+    const own = error instanceof UserError
+    const { message = own ? error.message : DEFAULT_ERROR, visibility = own ? 'private' : 'reply' } = options
     try {
       await this.acknowledging?.catch(() => undefined)
       await this.presentError(error, message, visibility)

@@ -78,7 +78,7 @@ describe('@Observer', () => {
   })
 
   it('describes the result', () => {
-    expectTypeOf<DispatchOutcome>().toEqualTypeOf<'ran' | 'denied' | 'cooldown' | 'invalid' | 'error' | 'not-found'>()
+    expectTypeOf<DispatchOutcome>().toEqualTypeOf<'ran' | 'denied' | 'cooldown' | 'invalid' | 'refused' | 'error' | 'not-found'>()
     expectTypeOf<DispatchResult>().toEqualTypeOf<{
       outcome: DispatchOutcome
       startedAt: number

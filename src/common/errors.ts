@@ -24,6 +24,50 @@ export class GuardDeniedError extends Error {
   }
 }
 
+/** What a {@link UserError} carries besides its message. */
+export interface UserErrorOptions {
+  /** Names the error, for a filter or presenter to branch on, or to look a translation up by. */
+  code?: string
+  /** Values the message is built from, such as the amount missing, for a translation to fill in. */
+  context?: Readonly<Record<string, unknown>>
+  /** The error that led to this one, such as a lookup that failed. */
+  cause?: unknown
+}
+
+/**
+ * A mistake the user can fix, such as too few coins or an account that does not exist, rather than a
+ * fault in the bot. Throw it from a handler, a pipe, a service or a guard: the built-in fallback shows
+ * its message to the user who made the call, privately for an interaction and as a reply to a message,
+ * and logs it only at debug level. Observers see the outcome `'refused'`.
+ *
+ * `code` and `context` let an exception filter or a presenter phrase it otherwise, such as in the
+ * user's language: a presenter's `error()` receives the error with the interaction.
+ *
+ * @example
+ * ```typescript
+ * if (balance < price) {
+ *   throw new UserError(`You need ${price - balance} more coins.`, { code: 'shop.poor', context: { missing: price - balance } })
+ * }
+ * ```
+ */
+export class UserError extends Error {
+  /** Names the error, for a filter or presenter to branch on. */
+  readonly code?: string
+  /** Values the message is built from. */
+  readonly context?: Readonly<Record<string, unknown>>
+
+  /**
+   * @param message - What the user is told.
+   * @param options - A `code`, the `context` the message is built from, and the `cause`.
+   */
+  constructor(message: string, { code, context, cause }: UserErrorOptions = {}) {
+    super(message, cause === undefined ? undefined : { cause })
+    this.name = 'UserError'
+    this.code = code
+    this.context = context
+  }
+}
+
 /**
  * The error dispatch reports when an interaction matches no handler, such as a button whose customId
  * fits no `@Command` pattern. Global filters receive it, with no handler in their `ExecutionContext`;
