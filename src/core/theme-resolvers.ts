@@ -1,7 +1,7 @@
 import { Logger } from '@src/common/logger.js'
 import { type ThemeOverride, type ThemeResolvers } from '@src/interface/index.js'
 import { themeProblems } from '@src/core/theme-validation.js'
-import { copyLayer } from '@src/core/theme-scope.js'
+import { copyLayer, outsideThemeScope } from '@src/core/theme-scope.js'
 
 /** How long a resolver's result is kept, in seconds, unless `themeCache.ttlSeconds` says otherwise. */
 export const DEFAULT_THEME_TTL_SECONDS = 300
@@ -99,7 +99,8 @@ class ResolverCache {
 
   /** The resolver's result, or a rejection when it throws, rejects or passes the timeout. */
   private within(id: string): Promise<unknown> {
-    const attempt = Promise.resolve().then(() => this.resolve(id))
+    // Outside the call's theme, which the resolver has no use for and whatever it starts would otherwise keep
+    const attempt = Promise.resolve().then(() => outsideThemeScope(() => this.resolve(id)))
     // A rejection after the timeout has nobody left to hear it
     attempt.catch(() => undefined)
     let timer: ReturnType<typeof setTimeout> | undefined

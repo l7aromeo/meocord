@@ -140,6 +140,14 @@ export function runWithTheme<T>(theme: ResolvedTheme, fn: () => T): T {
   return scope.run({ theme }, fn)
 }
 
+/**
+ * Runs `fn` outside any call's theme: for app code MeoCord runs on a call's behalf, such as a theme resolver, whose
+ * pooled connections and timers would otherwise keep the call's scope alive.
+ */
+export function outsideThemeScope<T>(fn: () => T): T {
+  return scope.exit(fn)
+}
+
 /** Runs `fn` in `themeScope`, whose theme may be replaced while it runs, as a per-server theme is found. */
 export function runInThemeScope<T>(themeScope: ThemeScope, fn: () => T): T {
   return scope.run(themeScope, fn)
