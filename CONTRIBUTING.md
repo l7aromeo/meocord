@@ -106,6 +106,9 @@ It checks, in order:
 - exactly the smoke command is registered in the test server, and `clearOther` leaves no global command;
 - with a helper bot, `@On('messageCreate')` receives its message and `@ReactionHandler` its reaction.
   `@MessageHandler` ignores messages from bots, so that one is marked for a person to check;
+- with a helper bot, the theme on real ids: a listener's reply, read back from Discord, carries the
+  app's theme, the listener class's `@UseTheme`, the test server's and the helper bot's from `themeFor`,
+  merged, and a `UserError` it throws is answered with that theme's warning emoji (`replyEmoji`);
 - SIGINT sent to the CLI alone, as Docker, pm2 and systemd send it, runs `onShutdown` in reverse
   dependency order and exits 0, leaving no process behind;
 - with process sharding and two shards: a process per shard, primary only on shard 0, `ShardContext.call`
@@ -204,6 +207,25 @@ it in each of the four contexts, and work through the steps in each:
     locked and the bot's output logs why.
 
 For message handlers, send `e2e ping` in the test server: the bot answers "pong".
+
+For the theme, run `/e2e-theme` in the test server, where the server's theme makes the primary colour
+`#B04A9C`, and in the bot's DMs, where it is the app's `#5865F2`. A bot cannot start an interaction, so
+these are checked by a person:
+
+1. **`/e2e-theme`**: four embeds. The two without a colour, the plain one and the `EmbedBuilder`, have a
+   bar in the primary colour; `0` has none; `#26A042` keeps its green.
+2. **Containers**: a follow-up with two containers. The one without an accent has a bar in the primary
+   colour; the one with a `null` accent has none.
+3. **Follow-up**: an embed with a bar in the primary colour.
+4. **Loading, 3s**: the button shows ⏳ and the "Working on it…" view has a bar in the primary colour
+   until the three seconds end.
+5. **Fail**: a private "Oops!" message in the theme's `danger`, `#E3606D`.
+6. **Refuse**: a private "Oops!" message in the theme's `warning`, `#B08400`.
+7. **Collector**: click **Collected** on the follow-up within a minute. It becomes an embed with a bar in
+   the primary colour.
+
+The manual run registers `/e2e-theme` globally with the checklist's commands; the next automated run
+removes them.
 
 ### In CI
 

@@ -14,7 +14,19 @@ import { cpSync, existsSync, mkdtempSync, realpathSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
 import { isDeepStrictEqual } from 'util'
-import { DiscordApi, type RegisteredCommand } from './lib/discord-api.js'
+import { DiscordApi, type RegisteredCommand, type StoredMessage } from './lib/discord-api.js'
+import { DEFAULT_THEME } from '../src/core/theme-defaults.js'
+import {
+  APP_THEME,
+  CLASS_THEME,
+  COLOR_ROLES,
+  EMOJI_ROLES,
+  GUILD_THEME,
+  REFUSAL,
+  REFUSE,
+  SWATCHES,
+  USER_THEME,
+} from '../test/e2e/app/src/theme-showcase.js'
 import { builtCli, cleanEnv, installedCliOf, mustRun, pack, renderApp, repoRoot } from './lib/packed-app.js'
 
 const botToken = process.env.MEOCORD_E2E_BOT_TOKEN?.trim() ?? ''
@@ -193,10 +205,67 @@ const readyOf = (bot: Bot, cls: string) => bot.markers.filter(marker => marker.e
 const shutdownOrder = (bot: Bot, pid: number) =>
   bot.markers.filter(marker => marker.event === 'shutdown' && marker.pid === pid).map(marker => String(marker.cls))
 
+/** A hex colour as Discord stores it. */
+const colourOf = (hex: string) => Number.parseInt(hex.slice(1), 16)
+
+/** The theme a message from the helper bot in the test server is answered in: every layer, in the order MeoCord merges them. */
+const expectedTheme = {
+  colors: { ...DEFAULT_THEME.colors, ...APP_THEME.colors, ...CLASS_THEME.colors, ...GUILD_THEME.colors, ...USER_THEME.colors } as Record<string, string>,
+  emojis: { ...DEFAULT_THEME.emojis, ...CLASS_THEME.emojis } as Record<string, string>,
+}
+
+/** The bot's reply to `messageId`, once it is there. */
+async function replyTo(api: DiscordApi, messageId: string, botId: string): Promise<StoredMessage> {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const reply = (await api.messagesAfter(channelId, messageId)).find(
+      message => message.author.id === botId && message.message_reference?.message_id === messageId,
+    )
+    if (reply) return reply
+    await sleep(1_000)
+  }
+  throw new Error(`No reply to message ${messageId} within 30s.`)
+}
+
+/**
+ * The helper bot asks the showcase listener for its swatches and for a refusal, and the stored answers must carry
+ * the call's theme: the app's, the listener class's @UseTheme, the test server's and the helper bot's, merged.
+ */
+async function themeChecks(bot: Bot, helper: DiscordApi): Promise<void> {
+  const api = new DiscordApi(botToken)
+  const botId = (await api.currentUser()).id
+  const sent: string[] = []
+  const replies: string[] = []
+  try {
+    await check("a listener's reply takes the app's, the class's, the server's and the user's theme", async () => {
+      const ask = await helper.sendMessage(channelId, SWATCHES)
+      sent.push(ask.id)
+      const marker = await bot.waitFor('the swatches reply', marker => marker.event === 'theme-reply' && marker.to === ask.id)
+      replies.push(String(marker.id))
+      const reply = await api.message(channelId, String(marker.id))
+      const colours = Object.fromEntries(reply.embeds.map(embed => [embed.title, embed.color]))
+      const expected = Object.fromEntries(COLOR_ROLES.map(role => [role, colourOf(expectedTheme.colors[role])]))
+      expect(isDeepStrictEqual(colours, expected), `Stored ${JSON.stringify(colours)}, expected ${JSON.stringify(expected)}.`)
+      const emojis = EMOJI_ROLES.map(role => `${role} ${expectedTheme.emojis[role]}`).join('\n')
+      expect(reply.content === emojis, `Stored ${JSON.stringify(reply.content)}, expected ${JSON.stringify(emojis)}.`)
+    })
+    await check("a UserError from a listener is answered with the call's warning emoji", async () => {
+      const ask = await helper.sendMessage(channelId, REFUSE)
+      sent.push(ask.id)
+      const reply = await replyTo(api, ask.id, botId)
+      replies.push(reply.id)
+      const text = `${expectedTheme.emojis.warning} ${REFUSAL}`
+      expect(reply.content === text, `Stored ${JSON.stringify(reply.content)}, expected ${JSON.stringify(text)}.`)
+    })
+  } finally {
+    for (const id of sent) await helper.deleteMessage(channelId, id).catch(error => console.log(`        could not delete the helper's message: ${redact(String(error))}`))
+    for (const id of replies) await api.deleteMessage(channelId, id).catch(error => console.log(`        could not delete the bot's reply: ${redact(String(error))}`))
+  }
+}
+
 /** The helper bot posts a message and reacts to it, and the smoke app must see both. */
 async function helperChecks(bot: Bot): Promise<void> {
   if (!helperToken || !channelId) {
-    record('skip', 'a message and a reaction from the helper bot', 'set MEOCORD_E2E_CHANNEL_ID and MEOCORD_E2E_HELPER_BOT_TOKEN to run them')
+    record('skip', 'a message, a reaction and the theme showcase from the helper bot', 'set MEOCORD_E2E_CHANNEL_ID and MEOCORD_E2E_HELPER_BOT_TOKEN to run them')
     return
   }
 
@@ -217,6 +286,7 @@ async function helperChecks(bot: Bot): Promise<void> {
       await helper.deleteMessage(channelId, message.id).catch(error => console.log(`        could not delete the helper's message: ${redact(String(error))}`))
     }
   }
+  await themeChecks(bot, helper)
 }
 
 async function automated(): Promise<void> {
@@ -224,8 +294,10 @@ async function automated(): Promise<void> {
   const applicationId = await api.applicationId()
   let registered: RegisteredCommand[] = []
 
+  // The helper bot's id, so the smoke app gives its messages a user's theme
+  const themedUserId = helperToken && channelId ? (await new DiscordApi(helperToken).currentUser()).id : ''
   console.log('\nOne process')
-  const bot = new Bot({})
+  const bot = new Bot({ MEOCORD_E2E_THEMED_USER_ID: themedUserId })
   try {
     const started = await check('logs in and runs onReady in dependency order', async () => {
       const probe = await bot.waitFor('onReady in ProbeService', marker => marker.event === 'ready' && marker.cls === 'ProbeService', 90_000)
