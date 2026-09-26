@@ -351,7 +351,7 @@ describe('the fallback on a message a guard or validation refuses', () => {
     const message = Object.assign(createMockMessage(), { content: '!ban x' })
     const logger = createLogger()
 
-    await createFallback(logger, () => 3)(makeError(), contextFor('ban', message))
+    await createFallback(logger, () => ({ deleteUsageRepliesAfter: 3 }))(makeError(), contextFor('ban', message))
     const reply = await (vi.mocked(message.reply).mock.results[0]?.value as Promise<{ deleted: boolean }>)
 
     expect(message.reply).toHaveBeenCalledWith({ content: expect.stringContaining(text), allowedMentions: { repliedUser: false, parse: [] } })

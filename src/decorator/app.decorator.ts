@@ -32,7 +32,7 @@ function assertMessageOptions(messages: MessageCommandOptions | undefined): void
   if (prefix !== undefined && !isText(prefix) && typeof prefix !== 'function' && !(Array.isArray(prefix) && prefix.every(isText))) {
     throw new TypeError('@MeoCord({ messages: { prefix } }) takes a string, a list of strings, or a function of the message returning them.')
   }
-  for (const [name, value] of Object.entries({ mention, caseSensitive })) {
+  for (const [name, value] of Object.entries({ mention, caseSensitive, replyEmoji: messages.replyEmoji })) {
     if (value !== undefined && typeof value !== 'boolean') throw new TypeError(`@MeoCord({ messages: { ${name} } }) takes true or false.`)
   }
   const { types, deleteUsageRepliesAfter } = messages
