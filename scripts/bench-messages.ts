@@ -11,8 +11,15 @@ import { tmpdir } from 'os'
 import path from 'path'
 import { CASES, type Case, type Measured, ROUTE_COUNTS, run } from './lib/message-bench.js'
 
-/** What a message may cost, at any number of routes, in calls of the reference workload. */
-const BUDGET_REFERENCES: Record<Case, number> = { chatter: 1, unknown: 8, matching: 10 }
+/**
+ * What a message may cost, at any number of routes, in calls of the reference workload, for each runtime.
+ * The reference tracks Bun's matching closely on any machine, but on CI runners Node's matching slows about
+ * twice as much as Node's reference does, so Node's budgets sit at 1.6x the highest it measured there.
+ */
+const BUDGET_REFERENCES: Record<'bun' | 'node', Record<Case, number>> = {
+  bun: { chatter: 1, unknown: 8, matching: 10 },
+  node: { chatter: 1, unknown: 10, matching: 16 },
+}
 /** What a message may cost on any machine, in nanoseconds, so a slowdown the reference shares still fails. */
 const CAP_NS = 10_000
 /** How much more a message may cost at 1000 routes than at 10: the index keeps it flat. */
@@ -50,8 +57,9 @@ for (const [runtime, { referenceNs, results }] of [
   for (const c of CASES) {
     for (const count of ROUTE_COUNTS) {
       const ns = results[count][c]
-      if (inRefs(ns) > BUDGET_REFERENCES[c]) {
-        failures.push(`${runtime}: ${c} at ${count} routes took ${inRefs(ns).toFixed(2)} ref (${ns.toFixed(0)} ns), over its ${BUDGET_REFERENCES[c]} ref budget`)
+      const budget = BUDGET_REFERENCES[runtime][c]
+      if (inRefs(ns) > budget) {
+        failures.push(`${runtime}: ${c} at ${count} routes took ${inRefs(ns).toFixed(2)} ref (${ns.toFixed(0)} ns), over its ${budget} ref budget`)
       }
       if (ns > CAP_NS) failures.push(`${runtime}: ${c} at ${count} routes took ${ns.toFixed(0)} ns, over the ${CAP_NS} ns cap`)
     }
