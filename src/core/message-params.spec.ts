@@ -105,6 +105,17 @@ describe('typed message params', () => {
     expect(guild.members.fetch).toHaveBeenCalledWith({ user: [ID(2), ID(3)] })
   })
 
+  it('asks for uncached members at most 100 at a time, as a gateway request takes no more', async () => {
+    const { message, guild } = guildMessage()
+    const ids = Array.from({ length: 150 }, (_, i) => ID(200 + i))
+    guild.members.fetch.mockImplementation((async ({ user }: { user: string[] }) => new Collection(user.map(id => [id, member(id)]))) as never)
+
+    const params = await resolveMessageParams(routeOf('kick {targets:member...}'), { targets: ids.join(' ') }, message, '!', undefined)
+
+    expect((params.targets as GuildMember[]).map(target => target.id)).toEqual(ids)
+    expect(guild.members.fetch.mock.calls.map(([options]) => (options as { user: string[] }).user.length)).toEqual([100, 50])
+  })
+
   it('fetches one uncached member on its own, and fetches each when the batch is refused', async () => {
     const one = guildMessage()
     one.guild.members.fetch.mockResolvedValue(member(ID(5)) as never)

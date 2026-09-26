@@ -283,24 +283,33 @@ function readFlags(route: MessageRoute, message: Message, start: string, params:
   return issues
 }
 
+/** The most member IDs Discord's Request Guild Members takes in one request. */
+const MEMBERS_PER_REQUEST = 100
+
 /**
- * The server's members with these IDs, none of them cached: one request for several, answered over the
+ * The server's members with these IDs, none of them cached: one request for every 100, answered over the
  * gateway, or one fetch for a single one. A member that does not exist comes back as `undefined`.
  */
 async function fetchMembers(message: Message, ids: string[]): Promise<Map<string, GuildMember | undefined>> {
   const found = new Map<string, GuildMember | undefined>()
   if (ids.length === 0) return found
   const guild = message.guild!
+  const single: string[] = ids.length === 1 ? ids : []
   if (ids.length > 1) {
-    const batch = await guild.members.fetch({ user: ids }).catch(() => undefined)
-    if (batch instanceof Collection) {
-      for (const id of ids) found.set(id, batch.get(id))
-      return found
-    }
+    // A gateway request for members takes at most 100 IDs
+    const chunks = Array.from({ length: Math.ceil(ids.length / MEMBERS_PER_REQUEST) }, (_, c) =>
+      ids.slice(c * MEMBERS_PER_REQUEST, (c + 1) * MEMBERS_PER_REQUEST),
+    )
+    const batches = await Promise.all(chunks.map(chunk => guild.members.fetch({ user: chunk }).catch(() => undefined)))
+    chunks.forEach((chunk, c) => {
+      const batch = batches[c]
+      if (batch instanceof Collection) for (const id of chunk) found.set(id, batch.get(id))
+      else single.push(...chunk)
+    })
   }
   // One ID, or a batch the gateway refused: each is fetched on its own
-  const single = await Promise.all(ids.map(id => guild.members.fetch(id).catch(() => undefined)))
-  ids.forEach((id, i) => found.set(id, single[i] as GuildMember | undefined))
+  const fetched = await Promise.all(single.map(id => guild.members.fetch(id).catch(() => undefined)))
+  single.forEach((id, i) => found.set(id, fetched[i] as GuildMember | undefined))
   return found
 }
 
