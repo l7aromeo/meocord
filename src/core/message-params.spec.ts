@@ -1,4 +1,4 @@
-import { Collection, type GuildMember, type Message, type Role, type TextChannel, type User } from 'discord.js'
+import { Collection, type GuildMember, type Role, type TextChannel, type User } from 'discord.js'
 import { Controller, MeoCord, MessageHandler } from '@src/decorator/index.js'
 import { MessageUsageError } from '@src/common/errors.js'
 import { type MessageParamType } from '@src/interface/index.js'
@@ -142,10 +142,10 @@ describe('typed message params', () => {
   })
 
   it('resolves a user from the client cache, or fetches it', async () => {
-    const { message } = guildMessage()
     const [cached, fetched] = [{ id: ID(30) }, { id: ID(31) }] as unknown as User[]
-    const users = { cache: new Collection([[ID(30), cached]]), fetch: vi.fn(async () => fetched) }
-    Object.defineProperty(message, 'client', { value: { users } })
+    const message = createMockMessage({ content: 'x', guild: createMockGuild(), users: [cached] })
+    const users = vi.mocked(message.client.users)
+    users.fetch.mockResolvedValue(fetched as never)
     const route = routeOf('who {u:user}')
 
     expect(await resolveMessageParams(route, { u: `<@${ID(30)}>` }, message, '!', undefined)).toEqual({ u: cached })
@@ -310,4 +310,3 @@ describe('typed patterns at startup', () => {
   })
 })
 
-void (undefined as unknown as Message)
