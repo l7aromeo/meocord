@@ -112,6 +112,26 @@ describe('Logger levels', () => {
     resetLogLevel()
   })
 
+  // Loading dist/meocord.config.mjs runs its dotenv import: a test or the CLI would get .env mid-run
+  it('reads nothing from dist outside a built application, so no appName and no config side effects', () => {
+    Reflect.deleteProperty(globalThis, BUNDLE_ENTRY_KEY)
+    vi.mocked(loadMeoCordConfig).mockReturnValue({ discordToken: 'token', appName: 'Meo' })
+
+    logEveryLevel()
+
+    expect(loadMeoCordConfig).not.toHaveBeenCalled()
+    expect(printed()).not.toContainEqual(expect.stringContaining('[Meo]'))
+    expect(levelsShown()).toBe('LOG,LOG,LOG,WARN,ERROR')
+  })
+
+  it('names the app in a built application', () => {
+    vi.mocked(loadMeoCordConfig).mockReturnValue({ discordToken: 'token', appName: 'Meo' })
+
+    new Logger().log('hello')
+
+    expect(printed()).toEqual([expect.stringMatching(/^\[Meo\] .*\[LOG\] hello$/)])
+  })
+
   it('leaves logLevel to the built bot: the CLI and tests go by MEOCORD_LOG_LEVEL and the default', () => {
     Reflect.deleteProperty(globalThis, BUNDLE_ENTRY_KEY)
     vi.mocked(loadMeoCordConfig).mockReturnValue({ discordToken: 'token', logLevel: 'silent' } as MeoCordConfig)

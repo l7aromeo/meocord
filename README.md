@@ -2199,6 +2199,12 @@ npm run test:coverage     # coverage report
 
 In an older project, add Vitest (or keep Jest) with the same SWC setup; `meocord/testing` works with either.
 
+Tests do not load `.env`, so a real token never reaches a spec unasked, and they run the same before and after a build. A project whose tests need its variables loads them in `vitest.setup.ts`:
+
+```typescript
+import 'dotenv/config'
+```
+
 ### `MeoCordTestingModule`
 
 Builds an isolated DI container from your controllers and providers.

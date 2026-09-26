@@ -226,6 +226,30 @@ function runAppScripts(): void {
 }
 
 /**
+ * Runs a spec that logs, after the builds have left a dist/meocord.config.mjs: a test must not load .env
+ * through it, since the compiled config imports dotenv. Tests load .env only when their setup does.
+ */
+function verifyTestsKeepEnvOut(): void {
+  const envFile = path.join(appDir, '.env')
+  const spec = path.join(appDir, 'src', 'env-probe.spec.ts')
+  if (!existsSync(path.join(appDir, 'dist', 'meocord.config.mjs'))) throw new Error('The builds wrote no dist/meocord.config.mjs')
+  const envBefore = existsSync(envFile) ? readFileSync(envFile, 'utf8') : undefined
+  writeFileSync(envFile, `${envBefore ?? ''}PROBE_VAR=from-dotenv\n`)
+  writeFileSync(
+    spec,
+    `import { Logger } from 'meocord/common'\n\nit('leaves .env unloaded when it logs', () => {\n` +
+      `  expect(process.env.PROBE_VAR).toBeUndefined()\n  new Logger().log('probe')\n  expect(process.env.PROBE_VAR).toBeUndefined()\n})\n`,
+  )
+  try {
+    inApp('a spec that logs after a build leaves .env unloaded', 'vitest', 'run', 'src/env-probe.spec.ts')
+  } finally {
+    rmSync(spec)
+    if (envBefore === undefined) rmSync(envFile)
+    else writeFileSync(envFile, envBefore)
+  }
+}
+
+/**
  * Plants two services that import each other through `@src` and checks the application's lint warns on
  * both, with no error: the resolver has to follow the alias for the cycle to be seen at all.
  */
@@ -306,6 +330,7 @@ function main(): void {
     plantUntestedFiles()
     console.log('')
     runAppScripts()
+    verifyTestsKeepEnvOut()
     verifyAssetTypesBesideRsbuild()
     verifyCycleWarning()
     console.log('')
