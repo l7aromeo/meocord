@@ -111,6 +111,9 @@ The pre-commit hook runs `bun run lint`. Do not bypass it for code changes.
 - Keep public types free of internal shapes (no `regex`, `specificity` or metadata maps).
 - New behaviour needs tests; a bug fix needs a test that fails without the fix. Prefer building
   real decorated controllers over mocking the framework.
+- Prefer a structural fix over a band-aid where one is possible: change the order, data structure
+  or contract that lets a problem happen, not a cap, retry or special case around it. A safety net
+  may sit beside a structural fix, never in place of one; if only a band-aid is practical, say so.
 
 ## 6. Verification
 
