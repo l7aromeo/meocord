@@ -57,3 +57,5 @@ export type {
   ProviderToken,
   ValueProvider,
 } from '@src/interface/provider.interface.js'
+
+export { createMockTheme, withTheme } from './theme.js'
