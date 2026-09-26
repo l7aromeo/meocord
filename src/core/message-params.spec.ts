@@ -3,7 +3,7 @@ import { Controller, MeoCord, MessageHandler } from '@src/decorator/index.js'
 import { MessageUsageError } from '@src/common/errors.js'
 import { type MessageParamType } from '@src/interface/index.js'
 import { buildMessageRoutes, type MessageRoute } from '@src/core/message-routes.js'
-import { missingParams, resolveMessageParams, usageOf } from '@src/core/message-params.js'
+import { fitsParamType, missingParams, resolveMessageParams, usageOf } from '@src/core/message-params.js'
 import { createMockGuild, createMockMessage } from '@src/testing/index.js'
 
 const ID = (n: number) => String(100_000_000_000_000_000n + BigInt(n))
@@ -173,6 +173,24 @@ describe('typed message params', () => {
   })
 })
 
+describe('the form of a typed word', () => {
+  it('tells from the word alone whether it can be a value of a built-in type', () => {
+    expect(['20', '-3'].map(word => fitsParamType('int', word, false))).toEqual([true, true])
+    expect(['2.5', 'x'].map(word => fitsParamType('int', word, false))).toEqual([false, false])
+    expect(['2.5', 'yes', 'OFF', '1h30m', 'soon'].map((word, i) => fitsParamType(['number', 'bool', 'bool', 'duration', 'duration'][i], word, false))).toEqual([
+      true,
+      true,
+      true,
+      true,
+      false,
+    ])
+    expect([`<@${ID(1)}>`, `<@!${ID(1)}>`, ID(1), 'ana'].map(word => fitsParamType('member', word, false))).toEqual([true, true, true, false])
+    expect([`<@&${ID(1)}>`, ID(1), 'Moderator'].map(word => fitsParamType('role', word, false))).toEqual([true, true, false])
+    expect([`<#${ID(1)}>`, `<@${ID(1)}>`].map(word => fitsParamType('channel', word, false))).toEqual([true, false])
+    expect([fitsParamType('on|off', 'ON', false), fitsParamType('on|off', 'ON', true)]).toEqual([true, false])
+  })
+})
+
 describe('usage', () => {
   it('shows a route as the user types it, after the start the message used', () => {
     const route = routeOf('ban {target:member} {days:int} {reason...?}')
@@ -195,6 +213,12 @@ describe('typed patterns at startup', () => {
   it('refuses a type no one declared, and a typed rest', () => {
     expect(() => routeOf('pay {amount:money}')).toThrow(/\{amount:money\} names no type/)
     expect(() => routeOf('say {text:string...}')).toThrow(/a rest param takes no type/)
+  })
+
+  it("refuses an app's own type before another optional param, since only its parse can tell its words", () => {
+    const color: MessageParamType<number> = { parse: word => (word.startsWith('#') ? 1 : undefined) }
+    expect(() => routeOf('paint {shade:color?} {note...?}', { color })).toThrow(/\{shade:color\?\} comes before another optional param/)
+    expect(() => routeOf('paint {note:int?} {shade:color?}', { color })).not.toThrow()
   })
 
   it("refuses an app type named like a built-in, one without parse, and a usage reply time that isn't one", () => {

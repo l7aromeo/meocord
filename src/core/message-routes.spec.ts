@@ -55,6 +55,34 @@ describe('message patterns', () => {
     expect(capture('ban {user} {reason...?}', 'ban ana spam again')).toEqual({ user: 'ana', reason: 'spam again' })
   })
 
+  it('gives trailing optional params the words that fit them, left to right', () => {
+    const ban = 'ban {target:member} {duration:duration?} {reason...?}'
+    expect(capture(ban, 'ban <@200000000000000001> spamming again')).toEqual({ target: '<@200000000000000001>', reason: 'spamming again' })
+    expect(capture(ban, 'ban <@200000000000000001> 7d spamming')).toEqual({ target: '<@200000000000000001>', duration: '7d', reason: 'spamming' })
+    expect(capture(ban, 'ban <@200000000000000001> 7d')).toEqual({ target: '<@200000000000000001>', duration: '7d' })
+    expect(capture(ban, 'ban <@200000000000000001>')).toEqual({ target: '<@200000000000000001>' })
+
+    const lights = 'lights {mode:on|off?} {room?}'
+    expect(capture(lights, 'lights kitchen')).toEqual({ room: 'kitchen' })
+    expect(capture(lights, 'lights OFF kitchen')).toEqual({ mode: 'OFF', room: 'kitchen' })
+    expect(capture(lights, 'lights on')).toEqual({ mode: 'on' })
+    // The last optional takes any word, so a word of the wrong type is reported rather than dropped
+    expect(capture('set {level:int?} {on:bool?}', 'set maybe')).toEqual({ on: 'maybe' })
+  })
+
+  it('matches no trailing optionals when words are left over, and minds case in choices when told to', () => {
+    expect(capture('lights {mode:on|off?} {room?}', 'lights kitchen hall')).toBeUndefined()
+    expect(capture('lights {mode:on|off?} {room?}', 'lights OFF kitchen', true)).toBeUndefined()
+    expect(capture('x {a:int?} {b:bool?} {c...?}', 'x yes and more')).toEqual({ b: 'yes', c: 'and more' })
+    expect(capture('x {a:int?} {b:bool?} {c...?}', 'x 3 more')).toEqual({ a: '3', c: 'more' })
+  })
+
+  it('refuses an untyped optional param before another, which would take every word', () => {
+    expect(() => parseMessagePattern('ban {user} {days?} {reason...?}')).toThrow(/\{days\?\} comes before another optional param, so it needs a type/)
+    expect(() => parseMessagePattern('ban {user} {days:string?} {reason?}')).toThrow(/\{days:string\?\} comes before another optional param/)
+    expect(() => parseMessagePattern('ban {user} {days:int?} {reason...?}')).not.toThrow()
+  })
+
   it('matches literal words in any case by default, and param values as written', () => {
     expect(capture('roll {sides}', 'ROLL D20')).toEqual({ sides: 'D20' })
     expect(capture('roll {sides}', 'ROLL 20', true)).toBeUndefined()
@@ -64,7 +92,8 @@ describe('message patterns', () => {
   it('refuses a pattern that cannot be read', () => {
     expect(() => parseMessagePattern('say {text...} now')).toThrow(/\{text\.\.\.\} takes the rest of the message, so it must be last/)
     expect(() => parseMessagePattern('give {user} {user}')).toThrow(/\{user\} appears twice/)
-    expect(() => parseMessagePattern('ban {reason?} {user}')).toThrow(/\{reason\?\} is optional, so it must be last/)
+    expect(() => parseMessagePattern('ban {reason?} {user}')).toThrow(/\{reason\?\} is optional, so only optional params may follow it; "\{user\}" is not/)
+    expect(() => parseMessagePattern('ban {reason?} now')).toThrow(/only optional params may follow it; "now" is not/)
     expect(() => parseMessagePattern('roll d{sides}')).toThrow(/"d\{sides\}".*a whole word/)
     expect(() => parseMessagePattern('roll {si-des}')).toThrow(/"\{si-des\}".*a whole word/)
   })

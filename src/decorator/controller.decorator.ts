@@ -92,8 +92,9 @@ export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boole
  *
  * A pattern is matched word by word. A literal word matches itself, in any case unless
  * `caseSensitive` is set. `{name}` captures one word, and words in quotes count as one. `{name...}`
- * captures the rest of the message as typed. `{name?}` and `{name...?}` are optional. The last three
- * come only at the end. `{name:type}` turns the word into a value of the type before any guard runs:
+ * captures the rest of the message as typed, at the end. `{name?}` and `{name...?}` are optional, and
+ * only optional params follow one; of several, each takes a word only if it fits its type, and the
+ * last takes any. `{name:type}` turns the word into a value of the type before any guard runs:
  * `int`, `number`, `bool`, `duration`, `member`, `user`, `role`, `channel`, words such as `on|off`, or
  * a type the app adds. The params arrive as the handler's second argument, where `@Validate`, pipes
  * and `@Cooldown({ by })` see them too, and the params the handler declares are checked against them.
@@ -115,9 +116,10 @@ export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boole
  *   await message.reply(`Rolling d${sides}${note ? ` (${note})` : ''}`)
  * }
  *
- * @MessageHandler('ban {target:member} {reason...?}')
- * async ban(message: Message, { target, reason }: { target: GuildMember; reason?: string }) {
- *   await target.ban({ reason })
+ * // !mute @ana spam    !mute @ana 1h spam
+ * @MessageHandler('mute {target:member} {duration:duration?} {reason...?}')
+ * async mute(message: Message, { target, duration, reason }: { target: GuildMember; duration?: number; reason?: string }) {
+ *   await target.timeout(duration ?? 600_000, reason)
  * }
  *
  * @MessageHandler('hello', { prefix: false })

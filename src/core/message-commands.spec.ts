@@ -391,6 +391,19 @@ describe('typed message params and usage replies', () => {
     }
   }
 
+  @Controller()
+  class Moderation {
+    @MessageHandler('ban {target:member} {duration:duration?} {reason...?}')
+    async ban(_message: Message, params: { target: GuildMember; duration?: number; reason?: string }) {
+      seen.push(['ban', params])
+    }
+
+    @MessageHandler('slowmode {mode:on|off?} {seconds:int?}')
+    async slowmode(_message: Message, params: { mode?: 'on' | 'off'; seconds?: number }) {
+      seen.push(['slowmode', params])
+    }
+  }
+
   /** Sends a message in a guild whose member cache holds the target, and waits for dispatch. */
   async function sendIn(client: Client, content: string, guild: ReturnType<typeof createMockGuild> | null = createMockGuild({ members: [target] })) {
     const message = createMockMessage({ content, guild })
@@ -420,6 +433,28 @@ describe('typed message params and usage replies', () => {
       ['guard', { to: target, amount: 25, note: 'for lunch' }],
       ['pay', { to: target, amount: 25, note: 'for lunch' }],
     ])
+  })
+
+  it('gives each trailing optional param a word that fits its type, and leaves one out when none does', async () => {
+    const client = await startApp({ controllers: [Moderation], messages: { prefix: '!', deleteUsageRepliesAfter: 0 } })
+
+    await sendIn(client, `!ban <@${TARGET}> spamming`)
+    await sendIn(client, `!ban <@${TARGET}> 7d spamming links`)
+    await sendIn(client, `!ban ${TARGET}`)
+    await sendIn(client, '!slowmode OFF')
+    await sendIn(client, '!slowmode 30')
+    const wrong = await sendIn(client, '!slowmode soon')
+
+    expect(seen).toEqual([
+      ['ban', { target, reason: 'spamming' }],
+      ['ban', { target, duration: 604_800_000, reason: 'spamming links' }],
+      ['ban', { target }],
+      ['slowmode', { mode: 'off' }],
+      ['slowmode', { seconds: 30 }],
+    ])
+    expect(wrong.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'Usage: !slowmode [mode] [seconds]\nseconds: "soon" is not a whole number' }),
+    )
   })
 
   it('answers a word of the wrong type with the usage, and deletes the answer after 10 seconds', async () => {
