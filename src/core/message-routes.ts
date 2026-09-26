@@ -524,15 +524,17 @@ export function matchMessageCommand(
 /**
  * What a test calling a handler with a message alone passes as its params, as dispatch would build
  * them: `undefined` for a listener, which takes none; `{}` for a message without content; otherwise
- * what the handler's pattern captures, with the route and the start the message used, or why the content
- * does not reach it.
+ * what the handler's pattern captures, with the route and the start the message used. A message that
+ * names the command after a prefix or mention without fitting its pattern gives the route, the start and
+ * `given`, the words after the command words, as dispatch answers it; any other gives why it does not
+ * reach the handler.
  */
 export async function messageParamsFor(
   controllerClass: ControllerClass,
   methodName: string,
   message: Message,
   options: MessageCommandOptions,
-): Promise<{ params: Record<string, string>; route?: MessageRoute; start?: string } | { mismatch: string } | undefined> {
+): Promise<{ params: Record<string, string>; route?: MessageRoute; start?: string; given?: number } | { mismatch: string } | undefined> {
   const route = buildMessageRoutes([controllerClass], options).find(candidate => candidate.method === methodName)
   if (!route) return undefined
   if (typeof message.content !== 'string') return { params: {} }
@@ -541,5 +543,7 @@ export async function messageParamsFor(
   const starts = await messageStarts(options, message, typeof botId === 'string' ? botId : undefined)
   const matched = matchMessageRoute([route], message.content, starts)
   if (matched) return { params: matched.params, route, start: matched.start }
+  const named = matchMessageCommand([route], message.content, starts)
+  if (named) return { params: {}, route, start: named.start, given: named.given }
   return { mismatch: `message '${message.content}' does not match ${controllerClass.name}.${methodName}'s pattern '${route.pattern}'.` }
 }
