@@ -34,12 +34,12 @@ import {
   type GuardInterface,
   type InterceptorInterface,
   type MessageCommandOptions,
-  type RootTheme,
+  type ThemeOverride,
   type ThemeResolvers,
 } from '@src/interface/index.js'
 import { ThemeCache } from '@src/core/theme-resolvers.js'
 import { claimAmbientAppTheme, releaseAmbientAppTheme } from '@src/core/theme-runtime.js'
-import { copyLayer } from '@src/core/theme-scope.js'
+import { copyLayer, mergeTheme, type ResolvedTheme } from '@src/core/theme-scope.js'
 import { assertValidTheme } from '@src/core/theme-validation.js'
 import { buildMessageRoutes, messageParamsFor } from '@src/core/message-routes.js'
 import { messageCommandHooks } from '@src/core/message-params.js'
@@ -566,8 +566,8 @@ export class TestingModuleBuilder {
     Partial<InterceptorInterface>
   >()
 
-  /** The layer `overrideTheme` gives, in place of the app's `@MeoCord({ theme })`. */
-  private themeOverride?: { layer: RootTheme }
+  /** The layer `overrideTheme` gives, over the app's `@MeoCord({ theme })`. */
+  private themeOverride?: ThemeOverride
   /** The resolvers `overrideThemeFor` gives, in place of the app's `@MeoCord({ themeFor })`. */
   private themeForOverride?: { resolvers: ThemeResolvers | undefined }
 
@@ -656,11 +656,11 @@ export class TestingModuleBuilder {
   }
 
   /**
-   * Replaces the app's `@MeoCord({ theme })` for this module, or gives a module without an app one. Each
-   * `@UseTheme`, and what `themeFor` looks up, still goes over it. It replaces the app's theme rather than
-   * merging over it, so it gives every token the app added, as `@MeoCord({ theme })` does.
+   * Changes part of the app's `@MeoCord({ theme })` for this module, or gives a module without an app a
+   * theme. It goes over the app's theme, so it names only the tokens it changes; each `@UseTheme`, and what
+   * `themeFor` looks up, still goes over it.
    *
-   * @param theme - The app's theme for this module, checked as `@MeoCord({ theme })` checks it, and copied.
+   * @param theme - The tokens to change, checked as `@MeoCord({ theme })` checks them, and copied.
    * @throws Error naming each token that is not valid.
    * @example
    * ```ts
@@ -669,9 +669,9 @@ export class TestingModuleBuilder {
    *   .compile()
    * ```
    */
-  overrideTheme(theme: RootTheme): TestingModuleBuilder {
+  overrideTheme(theme: ThemeOverride): TestingModuleBuilder {
     assertValidTheme(theme, 'overrideTheme')
-    this.themeOverride = { layer: copyLayer(theme) }
+    this.themeOverride = copyLayer(theme)
     return this
   }
 
@@ -699,7 +699,8 @@ export class TestingModuleBuilder {
     const stages = this.options.app && appStages(this.options.app)
     if (!this.themeOverride && !this.themeForOverride) return stages
     const { theme: appTheme, themeFor, ...rest } = stages ?? { guards: [], interceptors: [], filters: [] }
-    const theme = this.themeOverride ? this.themeOverride.layer : appTheme
+    // Merged as a scope's layer is; the app's layer is MeoCord's copy, so freezing it touches nothing of the app's
+    const theme = this.themeOverride ? (appTheme ? (mergeTheme(appTheme as ResolvedTheme, this.themeOverride) as ThemeOverride) : this.themeOverride) : appTheme
     const resolvers = this.themeForOverride ? this.themeForOverride.resolvers : themeFor?.resolvers
     return {
       ...rest,

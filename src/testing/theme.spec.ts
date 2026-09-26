@@ -52,16 +52,16 @@ afterEach(() => {
 })
 
 describe('overrideTheme', () => {
-  it('replaces the app\'s theme for this module only', async () => {
+  it('changes part of the app\'s theme for this module only, keeping the rest', async () => {
     const overridden = MeoCordTestingModule.create({ app: App, controllers: [Shop] }).overrideThemeFor(undefined).overrideTheme({ colors: { primary: '#0000B1' } }).compile()
     const plain = MeoCordTestingModule.create({ app: App, controllers: [Shop] }).overrideThemeFor(undefined).compile()
 
     await overridden.invoke(Shop, 'buy', press('buy'))
     await plain.invoke(Shop, 'buy', press('buy'))
 
-    // Replaced, not merged: the app's info is gone with the rest of its layer
+    // Merged over the app's theme: its info stays
     expect(seen).toEqual([
-      ['#0000B1', DEFAULT_THEME.colors.info],
+      ['#0000B1', '#0000A2'],
       ['#0000A1', '#0000A2'],
     ])
   })

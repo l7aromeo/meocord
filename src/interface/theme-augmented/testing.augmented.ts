@@ -15,5 +15,8 @@ withTheme({ colors: { vip: 0 }, charts: { axis: 0, series: [] } }, () => undefin
 withTheme({ colors: { primary: 0 } }, () => undefined)
 
 MeoCordTestingModule.create({ controllers: [] }).overrideTheme({ colors: { vip: '#C0C0C0' }, charts: { axis: 0, series: [] } })
-// @ts-expect-error it replaces the app's theme, so it gives what the app's must
+// It goes over the app's theme, so a part of it is enough, the app's own tokens included
 MeoCordTestingModule.create({ controllers: [] }).overrideTheme({ colors: { primary: '#C0C0C0' } })
+MeoCordTestingModule.create({ controllers: [] }).overrideTheme({ charts: { axis: 0 } })
+// @ts-expect-error still nothing unknown
+MeoCordTestingModule.create({ controllers: [] }).overrideTheme({ charts: { axes: 0 } })

@@ -2434,7 +2434,7 @@ it('schedules the reminders it loaded at startup', () => {
 
 #### Themes in a test
 
-A testing module runs each call in its theme as the bot does, through `invoke` and `dispatch` alike: the app's theme, each `@UseTheme`, and what `themeFor` looks up. The builder replaces the app's theme or resolvers for one module, and `createMockTheme` and `withTheme` from `meocord/testing` test a service or presenter without a module:
+A testing module runs each call in its theme as the bot does, through `invoke` and `dispatch` alike: the app's theme, each `@UseTheme`, and what `themeFor` looks up. The builder changes the app's theme or replaces its resolvers for one module, and `createMockTheme` and `withTheme` from `meocord/testing` test a service or presenter without a module:
 
 ```typescript
 import { vi } from 'vitest'
@@ -2443,7 +2443,7 @@ import { createMockTheme, MeoCordTestingModule, withTheme } from 'meocord/testin
 it("colours a refund in the server's theme", async () => {
   const guild = vi.fn(() => ({ colors: { primary: '#E3606D' } }))
   const module = MeoCordTestingModule.create({ app: App, controllers: [ShopController] })
-    .overrideTheme({ colors: { primary: '#5865F2' } }) // in place of @MeoCord({ theme })
+    .overrideTheme({ colors: { primary: '#5865F2' } }) // over @MeoCord({ theme })
     .overrideThemeFor({ guild }) // in place of @MeoCord({ themeFor }); undefined removes it
     .compile()
 
@@ -2466,7 +2466,7 @@ it('formats a receipt in the theme it is given', async () => {
 })
 ```
 
-- **`overrideTheme(theme)`** replaces the app's `@MeoCord({ theme })`, or gives a module without an app one; each `@UseTheme` still goes over it. It is checked as `@MeoCord({ theme })` is, and gives every token the app added. To change one token without restating the rest, test the code that reads it with `createMockTheme` and `withTheme`, which take only the tokens to change (and any the app added, which have no default); in a module, `overrideThemeFor({ user: () => ({ colors: { primary: '#E3606D' } }) })` merges one over the app's theme for every call with a user, in place of the app's `themeFor`.
+- **`overrideTheme(theme)`** changes part of the app's `@MeoCord({ theme })`, or gives a module without an app a theme. It goes over the app's theme, so it names only the tokens it changes, and each `@UseTheme` still goes over it. It is checked as `@MeoCord({ theme })` is.
 - **`overrideThemeFor(resolvers)`** replaces the app's `themeFor`, or removes it with `undefined`. The app's `themeCache` and `themeForTimeoutMs` still apply.
 - **`module.themeCache`** is the module's `ThemeCache`, the one its classes inject. Each module has its own, so a result never reaches another test.
 - **`createMockTheme(overrides?)`** returns a whole theme, frozen, with `overrides` merged over MeoCord's defaults, to pass where code takes a theme or to compare against. When the app adds tokens, `overrides` gives them, as the app's theme does.
