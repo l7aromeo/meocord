@@ -20,8 +20,10 @@ import {
   ownsAmbientTheme,
   releaseAmbientTheme,
   type ResolvedTheme,
+  setThemeOutsideCalls,
   themeLayersVersion,
   type ThemeScope,
+  useTheme,
 } from '@src/core/theme-scope.js'
 
 /** Private metadata: the theme layer a class-level `@UseTheme` sets, kept on the class. */
@@ -160,6 +162,25 @@ export function beginCallTheme(
   })
   return { scope, ready }
 }
+
+const clientApps = new WeakMap<object, Container>()
+
+/** Records which app a client's interactions come to, so an answer outside any call can find its theme. */
+export function registerClientTheme(client: object, container: Container): void {
+  clientApps.set(client, container)
+}
+
+// An answer outside any call, as in a collector's callback, takes the theme of the app its interaction came to,
+// with the server's and user's themes over it, from the same caches calls use
+setThemeOutsideCalls(interaction => {
+  const container = clientApps.get((interaction as { client?: object }).client ?? interaction)
+  const themes = container && current(container)
+  if (!themes) return useTheme()
+  const layers = themes.resolvers && lookupLayers(themes.resolvers, [interaction])
+  if (!layers) return themes.app
+  if (layers instanceof Promise) return layers.then(([guild, user]) => mergeTheme(mergeTheme(themes.app, guild), user))
+  return mergeTheme(mergeTheme(themes.app, layers[0]), layers[1])
+})
 
 /** Makes the app's theme the one read outside a call, unless another app in the process already has. */
 export function claimAmbientAppTheme(container: Container): void {

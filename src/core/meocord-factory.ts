@@ -43,7 +43,7 @@ import {
   shardingRole,
 } from '@src/util/sharding-mode.util.js'
 import { type MeoCordConfig } from '@src/interface/index.js'
-import { claimAmbientAppTheme } from '@src/core/theme-runtime.js'
+import { claimAmbientAppTheme, registerClientTheme } from '@src/core/theme-runtime.js'
 
 /**
  * Recursively binds a class and all its constructor dependencies to the container in singleton scope.
@@ -275,6 +275,7 @@ export class MeoCordFactory {
       bindAppPresenter(container, target as object, discordClient)
       // A bot runs one app, whose theme code outside any call then reads
       claimAmbientAppTheme(container)
+      registerClientTheme(discordClient, container)
     }
 
     return new MeoCordApp(

@@ -72,12 +72,13 @@ describe('Theme, deprecated', () => {
   })
 
   it('recolours the default presenter by assignment, as it did in 4.0', () => {
-    const context = {} as ResponseContext
     Theme.primaryColor = '#0A0B0C'
     Theme.errorColor = '#0D0E0F'
+    // The theme respond() gives a presenter outside a @UseTheme, as a call reads it
+    const context = { theme: useTheme() } as ResponseContext
 
     expect(defaultPresenter.loading?.(context)).toMatchObject({ color: '#0A0B0C' })
-    expect(defaultPresenter.error?.(context, { message: 'x', error: new Error('x') } as never)).toMatchObject({ color: '#0D0E0F' })
+    expect(defaultPresenter.error?.(context, { message: 'x', error: new Error('x'), tone: 'danger' })).toMatchObject({ color: '#0D0E0F' })
   })
 
   it('warns once for each property set, and never when one is read', () => {

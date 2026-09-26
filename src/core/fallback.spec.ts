@@ -18,7 +18,6 @@ import {
   cooldownStoreMessage,
   GuardDeniedError,
   MessageUsageError,
-  Theme,
   UserError,
   ValidationError,
 } from '@src/common/index.js'
@@ -26,6 +25,7 @@ import { Logger } from '@src/common/logger.js'
 import { HandlerExecutionContext, UnroutedExecutionContext } from '@src/common/execution-context.js'
 import { MessageHandler, On } from '@src/decorator/index.js'
 import { createFallback, isUserOutcome } from '@src/core/fallback.js'
+import { DEFAULT_THEME } from '@src/core/theme-defaults.js'
 import { createMockInteraction, createMockMessage } from '@src/testing/index.js'
 
 const createLogger = () =>
@@ -53,10 +53,13 @@ function sent(method: { mock: { calls: unknown[][] } }): Sent {
   return method.mock.calls[0][0] as Sent
 }
 
-/** The description of the one embed a payload carries, checking it is styled as an error. */
-function describedAs(payload: Sent): string | undefined {
+/**
+ * The description of the one embed a payload carries, checking it is styled as an error of its tone: `danger` for a
+ * fault in the bot, `warning` for the user's own outcome.
+ */
+function describedAs(payload: Sent, tone: 'danger' | 'warning'): string | undefined {
   const [embed] = payload.embeds ?? []
-  expect(embed.color).toBe(resolveColor(Theme.errorColor))
+  expect(embed.color).toBe(resolveColor(DEFAULT_THEME.colors[tone]))
   expect(embed.title).toBe('Oops!')
   return embed.description
 }
@@ -96,7 +99,7 @@ describe('the fallback', () => {
       const logger = await fail(interaction)
 
       const payload = sent(interaction.reply)
-      expect(describedAs(payload)).toBe(GENERIC)
+      expect(describedAs(payload, 'danger')).toBe(GENERIC)
       expect(payload.flags).toBe(Ephemeral)
       expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('Error handling'), failure)
     })
@@ -106,7 +109,7 @@ describe('the fallback', () => {
 
       const logger = await fail(interaction, new CommandNotFoundError('No handler matched it.'))
 
-      expect(describedAs(sent(interaction.reply))).toBe('Command not found!')
+      expect(describedAs(sent(interaction.reply), 'warning')).toBe('Command not found!')
       expect(logger.warn).toHaveBeenCalledWith('No handler matched it.')
       expect(logger.error).not.toHaveBeenCalled()
     })
@@ -117,7 +120,7 @@ describe('the fallback', () => {
       const logger = await fail(interaction, new GuardDeniedError('Owners only.'))
 
       const payload = sent(interaction.reply)
-      expect(describedAs(payload)).toBe('Owners only.')
+      expect(describedAs(payload, 'warning')).toBe('Owners only.')
       expect(payload.flags).toBe(Ephemeral)
       expect(logger.error).not.toHaveBeenCalled()
     })
@@ -128,7 +131,7 @@ describe('the fallback', () => {
       const logger = await fail(interaction, new CooldownStoreError(undefined, true))
 
       const payload = sent(interaction.reply)
-      expect(describedAs(payload)).toBe(cooldownStoreMessage())
+      expect(describedAs(payload, 'warning')).toBe(cooldownStoreMessage())
       expect(payload.flags).toBe(Ephemeral)
       expect(logger.error).not.toHaveBeenCalled()
     })
@@ -139,7 +142,7 @@ describe('the fallback', () => {
       const logger = await fail(interaction, new CooldownError(12_000, 'user'))
 
       const payload = sent(interaction.reply)
-      expect(describedAs(payload)).toBe('Slow down: try again in 12s.')
+      expect(describedAs(payload, 'warning')).toBe('Slow down: try again in 12s.')
       expect(payload.flags).toBe(Ephemeral)
       expect(logger.error).not.toHaveBeenCalled()
       expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('Cooldown (user)'))
@@ -155,7 +158,7 @@ describe('the fallback', () => {
       const logger = await fail(interaction, invalid)
 
       const payload = sent(interaction.reply)
-      expect(describedAs(payload)).toBe('minutes: Must be at least 1\nnote: Too long')
+      expect(describedAs(payload, 'warning')).toBe('minutes: Must be at least 1\nnote: Too long')
       expect(payload.flags).toBe(Ephemeral)
       expect(logger.error).not.toHaveBeenCalled()
       expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('Invalid input'))
@@ -169,7 +172,7 @@ describe('the fallback', () => {
 
       await fail(interaction)
 
-      expect(describedAs(sent(interaction.editReply))).toBe(GENERIC)
+      expect(describedAs(sent(interaction.editReply), 'danger')).toBe(GENERIC)
       expect(interaction.followUp).not.toHaveBeenCalled()
     })
 
@@ -199,7 +202,7 @@ describe('the fallback', () => {
       expect(interaction.editReply).not.toHaveBeenCalled()
       expect(steps).toEqual(['delete', 'followUp'])
       const payload = sent(interaction.followUp)
-      expect(describedAs(payload)).toBe('Owners only.')
+      expect(describedAs(payload, 'warning')).toBe('Owners only.')
       expect(payload.flags).toBe(Ephemeral)
     })
 
@@ -212,7 +215,7 @@ describe('the fallback', () => {
       expect(interaction.editReply).not.toHaveBeenCalled()
       expect(interaction.deleteReply).toHaveBeenCalledTimes(1)
       const payload = sent(interaction.followUp)
-      expect(describedAs(payload)).toBe(cooldownMessage(12_000))
+      expect(describedAs(payload, 'warning')).toBe(cooldownMessage(12_000))
       expect(payload.flags).toBe(Ephemeral)
     })
 
@@ -234,7 +237,7 @@ describe('the fallback', () => {
       await fail(interaction)
 
       const payload = sent(interaction.followUp)
-      expect(describedAs(payload)).toBe(GENERIC)
+      expect(describedAs(payload, 'danger')).toBe(GENERIC)
       expect(payload.flags).toBe(Ephemeral)
     })
 

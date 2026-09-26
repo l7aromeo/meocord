@@ -1,9 +1,10 @@
-import { type AutocompleteInteraction, BaseInteraction, type Interaction, Message } from 'discord.js'
+import { type AutocompleteInteraction, Message } from 'discord.js'
 import { type ExecutionContext } from '@src/common/execution-context.js'
 import { CommandNotFoundError, CooldownError, CooldownStoreError, GuardDeniedError, MessageUsageError, UserError, ValidationError } from '@src/common/errors.js'
 import { type Logger } from '@src/common/logger.js'
 import { respond } from '@src/common/response/response-state.js'
 import { describeInteraction } from '@src/util/interaction.util.js'
+import { isUserOutcome } from '@src/common/user-outcome.js'
 import { getMessageHandlers } from '@src/decorator/controller.decorator.js'
 import { useTheme } from '@src/core/theme-scope.js'
 import { type MessageCommandOptions } from '@src/interface/index.js'
@@ -172,25 +173,4 @@ export function createFallback(logger: Logger, messageOptions: () => MessageRepl
   }
 }
 
-/**
- * Whether the fallback answers `error`, raised for `call`, as the user's own outcome rather than a fault:
- * one it handles below error level. It mirrors `createFallback`'s branches, which fallback.spec pins pair
- * by pair. An interaction that expired is only warned about, but counts as a fault: it is a timing failure.
- */
-export function isUserOutcome(error: unknown, call: unknown): boolean {
-  if (!(call instanceof BaseInteraction)) {
-    const answered = call instanceof Message && (error instanceof GuardDeniedError || error instanceof ValidationError)
-    return answered || error instanceof MessageUsageError || error instanceof CooldownError || error instanceof CooldownStoreError || error instanceof UserError
-  }
-  const interaction = call as Interaction
-  if (interaction.isAutocomplete() || !interaction.isRepliable()) return false
-  return (
-    error instanceof CommandNotFoundError ||
-    error instanceof GuardDeniedError ||
-    error instanceof CooldownError ||
-    error instanceof CooldownStoreError ||
-    error instanceof UserError ||
-    error instanceof ValidationError
-  )
-}
-
+export { isUserOutcome }

@@ -3,25 +3,32 @@ import { Command, Controller, MeoCord, Service } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { type PresentedError, type ResponsePresenter } from '@src/interface/index.js'
 import { Theme } from '@src/common/theme.js'
+import { DEFAULT_THEME } from '@src/core/theme-defaults.js'
 import { defaultPresenter, renderContainer, renderEmbed, RENDERED_CONTAINER_ID } from '@src/common/response/presenter.js'
 import { respond } from '@src/common/response/response-state.js'
 import { createMockInteraction, MeoCordTestingModule } from '@src/testing/index.js'
 
 describe('the default presenter', () => {
-  const context = { interaction: createMockInteraction(ChatInputCommandInteraction), locale: 'en-US', mode: 'embed' as const }
+  const theme = { ...DEFAULT_THEME, emojis: { ...DEFAULT_THEME.emojis, loading: '⌛' } }
+  const context = { interaction: createMockInteraction(ChatInputCommandInteraction), locale: 'en-US', mode: 'embed' as const, theme }
 
-  it('loads with "⏳ Working on it…" in the primary colour', () => {
+  it('loads with "Working on it…", the theme\'s loading emoji and its primary colour', () => {
     expect(renderEmbed(defaultPresenter.loading(context))).toEqual({
-      description: '⏳ Working on it…',
-      color: resolveColor(Theme.primaryColor),
+      description: '⌛ Working on it…',
+      color: resolveColor(DEFAULT_THEME.colors.primary),
     })
   })
 
-  it('shows errors as MeoCord always has: "Oops!" in the error colour', () => {
-    expect(renderEmbed(defaultPresenter.error(context, { message: 'Nope.', error: new Error() }))).toEqual({
+  it('shows errors under "Oops!" in the colour of their tone: danger for a fault, warning for the user\'s own outcome', () => {
+    expect(renderEmbed(defaultPresenter.error(context, { message: 'Nope.', error: new Error(), tone: 'danger' }))).toEqual({
       title: 'Oops!',
       description: 'Nope.',
-      color: resolveColor(Theme.errorColor),
+      color: resolveColor(DEFAULT_THEME.colors.danger),
+    })
+    expect(renderEmbed(defaultPresenter.error(context, { message: 'Slow down.', error: new Error(), tone: 'warning' }))).toEqual({
+      title: 'Oops!',
+      description: 'Slow down.',
+      color: resolveColor(DEFAULT_THEME.colors.warning),
     })
   })
 
@@ -78,8 +85,9 @@ describe('@MeoCord({ presenter })', () => {
 
     await module.invoke(FailingController, 'fail', interaction)
 
+    // The presenter gave no colour, so the view takes the theme's primary
     expect(interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ embeds: [{ title: 'Brand', description: 'Broken.' }] }),
+      expect.objectContaining({ embeds: [{ title: 'Brand', description: 'Broken.', color: resolveColor(DEFAULT_THEME.colors.primary) }] }),
     )
   })
 })

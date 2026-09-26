@@ -14,6 +14,7 @@ import {
   ModalBuilder,
   ModalSubmitInteraction,
   type MessageReaction,
+  resolveColor,
 } from 'discord.js'
 import { vi } from 'vitest'
 import { Autocomplete, Command, Controller, Cooldown, Defer, Guard, MessageHandler, On, ReactionHandler, UseGuard } from '@src/decorator/index.js'
@@ -22,6 +23,7 @@ import { type GuardInterface } from '@src/interface/index.js'
 import { GuardDeniedError } from '@src/common/errors.js'
 import { LOCK_MEMORY_MS, lockedMessageCount, respond } from '@src/common/response/response-state.js'
 import { defaultPresenter, renderContainer, renderEmbed, RENDERED_CONTAINER_ID } from '@src/common/response/presenter.js'
+import { DEFAULT_THEME } from '@src/core/theme-defaults.js'
 import { MeoCordApp } from '@src/core/meocord.app.js'
 import { createChatInputOptions, createDiscordError, createMockInteraction, createMockMessage, getResponse } from '@src/testing/index.js'
 
@@ -46,7 +48,7 @@ function messageWith(options: { flags?: number; embeds?: APIEmbed[]; components?
   })
 }
 
-const loadingView = defaultPresenter.loading({} as never)
+const loadingView = defaultPresenter.loading({ theme: DEFAULT_THEME } as never)
 const calls = (interaction: object) => getResponse(interaction as never).calls.map(call => call.method)
 const payloads = (interaction: object) => getResponse(interaction as never).calls.map(call => call.payload as Payload)
 const buttonsOf = (payload: Payload) => (payload.components?.[0].components as Json[]) ?? []
@@ -215,7 +217,8 @@ describe.each(contexts)('@Defer in %s', (_where, context, owners) => {
     expect(buttonsOf(lock)[0].emoji).toEqual({ name: '⏳' })
     expect(lock.embeds).toEqual([{ description: 'card' }, renderEmbed(loadingView)])
     expect(answer.components).toEqual([row()])
-    expect(answer.embeds).toEqual([{ description: 'new card' }])
+    // respond() fills the embed's colour from the theme
+    expect(answer.embeds).toEqual([{ description: 'new card', color: resolveColor(DEFAULT_THEME.colors.primary) }])
   })
 
   it('locks a private card too, through the interaction', async () => {
