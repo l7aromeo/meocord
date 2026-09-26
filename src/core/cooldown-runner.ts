@@ -174,7 +174,8 @@ interface Counted { key: string; seconds: number; uses: number; per: CooldownSco
 
 /**
  * The cooldowns a call counts against, keyed. With `peek`, those with `by` are left out, since their key
- * comes from params not resolved yet. A bypass is asked once per call: the peek's answer serves the consume.
+ * comes from params not resolved yet; after a peek the store failed, only those are left, the rest having
+ * run uncounted. A bypass is asked once per call: the peek's answer serves the consume.
  */
 async function keyed(
   controller: { name: string },
@@ -186,12 +187,14 @@ async function keyed(
 ): Promise<Counted[]> {
   const context = contextOf()
   const first = context.getArgs()[0]
-  const bypassed = peek ? [] : (peeked.get(context)?.bypassed ?? [])
+  const earlier = peek ? undefined : peeked.get(context)
+  const bypassed = earlier?.bypassed ?? []
   if (peek) peeked.set(context, { bypassed, storeFailed: false })
 
   const counted: Counted[] = []
   for (const [index, { seconds, uses, per, bypass, by }] of cooldowns.entries()) {
     if (peek && by) continue
+    if (earlier?.storeFailed && !by) continue
     if (bypass) {
       bypassed[index] ??= Boolean(await bypass(context))
       if (bypassed[index]) continue
@@ -261,8 +264,10 @@ export async function peekCooldowns(
  * Counts the call against all of the handler's cooldowns in one store call, `consumeMany`. With a store
  * that overrides it, as the built-in ones do, a call one cooldown refuses counts against none. Every key is
  * worked out first, so a `bypass` or `by` that throws leaves every count untouched. A store that fails is
- * handled by the app's policy: the call is refused with CooldownStoreError, or runs uncounted. A call whose
- * {@link peekCooldowns} already found the store failing runs uncounted without asking it again.
+ * handled by the app's policy: the call is refused with CooldownStoreError, or runs uncounted. When the
+ * call's {@link peekCooldowns} found the store failing, the cooldowns it checked run uncounted without
+ * asking again; those with `by`, which it never checked, are still counted, so a call waits a second
+ * timeout only when the store is still down and the handler has one.
  *
  * @param params - The handler's second argument, as the handler receives it, for `by`.
  * @throws CooldownError with the time until every cooldown allows another call.
@@ -277,8 +282,6 @@ export async function consumeCooldowns(
   params: unknown,
 ): Promise<void> {
   if (cooldowns.length === 0 || !isCounted(contextOf)) return
-  // Only under 'allow', since 'deny' ended the call at the peek: it runs uncounted, as a second failure would leave it
-  if (peeked.get(contextOf())?.storeFailed) return
   const counted = await keyed(controller, methodName, cooldowns, contextOf, params, false)
   if (counted.length === 0) return
   await ask(container, counted, false, undefined)
