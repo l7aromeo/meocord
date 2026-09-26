@@ -20,6 +20,7 @@ import { isCustomIdRouted, matchesCommandType } from '@src/util/interaction.util
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { BUILDER_GUILDS } from '@src/decorator/command-builder.decorator.js'
 import { routeSpecificity } from '@src/core/route-specificity.js'
+import { type Route } from '@src/common/route.js'
 
 const COMMAND_METADATA_KEY = Symbol('commands')
 const MESSAGE_HANDLER_METADATA_KEY = Symbol('message_handlers')
@@ -213,7 +214,7 @@ const escapeLiteral = (literal: string): string => literal.replace(/[/\\^$*+?.()
  * the next `/`, so a uuid is captured whole and `profile/{uuid}` never overlaps `profile/{uuid}/{id}`;
  * `-`-separated patterns can, which {@link findAmbiguousRoutes} reports at registration.
  */
-function createRegexFromPattern(pattern: string): { regex: RegExp; params: string[]; specificity: number } {
+export function createRegexFromPattern(pattern: string): { regex: RegExp; params: string[]; specificity: number } {
   const params: string[] = []
   let regexPattern = ''
   let cursor = 0
@@ -265,7 +266,8 @@ function createRegexFromPattern(pattern: string): { regex: RegExp; params: strin
  * @param commandName - What the command is addressed by. Commands registered with
  *   Discord use their name, and a subcommand its full path — `settings notify email`,
  *   parts separated by a space, the way Discord displays it. Components use a customId
- *   pattern, where `{name}` captures one `/`-separated segment.
+ *   pattern, where `{name}` captures one `/`-separated segment, or a {@link Route}
+ *   made from one, which also builds the customIds it matches.
  * @param builderOrType - A command builder class, or a `CommandType` for a handler that
  *   registers nothing of its own: every component, and every subcommand of a command
  *   whose builder already describes it.
@@ -287,6 +289,13 @@ function createRegexFromPattern(pattern: string): { regex: RegExp; params: strin
  *   await interaction.reply(`Fetching stats for ID: ${id}`);
  * }
  *
+ * const ticket = route('ticket/{id}')
+ *
+ * @Command(ticket, CommandType.BUTTON)
+ * public async handleTicket(interaction: ButtonInteraction, { id }) {
+ *   await interaction.reply(`Ticket ${id}`)
+ * }
+ *
  * @Command('assign/{taskId}', CommandType.USER_SELECT_MENU)
  * public async handleAssign(interaction: UserSelectMenuInteraction, { taskId }) {
  *   await interaction.reply(`Assigned ${interaction.users.size} user(s) to ${taskId}`)
@@ -294,9 +303,10 @@ function createRegexFromPattern(pattern: string): { regex: RegExp; params: strin
  * ```
  */
 export function Command<CBC extends BuildableCommandType, T extends CommandBuilderConstructor<CBC> | CommandType>(
-  commandName: string,
+  name: string | Route,
   builderOrType: T,
 ) {
+  const commandName = typeof name === 'string' ? name : name.pattern
   return function <P extends Record<string, any>, R extends Promise<void> | void>(
     target: object,
     propertyKey: string,

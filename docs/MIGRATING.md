@@ -542,6 +542,9 @@ spellings of a pattern, such as `card/{id}` and `card/{cardId}`, is one route an
 - A `bundleDependencies` build starts under Bun. A bundled ES module that probes for CommonJS, as
   lodash-es does with `typeof exports`, made Bun read the whole bundle as CommonJS and refuse its
   `import` statements; those probes now see `undefined`, as they do under Node.
+- A customId param holding `%2F` or `%25` reaches the handler decoded, as `/` or `%`, so ids built by
+  `route()` round-trip. A handler that decoded them itself now receives the decoded value; drop its own
+  decoding.
 
 ## Adopting 4.1 patterns
 

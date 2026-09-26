@@ -681,6 +681,30 @@ Two handlers whose patterns match exactly the same customIds of one component ty
 </details>
 
 <details>
+<summary><b>Building customIds from a route</b></summary>
+
+`route()` from `meocord/common` turns a pattern into a value that `@Command` takes and that builds the customIds it matches, so the button you send and the handler that receives it share one definition:
+
+```typescript
+import { route } from 'meocord/common'
+
+export const ticket = route('ticket/{id}/{action}')
+
+@Command(ticket, CommandType.BUTTON)
+async handle(interaction: ButtonInteraction, { id, action }: { id: string; action: string }) {
+  // ...
+}
+
+new ButtonBuilder().setCustomId(ticket.build({ id: 42, action: 'close' })) // 'ticket/42/close'
+```
+
+`build` takes exactly the pattern's params: a missing or unknown one fails to compile, and a route without params takes nothing. Values may be strings, numbers or bigints. A `/` or `%` inside a value is encoded as `%2F` or `%25`, and handlers receive it decoded, so a value never spills into the next segment. An empty value, or a customId longer than Discord's 100 characters, throws.
+
+A route is ranked, and checked for duplicates, exactly as its pattern string would be, and `` `${ticket}` `` gives the pattern back. Plain string patterns keep working beside routes.
+
+</details>
+
+<details>
 <summary><b>When nothing matches</b></summary>
 
 An unroutable interaction raises `CommandNotFoundError`, which the [built-in fallback](#the-built-in-fallback) answers with "Command not found!", and logs a warning naming the `customId` or command that failed to match. If a control appears dead, that log line is the first place to look.
