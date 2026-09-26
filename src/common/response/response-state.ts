@@ -16,7 +16,7 @@ import {
   resolveColor,
 } from 'discord.js'
 import { Logger } from '@src/common/logger.js'
-import { UserError } from '@src/common/errors.js'
+import { CommandNotFoundError, UserError } from '@src/common/errors.js'
 import { getInstallContext, type InstallContext } from '@src/common/response/install-context.js'
 import {
   flagNames,
@@ -772,8 +772,10 @@ export class InteractionResponse implements ResponseState {
         logger.debug(`Could not deliver the error reply: ${String(deliveryError)}`)
         return
       }
-      // Answered by something discord.js did not see: follow up once instead.
+      // Answered by something discord.js did not see: follow up once instead, unless to say no handler matched,
+      // which the answer, a collector's, already disproves
       this.phase = 'replied'
+      if (error instanceof CommandNotFoundError) return
       try {
         await this.followUp(this.privateError(error, message, theme))
       } catch (retryError) {

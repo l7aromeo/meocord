@@ -754,6 +754,8 @@ A route is ranked, and checked for duplicates, exactly as its pattern string wou
 
 An unroutable interaction raises `CommandNotFoundError`, which the [built-in fallback](#the-built-in-fallback) answers with "Command not found!", and logs a warning naming the `customId` or command that failed to match. If a control appears dead, that log line is the first place to look.
 
+A button, select menu or modal submission no route takes may be a discord.js collector's, from `createMessageComponentCollector` or `awaitModalSubmit`. While anything besides MeoCord listens for the client's interactions, MeoCord leaves such an interaction to it for 1.5 seconds, and answers "Command not found!" and logs the warning only if nothing has answered it by then. With no other listener it answers at once, and a command no handler takes is always answered at once.
+
 Autocomplete cannot be replied to, so an unclaimed option is answered with an empty list instead and the warning names the command and option.
 
 A handler that throws goes to its [exception filters](#exception-filters), then to the built-in fallback, which logs the error and answers the user in whatever way the interaction still allows — editing a deferred reply, or following up one already sent.

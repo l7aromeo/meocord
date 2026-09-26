@@ -47,6 +47,38 @@ import {
 } from '@src/core/message-routes.js'
 import { messageCommandHooks } from '@src/core/message-params.js'
 import { CommandNotFoundError } from '@src/common/errors.js'
+import { existingResponse } from '@src/common/response/response-state.js'
+
+/**
+ * How long a component or modal submission no route takes is left to the client's other listeners, such as a
+ * collector, before MeoCord answers that no handler matched: well inside Discord's three seconds, which the answer
+ * still needs.
+ */
+export const UNROUTED_COMPONENT_GRACE_MS = 1_500
+
+/** The client listeners MeoCord adds for dispatch, which do not count as another listener that may answer. */
+const ownListeners = new WeakSet<object>()
+
+/** Marks `listener` as MeoCord's own dispatch listener, and returns it. */
+export function ownInteractionListener<F extends (...args: never[]) => unknown>(listener: F): F {
+  ownListeners.add(listener)
+  return listener
+}
+
+/** Whether a listener other than MeoCord's own takes the client's interactions, as a collector's does. */
+function othersListening(client: unknown): boolean {
+  const { listeners } = (client ?? {}) as { listeners?: unknown }
+  if (typeof listeners !== 'function') return false
+  const taken: unknown = listeners.call(client, 'interactionCreate')
+  return Array.isArray(taken) && taken.some(listener => !ownListeners.has(listener as object))
+}
+
+/** Whether the interaction has been answered or acknowledged, through `respond()` or discord.js directly. */
+function answered(interaction: Interaction): boolean {
+  const state = existingResponse(interaction)?.state
+  if (state && state !== 'unanswered') return true
+  return 'replied' in interaction && (interaction.replied || interaction.deferred)
+}
 
 type ControllerClass = new (...args: any[]) => any
 
@@ -235,6 +267,17 @@ export class Dispatcher {
         if (!commandMetadata) continue
 
         await this.executeCommand(controllerInstance, commandMetadata, interaction, call)
+        return
+      }
+    }
+
+    // A component or modal no route takes may be a collector's: with another listener on the client, it has the
+    // grace to answer, and MeoCord says no handler matched only if nothing did
+    if (hasCustomId(interaction) && othersListening(interaction.client)) {
+      await new Promise(resolve => setTimeout(resolve, UNROUTED_COMPONENT_GRACE_MS))
+      if (answered(interaction)) {
+        this.logger.debug(`No handler matched ${describeInteraction(interaction)}; another listener answered it.`)
+        await observeUnclaimed(this.container, [interaction], this.runOptions(call))
         return
       }
     }

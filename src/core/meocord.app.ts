@@ -42,7 +42,7 @@ import { isShardProcess } from '@src/util/sharding-mode.util.js'
 import { isShardMessage, type ShardMessage } from '@src/core/shard-messages.js'
 import { releaseAmbientAppTheme } from '@src/core/theme-runtime.js'
 import { registerCommands } from '@src/core/command-registration.js'
-import { Dispatcher } from '@src/core/dispatcher.js'
+import { Dispatcher, ownInteractionListener } from '@src/core/dispatcher.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
 import { FORCE_REGISTER_ENV, isRegisterOnly, REGISTER_GUILD_ENV } from '@src/util/registration-mode.util.js'
 
@@ -235,8 +235,9 @@ export class MeoCordApp implements MeoCordApplication {
       }),
     )
 
-    this.bot.on('interactionCreate', interaction =>
-      this.runListener('interactionCreate', () => this.dispatcher.interaction(interaction)),
+    this.bot.on(
+      'interactionCreate',
+      ownInteractionListener(interaction => this.runListener('interactionCreate', () => this.dispatcher.interaction(interaction))),
     )
 
     this.bot.on('messageCreate', message => this.runListener('messageCreate', () => this.dispatcher.message(message)))
