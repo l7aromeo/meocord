@@ -2,7 +2,7 @@ import { Collection, type GuildMember, type Message } from 'discord.js'
 import { MessageUsageError, type MessageUsageIssue } from '@src/common/errors.js'
 import { type MessageParamType } from '@src/interface/index.js'
 import { type FlagToken, type MessageRoute, type PatternToken } from '@src/core/message-routes.js'
-import { type GivenFlag, scanFlags, splitWords } from '@src/core/message-words.js'
+import { type GivenFlag, splitFlagWords, splitWords } from '@src/core/message-words.js'
 
 type ParamToken = Extract<PatternToken, { param: string }>
 
@@ -257,7 +257,7 @@ function readFlags(route: MessageRoute, message: Message, start: string, params:
   const key = (name: string) => (route.caseSensitive ? name : name.toLowerCase())
   const given = new Map<string, GivenFlag>()
   const text = (message.content ?? '').trim()
-  for (const flag of scanFlags(text.slice(start.length)).flags) {
+  for (const flag of splitFlagWords(text.slice(start.length)).flags) {
     const declared = route.flags.find(candidate => key(candidate.flag) === key(flag.name))
     if (declared) given.set(declared.flag, flag)
     else if (!issues.some(issue => issue.message.startsWith(`--${flag.name} `))) {
