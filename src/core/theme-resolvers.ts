@@ -15,6 +15,8 @@ export const DEFAULT_THEME_FOR_TIMEOUT_MS = 1_000
 export const THEME_FAILURE_BACKOFF_MS = 10_000
 /** How long a burst of failures or of answers lasts, from its first: its second is summed up, the rest only counted. */
 const BURST_MS = 2 * THEME_FAILURE_BACKOFF_MS
+/** How many lookups in a row an id must answer before its failure is over: one failing again first is flapping. */
+const STEADY_ANSWERS = 2
 
 /**
  * Failures, or answers after failing, across a resolver's servers or users, in bursts of `BURST_MS` from each burst's
@@ -57,8 +59,12 @@ class ResolverCache {
   private readonly pending = new Map<string, { token: object; result: Promise<ThemeOverride | undefined> }>()
   /** The ids already warned about for an invalid result, until one gives a valid result again. */
   private readonly warned = new Set<string>()
-  /** The ids whose lookups are failing, so an id that keeps failing is counted once, when it starts. */
-  private readonly failing = new Map<string, { failures: number; since: number }>()
+  /**
+   * The ids whose lookups are failing, so an id that keeps failing is counted once, when it starts; each is kept after it
+   * answers until it has answered `STEADY_ANSWERS` lookups in a row, so failing again first is flapping, not a new
+   * failure, however long the cache keeps an answer.
+   */
+  private readonly failing = new Map<string, { failures: number; since: number; answers: number; flapping: boolean }>()
   /** The ids that start failing, and those that answer again. */
   private readonly failures = new Burst()
   private readonly answers = new Burst()
@@ -157,23 +163,34 @@ class ResolverCache {
   }
 
   /**
-   * Logs an id that starts failing, once until it answers: on its own, or as the second in a burst, in one summary for
-   * the resolver, since many servers or users failing together is the resolver failing.
+   * Logs an id that starts failing, once until it answers, and once more when it fails again before it has answered
+   * `STEADY_ANSWERS` lookups in a row, as flapping: on its own, or as the second in a burst, in one summary for the
+   * resolver, since many servers or users failing together is the resolver failing.
    */
   private failed(id: string, error: unknown): void {
+    const now = Date.now()
     const failing = this.failing.get(id)
+    const cause = error instanceof ThemeLookupTimeout ? `did not answer within ${this.timeoutMs} ms` : String((error as Error)?.message ?? error)
+    const reason = error instanceof ThemeLookupTimeout ? cause : `failed: ${cause}`
+    const backoff = `${THEME_FAILURE_BACKOFF_MS / 1000}s`
+    let alone: string
     if (failing) {
       failing.failures++
-      return
+      const answered = failing.answers > 0
+      failing.answers = 0
+      if (!answered || failing.flapping) return
+      failing.flapping = true
+      alone =
+        `themeFor.${this.kind} for ${this.kind} ${id} fails again before answering steadily: ${cause}. It is not logged again ` +
+        `until it has answered ${STEADY_ANSWERS} lookups in a row.`
+    } else {
+      if (this.failing.size >= this.max) this.failing.clear()
+      this.failing.set(id, { failures: 1, since: now, answers: 0, flapping: false })
+      alone = `themeFor.${this.kind} for ${this.kind} ${id} ${reason}. Its calls use the theme without it, and it is asked again after ${backoff}.`
     }
-    if (this.failing.size >= this.max) this.failing.clear()
-    const now = Date.now()
-    this.failing.set(id, { failures: 1, since: now })
-    const reason = error instanceof ThemeLookupTimeout ? `did not answer within ${this.timeoutMs} ms` : `failed: ${String((error as Error)?.message ?? error)}`
-    const backoff = `${THEME_FAILURE_BACKOFF_MS / 1000}s`
     switch (this.failures.next(now)) {
       case 'alone':
-        logger.error(`themeFor.${this.kind} for ${this.kind} ${id} ${reason}. Its calls use the theme without it, and it is asked again after ${backoff}.`)
+        logger.error(alone)
         break
       case 'summary':
         logger.error(
@@ -184,16 +201,23 @@ class ResolverCache {
     }
   }
 
-  /** Logs that an id whose lookups were failing answers again: on its own, or as the second in a burst, in one summary. */
+  /**
+   * Logs that an id whose lookups were failing answers again, at once, or for one that was flapping, once it has
+   * answered `STEADY_ANSWERS` lookups in a row: on its own, or as the second in a burst, in one summary.
+   */
   private recovered(id: string): void {
     const failing = this.failing.get(id)
     if (!failing) return
-    this.failing.delete(id)
     const now = Date.now()
+    failing.answers++
+    if (failing.answers >= STEADY_ANSWERS) this.failing.delete(id)
+    // Logged once for each: a steady id on its first answer, a flapping one when it is steady
+    if (failing.flapping ? failing.answers < STEADY_ANSWERS : failing.answers > 1) return
+    const seconds = Math.round((now - failing.since) / 1000)
+    const steadily = failing.flapping ? ' steadily' : ''
     switch (this.answers.next(now)) {
       case 'alone': {
-        const seconds = Math.round((now - failing.since) / 1000)
-        logger.log(`themeFor.${this.kind} for ${this.kind} ${id} answers again, after ${failing.failures} failed lookup(s) over ${seconds}s.`)
+        logger.log(`themeFor.${this.kind} for ${this.kind} ${id} answers${steadily} again, after ${failing.failures} failed lookup(s) over ${seconds}s.`)
         break
       }
       case 'summary':

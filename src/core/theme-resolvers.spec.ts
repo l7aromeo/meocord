@@ -496,6 +496,67 @@ describe('a resolver that fails', () => {
     ])
   })
 
+  describe('a server that flaps', () => {
+    // `fails` is told which lookup this is, counted from 0
+    const run = async (rounds: number, fails: (lookup: number) => boolean, extra: object = { themeCache: { ttlSeconds: 1 } }) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] })
+      const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {})
+      const logs = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => {})
+      let lookup = 0
+      const module = moduleWith(
+        {
+          guild: () => {
+            if (fails(lookup++)) throw new Error('flaky')
+            return undefined
+          },
+        },
+        extra,
+      )
+      // Asked on every backoff
+      for (let round = 0; round < rounds; round++) {
+        await module.invoke(Panel, 'panel', press('panel'))
+        vi.advanceTimersByTime(10_001)
+      }
+      return {
+        errors: errors.mock.calls.map(([text]) => String(text)),
+        answers: logs.mock.calls.map(([text]) => String(text)).filter(text => text.includes('answers')),
+      }
+    }
+
+    it('is logged when it starts, when it answers and when it fails again before answering steadily, not on every flap', async () => {
+      const lines = await run(360, lookup => lookup % 2 === 0)
+
+      expect(lines.errors).toEqual([
+        expect.stringContaining(`themeFor.guild for guild ${GUILD} failed: flaky`),
+        expect.stringContaining(`themeFor.guild for guild ${GUILD} fails again before answering steadily: flaky`),
+      ])
+      expect(lines.answers).toEqual([expect.stringContaining(`themeFor.guild for guild ${GUILD} answers again`)])
+    })
+
+    it('is damped the same at the default cache time, when each answer is kept for five minutes', async () => {
+      const lines = await run(1080, lookup => lookup % 2 === 0, {})
+
+      expect([lines.errors.length, lines.answers.length]).toEqual([2, 1])
+    })
+
+    it('is logged once more when it has answered steadily, after flapping', async () => {
+      const lines = await run(20, lookup => lookup < 6 && lookup % 2 === 0)
+
+      expect(lines.errors).toHaveLength(2)
+      expect(lines.answers).toEqual([
+        expect.stringContaining(`themeFor.guild for guild ${GUILD} answers again`),
+        expect.stringContaining(`themeFor.guild for guild ${GUILD} answers steadily again, after 3 failed lookup(s)`),
+      ])
+    })
+
+    it('never holds back the answer of a server that failed once and then answers steadily', async () => {
+      const lines = await run(30, lookup => lookup === 0)
+
+      expect(lines.errors).toHaveLength(1)
+      expect(lines.answers).toEqual([expect.stringContaining(`themeFor.guild for guild ${GUILD} answers again`)])
+    })
+  })
+
   it('logs a server whose lookups keep failing once, and never a healthy one beside it', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] })
     const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {})
