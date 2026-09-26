@@ -1,6 +1,6 @@
 {
   "name": "meocord",
-  "description": "Decorator-based Discord bot framework built on discord.js. Brings NestJS-style controllers, dependency injection, guards, and testing utilities to bot development — with a full CLI and TypeScript-first design.",
+  "description": "Decorator-based framework for Discord bots on discord.js: controllers for commands, components, messages and reactions, dependency injection, guards, a CLI and a testing toolkit.",
   "version": "4.1.0-beta.4",
   "type": "module",
   "engines": {
@@ -195,7 +195,6 @@
     "controller",
     "guard",
     "slash-command",
-    "nestjs-style",
     "cli",
     "testing",
     "meocord"
