@@ -122,7 +122,8 @@ export class TestingModule {
    * @example
    * ```ts
    * const module = await MeoCordTestingModule.create({
-   *   providers: [{ provide: DATABASE, useFactory: async () => createTestDatabase() }, NotesStore],
+   *   controllers: [NotesController],
+   *   providers: [{ provide: DATABASE, useFactory: async () => createTestDatabase() }],
    * })
    *   .compile()
    *   .init()

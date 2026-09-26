@@ -57,6 +57,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'createToken',
     'createTranslator',
     'defineCatalog',
+    'factoryProvider',
     'getInstallContext',
     'isExplainedError',
     'respond',
