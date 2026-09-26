@@ -1494,11 +1494,12 @@ if (balance < price) {
 }
 ```
 
-| Where it is thrown     | What the user sees                                                          |
-| ---------------------- | --------------------------------------------------------------------------- |
-| An interaction handler | Its message, privately, in the presenter's error style, even after `@Defer` |
-| A message handler      | Its message as a reply to their message, without pinging them               |
-| A reaction or an event | Nothing; there is no one to answer                                          |
+| Where it is thrown                                      | What the user sees                                                                |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| An interaction handler                                  | Its message, privately, in the presenter's error style, even after `@Defer`       |
+| A message handler                                       | Its message as a reply to their message, without pinging them                     |
+| An event with a message, such as `@On('messageCreate')` | Its message as a reply to the event's message, the edited one for `messageUpdate` |
+| A reaction or another event                             | Nothing; there is no one to answer                                                |
 
 It is logged only at debug level, since nothing in the bot failed, and [observers](#observers) see the outcome `'refused'`, apart from `'error'`, so a dashboard can tell the user's mistakes from the bot's faults. `respond(interaction).error(userError)` shows its message privately too. Where `GuardDeniedError` says a guard turned the call away, `UserError` says the call itself could not go ahead.
 

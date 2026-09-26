@@ -1,6 +1,7 @@
 import {
   type ActivityOptions,
   Client,
+  Message,
   REST,
   Routes,
 } from 'discord.js'
@@ -18,7 +19,7 @@ import { type MessageCommandOptions } from '@src/interface/index.js'
 
 
 import { globalStagesOf, runHandler } from '@src/core/handler-pipeline.js'
-import { createFallback, type Fallback } from '@src/core/fallback.js'
+import { createFallback, type Fallback, replyWithUserError } from '@src/core/fallback.js'
 
 
 import { stageClass, stageTypes } from '@src/core/stage-scope.js'
@@ -36,7 +37,7 @@ import { type MeoCordApplication } from '@src/interface/index.js'
 import { stopRequests } from '@src/util/stop-request.util.js'
 import { explainLoginFailure, type FatalLoginCode, fatalLoginCode, isRefusedToken, tokenMessage } from '@src/core/login-failure.js'
 import { markExplained } from '@src/common/explained-error.js'
-import { GuardDeniedError } from '@src/common/errors.js'
+import { GuardDeniedError, UserError } from '@src/common/errors.js'
 import { isShardProcess } from '@src/util/sharding-mode.util.js'
 import { isShardMessage, type ShardMessage } from '@src/core/shard-messages.js'
 import { registerCommands } from '@src/core/command-registration.js'
@@ -356,11 +357,17 @@ export class MeoCordApp implements MeoCordApplication {
       for (const { event, method, once } of getEventHandlers(lifecycleClass.prototype)) {
         const logError = (error: unknown) =>
           this.logger.error(`Error handling event "${event}" in ${lifecycleClass.name}.${method}:`, error)
-        // An event has no one to answer, so an error no filter handles is only logged, with the handler.
-        // A guard denying one only filters which events the handler takes, which is no fault.
-        const fallback: Fallback = async error => {
-          if (error instanceof GuardDeniedError) this.logger.debug(`Denied event "${event}" in ${lifecycleClass.name}.${method}: ${error.message}`)
-          else logError(error)
+        // An error no filter handles is logged, with the handler. A guard denying an event only filters which
+        // events the handler takes, and a UserError is meant for the sender of the event's message, if it has one
+        const fallback: Fallback = async (error, context) => {
+          const where = `event "${event}" in ${lifecycleClass.name}.${method}`
+          if (error instanceof GuardDeniedError) this.logger.debug(`Denied ${where}: ${error.message}`)
+          else if (error instanceof UserError) {
+            this.logger.debug(`Refused ${where}: ${error.message}`)
+            // The newest message the event carries: an edit's new message, not its old one
+            const message = [...context.getArgs()].reverse().find((arg): arg is Message => arg instanceof Message)
+            if (message) await replyWithUserError(message, error, this.logger)
+          } else logError(error)
         }
         const listener = async (...args: unknown[]) => {
           try {

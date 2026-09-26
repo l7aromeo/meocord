@@ -11,6 +11,7 @@ import {
   Partials,
 } from 'discord.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
+import { UserError } from '@src/common/errors.js'
 import {
   Catch,
   Controller,
@@ -189,6 +190,38 @@ describe('gateway event handlers', () => {
 
     expect(ran).toHaveBeenCalled()
     expect(logged.error).toContainEqual(['Error handling event "guildMemberAdd" in Broken.fail:', new Error('boom')])
+  })
+
+  it("answers a UserError from a handler of a message event, as a message command's is answered, and logs no error", async () => {
+    @Service()
+    class Linking {
+      @On('messageCreate')
+      created() {
+        throw new UserError('Link your account first.')
+      }
+
+      @On('messageUpdate')
+      edited() {
+        throw new UserError('Edits are not checked again.')
+      }
+
+      @On('guildMemberAdd')
+      joined() {
+        throw new UserError('No one to tell.')
+      }
+    }
+    const client = await startApp({ services: [Linking] })
+    const sent = createMockMessage({ content: 'hi' })
+    const [before, after] = [createMockMessage({ content: 'old' }), createMockMessage({ content: 'new' })]
+
+    await emit(client, 'messageCreate', sent)
+    await emit(client, 'messageUpdate', before, after)
+    await emit(client, 'guildMemberAdd', member)
+
+    expect(sent.reply).toHaveBeenCalledWith({ content: 'Link your account first.', allowedMentions: { repliedUser: false } })
+    expect(after.reply).toHaveBeenCalledWith({ content: 'Edits are not checked again.', allowedMentions: { repliedUser: false } })
+    expect(before.reply).not.toHaveBeenCalled()
+    expect(logged.error).toEqual([])
   })
 
   it('gives a service the app\'s HandlerRegistry, listing the app\'s handlers', async () => {
