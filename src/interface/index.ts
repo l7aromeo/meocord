@@ -342,6 +342,16 @@ export interface ReactionHandlerOptions {
   action: ReactionHandlerAction
 }
 
+/** What a `@ReactionHandler` sets for itself. */
+export interface ReactionHandlerSettings {
+  /**
+   * Also runs for reactions from bots, the bot's own included, which are skipped by default as
+   * messages from bots are.
+   * @defaultValue `false`
+   */
+  bots?: boolean
+}
+
 /** One prefix or several, such as `'!'` or `['!', '?']`. `''` stands for no prefix. */
 export type MessagePrefix = string | readonly string[]
 

@@ -70,7 +70,7 @@ describe('@ReactionHandler', () => {
     }
 
     const handlers = getReactionHandlers(TestController.prototype)
-    expect(handlers[0]).toEqual({ emoji: '👍', method: 'handleThumbsUp' })
+    expect(handlers[0]).toEqual({ emoji: '👍', method: 'handleThumbsUp', settings: {} })
   })
 
   it('registers a handler without an emoji', () => {

@@ -36,6 +36,7 @@
 - [Subcommands](#subcommands)
 - [Autocomplete](#autocomplete)
 - [Message commands](#message-commands)
+- [Reactions](#reactions)
   - [Prefixes](#prefixes)
   - [Which handler runs](#which-handler-runs)
 - [Interaction responses](#interaction-responses)
@@ -839,6 +840,31 @@ Only one patterned handler runs for a message, the most specific that matches, a
 The table is built once at startup, so declaration order and file layout never decide it. Then every `@MessageHandler()` listener runs. Messages from bots, and empty messages, reach no handler. A prefix function that throws goes to the global [exception filters](#exception-filters), then the fallback, and the listeners still run.
 
 To check routing in a test, `resolveRoute(App, { content: '!roll 20' })` returns the handler a message reaches, and `invoke(DiceController, 'roll', createMockMessage({ content: '!roll 20' }))` runs it with the params its pattern captures — see [Testing](#testing).
+
+---
+
+## Reactions
+
+`@ReactionHandler(emoji)` runs when that emoji is added to or removed from a message, and `@ReactionHandler()` for every emoji. The emoji is matched by name: the character for a standard emoji, the name for a custom one. The second argument says who reacted, and whether the reaction was added or removed:
+
+```typescript
+import { type MessageReaction } from 'discord.js'
+import { Controller, ReactionHandler } from 'meocord/decorator'
+import { ReactionHandlerAction } from 'meocord/enum'
+import { type ReactionHandlerOptions } from 'meocord/interface'
+
+@Controller()
+export class StarboardController {
+  @ReactionHandler('⭐')
+  async star(reaction: MessageReaction, { user, action }: ReactionHandlerOptions) {
+    if (action === ReactionHandlerAction.ADD) await reaction.message.reply(`${user.username} starred this.`)
+  }
+}
+```
+
+Reactions from bots, the bot's own included, reach no handler, as messages from bots do: a bot that seeds a poll with its own reactions does not count them as votes, and never answers itself. A handler that wants them sets `bots: true`, as `@ReactionHandler('📌', { bots: true })`, or `@ReactionHandler({ bots: true })` for every emoji. A user discord.js holds only in part is fetched to tell, and skipped if that fails.
+
+Every handler that matches runs: in each controller, those for the emoji before those for every emoji. Before they run, the reacted-to message is fetched, so `reaction.message` is complete even for a message sent before the bot started; a reaction on a message the bot can no longer read is skipped. Reactions need the `GuildMessageReactions` intent (or `DirectMessageReactions`), and the `Message` and `Reaction` partials for older messages.
 
 ---
 
