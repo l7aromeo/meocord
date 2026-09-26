@@ -68,6 +68,9 @@ function assertMessageOptions(messages: MessageCommandOptions | undefined): void
  *   bot as well; and `caseSensitive` for the prefix and literal words.
  * @param options.observers - `@Observer` classes told about every dispatched call once it has settled,
  *   with its outcome and duration, in the order listed. The call never waits for them.
+ * @param options.warnUnanswered - Warns, once per handler, when a handler finishes without answering
+ *   its interaction, or defers it and never follows up, which leaves the user waiting. On in
+ *   development (`NODE_ENV` is `development`, as under `meocord start --dev`) and off otherwise.
  *
  * @example
  * ```typescript
@@ -111,6 +114,7 @@ export function MeoCord(options: {
   presenter?: new (...args: any[]) => ResponsePresenter
   messages?: MessageCommandOptions
   observers?: (new (...args: any[]) => DispatchObserver)[]
+  warnUnanswered?: boolean
 }): (target: any) => void {
   return (target: any): void => {
     assertStageEntries('@MeoCord({ guards })', 'guard', target.name, options.guards ?? [])
@@ -121,6 +125,9 @@ export function MeoCord(options: {
     providerMap(options.providers ?? [], '@MeoCord({ providers })')
     assertMessageOptions(options.messages)
     assertCooldownPolicy(target.name, options)
+    if (options.warnUnanswered !== undefined && typeof options.warnUnanswered !== 'boolean') {
+      throw new TypeError(`@MeoCord({ warnUnanswered }) on ${target.name} takes true or false.`)
+    }
     makeInjectable(target)
 
     Reflect.defineMetadata(MetadataKey.AppOptions, options, target)
