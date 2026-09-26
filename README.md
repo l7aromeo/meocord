@@ -1267,6 +1267,49 @@ The colours keep the hues of 4.0's `Theme`, with their lightness moved until eac
 
 Each problem is named with its key path and what to give instead, such as `theme.colors.primary: '#GGG' is not a colour: give a 6-digit hex string such as '#7680F4', …`. MeoCord's groups are checked whatever roles an app added to them; a group of the app's own is the app's to check.
 
+A theme set in code is checked where it is declared: a bad token in `@MeoCord({ theme })` or `@UseTheme` stops the bot before it logs in, and the message names the decorator, as in `@UseTheme on ShopController.refund: theme.emojis.loading: …`.
+
+### Setting the theme
+
+The app's theme goes in `@MeoCord({ theme })`, and `@UseTheme` changes part of it for a controller's handlers or for one handler. Each layer sets only what it changes, over the one beneath it:
+
+1. MeoCord's defaults;
+2. `@MeoCord({ theme })`;
+3. `@UseTheme` on each class, from the base class down to the class a handler is dispatched on;
+4. `@UseTheme` on the handler's method.
+
+```typescript
+@MeoCord({ controllers: [ShopController], clientOptions: { intents: [] }, theme: { colors: { primary: '#5865F2' } } })
+class App {}
+
+@Controller()
+@UseTheme({ colors: { primary: '#26A042' } })
+export class ShopController {
+  @Command('refund', CommandType.SLASH)
+  @UseTheme({ colors: { primary: '#E3606D' }, emojis: { loading: '💸' } })
+  async refund(interaction: ChatInputCommandInteraction) {}
+}
+```
+
+A subclass inherits its base class's `@UseTheme`, and `@Controller({ inheritStages: false })` stops it as it stops guards. A class or method takes one `@UseTheme`. Plain objects merge key by key; anything else, such as an array of colours, replaces the value beneath it.
+
+### Reading the theme
+
+`useTheme()` from `meocord/common` returns the theme of the running call, with every role present:
+
+```typescript
+const { colors, emojis } = useTheme()
+await respond(interaction).send({
+  embeds: [{ description: `${emojis.success} Saved`, color: resolveColor(colors.success) }],
+})
+```
+
+- **Anything the handler calls reads the same theme,** such as a service or a presenter, since the call's theme follows it through `AsyncLocalStorage`, as does work the call starts that outlives it, such as a timer's follow-up. An interceptor, guard or filter reads it as `context.getTheme()`.
+- **A controller method called directly** from another handler keeps the caller's theme: the theme belongs to the call answering the user.
+- **Outside any call,** such as in a scheduled job, it is the theme of the app the bot runs, or MeoCord's defaults before an app has started. It never throws.
+- **A theme is frozen,** since one theme is shared by every call it applies to. A colour is kept as written, so `useTheme().colors.primary` reads back what was set.
+- **A bot that sets no `@UseTheme` pays one check per call:** its handlers share the app's theme, which is built once at startup.
+
 ---
 
 ## How a handler runs

@@ -20,6 +20,8 @@ import { BUILT_IN_TYPES } from '@src/core/message-params.js'
 import { assertObservers } from '@src/core/observer-runner.js'
 import { type CooldownStoreFailure } from '@src/core/cooldown-runner.js'
 import { type CheckedEntry } from '@src/decorator/stage-entry.js'
+import { type RootTheme } from '@src/interface/theme.interface.js'
+import { assertValidTheme } from '@src/core/theme-validation.js'
 
 /** Refuses a `messages` option of the wrong type where the app is declared, rather than at the first message. */
 function assertMessageOptions(messages: MessageCommandOptions | undefined): void {
@@ -84,6 +86,9 @@ function assertMessageOptions(messages: MessageCommandOptions | undefined): void
  * @param options.warnUnanswered - Warns, once per handler, when a handler finishes without answering
  *   its interaction, or defers it and never follows up, which leaves the user waiting. On in
  *   development (`NODE_ENV` is `development`, as under `meocord start --dev`) and off otherwise.
+ * @param options.theme - The app's theme: the roles it changes from MeoCord's defaults, and every role the app
+ *   adds. It applies to every handler, beneath each `@UseTheme`; code reads it with `useTheme()`. Each token is
+ *   checked here, so a bad one stops the bot before it logs in.
  *
  * @example
  * ```typescript
@@ -119,6 +124,7 @@ export function MeoCord<const G extends readonly unknown[] = [], const I extends
   messages?: MessageCommandOptions
   observers?: (new (...args: any[]) => DispatchObserver)[]
   warnUnanswered?: boolean
+  theme?: RootTheme
 }): (target: any) => void {
   return (target: any): void => {
     assertStageEntries('@MeoCord({ guards })', 'guard', target.name, options.guards ?? [])
@@ -132,6 +138,7 @@ export function MeoCord<const G extends readonly unknown[] = [], const I extends
     if (options.warnUnanswered !== undefined && typeof options.warnUnanswered !== 'boolean') {
       throw new TypeError(`@MeoCord({ warnUnanswered }) on ${target.name} takes true or false.`)
     }
+    if (options.theme !== undefined) assertValidTheme(options.theme, `@MeoCord({ theme }) on ${target.name}`)
     makeInjectable(target)
 
     Reflect.defineMetadata(MetadataKey.AppOptions, options, target)

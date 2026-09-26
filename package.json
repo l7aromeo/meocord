@@ -21,6 +21,7 @@
     "test:typecheck": "tsc --noEmit --project tsconfig.test.json",
     "test:mutation": "bun scripts/mutation.ts",
     "bench:messages": "bun scripts/bench-messages.ts",
+    "bench:theme": "bun scripts/bench-theme.ts",
     "changeset": "changeset",
     "release:version": "changeset version && prettier --write CHANGELOG.md",
     "release:publish": "changeset publish",
