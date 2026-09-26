@@ -9,7 +9,15 @@ export interface ConfigProblems {
 type Check = (value: unknown, key: string) => string | undefined
 
 const describe = (value: unknown): string =>
-  typeof value === 'string' ? `'${value}'` : Array.isArray(value) ? 'an array' : value === null ? 'null' : typeof value
+  typeof value === 'string'
+    ? `'${value}'`
+    : typeof value === 'number' || typeof value === 'boolean'
+      ? String(value)
+      : Array.isArray(value)
+        ? 'an array'
+        : value === null
+          ? 'null'
+          : typeof value
 
 const optional =
   (check: Check): Check =>
@@ -68,7 +76,7 @@ const shardingShape: Record<keyof ShardingConfig, Check> = {
   shards: optional((value, key) =>
     value === 'auto' || (typeof value === 'number' && Number.isInteger(value) && value > 0)
       ? undefined
-      : `${key} must be 'auto' or a whole number of shards (got ${describe(value)})`,
+      : `${key} must be 'auto' or a whole number of shards, 1 or more (got ${describe(value)})`,
   ),
   development: optional(boolean),
 }
@@ -93,7 +101,7 @@ function configShape(problems: ConfigProblems): Record<keyof MeoCordConfig, Chec
     shutdownTimeout: optional((value, key) =>
       typeof value === 'number' && Number.isFinite(value) && value >= 0
         ? undefined
-        : `${key} must be a number of milliseconds (got ${describe(value)})`,
+        : `${key} must be a number of milliseconds, 0 or more (got ${describe(value)})`,
     ),
     commands: optional(objectOf(commandsShape, problems)),
     sharding: optional(objectOf(shardingShape, problems)),
