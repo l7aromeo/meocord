@@ -7,6 +7,9 @@ export default defineConfig({
   // cannot emit decorator metadata, which inversify's DI relies on.
   plugins: [
     swc.vite({
+      // Coverage reads a file no test imports as file.ts?cache=…&vitest-uncovered-coverage=true; the default
+      // pattern ends at the extension, so it would pass such a file to istanbul as raw TypeScript
+      include: /\.m?[jt]sx?(?:\?.*)?$/,
       jsc: {
         parser: { syntax: 'typescript', decorators: true },
         transform: { legacyDecorator: true, decoratorMetadata: true },
@@ -45,9 +48,8 @@ export default defineConfig({
       // under Bun, which is what CI uses to run the suite.
       provider: 'istanbul',
       // Naming `include` is what pulls in files no test ever imported, so a module with
-      // no spec at all is reported at zero rather than left out of the percentage.
-      // Those files are read from disk as TypeScript, which is why anything istanbul's
-      // parser cannot read has to be excluded below rather than left to chance.
+      // no spec at all is reported at zero rather than left out of the percentage. They
+      // go through SWC like imported ones, types and decorators included.
       include: ['src/**/*.ts'],
       // Excluded because there is nothing to measure, not to flatter the number:
       // specs and type tests are the tests themselves, `src/interface` declares types
