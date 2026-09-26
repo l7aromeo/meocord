@@ -385,6 +385,32 @@ describe('TestingModule.invoke with typed message params', () => {
     expect(received).toEqual([])
   })
 
+  it('rejects a message the handler matches but dispatch gives to a more specific one', async () => {
+    @Controller()
+    class RollAny {
+      @MessageHandler('roll {sides}')
+      async roll(_message: Message, params: { sides: string }) {
+        received.push(params)
+      }
+    }
+    @Controller()
+    class RollTwenty {
+      @MessageHandler('roll 20')
+      async twenty() {
+        received.push('twenty')
+      }
+    }
+    @MeoCord({ controllers: [RollAny, RollTwenty], clientOptions: { intents: [] }, messages: { prefix: '!' } })
+    class App {}
+    const module = MeoCordTestingModule.create({ controllers: [RollAny, RollTwenty], app: App }).compile()
+
+    await expect(module.invoke(RollAny, 'roll', createMockMessage({ content: '!roll 20' }))).rejects.toThrow(
+      "message '!roll 20' does not reach RollAny.roll: dispatch runs RollTwenty.twenty.",
+    )
+    await module.invoke(RollAny, 'roll', createMockMessage({ content: '!roll 6' }))
+    expect(received).toEqual([{ sides: '6' }])
+  })
+
   it("lets the handler's filters answer a missing param, as they do in dispatch", async () => {
     const caught: string[] = []
     @Catch(MessageUsageError)
