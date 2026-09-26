@@ -161,7 +161,8 @@ export class TestingModule {
    * @param methodName - The handler method's name.
    * @param args - The arguments dispatch would pass: the interaction, message or reaction, then the
    *   handler's params. With an interaction alone, the params are built as dispatch builds them: a
-   *   command's or an autocomplete's options, or the handler's customId params and a modal's fields.
+   *   command's or an autocomplete's options, or the handler's customId params with a modal's fields or
+   *   a select menu's choices.
    *   An interaction's customId or command name must be one dispatch could route to the handler; a mock
    *   built without one is not checked. With a message alone, a patterned `@MessageHandler` gets the
    *   params its pattern captures from the content, after the prefix of the module's `app`; a message

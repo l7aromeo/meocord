@@ -535,7 +535,8 @@ describe('MeoCordApp', () => {
       mockClient.emit('interactionCreate', interaction)
       await vi.advanceTimersByTimeAsync(0)
 
-      expect(calls).toEqual([{ scope: 'guild' }])
+      // A select menu's choices come too; this pins only the route's params
+      expect(calls).toEqual([expect.objectContaining({ scope: 'guild' })])
     })
 
     // A button and a select menu may legitimately share a customId shape. Matching on

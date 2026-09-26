@@ -1,4 +1,12 @@
-import { type Interaction, ModalSubmitInteraction } from 'discord.js'
+import {
+  ChannelSelectMenuInteraction,
+  type Interaction,
+  MentionableSelectMenuInteraction,
+  ModalSubmitInteraction,
+  RoleSelectMenuInteraction,
+  StringSelectMenuInteraction,
+  UserSelectMenuInteraction,
+} from 'discord.js'
 import { getCommandMap } from '@src/decorator/controller.decorator.js'
 import {
   hasCustomId,
@@ -11,7 +19,7 @@ import {
 /** The second argument an interaction handler receives, and the names given twice while building it. */
 export interface HandlerInput {
   params: Record<string, unknown>
-  /** Names both a customId param and a modal field carry; the customId param is the one kept. */
+  /** Names both a customId param and a modal field or select menu choice carry; the customId param is kept. */
   collisions: string[]
 }
 
@@ -32,10 +40,33 @@ function modalFields(interaction: ModalSubmitInteraction): Record<string, unknow
   return values
 }
 
+/** The entries of a discord.js Collection, or none for anything else, such as a test double's stub. */
+const entriesOf = (collection: unknown): unknown[] => (collection instanceof Map ? [...collection.values()] : [])
+
+/**
+ * What a select menu's user chose: `values`, the chosen strings or ids, and the objects discord.js resolved
+ * for them: `users` and `members` for a user select, `roles` for a role select, `channels` for a channel
+ * select, and `users`, `members` and `roles` for a mentionable one.
+ */
+function selectChoices(interaction: Interaction): Record<string, unknown> {
+  const selected = interaction as Interaction & { values?: unknown; users?: unknown; members?: unknown; roles?: unknown; channels?: unknown }
+  const values = Array.isArray(selected.values) ? [...(selected.values as string[])] : []
+  if (interaction instanceof StringSelectMenuInteraction) return { values }
+  if (interaction instanceof UserSelectMenuInteraction) {
+    return { values, users: entriesOf(selected.users), members: entriesOf(selected.members) }
+  }
+  if (interaction instanceof RoleSelectMenuInteraction) return { values, roles: entriesOf(selected.roles) }
+  if (interaction instanceof ChannelSelectMenuInteraction) return { values, channels: entriesOf(selected.channels) }
+  if (interaction instanceof MentionableSelectMenuInteraction) {
+    return { values, users: entriesOf(selected.users), members: entriesOf(selected.members), roles: entriesOf(selected.roles) }
+  }
+  return {}
+}
+
 /**
  * Builds a handler's input in one object: a chat command's or an autocomplete's options, or a
- * component's customId params and, for a modal, its fields. When a customId param and a field share
- * a name, the customId param wins, since the route was chosen by it.
+ * component's customId params with, for a modal, its fields and, for a select menu, its choices. When a
+ * customId param and a field or choice share a name, the customId param wins, since the route was chosen by it.
  *
  * @param routeParams - The params the customId's pattern captured.
  */
@@ -45,7 +76,7 @@ export function handlerInput(interaction: Interaction, routeParams: Record<strin
   }
   if (!hasCustomId(interaction)) return { params: {}, collisions: [] }
 
-  const fields = interaction instanceof ModalSubmitInteraction ? modalFields(interaction) : {}
+  const fields = interaction instanceof ModalSubmitInteraction ? modalFields(interaction) : selectChoices(interaction)
   const collisions = Object.keys(routeParams).filter(name => name in fields)
   return { params: { ...fields, ...routeParams }, collisions }
 }
