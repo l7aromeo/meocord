@@ -447,6 +447,16 @@ the bare message `{ prefix: false }`:
 
 ### Smaller changes
 
+- **Typed asset imports.** A new app has
+  [`src/assets.d.ts`](https://github.com/meocord/meocord/blob/main/src/bin/app-template/src/assets.d.ts.template),
+  which types an image, font or media import as its path and a Markdown or HTML import as its text, so
+  `import logo from './logo.png'` passes the app's own `tsc` and lint. Copy it into your `src/` to have the
+  same, and add `'src/**/*.d.ts'` to `coverage.exclude` in `vitest.config.ts`, where istanbul would try to
+  read it as code.
+- `meocord generate` writes components in 4.1's style, answering with `respond()`, and derives each
+  button's, modal's, select menu's and message handler's customId or pattern from its name. Files you
+  generated before keep theirs; one whose `'baka'` pattern clashes with the sample's stops the bot at
+  startup, and renaming either fixes it.
 - `process.env` values that `meocord.config.ts` loads are set before any application module runs,
   after a rebuild. An option such as `@MeoCord({ activities: [{ name: process.env.STATUS! }] })` read
   `undefined` in 4.0.

@@ -101,9 +101,10 @@ function commandsOf(file: string): TemplateCommand[] {
   const source = readFileSync(file, 'utf8')
   const template = labelFor(file)
 
+  // Rendered as a nested name renders it, the longest command name a generator writes
   return [...source.matchAll(COMMAND_CALL)].map(([, pattern, member]) => ({
     template,
-    pattern,
+    pattern: pattern.replaceAll('{{commandName}}', 'admin-ban'),
     type: CommandType[member as keyof typeof CommandType],
   }))
 }
@@ -112,8 +113,8 @@ const allCommands = allTemplates.flatMap(commandsOf)
 
 // An invalid pattern is not a compile error -- `@Command` throws while the class is
 // being defined, so a template carrying one typechecks, ships, and takes the user's
-// bot down on the first import. `verify:generated` cannot see it either: it only
-// typechecks the generated files, it never loads them.
+// bot down on the first import. `verify:generated` loads what it generates, for its
+// own two names; this checks every template, whatever it generates.
 describe('generator template command patterns', () => {
   it('finds command patterns to check', () => {
     expect(allCommands.length).toBeGreaterThan(0)

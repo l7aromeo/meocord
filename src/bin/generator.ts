@@ -11,6 +11,7 @@ import { FilterGeneratorHelper } from '@src/bin/helper/filter-generator.helper.j
 import { PipeGeneratorHelper } from '@src/bin/helper/pipe-generator.helper.js'
 import { ObserverGeneratorHelper } from '@src/bin/helper/observer-generator.helper.js'
 import wait from '@src/util/wait.util.js'
+import { toClassName, validateAndFormatName } from '@src/util/generator-cli.util.js'
 
 /**
  * Why a name cannot be a path inside the kind's folder: one that climbs out with `..`, starts at the
@@ -21,6 +22,32 @@ export function namePathProblem(name: string, folder: string): string | undefine
   return escapes
     ? `"${name}" leaves ${folder}. Names are paths inside ${folder}: use admin/ban, not ../ban or an absolute path.`
     : undefined
+}
+
+/**
+ * What to do with a generated class for it to take part: generating writes files and never edits
+ * `src/app.ts`, so a controller or observer does nothing until it is listed there.
+ */
+export function nextStepFor(component: string, name: string, type?: ControllerType): string | undefined {
+  const { className } = validateAndFormatName(name)
+  switch (component) {
+    case 'controller':
+      return `Next: add ${className}${toClassName((type ?? '').replace(/-/g, ' '))}Controller to @MeoCord({ controllers }) in src/app.ts.`
+    case 'observer':
+      return `Next: add ${className}Observer to @MeoCord({ observers }) in src/app.ts.`
+    case 'guard':
+      return `Next: put @UseGuard(${className}Guard) on a handler or controller, or add ${className}Guard to @MeoCord({ guards }) in src/app.ts for every call.`
+    case 'interceptor':
+      return `Next: put @UseInterceptor(${className}Interceptor) on a handler or controller, or add ${className}Interceptor to @MeoCord({ interceptors }) in src/app.ts for every call.`
+    case 'filter':
+      return `Next: put @UseFilter(${className}Filter) on a handler or controller, or add ${className}Filter to @MeoCord({ filters }) in src/app.ts for every call.`
+    case 'pipe':
+      return `Next: use ${className}Pipe in @UsePipe or @Validate's pipes on a handler.`
+    case 'service':
+      return `Next: inject ${className}Service in a controller's or service's constructor, which binds it, or add it to @MeoCord({ services }) in src/app.ts.`
+    default:
+      return undefined
+  }
 }
 
 export class GeneratorCLI {
@@ -211,6 +238,12 @@ export class GeneratorCLI {
         this.logger.error(`Unsupported component type: ${component}`)
         await wait(100)
         process.exit(1)
+    }
+
+    // A file that failed to write sets the exit code; there is no next step then
+    if (!process.exitCode) {
+      const next = nextStepFor(component, name, type)
+      if (next) this.logger.log(next)
     }
   }
 

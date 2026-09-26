@@ -25,6 +25,7 @@ import { createServer, type Server } from 'http'
 import { type AddressInfo } from 'net'
 import { tmpdir } from 'os'
 import path from 'path'
+import { ControllerType } from '../src/enum/controller.enum.js'
 import { cleanEnv, installedCliOf, mustRun, outputOf, pack, renderApp } from './lib/packed-app.js'
 
 type Tier = 'fast' | 'slow'
@@ -121,6 +122,35 @@ const firstLine = (error: Error) => error.stack?.split('\\n')[0]
 depd('stack-probe')('a deprecation, located through a stack hook of its own')
 console.log(\`error makers: axios \${typeof axios.get}, \${firstLine(new FetchError('probe', 'system'))}, \${firstLine(new ReplyError('ERR probe'))}\`)
 ${templateMain}`
+
+/** Two names for each generator, one nested, with class names of their own. */
+const generatedNames = [
+  { name: 'Generated', dir: '', className: 'Generated', file: 'generated' },
+  { name: 'admin/second', dir: 'admin/', className: 'Second', file: 'second' },
+]
+const pascal = (kebab: string) => kebab.replace(/(^|-)([a-z])/g, (_, _dash, letter: string) => letter.toUpperCase())
+
+/** Every generator run for two of each kind of component. */
+const generateTwoOfEach = generatedNames.flatMap(({ name }) => [
+  ...Object.values(ControllerType).map(type => ['g', 'co', type, name]),
+  ...['s', 'gu', 'i', 'f', 'pi', 'ob'].map(kind => ['g', kind, name]),
+])
+
+/** The template's app.ts with every generated controller and observer listed beside the samples. */
+const appWithGenerated = (() => {
+  const controllers = generatedNames.flatMap(({ dir, className, file }) =>
+    Object.values(ControllerType).map(type => ({
+      name: `${className}${pascal(type)}Controller`,
+      from: `@src/controllers/${type}/${dir}${file}.${type}.controller`,
+    })),
+  )
+  const observers = generatedNames.map(({ dir, className, file }) => ({ name: `${className}Observer`, from: `@src/observers/${dir}${file}.observer` }))
+  const template = readFileSync(path.join(import.meta.dirname, '..', 'src', 'bin', 'app-template', 'src', 'app.ts.template'), 'utf8')
+  const imports = [...controllers, ...observers].map(({ name, from }) => `import { ${name} } from '${from}'`).join('\n')
+  return `${imports}\n${template}`
+    .replace('  controllers: [\n', `  controllers: [\n${controllers.map(({ name }) => `    ${name},\n`).join('')}`)
+    .replace('  presenter: AppPresenter,\n', `  presenter: AppPresenter,\n  observers: [${observers.map(({ name }) => name).join(', ')}],\n`)
+})()
 
 /** Where the stalled API listens: it accepts requests and never answers them. */
 const STALLED_API_ENV = 'MEOCORD_SCENARIO_STALLED_API'
@@ -592,6 +622,20 @@ const scenarios: Scenario[] = [
     files: { '.env': INVALID_TOKEN_ENV },
     command: ['npm', 'run', 'start:prod', '--', '--build'],
     expect: { code: 1, says: ['Starting bot', 'An invalid token was provided'] },
+  },
+
+  {
+    name: 'two of every generated component, listed beside the samples, build and start without a routing warning',
+    tier: 'slow',
+    files: { '.env': INVALID_TOKEN_ENV, 'src/app.ts': appWithGenerated, dist: null },
+    before: generateTwoOfEach,
+    argv: ['start', '--prod', '--build'],
+    timeoutMs: 120_000,
+    expect: {
+      code: 1,
+      says: ['Production build completed', 'Starting bot', 'An invalid token was provided'],
+      never: ['match the same messages', 'can match the same customId', 'refuses to start'],
+    },
   },
 
   // Slow: the bun runtime, which the CLI runs the application on too

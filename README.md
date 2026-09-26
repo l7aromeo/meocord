@@ -86,7 +86,7 @@
 - **Lifecycle hooks** — `onReady` and `onShutdown` on any controller or service, in dependency order, for schedulers, cache warm-up and clean shutdown.
 - **Localisation** — One typed catalog per locale for command names, descriptions and replies, checked at compile time.
 - **Command registration and sharding** — Register globally, to guilds or to a development guild, from startup or CI; shard in one process or across processes with one setting.
-- **Full CLI** — `meocord create`, `build`, `start`, `register` and `generate`, which scaffolds controllers, services, guards, interceptors, filters and pipes, each with a spec. Builds with Rsbuild for development and production.
+- **Full CLI** — `meocord create`, `build`, `start`, `register` and `generate`, which scaffolds controllers, services, guards, interceptors, filters, pipes and observers, each with a spec. Builds with Rsbuild for development and production.
 - **Testing utilities** — `MeoCordTestingModule` runs a handler through its whole pipeline with `invoke` and sends events with `emit`; `inspectHandler`, `createMockInteraction`, `createMock` and the other mocks test controllers without a Discord connection. Type guards and reply state machines work out of the box.
 - **TypeScript-first** — Strict types throughout: handler parameters checked against validation schemas and event types, typed metadata and catalogs, and typed config.
 - **Extensible build** — An Rsbuild hook in `meocord.config.ts` to adjust the build without ejecting, and a self-contained build that runs without `node_modules`.
@@ -297,7 +297,7 @@ export default {
 
 MeoCord builds with [Rsbuild](https://rsbuild.rs). The hook receives its configuration and returns it, modified. A few things it handles for you, so you do not need rules for them:
 
-- **Images, fonts, svg and media** are emitted to `dist/assets/`, and importing one gives you its absolute path on disk — ready for `fs`, canvas, or a Discord attachment. Nothing is ever inlined as a data URI, whatever its size.
+- **Images, fonts, svg and media** are emitted to `dist/assets/`, and importing one gives you its absolute path on disk — ready for `fs`, canvas, or a Discord attachment. Nothing is ever inlined as a data URI, whatever its size. A new app's `src/assets.d.ts` types each such import as a `string`, and a Markdown or HTML import, read as text by the template's rule, as its text.
 - **Custom asset paths** — `output.filename.image` (and `svg`, `font`, `media`) accept a function, for when two files share a name in different folders:
 
   ```typescript
@@ -470,14 +470,14 @@ export default [
 npx meocord --help
 ```
 
-| Command    | Alias | Description                                                          |
-| ---------- | ----- | -------------------------------------------------------------------- |
-| `create`   | —     | Scaffold a new MeoCord application                                   |
-| `build`    | —     | Compile the application via Rsbuild                                  |
-| `start`    | —     | Start the application                                                |
-| `register` | —     | Register the commands, without starting the bot                      |
-| `generate` | `g`   | Scaffold controllers, services, guards, interceptors, filters, pipes |
-| `show`     | —     | Display framework info                                               |
+| Command    | Alias | Description                                                                     |
+| ---------- | ----- | ------------------------------------------------------------------------------- |
+| `create`   | —     | Scaffold a new MeoCord application                                              |
+| `build`    | —     | Compile the application via Rsbuild                                             |
+| `start`    | —     | Start the application                                                           |
+| `register` | —     | Register the commands, without starting the bot                                 |
+| `generate` | `g`   | Scaffold controllers, services, guards, interceptors, filters, pipes, observers |
+| `show`     | —     | Display framework info                                                          |
 
 Every command's own flags:
 
@@ -538,6 +538,10 @@ src/controllers/<type>/
 A builder is generated only for the three types Discord registers by name. Everything else is addressed by `customId` or, for autocomplete, by the command path it completes — there is nothing to register.
 
 Each controller gets its own builder, `<Name>CommandBuilder`, and registers a command named after it: `npx meocord g co slash Greeting` registers `/greeting`. A nested name uses its whole path, so `admin/ban` registers `/admin-ban` — Discord command names are global to the application, while folders only keep files apart. An autocomplete controller completes the slash command of the same name.
+
+Buttons, modals, select menus and message handlers take the same name: `npx meocord g co button ticket` routes the customIds `ticket` and `ticket/{id}`, and `npx meocord g co message ping` matches `ping`. Two generated components never share a route, nor share one with the samples `meocord create` writes.
+
+Generating writes files and never edits `src/app.ts`, so it ends by saying where the class goes: `Next: add TicketButtonController to @MeoCord({ controllers }) in src/app.ts.` A guard, interceptor or filter is named with the decorator that applies it; a service is bound when something injects it.
 
 Generating never overwrites. If any file it would write already exists, it refuses, names the files, and writes nothing.
 

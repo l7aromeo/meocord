@@ -32,7 +32,8 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { FORCE_STOP_GRACE_MS, MeoCordCLI } from '@src/bin/meocord.js'
 import { REPEAT_SIGNAL_WINDOW_MS } from '@src/util/stop-request.util.js'
-import { namePathProblem } from '@src/bin/generator.js'
+import { namePathProblem, nextStepFor } from '@src/bin/generator.js'
+import { ControllerType } from '@src/enum/controller.enum.js'
 import { RUNTIME_OVERRIDE_ENV } from '@src/util/runtime.util.js'
 import { loadMeoCordCliConfig } from '@src/util/meocord-source-config.util.js'
 
@@ -379,5 +380,32 @@ describe('namePathProblem', () => {
 
   it.each(['Ban', 'admin/ban', 'admin/ban-list', 'a..b'])('accepts %s', name => {
     expect(namePathProblem(name, 'src/services/')).toBeUndefined()
+  })
+})
+
+// Generating never edits src/app.ts, so it says where each kind of class goes for it to take part
+describe('nextStepFor', () => {
+  it.each([
+    ['controller', 'ticket', ControllerType.BUTTON, 'Next: add TicketButtonController to @MeoCord({ controllers }) in src/app.ts.'],
+    ['controller', 'admin/ban', ControllerType.SLASH, 'Next: add BanSlashController to @MeoCord({ controllers }) in src/app.ts.'],
+    ['controller', 'pick', ControllerType.USER_SELECT_MENU, 'Next: add PickUserSelectMenuController to @MeoCord({ controllers }) in src/app.ts.'],
+    ['observer', 'metrics', undefined, 'Next: add MetricsObserver to @MeoCord({ observers }) in src/app.ts.'],
+  ] as const)('names the list a %s %s goes in', (component, name, type, next) => {
+    expect(nextStepFor(component, name, type)).toBe(next)
+  })
+
+  it.each([
+    ['guard', 'UseGuard(AdminGuard)', 'guards'],
+    ['interceptor', 'UseInterceptor(AdminInterceptor)', 'interceptors'],
+    ['filter', 'UseFilter(AdminFilter)', 'filters'],
+  ])('names the decorator that applies a %s, and the global list', (component, decorator, list) => {
+    const next = nextStepFor(component, 'admin')
+
+    expect(next).toContain(`@${decorator}`)
+    expect(next).toContain(`@MeoCord({ ${list} })`)
+  })
+
+  it('says a service is bound when something injects it', () => {
+    expect(nextStepFor('service', 'billing/invoice')).toContain('inject InvoiceService')
   })
 })

@@ -1,11 +1,12 @@
 import { UserContextMenuCommandInteraction, MessageContextMenuCommandInteraction } from 'discord.js'
-import { Controller, Command } from 'meocord/decorator'
+import { respond } from 'meocord/common'
+import { Command, Controller } from 'meocord/decorator'
 import { {{builderClassName}} } from '{{builderImportPath}}'
 
 @Controller()
 export class {{className}}ContextMenuController {
   @Command('{{commandName}}', {{builderClassName}})
-  async handleContextMenu(interaction: UserContextMenuCommandInteraction | MessageContextMenuCommandInteraction) {
-    await interaction.reply('This is sample reply of context menu command.')
+  async handle{{className}}(interaction: UserContextMenuCommandInteraction | MessageContextMenuCommandInteraction) {
+    await respond(interaction).send('Hello from {{commandName}}!')
   }
 }
