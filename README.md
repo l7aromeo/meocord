@@ -52,6 +52,7 @@ If you know NestJS, the shape will feel familiar.
 - [Theming](#theming)
   - [Tokens](#tokens)
   - [Adding tokens of your own](#adding-tokens-of-your-own)
+  - [Migrating from `Theme`](#migrating-from-theme)
 - [How a handler runs](#how-a-handler-runs)
 - [Guards](#guards)
   - [Passing options to a guard](#passing-options-to-a-guard)
@@ -1180,7 +1181,7 @@ const { where, botInstalled } = getInstallContext(interaction) // where: 'guild'
 A presenter decides how MeoCord's answers look — the error view, and the loading view `@Defer` shows — while filters and the fallback decide what they say. It returns `{ text, title?, color?, emoji?, components? }`, rendered as an embed, or as a Components V2 container on a Components V2 message. Register one with `@MeoCord({ presenter })`; it is resolved once from the container, so it can inject services such as a `Translator`.
 
 ```typescript
-import { Theme, Translator } from 'meocord/common'
+import { Translator, useTheme } from 'meocord/common'
 import { MeoCord, Service } from 'meocord/decorator'
 import { type PresentedError, type ResponseContext, type ResponsePresenter } from 'meocord/interface'
 import enUS from '@src/locales/en-US'
@@ -1190,11 +1191,12 @@ export class BrandPresenter implements ResponsePresenter {
   constructor(private readonly t: Translator<typeof enUS>) {}
 
   loading(context: ResponseContext) {
-    return { text: this.t.for(context.interaction)('common.working'), emoji: '⏳', color: Theme.primaryColor }
+    const { colors, emojis } = useTheme()
+    return { text: this.t.for(context.interaction)('common.working'), emoji: emojis.loading, color: colors.primary }
   }
 
   error(_context: ResponseContext, { message }: PresentedError) {
-    return { title: 'Something went wrong', text: message, color: Theme.errorColor }
+    return { title: 'Something went wrong', text: message, color: useTheme().colors.danger }
   }
 }
 
@@ -1202,7 +1204,7 @@ export class BrandPresenter implements ResponsePresenter {
 class App {}
 ```
 
-Without one, errors show "Oops!" as their title in `Theme.errorColor`, and the loading view is "⏳ Working on it…" in `Theme.primaryColor`.
+Without one, errors show "Oops!" as their title in the theme's `colors.danger`, and the loading view is "⏳ Working on it…" in `colors.primary`.
 
 ---
 
@@ -1355,6 +1357,21 @@ MeoCord answers a message in plain text: a command's [usage](#usage-errors), a g
 ⚠️ Usage: !roll <sides>
 sides: "lots" is not a whole number
 ```
+
+### Migrating from `Theme`
+
+The static `Theme` class from `meocord/common` still works, and is deprecated. It goes in MeoCord 5.
+
+| `Theme`              | Reads, and sets  | Instead                                                                     |
+| -------------------- | ---------------- | --------------------------------------------------------------------------- |
+| `Theme.primaryColor` | `colors.primary` | `useTheme().colors.primary`; `@MeoCord({ theme: { colors: { primary } } })` |
+| `Theme.successColor` | `colors.success` | `useTheme().colors.success`                                                 |
+| `Theme.infoColor`    | `colors.info`    | `useTheme().colors.info`                                                    |
+| `Theme.errorColor`   | `colors.danger`  | `useTheme().colors.danger`                                                  |
+| `Theme.warningColor` | `colors.warning` | `useTheme().colors.warning`                                                 |
+
+- **Reading one reads the theme where it is read,** as `useTheme()` does, so a presenter or embed written against `Theme.primaryColor` follows `@MeoCord({ theme })` and `@UseTheme` with no change. Its values are the new defaults above; 4.0's were `#5865F2`, `#28A745`, `#17A2B8`, `#DC3545` and `#FFC107`, which `@MeoCord({ theme })` sets again if you want them.
+- **Assigning one still recolours MeoCord's views,** as it did in 4.0, as a role beneath every theme your app sets, so `@MeoCord({ theme })` and `@UseTheme` win over it. The first assignment to each logs a warning naming the role to set instead. A value that is not a colour is reported and left unset, and never throws.
 
 ---
 

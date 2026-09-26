@@ -256,11 +256,12 @@ export interface PresentedError {
  * @Service()
  * export class BrandPresenter implements ResponsePresenter {
  *   loading() {
- *     return { text: 'Working on it…', emoji: '⏳', color: Theme.primaryColor }
+ *     const { colors, emojis } = useTheme()
+ *     return { text: 'Working on it…', emoji: emojis.loading, color: colors.primary }
  *   }
  *
  *   error(_context: ResponseContext, { message }: PresentedError) {
- *     return { title: 'Something went wrong', text: message, color: Theme.errorColor }
+ *     return { title: 'Something went wrong', text: message, color: useTheme().colors.danger }
  *   }
  * }
  * ```
