@@ -42,7 +42,11 @@ function describeCall(context: ExecutionContext): string {
 async function tellAuthor(context: ExecutionContext, error: UserError, logger: Logger): Promise<void> {
   logger.debug(`Refused ${describeCall(context)}: ${error.message}`)
   const message = context.getMessage()
-  if (!message) return
+  if (message) await replyWithUserError(message, error, logger)
+}
+
+/** Replies to a message with a `UserError`'s message, without pinging; a reply that fails is logged and left. */
+export async function replyWithUserError(message: Message, error: UserError, logger: Logger): Promise<void> {
   try {
     await message.reply({ content: error.message, allowedMentions: { repliedUser: false } })
   } catch (replyError) {
