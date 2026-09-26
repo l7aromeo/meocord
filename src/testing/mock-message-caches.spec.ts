@@ -56,6 +56,19 @@ describe('createMockMessage caches', () => {
     expect(message.client.users.cache.get(OTHER)).toBe(user)
   })
 
+  // Fixed, so a test that writes the id down, or a snapshot of it, passes in any order and on any run
+  it('names the same bot whatever was mocked before it', async () => {
+    vi.resetModules()
+    const first = await import('./mock-interaction.js')
+    first.createMockUser()
+    first.createMockMessage()
+    const afterOthers = first.createMockClient().user!.id
+    vi.resetModules()
+    const second = await import('./mock-interaction.js')
+
+    expect(second.createMockClient().user!.id).toBe(afterOthers)
+  })
+
   it('is sent to the same bot as every mock client, or to the client it is given', () => {
     const client = createMockClient()
 
