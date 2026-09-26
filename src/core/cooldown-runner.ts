@@ -5,7 +5,7 @@ import { CooldownError, type CooldownScope, CooldownStoreError } from '@src/comm
 import { type CooldownBatchVerdict, type CooldownEntry, CooldownStore, MemoryCooldownStore } from '@src/common/cooldown-store.js'
 import { Logger } from '@src/common/logger.js'
 import { type ExecutionContext, type HandlerExecutionContext } from '@src/common/execution-context.js'
-import { sourcePrototype } from '@src/core/guard-runner.js'
+import { perHandler, sourcePrototype, stageClasses } from '@src/core/guard-runner.js'
 
 /** A value `@Cooldown`'s `by` counts under: calls with different values are counted apart. */
 export type CooldownKey = string | number
@@ -40,17 +40,17 @@ export const CLASS_COOLDOWNS = Symbol('class_cooldowns')
 export const METHOD_COOLDOWNS = Symbol('method_cooldowns')
 
 /** The cooldowns on a handler: the controller's, from the class declaring it down, then the method's. */
-export function handlerCooldowns(prototype: object, methodName: string): StoredCooldown[] {
+export const handlerCooldowns = perHandler((prototype: object, methodName: string): readonly StoredCooldown[] => {
   const source = sourcePrototype(prototype, methodName)
   if (!source) return []
-
-  const classLevel: StoredCooldown[] = []
-  for (let current: object | null = prototype; current; current = Object.getPrototypeOf(current)) {
-    classLevel.unshift(...((Reflect.getOwnMetadata(CLASS_COOLDOWNS, current.constructor) as StoredCooldown[]) ?? []))
-    if (current === source) break
-  }
-  return [...classLevel, ...((Reflect.getOwnMetadata(METHOD_COOLDOWNS, source, methodName) as StoredCooldown[]) ?? [])]
-}
+  return [
+    // The innermost class first, as filters are tried
+    ...[...stageClasses(prototype, methodName)]
+      .reverse()
+      .flatMap(cls => (Reflect.getOwnMetadata(CLASS_COOLDOWNS, cls) as StoredCooldown[]) ?? []),
+    ...((Reflect.getOwnMetadata(METHOD_COOLDOWNS, source, methodName) as StoredCooldown[]) ?? []),
+  ]
+})
 
 /** The cooldowns declared on a method itself. */
 export function methodCooldowns(prototype: object, methodName: string): StoredCooldown[] {

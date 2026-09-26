@@ -138,7 +138,7 @@ describe('class-level @UseGuard on inherited handlers', () => {
     await client.emit('interactionCreate', slash('own'))
     await client.emit('interactionCreate', slash('ping'))
 
-    expect(log).toEqual(['grandchild', 'child', 'own', 'grandchild', 'child', 'base class', 'base method', 'ping'])
+    expect(log).toEqual(['grandchild', 'child', 'base class', 'own', 'grandchild', 'child', 'base class', 'base method', 'ping'])
   })
 
   it('runs the same guards, once each, on a direct call and under invoke', async () => {

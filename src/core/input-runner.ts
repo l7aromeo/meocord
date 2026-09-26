@@ -5,7 +5,7 @@ import { type StandardSchemaV1 } from '@src/interface/standard-schema.interface.
 import { ValidationError } from '@src/common/errors.js'
 import { type HandlerExecutionContext } from '@src/common/execution-context.js'
 import { prepareInterceptor } from '@src/core/interceptor-runner.js'
-import { sourcePrototype } from '@src/core/guard-runner.js'
+import { perHandler, sourcePrototype } from '@src/core/guard-runner.js'
 import { consumeCooldowns, handlerCooldowns } from '@src/core/cooldown-runner.js'
 
 export type PipeClass = new (...args: any[]) => PipeInterface
@@ -39,10 +39,10 @@ const asList = (entries: PipeEntry | readonly PipeEntry[]): readonly PipeEntry[]
   Array.isArray(entries) ? entries : [entries as PipeEntry]
 
 /** The validation and pipes that run on a handler's input: `@Validate`'s first, then `@UsePipe`'s. */
-export function handlerInputStages(prototype: object, methodName: string): {
+export const handlerInputStages = perHandler((prototype: object, methodName: string): {
   schema?: StandardSchemaV1
   pipes: { key: string; entry: PipeEntry }[]
-} {
+} => {
   const source = sourcePrototype(prototype, methodName)
   if (!source) return { pipes: [] }
 
@@ -50,7 +50,7 @@ export function handlerInputStages(prototype: object, methodName: string): {
   const inline = Object.entries(validation?.pipes ?? {}).flatMap(([key, entries]) => asList(entries).map(entry => ({ key, entry })))
   const used = (Reflect.getOwnMetadata(METHOD_PIPES, source, methodName) as { key: string; entry: PipeEntry }[]) ?? []
   return { schema: validation?.schema, pipes: [...inline, ...used] }
-}
+})
 
 /** Binds a pipe as a singleton, as interceptors are: one that injects `ExecutionContext` is refused. */
 export function preparePipe(container: Container, entry: PipeEntry): void {

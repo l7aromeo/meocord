@@ -17,7 +17,6 @@ import {
   type CommandMetadata,
 } from '@src/interface/command-decorator.interface.js'
 import { isCustomIdRouted, matchesCommandType } from '@src/util/interaction.util.js'
-import { makeInjectable } from '@src/util/injectable.util.js'
 import { BUILDER_GUILDS } from '@src/decorator/command-builder.decorator.js'
 import { routeSpecificity } from '@src/core/route-specificity.js'
 
@@ -428,28 +427,6 @@ export function Autocomplete<R extends void | Promise<void>>(commandPath: string
 export function getAutocompleteHandlers(controller: any): AutocompleteMetadata[] {
   const handlers: AutocompleteMetadata[] = Reflect.getMetadata(AUTOCOMPLETE_METADATA_KEY, controller) || []
   return [...handlers].sort((a, b) => Number(Boolean(b.optionName)) - Number(Boolean(a.optionName)))
-}
-
-/**
- * Marks a class as a controller, to be listed in `@MeoCord({ controllers })`.
- *
- * @example
- * ```typescript
- * @Controller()
- * export class PingSlashController {
- *   constructor(private pingService: PingService) {}
- *
- *   @Command('ping', PingCommandBuilder)
- *   async ping(interaction: ChatInputCommandInteraction) {
- *     await interaction.reply(await this.pingService.handlePing())
- *   }
- * }
- * ```
- */
-export function Controller() {
-  return function (target: any) {
-    makeInjectable(target)
-  }
 }
 
 /** A pattern with its param names blanked, so two patterns that match the same customIds read the same. */

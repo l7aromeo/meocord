@@ -200,9 +200,10 @@ describe('guards under dispatch', () => {
     await client.emit('messageCreate', message)
     expect(log).toEqual(['A', 'B', 'A', 'skipped'])
 
+    // A direct call runs the chain dispatch runs, so the guards below the skipping decorator run too
     log.length = 0
     await container.get(GuardedController).skip(message)
-    expect(log).toEqual(['A', 'B', 'skipped'])
+    expect(log).toEqual(['A', 'B', 'A', 'skipped'])
   })
 
   it('injects the call context into guards that ask for it, without binding them in the root', async () => {

@@ -413,11 +413,28 @@ describe('@Cooldown, rule by rule', () => {
     expect(methodCooldowns(DailyController.prototype, 'missing')).toEqual([])
   })
 
-  it("applies the class cooldowns from the bound class up to the one declaring the handler, and none above it", () => {
+  it('applies the class cooldowns of every class in the chain, innermost first, however deep the handler is declared', () => {
     @Cooldown({ seconds: 1 })
     class Root {
       rooted() {}
     }
+    @Cooldown({ seconds: 2 })
+    class Middle extends Root {
+      declared() {}
+    }
+    @Cooldown({ seconds: 3 })
+    class Leaf extends Middle {}
+
+    expect(handlerCooldowns(Leaf.prototype, 'declared').map(({ seconds }) => seconds)).toEqual([1, 2, 3])
+    expect(handlerCooldowns(Leaf.prototype, 'rooted').map(({ seconds }) => seconds)).toEqual([1, 2, 3])
+  })
+
+  it('stops at a class that sets inheritStages: false, for the handlers it declares', () => {
+    @Cooldown({ seconds: 1 })
+    class Root {
+      rooted() {}
+    }
+    @Controller({ inheritStages: false })
     @Cooldown({ seconds: 2 })
     class Middle extends Root {
       declared() {}

@@ -5,7 +5,7 @@ import { type CallHandler, type InterceptorInterface } from '@src/interface/inde
 import { createMockInteraction, MeoCordTestingModule } from '@src/testing/index.js'
 
 describe('class interceptors on an inherited handler', () => {
-  it('come from the class declaring the handler down, never from a class above it', async () => {
+  it('come from every class in the chain, unless the declaring class opts out', async () => {
     const log: string[] = []
 
     @Interceptor()
@@ -27,10 +27,18 @@ describe('class interceptors on an inherited handler', () => {
       }
     }
 
-    await MeoCordTestingModule.create({ controllers: [Parent] })
-      .compile()
-      .invoke(Parent, 'plain', createMockInteraction(ChatInputCommandInteraction))
+    @Controller({ inheritStages: false })
+    class Standalone extends Grandparent {
+      @Command('alone', CommandType.SLASH)
+      async alone(_interaction: ChatInputCommandInteraction) {
+        log.push('alone')
+      }
+    }
 
-    expect(log).toEqual(['handler'])
+    const module = MeoCordTestingModule.create({ controllers: [Parent, Standalone] }).compile()
+    await module.invoke(Parent, 'plain', createMockInteraction(ChatInputCommandInteraction))
+    await module.invoke(Standalone, 'alone', createMockInteraction(ChatInputCommandInteraction))
+
+    expect(log).toEqual(['grandparent interceptor', 'handler', 'alone'])
   })
 })

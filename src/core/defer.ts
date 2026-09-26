@@ -1,6 +1,6 @@
 import 'reflect-metadata'
 import { type InteractionResponse } from '@src/common/response/response-state.js'
-import { sourcePrototype } from '@src/core/guard-runner.js'
+import { perHandler, sourcePrototype } from '@src/core/guard-runner.js'
 import { getAutocompleteHandlers, getMessageHandlers, getReactionHandlers } from '@src/decorator/controller.decorator.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
 
@@ -32,10 +32,10 @@ export const AUTO_DEFER_LIMIT_MS = 2500
 export const DEFER_OPTIONS = Symbol('defer_options')
 
 /** The `@Defer` options of a handler, read where the handler is declared. */
-export function handlerDefer(prototype: object, methodName: string): DeferOptions | undefined {
+export const handlerDefer = perHandler((prototype: object, methodName: string): DeferOptions | undefined => {
   const source = sourcePrototype(prototype, methodName)
   return source ? (Reflect.getOwnMetadata(DEFER_OPTIONS, source, methodName) as DeferOptions | undefined) : undefined
-}
+})
 
 /** The kind of non-interaction handler a method is, if any: `@Defer` cannot apply to one. */
 export function nonInteractionHandler(prototype: object, methodName: string): string | undefined {
