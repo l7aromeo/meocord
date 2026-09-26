@@ -51,7 +51,12 @@ export interface MessageStarts {
   prefixes: readonly string[]
   /** The bot's user id, when a mention of it counts as a start. */
   mention?: string
+  /** Whether the message was sent in a server, for the routes whose scope it fits; unset fits every scope. */
+  inGuild?: boolean
 }
+
+/** Whether a route's scope lets it run where the message was sent. */
+const fitsScope = (scope: MessageScope, inGuild: boolean | undefined) => inGuild === undefined || scope === 'any' || (scope === 'guild') === inGuild
 
 const PARAM = /^\{(\w+)(?::([\w-]+(?:\|[\w-]+)*))?(\.\.\.)?(\?)?\}$/
 const FLAG = /^\{--(\w+)(?::([\w-]+(?:\|[\w-]+)*))?(\?)?\}$/
@@ -146,6 +151,8 @@ function sameMessages(a: MessageRoute, b: MessageRoute): boolean {
   const startsOf = (route: MessageRoute) =>
     route.prefix === undefined ? 'app' : route.prefix === false ? 'none' : JSON.stringify([...route.prefix].sort())
   if (startsOf(a) !== startsOf(b) || a.tokens.length !== b.tokens.length) return false
+  // One for servers and one for direct messages never both fit a message
+  if ((a.scope === 'guild' && b.scope === 'dm') || (a.scope === 'dm' && b.scope === 'guild')) return false
   // A case-insensitive word matches every message the case-sensitive one does
   const exact = a.caseSensitive && b.caseSensitive
   return a.tokens.every((token, i) => {
@@ -285,7 +292,7 @@ export function usesAppPrefix(routes: readonly MessageRoute[]): boolean {
  */
 export async function messageStarts(options: MessageCommandOptions, message: Message, botId: string | undefined): Promise<MessageStarts> {
   const prefix = typeof options.prefix === 'function' ? await options.prefix(message) : options.prefix
-  return { prefixes: prefixList(prefix), mention: options.mention ? botId : undefined }
+  return { prefixes: prefixList(prefix), mention: options.mention ? botId : undefined, inGuild: message.guildId !== null && message.guildId !== undefined }
 }
 
 /**
@@ -545,8 +552,11 @@ export function matchMessageRoute(
     if (!words) split.set(rest, (words = splitWords(rest)))
     return words
   }
-  // One shape for every candidate, so the engine keeps this code monomorphic
-  let best: { rank: number; words: { value: string; start: number }[]; rest: string; flags: readonly GivenFlag[]; cuts: readonly number[] } | undefined
+  // One shape for every candidate, so the engine keeps this code monomorphic. A route whose scope does not fit
+  // runs only when none that fits matches, so dispatch can say where it works
+  type Candidate = { rank: number; words: { value: string; start: number }[]; rest: string; flags: readonly GivenFlag[]; cuts: readonly number[] }
+  let best: Candidate | undefined
+  let outside: Candidate | undefined
   for (const group of index.groups) {
     const rest =
       group.prefix === false
@@ -556,7 +566,11 @@ export function matchMessageRoute(
     const words = wordsOf(rest)
     const found: number[] = []
     reach(group.root, words, 0, rest, NONE, group.caseSensitive, found)
-    for (const rank of found) if (!best || rank < best.rank) best = { rank, words, rest, flags: NONE, cuts: NONE }
+    for (const rank of found) {
+      if (fitsScope(routes[rank].scope, starts.inGuild)) {
+        if (!best || rank < best.rank) best = { rank, words, rest, flags: NONE, cuts: NONE }
+      } else if (!outside || rank < outside.rank) outside = { rank, words, rest, flags: NONE, cuts: NONE }
+    }
     // Only a message naming a command with flags is read for them, so no message pays for another's flags
     const flagged = group.flagged
     if (!flagged || !namesFlaggedCommand(group, words[0])) continue
@@ -564,16 +578,22 @@ export function matchMessageRoute(
     const scanned = rest.includes('--') ? splitFlagWords(rest) : { words, flags: NONE, cuts: NONE }
     found.length = 0
     reach(flagged, scanned.words, 0, rest, scanned.cuts, group.caseSensitive, found)
-    for (const rank of found) if (!best || rank < best.rank) best = { rank, words: scanned.words, rest, flags: scanned.flags, cuts: scanned.cuts }
+    for (const rank of found) {
+      const candidate = { rank, words: scanned.words, rest, flags: scanned.flags, cuts: scanned.cuts }
+      if (fitsScope(routes[rank].scope, starts.inGuild)) {
+        if (!best || rank < best.rank) best = candidate
+      } else if (!outside || rank < outside.rank) outside = candidate
+    }
   }
-  if (!best) return undefined
-  const route = routes[best.rank]
-  const params = paramsOf(route, best.words, best.rest, best.cuts)
-  for (const { name, value } of best.flags) {
+  const chosen = best ?? outside
+  if (!chosen) return undefined
+  const route = routes[chosen.rank]
+  const params = paramsOf(route, chosen.words, chosen.rest, chosen.cuts)
+  for (const { name, value } of chosen.flags) {
     const declared = route.flags.find(flag => wordKey(flag.flag, route.caseSensitive) === wordKey(name, route.caseSensitive))
     if (declared) params[declared.flag] = value ?? ''
   }
-  return { route, params, start: text.slice(0, text.length - best.rest.length) }
+  return { route, params, start: text.slice(0, text.length - chosen.rest.length) }
 }
 
 /**
@@ -593,7 +613,9 @@ export function matchMessageCommand(
   if (first === content.length || !mayStart(index, starts, content[first])) return undefined
   const text = content.trim()
 
+  // The command's usage comes from a route whose scope fits, else from one whose reply says where it works
   let best: { rank: number; start: string; given: number } | undefined
+  let outside: { rank: number; start: string; given: number } | undefined
   for (const group of index.groups) {
     if (group.prefix === false) continue
     const rest = afterStart(text, group.prefix ?? starts.prefixes, starts.mention, group.caseSensitive)
@@ -611,12 +633,17 @@ export function matchMessageCommand(
       const words = routes[rank].flags.length > 0 ? positional : plain
       const command = commandWordsOf(routes[rank].tokens)
       if (command.every((word, i) => words[i] && wordKey(words[i].value, group.caseSensitive) === wordKey(word, group.caseSensitive))) {
-        best = { rank, start: text.slice(0, text.length - rest.length), given: words.length - command.length }
-        break
+        const named = { rank, start: text.slice(0, text.length - rest.length), given: words.length - command.length }
+        if (fitsScope(routes[rank].scope, starts.inGuild)) {
+          best = named
+          break
+        }
+        if (!outside || rank < outside.rank) outside = named
       }
     }
   }
-  return best && { route: routes[best.rank], start: best.start, given: best.given }
+  const chosen = best ?? outside
+  return chosen && { route: routes[chosen.rank], start: chosen.start, given: chosen.given }
 }
 
 /**

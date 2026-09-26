@@ -338,6 +338,27 @@ describe('message route ranking', () => {
     expect(build('whois {--in:channel?}', { scope: 'dm' })).toThrow(/scope is 'dm', but \{--in:channel\} is found only in a server/)
   })
 
+  it('keeps handlers of one pattern in scopes that do not overlap, and picks by where the message was sent', () => {
+    @Controller()
+    class Help {
+      @MessageHandler('help', { scope: 'guild' })
+      guild() {}
+
+      @MessageHandler('help', { scope: 'dm' })
+      dm() {}
+    }
+    @Controller()
+    class Everywhere {
+      @MessageHandler('help')
+      any() {}
+    }
+    const routes = buildMessageRoutes([Help])
+    const reach = (inGuild: boolean | undefined) => matchMessageRoute(routes, 'help', { ...RAW, inGuild })?.route.method
+
+    expect([reach(true), reach(false)]).toEqual(['guild', 'dm'])
+    expect(() => buildMessageRoutes([Help, Everywhere])).toThrow(/match the same messages/)
+  })
+
   it('leaves listeners out of the table', () => {
     @Controller()
     class Listener {
