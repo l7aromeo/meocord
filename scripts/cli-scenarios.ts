@@ -487,6 +487,22 @@ const scenarios: Scenario[] = [
     expect: { code: 0, says: ['MEOCORD_LOG_LEVEL is "loud", which is not a log level'], creates: ['dist/main.js'] },
   },
   {
+    name: "the CLI's own lines ignore the logLevel a previous build left in dist",
+    tier: 'fast',
+    files: { '.env': 'DISCORD_TOKEN=\n', 'meocord.config.ts': configWith("logLevel: 'silent',"), dist: null },
+    before: [['build', '--prod']],
+    argv: ['build', '--prod'],
+    expect: { code: 0, says: ['Production build completed successfully'], creates: ['dist/main.js'] },
+  },
+  {
+    name: 'the built bot prints from its logLevel',
+    tier: 'fast',
+    files: { '.env': 'DISCORD_TOKEN=\n', 'meocord.config.ts': configWith("logLevel: 'error',"), dist: null },
+    before: [['build', '--prod']],
+    argv: ['start', '--prod'],
+    expect: { code: 1, says: ['Discord token is missing'], never: ['Starting application'] },
+  },
+  {
     name: 'build refuses a config of the wrong shape, listing every problem',
     tier: 'fast',
     windows: true,

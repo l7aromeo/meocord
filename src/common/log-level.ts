@@ -1,4 +1,5 @@
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
+import { isBuiltApplication } from '@src/util/bundle-entry.util.js'
 import { type MeoCordConfig } from '@src/interface/index.js'
 
 /** A `logLevel`: the least severe line `Logger` prints. */
@@ -18,12 +19,13 @@ let rejectedEnv: string | undefined
 /**
  * The rank a line needs to print. Resolved on first use and kept, so logging reads neither the
  * environment nor the config again: `MEOCORD_LOG_LEVEL`, then `logLevel`, then `debug` in development
- * and `log` otherwise.
+ * and `log` otherwise. `logLevel` applies to the built bot only; the CLI and tests would otherwise read
+ * it from whatever `dist` a previous build left.
  */
 export function logThreshold(): number {
   if (threshold === undefined) {
     // The config first: loading it runs its `import 'dotenv/config'`, which may set the variable
-    const configured = loadMeoCordConfig()?.logLevel
+    const configured = isBuiltApplication() ? loadMeoCordConfig()?.logLevel : undefined
     const raw = process.env[LOG_LEVEL_ENV]
     // An environment variable is often written in capitals, DEBUG for debug
     const fromEnv = raw?.toLowerCase()
