@@ -361,6 +361,30 @@ describe('TestingModule.invoke with typed message params', () => {
     )
   })
 
+  it('rejects as not reaching the handler a message dispatch sends to a more specific one', async () => {
+    @Controller()
+    class Config {
+      @MessageHandler('config {key}')
+      async show(_message: Message, params: { key: string }) {
+        received.push(params)
+      }
+
+      @MessageHandler('config set {key} {value...}')
+      async set(_message: Message, params: { key: string; value: string }) {
+        received.push(params)
+      }
+    }
+    @MeoCord({ controllers: [Config], clientOptions: { intents: [] }, messages: { prefix: '!' } })
+    class App {}
+    const module = MeoCordTestingModule.create({ controllers: [Config], app: App }).compile()
+
+    await expect(module.invoke(Config, 'show', createMockMessage({ content: '!config set prefix ?' }))).rejects.toThrow(
+      "message '!config set prefix ?' does not reach Config.show: dispatch runs Config.set.",
+    )
+    await expect(module.invoke(Config, 'show', createMockMessage({ content: '!config' }))).rejects.toThrow('Usage: !config <key>')
+    expect(received).toEqual([])
+  })
+
   it("lets the handler's filters answer a missing param, as they do in dispatch", async () => {
     const caught: string[] = []
     @Catch(MessageUsageError)

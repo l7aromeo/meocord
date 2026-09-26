@@ -611,14 +611,15 @@ export function matchMessageCommand(
  * them: `undefined` for a listener, which takes none; `{}` for a message without content; otherwise
  * what the handler's pattern captures, with the route and the start the message used. A message that
  * names the command after a prefix or mention without fitting its pattern gives the route, the start and
- * `given`, the words after the command words, as dispatch answers it; any other gives why it does not
- * reach the handler.
+ * `given`, the words after the command words, when dispatch would answer it on this handler among
+ * `controllers`; any other gives why it does not reach the handler.
  */
 export async function messageParamsFor(
   controllerClass: ControllerClass,
   methodName: string,
   message: Message,
   options: MessageCommandOptions,
+  controllers: readonly ControllerClass[] = [controllerClass],
 ): Promise<{ params: Record<string, string>; route?: MessageRoute; start?: string; given?: number } | { mismatch: string } | undefined> {
   // The handler's pattern and its aliases, ranked as dispatch ranks them
   const routes = buildMessageRoutes([controllerClass], options).filter(candidate => candidate.method === methodName)
@@ -629,8 +630,14 @@ export async function messageParamsFor(
   const starts = await messageStarts(options, message, typeof botId === 'string' ? botId : undefined)
   const matched = matchMessageRoute(routes, message.content, starts)
   if (matched) return { params: matched.params, route: matched.route, start: matched.start }
-  const named = matchMessageCommand(routes, message.content, starts)
-  if (named) return { params: {}, route: named.route, start: named.start, given: named.given }
+  // A usage error only where dispatch gives one: no handler's pattern fits, and this one's words are named
+  const all = buildMessageRoutes(controllers, options)
+  const target = matchMessageRoute(all, message.content, starts) ?? matchMessageCommand(all, message.content, starts)
+  if (target && (target.route.controllerClass !== controllerClass || target.route.method !== methodName)) {
+    const other = `${target.route.controllerClass.name}.${target.route.method}`
+    return { mismatch: `message '${message.content}' does not reach ${controllerClass.name}.${methodName}: dispatch runs ${other}.` }
+  }
+  if (target && 'given' in target) return { params: {}, route: target.route, start: target.start, given: target.given }
   const pattern = routes.find(route => !route.aliasOf)?.pattern ?? routes[0].pattern
   return { mismatch: `message '${message.content}' does not match ${controllerClass.name}.${methodName}'s pattern '${pattern}'.` }
 }
