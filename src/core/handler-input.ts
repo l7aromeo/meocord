@@ -8,6 +8,7 @@ import {
   UserSelectMenuInteraction,
 } from 'discord.js'
 import { getCommandMap } from '@src/decorator/controller.decorator.js'
+import { decodeRouteParams } from '@src/common/route.js'
 import {
   hasCustomId,
   isCustomIdRouted,
@@ -92,7 +93,7 @@ export function routeParamsFor(prototype: object, methodName: string, interactio
     for (const meta of metaList) {
       if (meta.methodName !== methodName || !meta.regex || !matchesCommandType(meta.type, interaction)) continue
       const match = meta.regex.exec(interaction.customId)
-      if (match) return { ...match.groups }
+      if (match) return decodeRouteParams(match.groups)
     }
   }
   return {}

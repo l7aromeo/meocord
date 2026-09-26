@@ -59,6 +59,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'getInstallContext',
     'isExplainedError',
     'respond',
+    'route',
   ],
   'meocord/enum': ['CommandType', 'MetadataKey', 'ReactionHandlerAction'],
   'meocord/testing': [

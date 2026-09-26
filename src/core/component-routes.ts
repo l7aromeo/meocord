@@ -1,6 +1,7 @@
 import { type CommandType } from '@src/enum/index.js'
 import { type CommandMetadata } from '@src/interface/index.js'
 import { findAmbiguousRoutes, getCommandMap, patternShape } from '@src/decorator/controller.decorator.js'
+import { decodeRouteParams } from '@src/common/route.js'
 
 export type ControllerClass = new (...args: any[]) => any
 
@@ -69,7 +70,7 @@ export function matchComponentRoute(
   for (const route of routes) {
     if (!acceptsType(route.meta.type)) continue
     const match = route.meta.regex!.exec(customId)
-    if (match) return { route, params: { ...match.groups } }
+    if (match) return { route, params: decodeRouteParams(match.groups) }
   }
   return undefined
 }
