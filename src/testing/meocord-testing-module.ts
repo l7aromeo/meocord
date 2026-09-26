@@ -192,7 +192,7 @@ export class TestingModule {
   async close(): Promise<void> {
     this.closing ??= (async () => {
       // A close during init waits for the hooks it started, so it shuts down whatever they readied
-      await this.readying?.catch(() => {})
+      await this.readying?.catch(() => undefined)
       const failures: { name: string; error: unknown }[] = []
       await runShutdownHooks(this.readied, (name, error) => failures.push({ name, error }))
       throwFailures('onShutdown', failures)
@@ -203,12 +203,8 @@ export class TestingModule {
   private async runReady(client: Client<true>, primary: boolean): Promise<void> {
     const failures: { name: string; error: unknown }[] = []
     const failed = (unit: LifecycleUnit, error: unknown) => failures.push({ name: unit.name, error })
-    await runReadyHooks(this.container, this.lifecycle, client, { primary }, this.readied, {
-      resolveFailed: failed,
-      hookFailed: failed,
-      // The failed dependency's own error is what the test sees
-      dependsOnFailed: () => {},
-    })
+    // No warning for a hook whose dependency failed: the test sees the dependency's own error
+    await runReadyHooks(this.container, this.lifecycle, client, { primary }, this.readied, { resolveFailed: failed, hookFailed: failed })
     throwFailures('onReady', failures)
   }
 
