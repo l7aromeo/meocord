@@ -1244,6 +1244,29 @@ declare module 'meocord/interface' {
 - **Some names are reserved.** MeoCord adds roles only from `ReservedThemeRole`: `accent`, `muted`, `subtle`, `secondary`, `tertiary`, `attention`, `severe`, `error`, `done`, `brand`, `link` and `premium`, in any group. An app that takes one gets a type error at its root theme naming each, `{ 'MeoCord reserves these theme roles; rename yours': 'colors.accent' }`, rather than a clash when MeoCord adds it. Any other name is yours, and MeoCord never takes it.
 - **A theme kept in a variable** is not checked for unknown keys, as TypeScript checks only object literals; write it with `satisfies ThemeOverride` to have it checked.
 
+### Defaults
+
+| Role      | Colour    | Emoji | Button style            |
+| --------- | --------- | ----- | ----------------------- |
+| `primary` | `#7680F4` | —     | `ButtonStyle.Primary`   |
+| `neutral` | `#888B95` | —     | `ButtonStyle.Secondary` |
+| `success` | `#26A042` | ✅    | `ButtonStyle.Success`   |
+| `warning` | `#B08400` | ⚠️    | —                       |
+| `danger`  | `#E3606D` | ⛔    | `ButtonStyle.Danger`    |
+| `info`    | `#1699AE` | ℹ️    | —                       |
+| `loading` | —         | ⏳    | —                       |
+
+The colours keep the hues of 4.0's `Theme`, with their lightness moved until each gives at least 3:1 against every surface an embed's stripe or a container's accent sits on in Discord's light, dark, darker and midnight themes, the contrast WCAG 2.1 asks of a graphic that carries meaning. A test holds every default to it, so a default that changes still passes on both light and dark.
+
+### Valid tokens
+
+- **A colour** is a 6-digit hex string such as `'#7680F4'` (with or without `#`), a whole number from `0` to `0xFFFFFF`, an `[r, g, b]` tuple of whole numbers from 0 to 255, or a discord.js colour name such as `'Blurple'`. A 3-digit hex string such as `'#FFF'` is not one.
+- **An emoji** is one unicode emoji, including flags, keycaps, skin tones and joined sequences such as `'👨‍👩‍👧'`, or a custom one written `<:name:id>` or `<a:name:id>`. A shortcode such as `':smile:'` is not one; a custom emoji must also be one the bot may use, such as an emoji the application owns.
+- **A button style** is `ButtonStyle.Primary`, `Secondary`, `Success` or `Danger`.
+- **A role MeoCord reserves** is refused in any group, in JavaScript as in TypeScript.
+
+Each problem is named with its key path and what to give instead, such as `theme.colors.primary: '#GGG' is not a colour: give a 6-digit hex string such as '#7680F4', …`. MeoCord's groups are checked whatever roles an app added to them; a group of the app's own is the app's to check.
+
 ---
 
 ## How a handler runs
