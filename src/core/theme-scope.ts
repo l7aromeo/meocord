@@ -88,6 +88,17 @@ export function setLegacyThemeLayer(layer: ThemeOverride | undefined): void {
 
 // The theme outside any call: the app the process runs, once it has started
 let ambient: { owner: object; theme: () => ResolvedTheme } | undefined
+let ambientVersion = 0
+
+/** The number of times the app read outside a call has changed, so each app decides again whether its calls need a scope. */
+export function ambientThemeVersion(): number {
+  return ambientVersion
+}
+
+/** Whether some app's theme is the one read outside a call. */
+export function hasAmbientTheme(): boolean {
+  return ambient !== undefined
+}
 
 /**
  * Makes an app's theme the one read outside a call, when no other app has: a bot runs one app, and code it runs
@@ -96,8 +107,16 @@ let ambient: { owner: object; theme: () => ResolvedTheme } | undefined
  */
 export function claimAmbientTheme(owner: object, theme: () => ResolvedTheme): boolean {
   if (ambient && ambient.owner !== owner) return false
+  if (!ambient) ambientVersion++
   ambient = { owner, theme }
   return true
+}
+
+/** Gives up the theme read outside a call, when `owner` has it: its start failed, or it has stopped. */
+export function releaseAmbientTheme(owner: object): void {
+  if (ambient?.owner !== owner) return
+  ambient = undefined
+  ambientVersion++
 }
 
 /** Whether `owner` is the app whose theme is read outside a call. */
