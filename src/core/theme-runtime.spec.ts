@@ -130,6 +130,34 @@ describe('the layers a handler\'s theme is built from', () => {
     expect(seen).toEqual(['#000005'])
   })
 
+  it('freezes only the plain objects and arrays of a theme, leaving what else an app keeps in it as it is', async () => {
+    class Palette {
+      series = ['#000001']
+    }
+    const charts = { palette: new Palette(), lookup: new Map([['a', 1]]), plain: { axis: '#000002', steps: [1, 2] } }
+
+    @Controller()
+    class Chart {
+      @Command('chart', CommandType.BUTTON)
+      chart() {
+        const { charts: read } = useTheme() as unknown as { charts: typeof charts }
+        seen.push({
+          palette: Object.isFrozen(read.palette),
+          series: Object.isFrozen(read.palette.series),
+          lookup: Object.isFrozen(read.lookup),
+          plain: Object.isFrozen(read.plain),
+          steps: Object.isFrozen(read.plain.steps),
+        })
+      }
+    }
+    @MeoCord({ controllers: [Chart], clientOptions: { intents: [] }, theme: { charts } as never })
+    class App {}
+
+    await MeoCordTestingModule.create({ app: App, controllers: [Chart] }).compile().invoke(Chart, 'chart', press('chart'))
+
+    expect(seen).toEqual([{ palette: false, series: false, lookup: false, plain: true, steps: true }])
+  })
+
   it('never freezes the object an app gives @UseTheme', () => {
     const brand = { colors: { primary: '#000006' } } as const
 

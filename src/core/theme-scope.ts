@@ -18,9 +18,12 @@ const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   return prototype === Object.prototype || prototype === null
 }
 
-/** Freezes a value and every plain object in it; arrays are frozen too, as one token. */
+/**
+ * Freezes the plain objects and arrays in a theme, at every depth: the parts {@link copyLayer} copied. Anything else,
+ * such as a class instance or a `Map` an app keeps in a group of its own, is the app's and is left as it is.
+ */
 function deepFreeze<T>(value: T): T {
-  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+  if ((Array.isArray(value) || isPlainObject(value)) && !Object.isFrozen(value)) {
     for (const inner of Object.values(value)) deepFreeze(inner)
     Object.freeze(value)
   }
