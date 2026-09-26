@@ -238,6 +238,15 @@ function assertInputStagesOnInteractions(controller: new (...args: any[]) => unk
   }
 }
 
+/** What a call the guards let through can do before its arguments are fetched. */
+export interface AdmittedCall {
+  /** Throws the error a cooldown would refuse the call with, without counting the call. */
+  checkCooldowns(): Promise<void>
+}
+
+// Cooldowns are counted once the input is valid, after the fetch; nothing is checked ahead of it
+const ADMITTED: AdmittedCall = { checkCooldowns: () => Promise.resolve() }
+
 /** How a pipeline run ends an error: the fallback to answer one no filter handles, if any. */
 export interface RunOptions {
   /** Answers an error no filter handled. Without it, such an error rejects the call. */
@@ -247,6 +256,12 @@ export interface RunOptions {
    * inside the filters: a message's typed params resolved, or a usage error thrown for the filters.
    */
   resolveArgs?: (args: unknown[]) => Promise<unknown[]>
+  /**
+   * Turns the arguments the guards let through into the ones the interceptors and the handler receive,
+   * inside the filters: what a message's params name, fetched from Discord. It never runs for a call the
+   * guards deny, so a caller they refuse costs no request.
+   */
+  fetchArgs?: (args: unknown[], admitted: AdmittedCall) => Promise<unknown[]>
   /** What the call handles, when its first argument cannot say, as for an event whose first argument is a message. */
   type?: ExecutionContextType
   /**
@@ -384,6 +399,10 @@ export async function runHandler(
       outcome = 'denied'
       await response?.abandon()
       return { ran: false }
+    }
+    if (options.fetchArgs) {
+      args = await options.fetchArgs(args, ADMITTED)
+      currentArgs.current = args
     }
 
     const handler = async () => {
