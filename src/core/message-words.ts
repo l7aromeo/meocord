@@ -114,20 +114,19 @@ export function splitFlagWords(text: string): FlagWords {
 }
 
 /**
- * The text from `start` to the end, as a rest param takes it: without the flags `cuts` marks, the text
- * around each kept as it is and joined by a space.
+ * The text from `start` to the end, as a rest param takes it: each flag `cuts` marks left out with the space
+ * before it, and the rest kept as typed, line breaks included.
  */
 export function restFrom(text: string, start: number, cuts: readonly number[]): string {
   if (cuts.length === 0 || cuts[cuts.length - 1] <= start) return text.slice(start).trimEnd()
-  const parts: string[] = []
+  let rest = ''
   let from = start
   for (let c = 0; c < cuts.length; c += 2) {
     if (cuts[c + 1] <= start) continue
-    const part = text.slice(from, cuts[c]).trim()
-    if (part) parts.push(part)
+    let end = cuts[c]
+    while (end > from && isSpace(text, end - 1)) end--
+    rest += text.slice(from, end)
     from = cuts[c + 1]
   }
-  const last = text.slice(from).trim()
-  if (last) parts.push(last)
-  return parts.join(' ')
+  return (rest + text.slice(from)).trimEnd()
 }

@@ -88,6 +88,8 @@ describe('message patterns', () => {
 
   it('leaves the flags out of a rest, keeps a quoted flag as text, and reads no flags for a pattern without any', () => {
     expect(capture('note {text...} {--pin}', 'note buy  milk --pin now')).toEqual({ text: 'buy  milk now', pin: '' })
+    expect(capture('note {text...} {--pin}', 'note line one\n--pin\nline two')).toEqual({ text: 'line one\nline two', pin: '' })
+    expect(capture('note {text...} {--pin}', 'note a\n\nb --pin')).toEqual({ text: 'a\n\nb', pin: '' })
     expect(capture('note {text...} {--pin}', 'note "--pin" is a flag')).toEqual({ text: '"--pin" is a flag' })
     expect(capture('say {text...}', 'say --loud hello')).toEqual({ text: '--loud hello' })
     expect(capture('echo {word}', 'echo --x')).toEqual({ word: '--x' })
@@ -127,6 +129,12 @@ describe('message patterns', () => {
       purge() {}
     }
     expect(matchMessageRoute(buildMessageRoutes([Purge]), '!  purge --bots 5', { prefixes: ['!'] })?.start).toBe('!  ')
+  })
+
+  it('refuses a flag whose name a message could not give, one not starting with a letter', () => {
+    expect(() => parseMessagePattern('auth {--2fa}')).toThrow(/\{--2fa\}: a flag's name starts with a letter/)
+    expect(() => parseMessagePattern('auth {--_x:int?}')).toThrow(/\{--_x:int\?\}: a flag's name starts with a letter/)
+    expect(() => parseMessagePattern('auth {--x2_y}')).not.toThrow()
   })
 
   it('refuses an untyped flag marked optional, a name a param and a flag share, and a pattern of flags alone', () => {

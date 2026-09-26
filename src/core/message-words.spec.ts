@@ -37,10 +37,13 @@ describe('splitFlagWords', () => {
 })
 
 describe('restFrom', () => {
-  it('cuts the rest from a word, leaving out the flags and joining what is around them with a space', () => {
+  it('cuts the rest from a word, leaving out each flag with the space before it and keeping the rest as typed', () => {
     const text = 'note buy  milk --pin now --x=1'
     const { words, cuts } = splitFlagWords(text)
     expect(restFrom(text, words[1].start, cuts)).toBe('buy  milk now')
+    const lines = 'say one\n--loud\ntwo\n\nthree --x'
+    const split = splitFlagWords(lines)
+    expect(restFrom(lines, split.words[1].start, split.cuts)).toBe('one\ntwo\n\nthree')
     expect(restFrom(text, words[3].start, cuts)).toBe('now')
     expect(restFrom('say   "spaced  out"  words  ', 6, [])).toBe('"spaced  out"  words')
   })
@@ -48,7 +51,8 @@ describe('restFrom', () => {
 
 /*
  * A reference scan that rebuilds the text without its flags before splitting it into words: the plain
- * definition the single pass must agree with, for the flags, the words and the rest from each word.
+ * definition the single pass must agree with, for the flags and the words. A word's rest is the text from
+ * it with each later flag and the space before it removed.
  */
 function rebuiltScan(text: string) {
   const isSpace = (at: number) => /\s/.test(text[at] ?? '')
@@ -60,6 +64,8 @@ function rebuiltScan(text: string) {
     return end < text.length ? end : -1
   }
   const flags: { name: string; value: string | undefined }[] = []
+  const spans: [number, number][] = []
+  const starts: number[] = []
   const kept: string[] = []
   let from = 0
   let i = 0
@@ -71,6 +77,7 @@ function rebuiltScan(text: string) {
     const start = i
     const quoted = quoteEnd(i)
     if (quoted !== -1) {
+      starts.push(start)
       i = quoted + 1
       continue
     }
@@ -90,16 +97,23 @@ function rebuiltScan(text: string) {
         }
       }
       flags.push({ name: flag[1], value })
+      spans.push([start, j])
       kept.push(text.slice(from, start))
       from = i = j
       continue
     }
+    starts.push(start)
     while (i < text.length && !isSpace(i)) i++
   }
   kept.push(text.slice(from))
   const stripped = flags.length === 0 ? text : kept.map(part => part.trim()).filter(Boolean).join(' ')
   const words = splitWords(stripped)
-  return { flags, words: words.map(word => word.value), rests: words.map(word => stripped.slice(word.start).trimEnd()) }
+  const restOf = (from: number) =>
+    spans
+      .filter(([s]) => s >= from)
+      .reduceRight((rest, [s, e]) => rest.slice(0, s - from).replace(/\s+$/, '') + rest.slice(e - from), text.slice(from))
+      .trimEnd()
+  return { flags, words: words.map(word => word.value), rests: starts.map(restOf) }
 }
 
 /** A small seeded generator (mulberry32), so a failure reproduces from its seed. */
