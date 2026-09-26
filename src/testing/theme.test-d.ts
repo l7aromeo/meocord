@@ -1,5 +1,5 @@
 import { describe, expectTypeOf, it } from 'vitest'
-import { type DeepReadonly, type MeoCordTheme, type ThemeResolvers } from '@src/interface/index.js'
+import { type DeepReadonly, type MeoCordTheme, type ThemeOverride, type ThemeResolvers } from '@src/interface/index.js'
 import { type ThemeCache } from '@src/common/index.js'
 import { createMockTheme, MeoCordTestingModule, type TestingModule, type TestingModuleBuilder, withTheme } from '@src/testing/index.js'
 
@@ -29,6 +29,7 @@ describe('the builder and the module', () => {
     expectTypeOf(builder.overrideTheme({ colors: { primary: '#7680F4' } })).toEqualTypeOf<TestingModuleBuilder>()
     expectTypeOf(builder.overrideThemeFor({ guild: async () => undefined })).toEqualTypeOf<TestingModuleBuilder>()
     expectTypeOf(builder.overrideThemeFor).parameter(0).toEqualTypeOf<ThemeResolvers | undefined>()
+    expectTypeOf(builder.overrideTheme).parameter(0).toEqualTypeOf<ThemeOverride>()
     expectTypeOf<TestingModule['themeCache']>().toEqualTypeOf<ThemeCache>()
     // @ts-expect-error a role no group has
     builder.overrideTheme({ colors: { primry: '#7680F4' } })
