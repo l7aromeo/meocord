@@ -265,7 +265,13 @@ async function themeChecks(bot: Bot, helper: DiscordApi): Promise<void> {
 /** The helper bot posts a message and reacts to it, and the smoke app must see both. */
 async function helperChecks(bot: Bot): Promise<void> {
   if (!helperToken || !channelId) {
-    record('skip', 'a message, a reaction and the theme showcase from the helper bot', 'set MEOCORD_E2E_CHANNEL_ID and MEOCORD_E2E_HELPER_BOT_TOKEN to run them')
+    const name = 'a message, a reaction and the theme showcase from the helper bot'
+    // Optional on a contributor's machine; in CI a skip would pass the run with these checks never run
+    if (process.env.CI === 'true') {
+      record('FAIL', name, 'helper bot not configured: set MEOCORD_E2E_HELPER_BOT_TOKEN and MEOCORD_E2E_CHANNEL_ID in the e2e environment')
+    } else {
+      record('skip', name, 'set MEOCORD_E2E_CHANNEL_ID and MEOCORD_E2E_HELPER_BOT_TOKEN to run them')
+    }
     return
   }
 

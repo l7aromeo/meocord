@@ -236,7 +236,9 @@ can read the repository and nothing more, requests no OIDC token and keeps no gi
 share the `discord-e2e` concurrency group, so only one logs in as the test bot at a time, and a
 running check is never cancelled for another. It is not a required check, so an outage at Discord blocks
 no merge. Pull requests from forks get no secrets: for them a separate job explains the skip. Without
-the environment's secrets, the job passes with the skip message.
+the environment's secrets, the job passes with the skip message. With the test bot's but without the
+helper bot's, the helper bot's checks fail there, where a contributor's run skips them, so the job never
+passes with them left unrun.
 
 ## Changesets and releases
 
