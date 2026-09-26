@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'child_process'
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
+import { stripVTControlCharacters } from 'util'
 import { createRsbuild } from '@rsbuild/core'
 import { vi } from 'vitest'
 import { createRsbuildConfig } from '@src/build/rsbuild-config.js'
@@ -21,7 +22,7 @@ debug('bot')('started')
 console.log('started')
 `
 
-/** The messages of the warnings the last build reported. */
+/** The messages of the warnings the last build reported, without the colours a CI terminal adds. */
 let warnings: string[] = []
 
 async function build(externals: { optionalExternals?: string[]; externals?: string[] }): Promise<string> {
@@ -35,7 +36,7 @@ async function build(externals: { optionalExternals?: string[]; externals?: stri
       },
     })
     rsbuild.onAfterBuild(({ stats }) => {
-      warnings = (stats?.toJson({ all: false, warnings: true }).warnings ?? []).map(warning => warning.message)
+      warnings = (stats?.toJson({ all: false, warnings: true }).warnings ?? []).map(warning => stripVTControlCharacters(warning.message))
     })
     await rsbuild.build()
   } finally {
