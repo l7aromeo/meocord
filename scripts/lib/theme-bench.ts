@@ -9,7 +9,7 @@ import { Container } from 'inversify'
 import { Controller } from '../../src/decorator/controller-class.decorator.js'
 import { UseTheme } from '../../src/decorator/theme.decorator.js'
 import { bindGlobalStages, prepareHandlerStages, runHandler } from '../../src/core/handler-pipeline.js'
-import { claimAmbientAppTheme } from '../../src/core/theme-runtime.js'
+import { claimAmbientAppTheme, releaseAmbientAppTheme } from '../../src/core/theme-runtime.js'
 import { useTheme } from '../../src/core/theme-scope.js'
 
 export const CASES = ['app', 'scoped', 'read'] as const
@@ -66,9 +66,12 @@ async function time<K extends string>(targets: Record<K, ReturnType<typeof conta
   const entries = Object.entries(targets) as [K, ReturnType<typeof containerFor>][]
   for (let round = 0; round < 9; round++) {
     for (const [name, target] of entries) {
+      // Only while its own calls are timed: while an app owns the theme read outside calls, every other app scopes
+      if (name === 'app') claimAmbientAppTheme(target.container)
       const started = process.hrtime.bigint()
       for (let i = 0; i < iterations; i++) await runHandler(target.container, target.instance, 'run', [{}], { type: 'event' })
       const ns = Number(process.hrtime.bigint() - started) / iterations
+      if (name === 'app') releaseAmbientAppTheme(target.container)
       // The first round warms every target up
       if (round > 0) fastest[name] = Math.min(fastest[name] ?? Infinity, ns)
     }
@@ -77,11 +80,9 @@ async function time<K extends string>(targets: Record<K, ReturnType<typeof conta
 }
 
 export async function run(): Promise<Measured> {
-  const app = containerFor(AppThemed, { colors: { primary: '#000003' } })
-  // The bot's own app, whose theme is read outside a call, so its calls need no scope
-  claimAmbientAppTheme(app.container)
+  // `app` is timed as the bot's own app, whose theme is read outside a call, so its calls need no scope
   const { plain, ...results } = await time(
-    { plain: containerFor(Plain), app, scoped: containerFor(Scoped), read: containerFor(Reads) },
+    { plain: containerFor(Plain), app: containerFor(AppThemed, { colors: { primary: '#000003' } }), scoped: containerFor(Scoped), read: containerFor(Reads) },
     30_000,
   )
   return { plainNs: plain, results }
