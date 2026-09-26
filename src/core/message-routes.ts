@@ -302,7 +302,8 @@ function compileIndex(routes: readonly MessageRoute[]): MessageIndex {
       // Lowercasing a character outside ASCII can change its length, so such a prefix turns nothing away
       ownPrefixes.some(prefix => prefix === '' || prefix.charCodeAt(0) > 127),
     usesAppStarts: all.some(group => group.prefix === undefined),
-    ownFirsts: new Set(ownPrefixes.flatMap(prefix => [prefix[0], prefix[0].toLowerCase(), prefix[0].toUpperCase()])),
+    // An empty prefix has no first character; it makes the index accept any start instead
+    ownFirsts: new Set(ownPrefixes.filter(Boolean).flatMap(prefix => [prefix[0], prefix[0].toLowerCase(), prefix[0].toUpperCase()])),
   }
 }
 

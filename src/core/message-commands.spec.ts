@@ -165,6 +165,22 @@ describe('message commands', () => {
     expect(calls).toEqual([['ping'], ['hello']])
   })
 
+  it("runs every handler when one sets its own prefix to '', none", async () => {
+    @Controller()
+    class Unprefixed {
+      @MessageHandler('echo {text...}', { prefix: '' })
+      echo(_message: Message, { text }: { text: string }) {
+        calls.push(['echo', text])
+      }
+    }
+    const client = await startApp({ controllers: [DiceController, Unprefixed], messages: { prefix: '!' } })
+
+    await send(client, '!ping')
+    await send(client, 'echo hi')
+    expect(calls).toEqual([['ping'], ['echo', 'hi']])
+    expect(logged.error).toEqual([])
+  })
+
   it('matches keywords as the whole message, without a prefix, when none is configured', async () => {
     const client = await startApp({ controllers: [DiceController] })
 
