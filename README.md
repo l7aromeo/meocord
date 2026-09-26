@@ -332,6 +332,7 @@ MeoCord builds with [Rsbuild](https://rsbuild.rs). The hook receives its configu
 | `optionalExternals`  | `[]`    | Packages a dependency tries to load and runs without, such as `supports-color`; see below.                 |
 | `shutdownTimeout`    | `10000` | Milliseconds shutdown waits for the [`onShutdown` hooks](#lifecycle-hooks), all of them together.          |
 | `sourceMappedStacks` | `true`  | Stack traces name your source files — see [Stack traces](#stack-traces).                                   |
+| `logLevel`           | —       | The least severe line `Logger` prints — see [Log level](#log-level).                                       |
 | `commands`           | global  | Where commands are registered, and whether at startup — see [Command registration](#command-registration). |
 | `sharding`           | —       | Split the gateway connection into shards — see [Sharding](#sharding).                                      |
 
@@ -353,6 +354,26 @@ A stack trace names your source, `src/services/profile.service.ts:42:11`, not th
 - Bun reports a call's column further along than Node does. In a minified production bundle, a frame for a call can map to the statement just before it, one line up; the frame that threw maps exactly.
 
 Set `sourceMappedStacks: false` when an error tracker applies uploaded source maps to the bundle's own positions, or you ship a source mapper of your own. `meocord start` then passes no flag, and the bundle installs no hook.
+
+### Log level
+
+`Logger`, and every line MeoCord logs through it, prints from a level up. `[DEBUG]` lines show in development, where `NODE_ENV` is `development` as under `meocord start --dev`, and are hidden everywhere else, so a production log shows what went wrong without the raw errors and stacks behind it.
+
+| Level      | Prints                                                                     |
+| ---------- | -------------------------------------------------------------------------- |
+| `'debug'`  | everything                                                                 |
+| `'log'`    | `[LOG]`, `[WARN]` and `[ERROR]`: `log`, `info`, `verbose`, `warn`, `error` |
+| `'warn'`   | `[WARN]` and `[ERROR]`                                                     |
+| `'error'`  | `[ERROR]` only                                                             |
+| `'silent'` | nothing                                                                    |
+
+Set `logLevel` in `meocord.config.ts` to choose another, or `MEOCORD_LOG_LEVEL` for one run without a rebuild; the variable wins over the config:
+
+```shell
+MEOCORD_LOG_LEVEL=debug node dist/main.js
+```
+
+A `MEOCORD_LOG_LEVEL` that names no level is reported once, and the config or the default applies. The level is read once, when the first line is logged, so a busy bot never looks it up again.
 
 ### Environment variables
 

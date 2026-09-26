@@ -56,6 +56,13 @@ describe('configProblems', () => {
     expect(configProblems({ discordToken: 't', commands: { guilds: [undefined, '1'] } }).errors).toEqual([])
   })
 
+  it('checks logLevel against the levels', () => {
+    expect(configProblems({ discordToken: 't', logLevel: 'warn' }).errors).toEqual([])
+    expect(configProblems({ discordToken: 't', logLevel: 'verbose' }).errors).toEqual([
+      "logLevel must be 'debug' or 'log' or 'warn' or 'error' or 'silent' (got 'verbose')",
+    ])
+  })
+
   it('warns about options it does not know, at the top and nested, without failing', () => {
     expect(configProblems({ discordToken: 't', bundleDependancies: true, sharding: { shard: 2 } })).toEqual({
       errors: [],
@@ -76,7 +83,7 @@ describe('configProblems', () => {
   // names what is checked, so a change to either shows up in review.
   it('checks every option MeoCordConfig declares', () => {
     expect([...CHECKED_CONFIG_KEYS].sort()).toEqual(
-      ['appName', 'bundleDependencies', 'commands', 'discordToken', 'externals', 'optionalExternals', 'rsbuild', 'sharding', 'shutdownTimeout', 'sourceMappedStacks'].sort(),
+      ['appName', 'bundleDependencies', 'commands', 'discordToken', 'externals', 'logLevel', 'optionalExternals', 'rsbuild', 'sharding', 'shutdownTimeout', 'sourceMappedStacks'].sort(),
     )
   })
 

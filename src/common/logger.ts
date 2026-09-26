@@ -4,9 +4,20 @@ import utc from 'dayjs/plugin/utc.js'
 import timezone from 'dayjs/plugin/timezone.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
 import chalk from 'chalk'
+import { LOG_LEVEL_ENV, LOG_LEVEL_RANK, logThreshold, takeRejectedLogLevel } from '@src/common/log-level.js'
 
 dayjs.extend(utc)
 dayjs.extend(timezone)
+
+/** Whether a line of this level prints, warning once about a `MEOCORD_LOG_LEVEL` that names no level. */
+function shows(level: 'debug' | 'log' | 'warn' | 'error'): boolean {
+  const threshold = logThreshold()
+  const rejected = takeRejectedLogLevel()
+  if (rejected !== undefined) {
+    new Logger('Logger').warn(`${LOG_LEVEL_ENV} is "${rejected}", which is not a log level: use debug, log, warn, error or silent.`)
+  }
+  return LOG_LEVEL_RANK[level] >= threshold
+}
 
 export class Logger {
   private readonly colorMap: Record<string, (msg: string) => string> = {
@@ -20,27 +31,27 @@ export class Logger {
   constructor(private context?: string) {}
 
   log(...args: any[]): void {
-    this.logWithContext('log', args)
+    if (shows('log')) this.logWithContext('log', args)
   }
 
   info(...args: any[]): void {
-    this.logWithContext('log', args)
+    if (shows('log')) this.logWithContext('log', args)
   }
 
   warn(...args: any[]): void {
-    this.logWithContext('warn', args)
+    if (shows('warn')) this.logWithContext('warn', args)
   }
 
   error(...args: any[]): void {
-    this.logWithContext('error', args)
+    if (shows('error')) this.logWithContext('error', args)
   }
 
   debug(...args: any[]): void {
-    this.logWithContext('debug', args)
+    if (shows('debug')) this.logWithContext('debug', args)
   }
 
   verbose(...args: any[]): void {
-    this.logWithContext('log', args)
+    if (shows('log')) this.logWithContext('log', args)
   }
 
   private formatMessage(message: any, logType: string): string {

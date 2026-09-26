@@ -103,6 +103,7 @@ function configShape(problems: ConfigProblems): Record<keyof MeoCordConfig, Chec
         ? undefined
         : `${key} must be a number of milliseconds, 0 or more (got ${describe(value)})`,
     ),
+    logLevel: optional(oneOf('debug', 'log', 'warn', 'error', 'silent')),
     commands: optional(objectOf(commandsShape, problems)),
     sharding: optional(objectOf(shardingShape, problems)),
   }

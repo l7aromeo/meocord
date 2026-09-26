@@ -479,6 +479,14 @@ const scenarios: Scenario[] = [
     },
   },
   {
+    name: 'an unknown MEOCORD_LOG_LEVEL is reported once, and the build goes on',
+    tier: 'fast',
+    env: { MEOCORD_LOG_LEVEL: 'loud' },
+    files: { dist: null },
+    argv: ['build', '--prod'],
+    expect: { code: 0, says: ['MEOCORD_LOG_LEVEL is "loud", which is not a log level'], creates: ['dist/main.js'] },
+  },
+  {
     name: 'build refuses a config of the wrong shape, listing every problem',
     tier: 'fast',
     windows: true,
@@ -692,6 +700,23 @@ const scenarios: Scenario[] = [
     files: { '.env': INVALID_TOKEN_ENV, dist: null },
     argv: ['register', '--build'],
     expect: { code: 1, says: [REFUSED_TOKEN, 'Reset Token'], never: ['Could not read the application'] },
+  },
+  {
+    name: 'start --prod hides debug lines by default',
+    tier: 'slow',
+    files: { '.env': INVALID_TOKEN_ENV },
+    before: [['build', '--prod']],
+    argv: ['start', '--prod'],
+    expect: { code: 1, says: [REFUSED_TOKEN], never: ['[DEBUG]'] },
+  },
+  {
+    name: 'MEOCORD_LOG_LEVEL=debug shows debug lines in production',
+    tier: 'slow',
+    files: { '.env': INVALID_TOKEN_ENV },
+    env: { MEOCORD_LOG_LEVEL: 'debug' },
+    before: [['build', '--prod']],
+    argv: ['start', '--prod'],
+    expect: { code: 1, says: [REFUSED_TOKEN, '[DEBUG]', 'Login failed'] },
   },
   {
     name: 'register says Discord refused the token and where to get one',

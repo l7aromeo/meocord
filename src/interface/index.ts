@@ -481,6 +481,20 @@ export interface MeoCordConfig {
    * @defaultValue `10_000`
    */
   shutdownTimeout?: number
+  /**
+   * The least severe log line `Logger` prints: `'debug'` prints everything, `'log'` hides `[DEBUG]`,
+   * `'warn'` prints warnings and errors, `'error'` only errors, and `'silent'` nothing. The
+   * `MEOCORD_LOG_LEVEL` environment variable overrides it for one run, without a rebuild.
+   *
+   * @defaultValue `'debug'` while `NODE_ENV` is `development`, as under `meocord start --dev`, and
+   *   `'log'` otherwise
+   *
+   * @example
+   * ```ts
+   * logLevel: 'warn',
+   * ```
+   */
+  logLevel?: 'debug' | 'log' | 'warn' | 'error' | 'silent'
 
   /**
    * Where the bot registers its application commands, and whether it does so at startup.
