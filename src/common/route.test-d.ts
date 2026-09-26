@@ -1,8 +1,14 @@
 import { describe, expectTypeOf, it } from 'vitest'
-import { type ButtonInteraction } from 'discord.js'
+import {
+  type ButtonInteraction,
+  type ModalSubmitInteraction,
+  type StringSelectMenuInteraction,
+  type UserSelectMenuInteraction,
+} from 'discord.js'
 import { route } from '@src/common/index.js'
-import { Command } from '@src/decorator/index.js'
+import { Command, UsePipe, Validate } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
+import { type PipeInterface, type Piped, type StandardSchemaV1 } from '@src/interface/index.js'
 
 /** Runs under `vitest --typecheck`: what a route's `build` takes, and that `@Command` takes a route. */
 
@@ -38,6 +44,123 @@ describe('route', () => {
     class Tickets {
       @Command(ticket, CommandType.BUTTON)
       open(_interaction: ButtonInteraction, _params: { id: string }) {
+        return undefined
+      }
+    }
+    expectTypeOf(Tickets).toBeConstructibleWith()
+  })
+})
+
+class Account {
+  uid = ''
+}
+class AccountPipe implements PipeInterface<string, Account> {
+  transform(uid: string) {
+    return Object.assign(new Account(), { uid })
+  }
+}
+declare const uidSchema: StandardSchemaV1<unknown, { uid: string }>
+const ticket = route('ticket/{id}')
+const profile = route('profile/{uid}')
+
+describe('@Command(route) and the handler params', () => {
+  it('takes params that name only what the route captures', () => {
+    class Tickets {
+      @Command(ticket, CommandType.BUTTON)
+      open(_interaction: ButtonInteraction, _params: { id: string }) {
+        return undefined
+      }
+
+      @Command(ticket, CommandType.BUTTON)
+      noParams(_interaction: ButtonInteraction) {
+        return undefined
+      }
+
+      @Command(ticket, CommandType.BUTTON)
+      optional(_interaction: ButtonInteraction, _params: { id: string; note?: string }) {
+        return undefined
+      }
+    }
+    expectTypeOf(Tickets).toBeConstructibleWith()
+  })
+
+  it('refuses a key the route does not capture, such as a misspelt one', () => {
+    class Tickets {
+      // @ts-expect-error the route captures {id}, not {ticketId}
+      @Command(ticket, CommandType.BUTTON)
+      open(_interaction: ButtonInteraction, _params: { ticketId: string }) {
+        return undefined
+      }
+    }
+    expectTypeOf(Tickets).toBeConstructibleWith()
+  })
+
+  it('refuses a param the pattern no longer has', () => {
+    const narrowed = route('ticket/{id}')
+    class Tickets {
+      // @ts-expect-error {action} is not in 'ticket/{id}'
+      @Command(narrowed, CommandType.BUTTON)
+      act(_interaction: ButtonInteraction, _params: { id: string; action: string }) {
+        return undefined
+      }
+    }
+    expectTypeOf(Tickets).toBeConstructibleWith()
+  })
+
+  it('leaves value types to @Validate and pipes', () => {
+    class Profiles {
+      @Command(profile, CommandType.BUTTON)
+      @Validate(uidSchema, { pipes: { uid: AccountPipe } })
+      piped(_interaction: ButtonInteraction, _params: { uid: Account }) {
+        return undefined
+      }
+
+      @Command(profile, CommandType.BUTTON)
+      @UsePipe('uid', AccountPipe)
+      separate(_interaction: ButtonInteraction, _params: { uid: Piped<Account> }) {
+        return undefined
+      }
+    }
+    expectTypeOf(Profiles).toBeConstructibleWith()
+  })
+
+  it("allows a select menu's choices beside the route's params", () => {
+    const poll = route('poll/{id}')
+    class Polls {
+      @Command(poll, CommandType.SELECT_MENU)
+      vote(_interaction: StringSelectMenuInteraction, _params: { id: string; values: string[] }) {
+        return undefined
+      }
+
+      @Command(poll, CommandType.USER_SELECT_MENU)
+      assign(_interaction: UserSelectMenuInteraction, _params: { id: string; values: string[]; users: unknown[] }) {
+        return undefined
+      }
+
+      // @ts-expect-error a string select menu has no users
+      @Command(poll, CommandType.SELECT_MENU)
+      users(_interaction: StringSelectMenuInteraction, _params: { id: string; users: unknown[] }) {
+        return undefined
+      }
+    }
+    expectTypeOf(Polls).toBeConstructibleWith()
+  })
+
+  it("allows a modal's fields, which the pattern cannot name", () => {
+    const report = route('report/{id}')
+    class Reports {
+      @Command(report, CommandType.MODAL_SUBMIT)
+      submit(_interaction: ModalSubmitInteraction, _params: { id: string; reason: string }) {
+        return undefined
+      }
+    }
+    expectTypeOf(Reports).toBeConstructibleWith()
+  })
+
+  it('leaves a plain string pattern unchecked', () => {
+    class Tickets {
+      @Command('ticket/{id}', CommandType.BUTTON)
+      open(_interaction: ButtonInteraction, _params: { ticketId: string }) {
         return undefined
       }
     }
