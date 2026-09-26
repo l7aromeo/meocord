@@ -2327,7 +2327,7 @@ await module.dispatch(reaction, { user, action: ReactionHandlerAction.REMOVE })
 
 - **What it resolves to.** `ran` says whether any handler ran, and `handlers` lists each one reached, in the order it ran, with its own `ran` and `error`. A message can reach a patterned handler and every `@MessageHandler()` listener, and a reaction several handlers.
 - **What the user sees.** The handler's answer, a usage reply, and the built-in fallback's answer to an error no filter handles are all sent to the mock, as the bot sends them.
-- **Errors.** A `MessageUsageError` or `CommandNotFoundError` the fallback answered resolves, in `error`, as an ordinary outcome of a message or an interaction. Any other error no filter handles rejects the call once the fallback has answered, so a bug in a handler does not pass silently; `invoke` rejects without running the fallback.
+- **Errors.** An error the fallback answers as the user's own outcome resolves, in `error`: a usage reply, an unknown command, or the refusal of a guard, a cooldown, a validation or a `UserError`, as the fallback answers each for an interaction or a message. Any other error no filter handles rejects the call once the fallback has answered, so a bug in a handler does not pass silently; `invoke` rejects without running the fallback.
 - **What it skips.** Whatever the bot skips reaches nothing, such as a message from a bot or a reaction from one to a handler without `bots: true`: `{ ran: false, handlers: [] }`.
 - The module waits for its [observers](#observers) before the call resolves.
 

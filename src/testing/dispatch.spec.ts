@@ -18,7 +18,7 @@ import {
   UseFilter,
 } from '@src/decorator/index.js'
 import { CommandType, ReactionHandlerAction } from '@src/enum/index.js'
-import { CommandNotFoundError, MessageUsageError } from '@src/common/errors.js'
+import { CommandNotFoundError, MessageUsageError, UserError } from '@src/common/errors.js'
 import { type DispatchObserver, type ExceptionFilter, type ReactionHandlerOptions } from '@src/interface/index.js'
 import { type DispatchedCall, MeoCordTestingModule } from './meocord-testing-module.js'
 import { createChatInputOptions, createMock, createMockInteraction, createMockMessage, createMockUser } from './mock-interaction.js'
@@ -49,6 +49,11 @@ class CardController {
   @Command('boom', CommandType.BUTTON)
   boom() {
     throw new Error('boom')
+  }
+
+  @Command('refuse', CommandType.BUTTON)
+  refuse() {
+    throw new UserError('You cannot do that.')
   }
 
   @UseFilter(HandledFilter)
@@ -150,6 +155,17 @@ describe('TestingModule.dispatch', () => {
 
     await expect(compile().dispatch(interaction)).rejects.toThrow('boom')
 
+    expect(interaction.reply).toHaveBeenCalled()
+  })
+
+  // The user is told, as the fallback means it: an outcome to assert on, not a failure
+  it("resolves with an error the fallback answers as the user's own, having told the user", async () => {
+    const interaction = button('refuse')
+
+    const result = await compile().dispatch(interaction)
+
+    expect(result.error).toBeInstanceOf(UserError)
+    expect(result.handlers).toEqual([{ controller: CardController, method: 'refuse', ran: true, error: expect.any(UserError) }])
     expect(interaction.reply).toHaveBeenCalled()
   })
 

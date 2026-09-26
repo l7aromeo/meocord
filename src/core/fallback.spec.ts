@@ -16,12 +16,14 @@ import {
   CooldownStoreError,
   cooldownStoreMessage,
   GuardDeniedError,
+  MessageUsageError,
   Theme,
+  UserError,
   ValidationError,
 } from '@src/common/index.js'
 import { Logger } from '@src/common/logger.js'
 import { UnroutedExecutionContext } from '@src/common/execution-context.js'
-import { createFallback } from '@src/core/fallback.js'
+import { createFallback, isUserOutcome } from '@src/core/fallback.js'
 import { createMockInteraction, createMockMessage } from '@src/testing/index.js'
 
 const createLogger = () =>
@@ -318,3 +320,44 @@ describe('the fallback', () => {
     expect(message.reply).not.toHaveBeenCalled()
   })
 })
+
+// Pinned against the fallback itself, so a branch added to one and not the other fails here
+describe('isUserOutcome', () => {
+  const errors: [string, () => unknown][] = [
+    ['MessageUsageError', () => new MessageUsageError('!roll <sides>', [])],
+    ['a quiet MessageUsageError', () => new MessageUsageError('!roll <sides>', [], { quiet: true })],
+    ['CommandNotFoundError', () => new CommandNotFoundError()],
+    ['GuardDeniedError', () => new GuardDeniedError('Not for you.')],
+    ['CooldownError', () => new CooldownError(5_000, 'user')],
+    ['CooldownStoreError', () => new CooldownStoreError(new Error('down'), false)],
+    ['UserError', () => new UserError('You cannot do that.')],
+    ['ValidationError', () => new ValidationError([{ message: 'bad', path: ['amount'] }])],
+    ['a plain Error', () => new Error('boom')],
+    ['an expired interaction (10062)', () => discordError(10062)],
+  ]
+  const calls: [string, () => unknown][] = [
+    ['a command', () => createMockInteraction(ChatInputCommandInteraction)],
+    ['an autocomplete', () => createMockInteraction(AutocompleteInteraction)],
+    ['a message', () => Object.assign(createMockMessage(), { content: '!roll' })],
+  ]
+
+  it.each(errors.flatMap(([name, error]) => calls.map(([on, call]) => [name, on, error, call] as const)))(
+    'agrees with the fallback about %s on %s',
+    async (_name, _on, makeError, makeCall) => {
+      const error = makeError()
+      const call = makeCall()
+
+      const logger = await fail(call, error)
+
+      // An expired interaction is only warned about, but it is a timing failure, not the user's outcome
+      const expired = (error as { code?: unknown }).code === 10062
+      expect(isUserOutcome(error, call)).toBe(!expired && logger.error.mock.calls.length === 0)
+    },
+  )
+
+  it('counts a user error on a command, and a plain error nowhere', () => {
+    expect(isUserOutcome(new UserError('no'), createMockInteraction(ChatInputCommandInteraction))).toBe(true)
+    expect(isUserOutcome(new Error('boom'), createMockMessage())).toBe(false)
+  })
+})
+
