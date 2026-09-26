@@ -185,6 +185,25 @@ function verifyAssetTypesBesideRsbuild(): void {
   }
 }
 
+/**
+ * Plants files no spec imports, as an application grows them: a decorated service and a plain module with
+ * type annotations. Coverage reads every file it includes, tested or not, so both have to be readable there.
+ */
+function plantUntestedFiles(): void {
+  mkdirSync(path.join(appDir, 'src', 'services', 'untested'), { recursive: true })
+  writeFileSync(
+    path.join(appDir, 'src', 'services', 'untested', 'ledger.service.ts'),
+    `import { Service } from 'meocord/decorator'\n\n@Service()\nexport class LedgerService {\n  private readonly entries: number[] = []\n\n` +
+      `  add(amount: number): number {\n    this.entries.push(amount)\n    return this.entries.reduce((sum, entry) => sum + entry, 0)\n  }\n}\n`,
+  )
+  mkdirSync(path.join(appDir, 'src', 'utils'), { recursive: true })
+  writeFileSync(
+    path.join(appDir, 'src', 'utils', 'format.ts'),
+    `export interface Amount {\n  value: number\n  currency: string\n}\n\nexport const formatAmount = ({ value, currency }: Amount): string => \`\${value.toFixed(2)} \${currency}\`\n`,
+  )
+  console.log('  ok  plant a decorated service and a typed module that no spec imports')
+}
+
 /** The application's own checks. */
 function runAppScripts(): void {
   // Without --noEmit: the tsconfigs set it, and a user running plain `tsc` must not find
@@ -284,6 +303,7 @@ function main(): void {
     createApp(pack())
     generateComponents()
     registerComponents()
+    plantUntestedFiles()
     console.log('')
     runAppScripts()
     verifyAssetTypesBesideRsbuild()
