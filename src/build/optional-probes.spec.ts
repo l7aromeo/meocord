@@ -19,6 +19,13 @@ describe('optionalProbeWarning', () => {
     expect(optionalProbeWarning(unresolved('supports-color', '/app/src'))).toMatch(/^A module tries to load supports-color/)
   })
 
+  // A colour terminal gets the bundler's warnings with ANSI codes around its parts
+  it('recognises the warning in colour', () => {
+    const coloured = `  \u001b[33m⚠\u001b[0m Module not found: Can't resolve \u001b[1m'supports-color'\u001b[22m in \u001b[1m'/app/node_modules/debug/src'\u001b[22m`
+
+    expect(optionalProbeWarning(coloured)).toMatch(/^debug tries to load supports-color, /)
+  })
+
   it('leaves any other warning alone', () => {
     expect(optionalProbeWarning(unresolved('left-pad', '/app/node_modules/debug/src'))).toBeUndefined()
     expect(optionalProbeWarning('export was not found')).toBeUndefined()

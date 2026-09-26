@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from 'node:util'
 import type { Rspack } from '@rsbuild/core'
 
 const NAME = 'MeoCordOptionalProbesPlugin'
@@ -12,7 +13,8 @@ const UNRESOLVED = /Module not found: Can't resolve '([^']+)' in '([^']+)'/
  * for, naming the dependency and `optionalExternals`; undefined for any other warning.
  */
 export function optionalProbeWarning(message: string): string | undefined {
-  const [, request, directory] = UNRESOLVED.exec(message) ?? []
+  // A colour terminal gets the message with ANSI codes around the request and the directory
+  const [, request, directory] = UNRESOLVED.exec(stripVTControlCharacters(message)) ?? []
   if (!request || !OPTIONAL_PROBES.includes(request)) return undefined
 
   const packages = [...directory.matchAll(/node_modules[\\/]((?:@[^\\/]+[\\/])?[^\\/]+)/g)]
