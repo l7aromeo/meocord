@@ -22,6 +22,7 @@ import { type RsbuildConfig } from '@rsbuild/core'
 export type { RsbuildConfig }
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
 import { type ExecutionContext } from '@src/common/execution-context.js'
+import { type DeepReadonly, type MeoCordTheme } from '@src/interface/theme.interface.js'
 
 /**
  * A guard, run by `@UseGuard` before a handler to decide whether it may run.
@@ -234,6 +235,9 @@ export interface ResponseContext {
 
   /** Whether the view is rendered as an embed or as a Components V2 container. */
   mode: 'embed' | 'v2'
+
+  /** The theme of the call being answered, to style the view from: the same one `useTheme()` returns in it. */
+  theme: DeepReadonly<MeoCordTheme>
 }
 
 /** An error a presenter styles: the words a filter chose, and the error itself. */
@@ -243,6 +247,12 @@ export interface PresentedError {
 
   /** The error being answered, so a presenter can style it by kind. */
   error: unknown
+
+  /**
+   * Which theme colour suits the error: `'warning'` for the user's own outcome, such as a cooldown, a refused
+   * guard or a `UserError`, and `'danger'` for a fault in the bot. Read `context.theme.colors[tone]`.
+   */
+  tone: 'warning' | 'danger'
 }
 
 /**
@@ -255,13 +265,12 @@ export interface PresentedError {
  * ```ts
  * @Service()
  * export class BrandPresenter implements ResponsePresenter {
- *   loading() {
- *     const { colors, emojis } = useTheme()
- *     return { text: 'Working on it…', emoji: emojis.loading, color: colors.primary }
+ *   loading({ theme }: ResponseContext) {
+ *     return { text: 'Working on it…', emoji: theme.emojis.loading, color: theme.colors.primary }
  *   }
  *
- *   error(_context: ResponseContext, { message }: PresentedError) {
- *     return { title: 'Something went wrong', text: message, color: useTheme().colors.danger }
+ *   error({ theme }: ResponseContext, { message, tone }: PresentedError) {
+ *     return { title: 'Something went wrong', text: message, color: theme.colors[tone] }
  *   }
  * }
  * ```

@@ -19,6 +19,7 @@ import {
 import { vi } from 'vitest'
 import { Logger } from '@src/common/logger.js'
 import { Theme } from '@src/common/theme.js'
+import { DEFAULT_THEME } from '@src/core/theme-defaults.js'
 import { GuardDeniedError } from '@src/common/errors.js'
 import { LOCK_MEMORY_MS, lockedMessageCount, respond, responseOf } from '@src/common/response/response-state.js'
 import { RENDERED_CONTAINER_ID, setPresenter } from '@src/common/response/presenter.js'
@@ -451,9 +452,10 @@ describe('respond()', () => {
   })
 
   describe('error()', () => {
+    // A plain Error is a fault in the bot, so the default presenter gives it the danger colour
     const describedAs = (payload: Payload) => {
       const [embed] = payload.embeds ?? []
-      expect(embed.color).toBe(resolveColor(Theme.errorColor))
+      expect(embed.color).toBe(resolveColor(DEFAULT_THEME.colors.danger))
       return embed.description
     }
 
@@ -577,8 +579,8 @@ describe('respond()', () => {
       await respond(interaction).error(error, { message: 'Words.' })
 
       expect(presenter.error).toHaveBeenCalledWith(
-        expect.objectContaining({ interaction, mode: 'embed' }),
-        { message: 'Words.', error },
+        expect.objectContaining({ interaction, mode: 'embed', theme: DEFAULT_THEME }),
+        { message: 'Words.', error, tone: 'danger' },
       )
       expect(sent(interaction.reply).embeds?.[0]).toMatchObject({ description: 'Branded.', color: resolveColor(Theme.warningColor) })
     })
@@ -1074,7 +1076,8 @@ describe("respond() under @Defer's timer and locks", () => {
     await respond(first).send({ embeds: [{ description: 'A result' }] })
     await responseOf(second).release()
 
-    expect(sent(second.editReply, 1).embeds).toEqual([{ description: 'A result' }])
+    // The answer as sent, the theme's primary colour filled in
+    expect(sent(second.editReply, 1).embeds).toEqual([{ description: 'A result', color: resolveColor(DEFAULT_THEME.colors.primary) }])
   })
 
   describe('the lock registry', () => {

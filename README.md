@@ -1181,7 +1181,7 @@ const { where, botInstalled } = getInstallContext(interaction) // where: 'guild'
 A presenter decides how MeoCord's answers look — the error view, and the loading view `@Defer` shows — while filters and the fallback decide what they say. It returns `{ text, title?, color?, emoji?, components? }`, rendered as an embed, or as a Components V2 container on a Components V2 message. Register one with `@MeoCord({ presenter })`; it is resolved once from the container, so it can inject services such as a `Translator`.
 
 ```typescript
-import { Translator, useTheme } from 'meocord/common'
+import { Translator } from 'meocord/common'
 import { MeoCord, Service } from 'meocord/decorator'
 import { type PresentedError, type ResponseContext, type ResponsePresenter } from 'meocord/interface'
 import enUS from '@src/locales/en-US'
@@ -1190,13 +1190,12 @@ import enUS from '@src/locales/en-US'
 export class BrandPresenter implements ResponsePresenter {
   constructor(private readonly t: Translator<typeof enUS>) {}
 
-  loading(context: ResponseContext) {
-    const { colors, emojis } = useTheme()
-    return { text: this.t.for(context.interaction)('common.working'), emoji: emojis.loading, color: colors.primary }
+  loading({ interaction, theme }: ResponseContext) {
+    return { text: this.t.for(interaction)('common.working'), emoji: theme.emojis.loading, color: theme.colors.primary }
   }
 
-  error(_context: ResponseContext, { message }: PresentedError) {
-    return { title: 'Something went wrong', text: message, color: useTheme().colors.danger }
+  error({ theme }: ResponseContext, { message, tone }: PresentedError) {
+    return { title: 'Something went wrong', text: message, color: theme.colors[tone] }
   }
 }
 
@@ -1204,7 +1203,9 @@ export class BrandPresenter implements ResponsePresenter {
 class App {}
 ```
 
-Without one, errors show "Oops!" as their title in the theme's `colors.danger`, and the loading view is "⏳ Working on it…" in `colors.primary`.
+A presenter styles from the call's [theme](#theming), `context.theme`, the same one `useTheme()` returns. An error's `tone` says which colour suits it: `'warning'` for the user's own outcome, such as a cooldown, a refused guard or a `UserError`, and `'danger'` for a fault in the bot. A view with no `color` takes the theme's `primary`.
+
+Without one, errors show "Oops!" as their title in the colour their tone names, and the loading view is "Working on it…" with the theme's loading emoji, ⏳ by default, in its primary colour.
 
 ---
 
@@ -1308,7 +1309,8 @@ await respond(interaction).send({
 
 - **Anything the handler calls reads the same theme,** such as a service or a presenter, since the call's theme follows it through `AsyncLocalStorage`, as does a timer or a promise the call starts that outlives it. An interceptor, guard or filter reads it as `context.getTheme()`.
 - **A component a route handles is themed with no extra code:** `@Command('ticket/close/{id}', CommandType.BUTTON)` runs in its own handler's theme, `@UseTheme` included, so routing a button to a handler is the way to theme it.
-- **A listener the handler registers runs in its emitter's context,** such as a collector's `collect` callback or a `client.on(...)` handler, as any `AsyncLocalStorage` value does. To read the handler's theme there, wrap the callback in `bindTheme` from `meocord/common`:
+- **A collector's answers are themed with no extra code too:** `respond(click)` outside any call, as in a collector's `collect` callback, takes the theme of the app the interaction came to, with its server's and user's themes from [`themeFor`](#themes-per-server-and-per-user).
+- **A listener the handler registers runs in its emitter's context,** such as a collector's `collect` callback or a `client.on(...)` handler, as any `AsyncLocalStorage` value does, so the handler's own `@UseTheme` does not reach it. To read the handler's theme there, with `useTheme()` or in what `respond()` fills, wrap the callback in `bindTheme` from `meocord/common`:
 
   ```typescript
   collector.on(
@@ -1324,6 +1326,15 @@ await respond(interaction).send({
 - **Outside any call,** such as in a scheduled job, it is the theme of the app the bot runs, or MeoCord's defaults before an app has started. It never throws.
 - **A theme is frozen,** since one theme is shared by every call it applies to. A colour is kept as written, so `useTheme().colors.primary` reads back what was set.
 - **A bot that sets neither `@UseTheme` nor `themeFor` pays one check per call:** its handlers share the app's theme, which is built once at startup.
+
+### What `respond()` themes
+
+What a handler sends through `respond()` takes the theme's `primary` colour where it leaves one unset, so a bot is themed without setting a colour on every embed:
+
+- **An embed with no `color`,** and **a Components V2 container with no `accent_color`,** get `colors.primary`. A colour that is set is kept, `0` and a `null` accent, which means none, included. An `EmbedBuilder` or `ContainerBuilder` is read, not changed.
+- **MeoCord's own views,** the loading view and error answers, are styled by the [presenter](#presenters) from the call's theme; a view it gives no colour takes `colors.primary`. The clicked button's loading emoji is the view's emoji, the theme's `emojis.loading` by default.
+- **What is sent around `respond()`,** with `interaction.reply()` or `message.reply()`, is not touched: that is the way to send a message exactly as written.
+- A colour is resolved when the message is sent, so `'Random'`, a colour discord.js accepts, gives a new colour to each message while `useTheme()` still reads `'Random'`.
 
 ### Themes per server and per user
 
@@ -1700,12 +1711,12 @@ It is logged only at debug level, since nothing in the bot failed, and [observer
 export class AppPresenter implements ResponsePresenter {
   constructor(private readonly t: Translator<typeof en>) {}
 
-  error({ interaction }: ResponseContext, { message, error }: PresentedError): ResponseView {
+  error({ interaction, theme }: ResponseContext, { message, error, tone }: PresentedError): ResponseView {
     const text =
       error instanceof UserError && error.code === 'shop.poor'
         ? this.t.for(interaction)('shop.poor', { missing: Number(error.context?.missing) })
         : message
-    return { title: 'Oops!', text, color: Theme.errorColor }
+    return { title: 'Oops!', text, color: theme.colors[tone] }
   }
   // ...
 }

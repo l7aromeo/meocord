@@ -153,6 +153,24 @@ export function runInThemeScope<T>(themeScope: ThemeScope, fn: () => T): T {
   return scope.run(themeScope, fn)
 }
 
+// Set by the runtime: the theme an app gives an interaction answered outside any call, as in a collector
+let themeOutsideCalls: ((interaction: object) => ResolvedTheme | Promise<ResolvedTheme>) | undefined
+
+/** Sets how an answer outside any call finds its theme: from the interaction's app, server and user. */
+export function setThemeOutsideCalls(resolve: (interaction: object) => ResolvedTheme | Promise<ResolvedTheme>): void {
+  themeOutsideCalls = resolve
+}
+
+/**
+ * The theme an answer to `interaction` uses: the running call's, or, outside any call, as in a collector's callback,
+ * the theme of the app the interaction came to, with its server's and user's themes over it.
+ */
+export function themeForInteraction(interaction: object): ResolvedTheme | Promise<ResolvedTheme> {
+  const call = scope.getStore()
+  if (call) return call.theme
+  return themeOutsideCalls?.(interaction) ?? useTheme()
+}
+
 /**
  * The theme of the running call: MeoCord's defaults, then the app's theme, then each `@UseTheme` from the
  * controller's base class down to the handler. Outside a call, the theme of the app the process runs, or

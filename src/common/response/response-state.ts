@@ -11,7 +11,9 @@ import {
   type ModalComponentData,
   type JSONEncodable,
   type APIModalInteractionResponseCallbackData,
+  ComponentType,
   type RepliableInteraction,
+  resolveColor,
 } from 'discord.js'
 import { Logger } from '@src/common/logger.js'
 import { UserError } from '@src/common/errors.js'
@@ -36,6 +38,8 @@ import {
   withoutRenderedViews,
 } from '@src/common/response/components.js'
 import { type ResponseContext, type ResponseView } from '@src/interface/index.js'
+import { isUserOutcome } from '@src/common/user-outcome.js'
+import { type ResolvedTheme, themeForInteraction } from '@src/core/theme-scope.js'
 
 /** The flags a message sent through `respond()` can ask for. */
 export type ResponseFlags = BitFieldResolvable<
@@ -170,6 +174,30 @@ export const LOCK_MEMORY_MS = 60_000
 /** How many locked messages are remembered, for tests. */
 export function lockedMessageCount(): number {
   return messageLocks.size
+}
+
+/**
+ * A body with the theme's primary colour where the app left one unset: an embed with no `color`, and a
+ * Components V2 container with no `accent_color`. A value set, even `0` or a `null` accent, is kept, and the app's
+ * own builders are read, never changed.
+ */
+function withThemeColours(body: Body, theme: ResolvedTheme): Body {
+  let primary: number | undefined
+  const colour = () => (primary ??= resolveColor(theme.colors.primary))
+  const embeds = body.embeds?.map(embed => {
+    const json = toJson(embed)
+    return json.color === undefined ? { ...json, color: colour() } : embed
+  })
+  const components = body.components?.map(component => {
+    const json = toJson(component)
+    return json.type === ComponentType.Container && json.accent_color === undefined ? { ...json, accent_color: colour() } : component
+  })
+  return { ...body, ...(embeds && { embeds }), ...(components && { components }) }
+}
+
+/** A view MeoCord renders, in the theme's primary colour when its presenter gave it none. */
+function themedView(view: ResponseView, theme: ResolvedTheme): ResponseView {
+  return view.color === undefined ? { ...view, color: theme.colors.primary } : view
 }
 
 function toJson(value: unknown): Record<string, unknown> {
@@ -429,7 +457,8 @@ export class InteractionResponse implements ResponseState {
     this.sync()
     if (this.phase === 'replied' && !this.acknowledging) return
 
-    const view = presenterFor(this.interaction.client).loading(this.presenterContext(this.v2))
+    const theme = await themeForInteraction(this.interaction)
+    const view = themedView(presenterFor(this.interaction.client).loading(this.presenterContext(this.v2, theme)), theme)
     const loadingEmbed = renderEmbed(view)
     const key = typeof message.id === 'string' ? message.id : message
     // A message another call holds is snapshotted as it was before any lock, not as that call's lock shows it
@@ -556,7 +585,7 @@ export class InteractionResponse implements ResponseState {
     this.cancelScheduled()
     await this.acknowledging
     this.sync()
-    const body = this.withRestore(toBody(payload))
+    const body = this.withRestore(withThemeColours(toBody(payload), await themeForInteraction(this.interaction)))
     if (this.phase !== 'unanswered') return this.editMessage(body)
     return answersWithOwnMessage(this.interaction) ? this.reply(body) : this.update(body)
   }
@@ -569,7 +598,7 @@ export class InteractionResponse implements ResponseState {
     this.cancelScheduled()
     await this.acknowledging
     this.sync()
-    const body = toBody(payload)
+    const body = withThemeColours(toBody(payload), await themeForInteraction(this.interaction))
     if (this.phase === 'unanswered') return this.reply(body)
     if (this.phase === 'deferred' && answersWithOwnMessage(this.interaction)) {
       // Discord makes a follow-up to a deferred, unsent reply that reply, ignoring its flags: a private one
@@ -710,9 +739,10 @@ export class InteractionResponse implements ResponseState {
     // A UserError is the user's own mistake: its message, for them alone, unless told otherwise
     const own = error instanceof UserError
     const { message = own ? error.message : DEFAULT_ERROR, visibility = own ? 'private' : 'reply' } = options
+    const theme = await themeForInteraction(this.interaction)
     try {
       await this.acknowledging?.catch(() => undefined)
-      await this.presentError(error, message, visibility)
+      await this.presentError(error, message, visibility, theme)
     } catch (deliveryError) {
       if (errorCode(deliveryError) !== ALREADY_ACKNOWLEDGED) {
         logger.debug(`Could not deliver the error reply: ${String(deliveryError)}`)
@@ -721,54 +751,55 @@ export class InteractionResponse implements ResponseState {
       // Answered by something discord.js did not see: follow up once instead.
       this.phase = 'replied'
       try {
-        await this.followUp(this.privateError(error, message))
+        await this.followUp(this.privateError(error, message, theme))
       } catch (retryError) {
         logger.debug(`Could not deliver the error reply: ${String(retryError)}`)
       }
     }
   }
 
-  private presenterContext(v2: boolean): ResponseContext {
-    return { interaction: this.interaction as Interaction, locale: this.interaction.locale, mode: v2 ? 'v2' : 'embed' }
+  private presenterContext(v2: boolean, theme: ResolvedTheme): ResponseContext {
+    return { interaction: this.interaction as Interaction, locale: this.interaction.locale, mode: v2 ? 'v2' : 'embed', theme }
   }
 
-  private view(error: unknown, message: string, v2: boolean): ResponseView {
-    return presenterFor(this.interaction.client).error(this.presenterContext(v2), { message, error })
+  private view(error: unknown, message: string, v2: boolean, theme: ResolvedTheme): ResponseView {
+    const tone = isUserOutcome(error, this.interaction) ? 'warning' : 'danger'
+    return themedView(presenterFor(this.interaction.client).error(this.presenterContext(v2, theme), { message, error, tone }), theme)
   }
 
-  private privateError(error: unknown, message: string): ResponsePayload {
-    const body = this.render(this.view(error, message, this.v2), this.v2)
+  private privateError(error: unknown, message: string, theme: ResolvedTheme): ResponsePayload {
+    const body = this.render(this.view(error, message, this.v2, theme), this.v2)
     return { ...body, flags: Number(body.flags ?? 0) | MessageFlags.Ephemeral } as ResponsePayload
   }
 
-  private async presentError(error: unknown, message: string, visibility: 'reply' | 'private'): Promise<void> {
+  private async presentError(error: unknown, message: string, visibility: 'reply' | 'private', theme: ResolvedTheme): Promise<void> {
     this.sync()
     if (this.phase === 'unanswered') {
-      await this.reply(toBody(this.privateError(error, message)))
+      await this.reply(toBody(this.privateError(error, message, theme)))
       return
     }
 
     if (answersWithOwnMessage(this.interaction)) {
       if (this.phase === 'deferred' && visibility === 'reply') {
-        await this.editMessage(this.render(this.view(error, message, this.v2), this.v2))
+        await this.editMessage(this.render(this.view(error, message, this.v2, theme), this.v2))
         return
       }
       // A private follow-up edits a private deferral into it, and replaces a public one
-      await this.followUp(this.privateError(error, message))
+      await this.followUp(this.privateError(error, message, theme))
       return
     }
 
     // The message the component is on: whether it is private does not change with edits.
     const current = 'message' in this.interaction ? (this.interaction.message ?? undefined) : this.message
     if (current?.flags?.has(MessageFlags.Ephemeral)) {
-      const appended = this.appendError(current, this.view(error, message, this.v2))
+      const appended = this.appendError(current, this.view(error, message, this.v2, theme))
       if (this.fits(appended)) {
         await this.editMessage(appended)
         return
       }
     }
     await this.restore()
-    await this.followUp(this.privateError(error, message))
+    await this.followUp(this.privateError(error, message, theme))
   }
 
   /** Whether a message stays within Discord's limits of 10 embeds and of Components V2 components. */

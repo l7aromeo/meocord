@@ -8,18 +8,18 @@ import {
   TextDisplayBuilder,
 } from 'discord.js'
 import { type PresentedError, type ResponseContext, type ResponsePresenter, type ResponseView } from '@src/interface/index.js'
-import { Theme } from '@src/common/theme.js'
 
 /**
- * MeoCord's own presenter: a "⏳ Working on it…" loading view in the primary colour, and errors in the
- * error colour under "Oops!".
+ * MeoCord's own presenter, styled by the call's theme: a "Working on it…" loading view with the theme's loading
+ * emoji in its primary colour, and errors under "Oops!" in the colour their tone names, `warning` for the user's own
+ * outcome and `danger` for a fault.
  */
 export const defaultPresenter: ResponsePresenter = {
-  loading: () => ({ text: 'Working on it…', emoji: '⏳', color: Theme.primaryColor }),
-  error: (_context: ResponseContext, { message }: PresentedError) => ({
+  loading: ({ theme }: ResponseContext) => ({ text: 'Working on it…', emoji: theme.emojis.loading, color: theme.colors.primary }),
+  error: ({ theme }: ResponseContext, { message, tone }: PresentedError) => ({
     title: 'Oops!',
     text: message,
-    color: Theme.errorColor,
+    color: theme.colors[tone],
   }),
 }
 

@@ -1,5 +1,5 @@
 import { ChatInputCommandInteraction } from 'discord.js'
-import { Theme } from 'meocord/common'
+import { Theme, useTheme } from 'meocord/common'
 import { createMockInteraction } from 'meocord/testing'
 import { AppPresenter } from '@src/presenters/app.presenter.js'
 
@@ -9,6 +9,7 @@ describe('AppPresenter', () => {
     interaction: createMockInteraction(ChatInputCommandInteraction),
     locale: 'en-US',
     mode: 'embed' as const,
+    theme: useTheme(),
   }
 
   it('shows a loading view in the primary colour', () => {
@@ -16,7 +17,9 @@ describe('AppPresenter', () => {
   })
 
   it('styles an error with the words it is given', () => {
-    expect(presenter.error(context, { message: 'Try again later.', error: new Error('x') })).toMatchObject({
+    expect(
+      presenter.error(context, { message: 'Try again later.', error: new Error('x'), tone: 'danger' }),
+    ).toMatchObject({
       text: 'Try again later.',
       color: Theme.errorColor,
     })
