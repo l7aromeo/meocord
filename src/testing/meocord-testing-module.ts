@@ -1,7 +1,7 @@
 import 'reflect-metadata'
 import { Container, type ServiceIdentifier } from 'inversify'
 import { COOLDOWN_POLICY, DEFAULT_COOLDOWN_STORE_TIMEOUT_MS } from '@src/core/cooldown-runner.js'
-import { BaseInteraction, type ClientEvents, type Interaction, Message } from 'discord.js'
+import { BaseInteraction, type Client, type ClientEvents, type Interaction, Message } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
 import { missingTranslatorError, Translator } from '@src/common/translator.js'
@@ -28,7 +28,9 @@ import { appObservers, assertObservers, bindObservers } from '@src/core/observer
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
 import { ShardContext } from '@src/core/shard-context.js'
-import { isAppClassToken } from '@src/core/lifecycle-order.js'
+import { isAppClassToken, type LifecycleUnit } from '@src/core/lifecycle-order.js'
+import { type LifecycleEntry, runReadyHooks, runShutdownHooks } from '@src/core/lifecycle-hooks.js'
+import { createMockClient } from './mock-interaction.js'
 import {
   assertProvided,
   assertTypedParameters,
@@ -39,6 +41,7 @@ import {
   type ProviderMap,
   resolutionOrder,
   resolveProviders,
+  tokenDependencies,
   tokenName,
 } from '@src/core/providers.js'
 import { type Provider, type ProviderToken } from '@src/interface/provider.interface.js'
@@ -91,6 +94,16 @@ export interface InvocationResult {
   error?: unknown
 }
 
+/** How `TestingModule.init` prepares the module. */
+export interface TestingModuleInitOptions {
+  /**
+   * Also run every `onReady` hook, once, in dependency order, as the bot does once it is online.
+   * `true` hands each hook a mock client from `createMockClient` and `{ primary: true }`; an object
+   * sets either.
+   */
+  ready?: boolean | { client?: Client<true>; primary?: boolean }
+}
+
 /** How an event sent with `TestingModule.emit` was handled. */
 export interface EmitResult {
   /** How many `@On` and `@Once` handlers ran; a handler a guard denied is not counted. */
@@ -108,16 +121,28 @@ export class TestingModule {
     private readonly providers: ProviderMap = new Map(),
     private readonly order: readonly unknown[] = [],
     private readonly messageOptions: MessageCommandOptions = {},
+    private readonly lifecycle: readonly LifecycleUnit[] = [],
   ) {}
 
   private resolving?: Promise<void>
+  private readying?: Promise<void>
+  private closing?: Promise<void>
+  /** The units whose `onReady` stage was reached, which `close()` shuts down. */
+  private readonly readied: LifecycleEntry[] = []
 
   /**
    * Resolves the module's `useFactory` providers, awaiting those that return a promise, in dependency
    * order. `invoke` and `emit` call it first; call it yourself before `get` resolves anything that
    * depends on an asynchronous factory. Calling it again does nothing more.
    *
-   * @returns The module, once every factory has made its value.
+   * With `{ ready: true }`, it then runs every `onReady` hook once, as the bot does once it is online:
+   * one at a time, each class after the classes and providers it injects, the observers' last. Every
+   * hook runs even when one fails. Pair it with {@link close}, which runs the `onShutdown` hooks.
+   *
+   * @param options - `ready` to also run the `onReady` hooks, with the client and `primary` to pass them.
+   * @returns The module, once every factory has made its value and every `onReady` hook asked for has
+   *   run. Rejects with the error of a factory or a hook that failed, or an `AggregateError` of the
+   *   hooks when several did.
    *
    * @example
    * ```ts
@@ -126,13 +151,65 @@ export class TestingModule {
    *   providers: [{ provide: DATABASE, useFactory: async () => createTestDatabase() }],
    * })
    *   .compile()
-   *   .init()
+   *   .init({ ready: true })
+   *
+   * expect(module.get(NotesStore).loaded).toBe(true)
+   * await module.close()
    * ```
    */
-  async init(): Promise<this> {
+  async init(options: TestingModuleInitOptions = {}): Promise<this> {
     this.resolving ??= resolveProviders(this.container, this.providers, this.order)
     await this.resolving
+    if (options.ready) {
+      const { client = createMockClient() as unknown as Client<true>, primary = true } = options.ready === true ? {} : options.ready
+      this.readying ??= this.runReady(client, primary)
+      await this.readying
+    }
     return this
+  }
+
+  /**
+   * Runs the `onShutdown` hooks of what `init({ ready: true })` readied, once, as the bot does when it
+   * stops: one at a time, in reverse, so a class stops before the classes and providers it uses. A
+   * provided value with an `onShutdown`, such as a connection pool, is closed after everything that
+   * injects it. Every hook runs even when one fails. As in the bot, a module that was never readied
+   * runs none. Calling it again does nothing more.
+   *
+   * @returns Once every hook has run. Rejects with the error of a hook that failed, or an
+   *   `AggregateError` naming each when several did.
+   *
+   * @example
+   * ```ts
+   * const module = await MeoCordTestingModule.create({ providers: [{ provide: POOL, useFactory: createPool }] })
+   *   .compile()
+   *   .init({ ready: true })
+   *
+   * await module.close()
+   *
+   * expect(module.get(POOL).ended).toBe(true)
+   * ```
+   */
+  async close(): Promise<void> {
+    this.closing ??= (async () => {
+      // A close during init waits for the hooks it started, so it shuts down whatever they readied
+      await this.readying?.catch(() => {})
+      const failures: { name: string; error: unknown }[] = []
+      await runShutdownHooks(this.readied, (name, error) => failures.push({ name, error }))
+      throwFailures('onShutdown', failures)
+    })()
+    await this.closing
+  }
+
+  private async runReady(client: Client<true>, primary: boolean): Promise<void> {
+    const failures: { name: string; error: unknown }[] = []
+    const failed = (unit: LifecycleUnit, error: unknown) => failures.push({ name: unit.name, error })
+    await runReadyHooks(this.container, this.lifecycle, client, { primary }, this.readied, {
+      resolveFailed: failed,
+      hookFailed: failed,
+      // The failed dependency's own error is what the test sees
+      dependsOnFailed: () => {},
+    })
+    throwFailures('onReady', failures)
   }
 
   /** The `@Once` handlers that have already handled their event, as a client forgets its once listeners. */
@@ -272,6 +349,17 @@ export class TestingModule {
     if (errors.length === 1) throw errors[0]
     if (errors.length > 1) throw new AggregateError(errors, `${errors.length} handlers of "${event}" threw.`)
     return { ran: results.filter(result => result.status === 'fulfilled' && result.value).length }
+  }
+}
+
+/** Rejects with the one hook's error, or an `AggregateError` naming each when several failed. */
+function throwFailures(hook: 'onReady' | 'onShutdown', failures: readonly { name: string; error: unknown }[]): void {
+  if (failures.length === 1) throw failures[0].error
+  if (failures.length > 1) {
+    throw new AggregateError(
+      failures.map(({ error }) => error),
+      `${failures.length} ${hook} hooks threw: ${failures.map(({ name }) => name).join(', ')}.`,
+    )
   }
 }
 
@@ -474,8 +562,14 @@ export class TestingModuleBuilder {
     const observers = [...(this.options.app ? appObservers(this.options.app) : []), ...(this.options.observers ?? [])]
     assertObservers("the testing module's observers", observers)
     bindObservers(container, observers)
+    // The order the app runs lifecycle hooks in: providers, then controllers, then observers, each after what it injects
+    const lifecycle: LifecycleUnit[] = resolutionOrder(container, providers, [
+      ...providers.keys(),
+      ...(this.options.controllers ?? []),
+      ...observers,
+    ]).map(token => ({ token, name: tokenName(token), dependencies: tokenDependencies(container, providers, token) }))
 
-    return new TestingModule(container, [...(this.options.controllers ?? [])], appClasses, providers, order, messages)
+    return new TestingModule(container, [...(this.options.controllers ?? [])], appClasses, providers, order, messages, lifecycle)
   }
 }
 

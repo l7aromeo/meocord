@@ -12,7 +12,7 @@ import {
   Routes,
   type User,
 } from 'discord.js'
-import { type Container, type ServiceIdentifier } from 'inversify'
+import { type Container } from 'inversify'
 import { Logger } from '@src/common/index.js'
 import {
   getAutocompleteHandlers,
@@ -33,7 +33,7 @@ import {
   resolveOptionParams,
 } from '@src/util/interaction.util.js'
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
-import { type MessageCommandOptions, type OnReady, type OnShutdown, type ReactionHandlerOptions } from '@src/interface/index.js'
+import { type MessageCommandOptions, type ReactionHandlerOptions } from '@src/interface/index.js'
 import { type AutocompleteMetadata, type CommandMetadata } from '@src/interface/command-decorator.interface.js'
 import {
   buildComponentRoutes,
@@ -56,6 +56,7 @@ import {
   type RequiringHandler,
 } from '@src/core/event-requirements.js'
 import { classUnits, type LifecycleUnit } from '@src/core/lifecycle-order.js'
+import { type LifecycleEntry, runReadyHooks, runShutdownHooks } from '@src/core/lifecycle-hooks.js'
 import { type MeoCordApplication } from '@src/interface/index.js'
 import { stopRequests } from '@src/util/stop-request.util.js'
 import { explainLoginFailure, type FatalLoginCode, fatalLoginCode, isRefusedToken, tokenMessage } from '@src/core/login-failure.js'
@@ -80,11 +81,6 @@ export const SLOW_READY_HOOK_MS = 10_000
 type LifecycleClass = new (...args: any[]) => any
 
 /** A resolved controller, service or provided value, with its name for logs. */
-interface LifecycleEntry {
-  name: string
-  instance: Partial<OnReady & OnShutdown>
-}
-
 /** Closes each started app: runs its shutdown hooks and destroys its client, resolving `false` on failure. */
 const runningApps = new Set<() => Promise<boolean>>()
 const stopRequest = stopRequests()
@@ -795,60 +791,23 @@ export class MeoCordApp implements MeoCordApplication {
    */
   private async runReadyHooks(client: Client<true>): Promise<void> {
     const entries: LifecycleEntry[] = []
-    const failed = new Set<unknown>()
-    // For each unit, the failed units it depends on, directly or through another dependency
-    const failedUpstream = new Map<unknown, Set<LifecycleUnit>>()
-    const byToken = new Map(this.lifecycleUnits.map(unit => [unit.token, unit]))
     this.lifecycleEntries = entries
-
-    for (const unit of this.lifecycleUnits) {
+    await runReadyHooks(
+      this.container,
+      this.lifecycleUnits,
+      client,
+      { primary: client.shard ? client.shard.ids.includes(0) : true },
+      entries,
+      {
+        resolveFailed: (unit, error) => this.logger.error(`Could not resolve ${unit.name} to run its lifecycle hooks:`, error),
+        hookFailed: (unit, error) => this.logger.error(`onReady failed in ${unit.name}:`, error),
+        dependsOnFailed: (unit, failed) =>
+          this.logger.warn(`Running onReady in ${unit.name} although it depends on ${failed.map(({ name }) => name).join(', ')}, which failed.`),
+        slow: unit => this.logger.warn(`onReady in ${unit.name} has run for over ${SLOW_READY_HOOK_MS} ms; the hooks after it are waiting.`),
+      },
       // Shutdown has begun: the client is going away, so no further hook starts
-      if (this.closing) break
-      const upstream = new Set<LifecycleUnit>()
-      for (const dependency of unit.dependencies) {
-        if (failed.has(dependency)) upstream.add(byToken.get(dependency)!)
-        failedUpstream.get(dependency)?.forEach(failedUnit => upstream.add(failedUnit))
-      }
-      failedUpstream.set(unit.token, upstream)
-
-      let instance: Partial<OnReady & OnShutdown>
-      try {
-        // A provided value may be anything, null included; only an object can carry hooks
-        instance = (this.container.get(unit.token as ServiceIdentifier) as Partial<OnReady & OnShutdown> | null) ?? {}
-      } catch (error) {
-        failed.add(unit.token)
-        this.logger.error(`Could not resolve ${unit.name} to run its lifecycle hooks:`, error)
-        continue
-      }
-      // Only a unit whose onReady has settled, or that has none, is shut down: a signal mid-ready
-      // skips the one still starting, and those not reached yet
-      if (typeof instance.onReady !== 'function') {
-        entries.push({ name: unit.name, instance })
-        continue
-      }
-
-      if (upstream.size > 0) {
-        const names = [...upstream].map(failedUnit => failedUnit.name).join(', ')
-        this.logger.warn(`Running onReady in ${unit.name} although it depends on ${names}, which failed.`)
-      }
-
-      const slow = setTimeout(
-        () =>
-          this.logger.warn(
-            `onReady in ${unit.name} has run for over ${SLOW_READY_HOOK_MS} ms; the hooks after it are waiting.`,
-          ),
-        SLOW_READY_HOOK_MS,
-      )
-      try {
-        await instance.onReady(client, { primary: client.shard ? client.shard.ids.includes(0) : true })
-      } catch (error) {
-        failed.add(unit.token)
-        this.logger.error(`onReady failed in ${unit.name}:`, error)
-      } finally {
-        clearTimeout(slow)
-      }
-      entries.push({ name: unit.name, instance })
-    }
+      { stopped: () => this.closing, slowAfterMs: SLOW_READY_HOOK_MS },
+    )
   }
 
   /**
@@ -856,16 +815,7 @@ export class MeoCordApp implements MeoCordApplication {
    * waiting once the whole sequence has run for the configured `shutdownTimeout`.
    */
   private async runShutdownHooks(entries: LifecycleEntry[]): Promise<void> {
-    const hooks = (async () => {
-      for (const { name, instance } of [...entries].reverse()) {
-        if (typeof instance.onShutdown !== 'function') continue
-        try {
-          await instance.onShutdown()
-        } catch (error) {
-          this.logger.error(`onShutdown failed in ${name}:`, error)
-        }
-      }
-    })()
+    const hooks = runShutdownHooks(entries, (name, error) => this.logger.error(`onShutdown failed in ${name}:`, error))
 
     let timer: ReturnType<typeof setTimeout> | undefined
     const timedOut = new Promise<'timeout'>(resolve => {

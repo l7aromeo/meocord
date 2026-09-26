@@ -1,5 +1,5 @@
 import { describe, expectTypeOf, it } from 'vitest'
-import { type ButtonInteraction, type Message } from 'discord.js'
+import { type ButtonInteraction, type Client, type Message } from 'discord.js'
 import { type InvocationResult, MeoCordTestingModule } from './meocord-testing-module.js'
 import { createExecutionContext } from './execution-context.js'
 import { getResponse } from './response.js'
@@ -92,5 +92,21 @@ describe('the testing helpers, misused', () => {
   it('takes only an interaction in getResponse', () => {
     // @ts-expect-error a message has no response state
     void getResponse({} as Message)
+  })
+})
+
+describe('TestingModule lifecycle', () => {
+  const module = MeoCordTestingModule.create({}).compile()
+
+  it('readies with true, or with the client and primary to pass the hooks', () => {
+    expectTypeOf(module.init()).resolves.toEqualTypeOf<typeof module>()
+    expectTypeOf(module.init({ ready: true })).resolves.toEqualTypeOf<typeof module>()
+    void module.init({ ready: { client: {} as Client<true>, primary: false } })
+    expectTypeOf(module.close()).toEqualTypeOf<Promise<void>>()
+  })
+
+  it('takes only a ready client', () => {
+    // @ts-expect-error onReady receives a client that has logged in
+    void module.init({ ready: { client: {} as Client<false> } })
   })
 })

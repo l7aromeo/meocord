@@ -1927,6 +1927,7 @@ export class ReminderScheduler implements OnReady, OnShutdown {
 - **Dependency order.** `onReady` hooks run one at a time, each class after the classes it injects: a `DatabaseService` is ready before the `ReminderScheduler` that injects it. Classes with no dependency between them run in declaration order, the `services` first, then the `controllers`. Command registration runs alongside and never delays the hooks. A hook still running after 10 seconds is named in a warning, and the hooks after it wait for it.
 - **`onShutdown`** runs on SIGINT or SIGTERM, before the client is destroyed, in reverse order, so a class stops before the classes it uses. The bot waits for the whole sequence up to `shutdownTimeout` from `meocord.config.ts` (10 seconds by default), then shuts down whether or not it finished. A second signal more than a second after the first exits at once; one sooner is taken as the same request, since a terminal's Ctrl+C can arrive twice. If the bot never became ready, for example because the login failed, no `onShutdown` hook runs. A signal that arrives while the `onReady` hooks are still running shuts down only the classes whose `onReady` finished, and those without one; the class still starting, and those after it, are skipped, and no further `onReady` starts.
 - A hook that throws is logged and the next one still runs. When a class's `onReady` failed, the classes that depend on it still run theirs, with a warning naming the failed dependency.
+- In a test, `init({ ready: true })` and `close()` on a testing module run the hooks in the same order — see [Lifecycle hooks in a test](#lifecycle-hooks-in-a-test).
 
 ---
 
@@ -2039,6 +2040,36 @@ const controller = module.get(GreetingSlashController)
 ```
 
 `providers` takes the same shapes as `@MeoCord({ providers })`: `useValue`, `useClass` and `useFactory`, under a class, string, symbol or `createToken` token. A factory that returns a promise is resolved by `await module.init()`, which `invoke` and `emit` call for you.
+
+#### Lifecycle hooks in a test
+
+`init()` runs no [lifecycle hook](#lifecycle-hooks). `init({ ready: true })` also runs every `onReady` once, as the bot does when it comes online, and `close()` runs the `onShutdown` hooks, so a test can check what a service does at startup and close what a provider opened:
+
+```typescript
+import { MeoCordTestingModule, type TestingModule } from 'meocord/testing'
+
+let module: TestingModule
+
+beforeEach(async () => {
+  module = await MeoCordTestingModule.create({
+    controllers: [ReminderController],
+    providers: [{ provide: DATABASE, useFactory: async () => createTestDatabase() }],
+  })
+    .compile()
+    .init({ ready: true })
+})
+
+afterEach(() => module.close())
+
+it('schedules the reminders it loaded at startup', () => {
+  expect(module.get(ReminderScheduler).pending).toHaveLength(2)
+})
+```
+
+- **Order.** The hooks run as the bot runs them: `onReady` one at a time, each class after the classes and providers it injects, the observers last; `onShutdown` in reverse, so a provided value such as a connection pool closes after everything that uses it.
+- **The client.** `onReady` receives a client from `createMockClient` and `{ primary: true }`. Pass your own with `init({ ready: { client, primary: false } })`.
+- **Failures.** Every hook runs even when one throws. Then `init` or `close` rejects with that error, or with an `AggregateError` naming each hook when several threw, where the bot would log them.
+- **Once.** A second `init({ ready: true })` or `close()` runs nothing more. As in the bot, a module that was never readied runs no `onShutdown`.
 
 ### Running a handler with `invoke`
 
