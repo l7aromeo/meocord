@@ -140,6 +140,28 @@ describe('message patterns', () => {
     expect(reach([Poke], '--ping ana')).toEqual(['poke', { target: 'ana', ping: '' }])
   })
 
+  it('reads a flag before the command words for no command, whatever other routes the app has', () => {
+    @Controller()
+    class Purge {
+      @MessageHandler('purge {count} {--bots}')
+      purge() {}
+    }
+    @Controller()
+    class Poke {
+      @MessageHandler('{target} {--ping}')
+      poke() {}
+    }
+    const starts: MessageStarts = { prefixes: ['!'] }
+    for (const controllers of [[Purge], [Purge, Poke]]) {
+      const routes = buildMessageRoutes(controllers, { prefix: '!' })
+      expect(matchMessageRoute(routes, '!--bots purge 5', starts)).toBeUndefined()
+      expect(matchMessageCommand(routes, '!--bots purge', starts)).toBeUndefined()
+      expect(matchMessageRoute(routes, '!purge 5 --bots', starts)?.params).toEqual({ count: '5', bots: '' })
+    }
+    const routes = buildMessageRoutes([Purge, Poke], { prefix: '!' })
+    expect(matchMessageRoute(routes, '!--ping ana', starts)).toMatchObject({ route: { method: 'poke' }, params: { target: 'ana', ping: '' } })
+  })
+
   it('gives the start a message used when it has flags', () => {
     @Controller()
     class Purge {
