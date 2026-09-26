@@ -139,6 +139,15 @@ function trim(entry: CallTimes, now: number): void {
   }
 }
 
+/** Whether a key allows one more call now, after trimming the calls that have left its window. */
+function verdictOf(entry: CallTimes, { uses, windowMs }: CooldownLimit, now: number): CooldownVerdict {
+  entry.windowMs = windowMs
+  trim(entry, now)
+  const { times, head } = entry
+  // A refused call is never recorded, so at most `uses` calls are ever in the window
+  return times.length - head < uses ? { allowed: true, retryAfterMs: 0 } : { allowed: false, retryAfterMs: times[times.length - uses] + windowMs - now }
+}
+
 export class MemoryCooldownStore extends CooldownStore {
   private readonly calls = new Map<string, CallTimes>()
   private sweeper?: ReturnType<typeof setInterval>
@@ -161,24 +170,22 @@ export class MemoryCooldownStore extends CooldownStore {
     return Promise.resolve({ allowed: true, retryAfterMs: 0 })
   }
 
-  /** Checks every entry as consumeMany does, recording nothing. */
+  /** Checks every entry as consumeMany does, recording nothing, and holding nothing for a key not yet counted. */
   peekMany(entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
-    return Promise.resolve(longestRefusal(this.check(entries, Date.now()).map(({ verdict }) => verdict)) ?? { allowed: true, retryAfterMs: 0 })
+    const verdicts = entries.map(({ key, limit }) => {
+      const entry = this.calls.get(key)
+      return entry ? verdictOf(entry, limit, Date.now()) : { allowed: true, retryAfterMs: 0 }
+    })
+    return Promise.resolve(longestRefusal(verdicts) ?? { allowed: true, retryAfterMs: 0 })
   }
 
   /** Each entry's call times, trimmed to its window, and whether it allows one more call now. */
   private check(entries: readonly CooldownEntry[], now: number): { entry: CallTimes; verdict: CooldownVerdict }[] {
     this.startSweeping()
-    return entries.map(({ key, limit: { uses, windowMs } }) => {
+    return entries.map(({ key, limit }) => {
       let entry = this.calls.get(key)
-      if (!entry) this.calls.set(key, (entry = { times: [], head: 0, windowMs }))
-      entry.windowMs = windowMs
-      trim(entry, now)
-      const { times, head } = entry
-      // A refused call is never recorded, so at most `uses` calls are ever in the window
-      const verdict: CooldownVerdict =
-        times.length - head < uses ? { allowed: true, retryAfterMs: 0 } : { allowed: false, retryAfterMs: times[times.length - uses] + windowMs - now }
-      return { entry, verdict }
+      if (!entry) this.calls.set(key, (entry = { times: [], head: 0, windowMs: limit.windowMs }))
+      return { entry, verdict: verdictOf(entry, limit, now) }
     })
   }
 

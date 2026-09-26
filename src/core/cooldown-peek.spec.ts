@@ -199,6 +199,14 @@ describe('peekCooldowns', () => {
     expect(error.timedOut).toBe(true)
   })
 
+  it('holds nothing for a key it peeks that no call has counted', async () => {
+    const store = new MemoryCooldownStore()
+
+    await store.peekMany([{ key: 'never-consumed', limit: { uses: 1, windowMs: 60_000 } }])
+
+    expect(store.size).toBe(0)
+  })
+
   it('lets every call through with a store that does not peek, leaving the refusal to consume', async () => {
     const memory = new MemoryCooldownStore()
     const consumeOnly = { consume: memory.consume.bind(memory) } as unknown as CooldownStore
