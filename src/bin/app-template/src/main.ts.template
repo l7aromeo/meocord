@@ -11,7 +11,7 @@ async function bootstrap() {
   logger.log('Application started')
 }
 
-// An error MeoCord explained, such as a privileged intent Discord refused, is already logged
+// An error MeoCord explained, such as a token or privileged intent Discord refused, is already logged
 bootstrap().catch(error => {
   if (!isExplainedError(error)) logger.error('Error during startup:', error)
 })

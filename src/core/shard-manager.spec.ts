@@ -157,24 +157,54 @@ describe('ShardManager', () => {
     expect(shards).toHaveLength(3)
   })
 
-  it('exits 1 before spawning anything when the token is missing', async () => {
+  it('exits 1 before spawning anything when the token is missing, saying where it comes from', async () => {
     const { manager, shards, exit } = setup({ token: '' })
     await manager.start()
     expect(exit).toHaveBeenCalledWith(1)
     expect(shards).toEqual([])
+    expect(logged.error).toEqual([expect.stringMatching(/^Discord token is missing: meocord\.config\.ts sets discordToken/)])
   })
 
-  it('starts the shards even when registration fails', async () => {
-    const { manager, shards } = setup({ shards: 1 })
+  const failingRest = (manager: InstanceType<typeof ShardManager>, error: Error) =>
     Reflect.set(manager, 'options', {
       ...Reflect.get(manager, 'options'),
       createRest: () => ({
         get: async () => {
-          throw new Error('401: Unauthorized')
+          throw error
         },
         put: async () => [],
       }),
     })
+
+  it('exits 1 before spawning anything when Discord refuses the token, explaining it once', async () => {
+    const { manager, shards, exit } = setup({ shards: 1 })
+    failingRest(manager, Object.assign(new Error('401: Unauthorized'), { status: 401 }))
+
+    await manager.start()
+
+    expect(exit).toHaveBeenCalledWith(1)
+    expect(shards).toEqual([])
+    expect(logged.error).toEqual([expect.stringMatching(/^Discord refused the bot token\. .*Reset Token/)])
+  })
+
+  it('explains a token Discord refuses when asked how many shards to run', async () => {
+    const { manager, shards, exit } = setup({
+      shards: 'auto',
+      recommendedShardCount: async () => {
+        throw Object.assign(new Error('An invalid token was provided.'), { code: 'TokenInvalid' })
+      },
+    })
+
+    await manager.start()
+
+    expect(exit).toHaveBeenCalledWith(1)
+    expect(shards).toEqual([])
+    expect(logged.error).toEqual([expect.stringMatching(/^Discord refused the bot token\./)])
+  })
+
+  it('starts the shards even when registration fails', async () => {
+    const { manager, shards } = setup({ shards: 1 })
+    failingRest(manager, new Error('503: Service Unavailable'))
 
     await manager.start()
 

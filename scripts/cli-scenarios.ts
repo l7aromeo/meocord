@@ -96,6 +96,8 @@ const configWith = (options: string) => validConfig.replace("// sharding: { shar
 
 /** A token Discord refuses, so a login or registration fails the way a wrong token does. */
 const INVALID_TOKEN_ENV = 'DISCORD_TOKEN=not-a-real-token\n'
+/** What the bot logs when Discord refuses INVALID_TOKEN_ENV's token. */
+const REFUSED_TOKEN = 'Discord refused the bot token'
 
 const templateMain = readFileSync(path.join(import.meta.dirname, '..', 'src', 'bin', 'app-template', 'src', 'main.ts.template'), 'utf8')
 
@@ -622,7 +624,7 @@ const scenarios: Scenario[] = [
     cwd: 'npm-app',
     files: { '.env': INVALID_TOKEN_ENV },
     command: ['npm', 'run', 'start:prod', '--', '--build'],
-    expect: { code: 1, says: ['Starting bot', 'An invalid token was provided'] },
+    expect: { code: 1, says: ['Starting bot', REFUSED_TOKEN] },
   },
 
   {
@@ -634,7 +636,7 @@ const scenarios: Scenario[] = [
     timeoutMs: 120_000,
     expect: {
       code: 1,
-      says: ['Production build completed', 'Starting bot', 'An invalid token was provided'],
+      says: ['Production build completed', 'Starting bot', REFUSED_TOKEN],
       never: ['match the same messages', 'can match the same customId', 'refuses to start'],
     },
   },
@@ -646,23 +648,28 @@ const scenarios: Scenario[] = [
     runtime: 'bun',
     files: { '.env': INVALID_TOKEN_ENV, dist: null },
     argv: ['start', '--prod', '--build'],
-    expect: { code: 1, says: ['Production build completed', 'Starting bot', 'An invalid token was provided'], creates: ['dist/main.js'] },
+    expect: {
+      code: 1,
+      says: ['Production build completed', 'Starting bot', REFUSED_TOKEN, 'Reset Token'],
+      never: ['An invalid token was provided', 'Error during startup'],
+      creates: ['dist/main.js'],
+    },
   },
   {
-    name: 'on bun, register --build says to check the token Discord refused',
+    name: 'on bun, register --build says Discord refused the token and where to get one',
     tier: 'slow',
     runtime: 'bun',
     files: { '.env': INVALID_TOKEN_ENV, dist: null },
     argv: ['register', '--build'],
-    expect: { code: 1, says: ['check discordToken', '401'] },
+    expect: { code: 1, says: [REFUSED_TOKEN, 'Reset Token'], never: ['DiscordAPIError', '401'] },
   },
   {
-    name: 'register says to check the token Discord refused',
+    name: 'register says Discord refused the token and where to get one',
     tier: 'slow',
     files: { '.env': INVALID_TOKEN_ENV },
     before: [['build', '--prod']],
     argv: ['register'],
-    expect: { code: 1, says: ['check discordToken', '401'] },
+    expect: { code: 1, says: [REFUSED_TOKEN, 'Reset Token'], never: ['DiscordAPIError', '401'] },
   },
 
   // Slow: a bundled build runs where no node_modules is installed, as a deployed dist does
@@ -673,7 +680,7 @@ const scenarios: Scenario[] = [
     before: [['build', '--prod']],
     hides: ['node_modules'],
     command: ['node', 'dist/main.js'],
-    expect: { code: 1, says: ['Starting bot', 'An invalid token was provided'], never: ['ERR_MODULE_NOT_FOUND', 'Cannot find'] },
+    expect: { code: 1, says: ['Starting bot', REFUSED_TOKEN], never: ['ERR_MODULE_NOT_FOUND', 'Cannot find'] },
   },
   ...(['node', 'bun'] as const).map(
     (runtime): Scenario => ({
@@ -685,7 +692,7 @@ const scenarios: Scenario[] = [
       command: runtime === 'bun' ? [runtimeBinary('bun'), '--no-install', 'dist/main.js'] : ['node', 'dist/main.js'],
       expect: {
         code: 1,
-        says: ['lodash-es: bundledModule', 'Starting bot', 'An invalid token was provided'],
+        says: ['lodash-es: bundledModule', 'Starting bot', REFUSED_TOKEN],
         never: ['SyntaxError', 'CommonJS'],
       },
     }),
@@ -711,7 +718,7 @@ const scenarios: Scenario[] = [
             'error makers: axios function',
             ...(runtime === 'node' ? ['FetchError: probe', 'ReplyError: ERR probe'] : ['Error: ERR probe']),
             'Starting bot',
-            'An invalid token was provided',
+            REFUSED_TOKEN,
           ],
           never: ['First argument must be an Error object'],
         },
@@ -725,7 +732,7 @@ const scenarios: Scenario[] = [
     before: [['build', '--dev']],
     hides: ['node_modules'],
     command: [runtimeBinary('bun'), '--no-install', 'dist/main.js'],
-    expect: { code: 1, says: ['lodash-es: bundledModule', 'An invalid token was provided'], never: ['SyntaxError', 'CommonJS'] },
+    expect: { code: 1, says: ['lodash-es: bundledModule', REFUSED_TOKEN], never: ['SyntaxError', 'CommonJS'] },
   },
   {
     name: 'an eval devtool from the hook is built as its non-eval twin, with a warning saying why',
@@ -750,7 +757,7 @@ const scenarios: Scenario[] = [
     command: ['node', 'dist/main.js'],
     expect: {
       code: 1,
-      says: ['optional probe: with color', 'An invalid token was provided'],
+      says: ['optional probe: with color', REFUSED_TOKEN],
       creates: ['dist/node_modules/optional-color/package.json'],
     },
   },
@@ -770,19 +777,31 @@ const scenarios: Scenario[] = [
     command: ['node', 'dist/main.js'],
     expect: {
       code: 1,
-      says: ['optional probe: without color', 'An invalid token was provided'],
+      says: ['optional probe: without color', REFUSED_TOKEN],
       leaves: ['dist/node_modules/optional-color'],
     },
   },
 
   // Slow: process sharding
   {
-    name: 'process sharding stops every shard at a refused token, instead of restarting them',
+    name: 'process sharding stops at a refused token before spawning a shard',
     tier: 'slow',
     files: { '.env': INVALID_TOKEN_ENV, 'meocord.config.ts': configWith("sharding: { mode: 'process', shards: 2 },"), dist: null },
     argv: ['start', '--prod', '--build'],
     timeoutMs: 60_000,
-    expect: { code: 1, says: ['Shard 0 cannot log in (TokenInvalid)', 'Stopping every shard'], never: ['restarting it'] },
+    expect: { code: 1, says: [REFUSED_TOKEN, 'Reset Token'], never: ['Shard 0', 'DiscordAPIError'] },
+  },
+  {
+    name: 'process sharding stops every shard at a refused token, instead of restarting them',
+    tier: 'slow',
+    files: {
+      '.env': INVALID_TOKEN_ENV,
+      'meocord.config.ts': configWith("sharding: { mode: 'process', shards: 2 },").replace('commands: {', 'commands: {\n    register: false,'),
+      dist: null,
+    },
+    argv: ['start', '--prod', '--build'],
+    timeoutMs: 60_000,
+    expect: { code: 1, says: ['Shard 0 cannot log in (TokenInvalid)', REFUSED_TOKEN, 'Stopping every shard'], never: ['restarting it'] },
   },
 
   // Slow: stop signals, sent to the whole process group as a terminal's Ctrl+C is, or to the CLI alone
@@ -836,7 +855,7 @@ const scenarios: Scenario[] = [
     platforms: ['linux', 'darwin'],
     files: { '.env': INVALID_TOKEN_ENV },
     argv: ['start', '--dev'],
-    signal: { name: 'SIGINT', after: 'An invalid token was provided' },
+    signal: { name: 'SIGINT', after: REFUSED_TOKEN },
     timeoutMs: 60_000,
     expect: { code: 0, says: ['Starting watch mode'] },
   },

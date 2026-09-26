@@ -219,12 +219,52 @@ describe('sharding', () => {
 
     it('leaves an error it does not explain unmarked, for main.ts to log', async () => {
       const loaded = await load()
-      const invalid = Object.assign(new Error('An invalid token was provided.'), { code: 'TokenInvalid' })
+      const unreachable = new Error('getaddrinfo ENOTFOUND discord.com')
 
-      await start(loaded, [], invalid)
+      await start(loaded, [], unreachable)
 
-      expect(loaded.isExplainedError(invalid)).toBe(false)
+      expect(loaded.isExplainedError(unreachable)).toBe(false)
       expect(logged.error).toEqual([])
+    })
+  })
+
+  describe('a login Discord refuses for its token, in one process', () => {
+    const invalidToken = () => Object.assign(new Error('An invalid token was provided.'), { code: 'TokenInvalid' })
+
+    const start = async (loaded: Loaded, rejection: Error) => {
+      vi.spyOn(loaded.discord.Client.prototype, 'login').mockRejectedValue(rejection)
+      const exitCode = process.exitCode
+      try {
+        await expect(loaded.MeoCordFactory.create(appClass(loaded)).start()).rejects.toBe(rejection)
+        return process.exitCode
+      } finally {
+        process.exitCode = exitCode
+      }
+    }
+
+    it('says Discord refused the token and where to get a new one, marking the error as explained', async () => {
+      const loaded = await load()
+      config.current = { discordToken: 'secret-token-value' }
+      const refused = invalidToken()
+
+      const exitCode = await start(loaded, refused)
+
+      expect(logged.error).toEqual([expect.stringMatching(/^Discord refused the bot token\. .*Reset Token/)])
+      expect(logged.error.join('')).not.toContain('secret-token-value')
+      expect(exitCode).toBe(1)
+      expect(loaded.isExplainedError(refused)).toBe(true)
+    })
+
+    // discord.js refuses an empty token with the same code as one Discord refused
+    it('says the token is missing when discordToken is empty', async () => {
+      const loaded = await load()
+      config.current = { discordToken: '' }
+      const refused = invalidToken()
+
+      await start(loaded, refused)
+
+      expect(logged.error).toEqual([expect.stringMatching(/^Discord token is missing: meocord\.config\.ts sets discordToken/)])
+      expect(loaded.isExplainedError(refused)).toBe(true)
     })
   })
 
@@ -251,7 +291,9 @@ describe('sharding', () => {
       } finally {
         process.exitCode = exitCode
       }
-      expect(sent).toEqual([{ meocord: 'fatal', code: 'TokenInvalid', message: 'An invalid token was provided.' }])
+      expect(sent).toEqual([{ meocord: 'fatal', code: 'TokenInvalid', message: expect.stringMatching(/^Discord refused the bot token\./) }])
+      // The manager logs it for every shard; the shard itself does not
+      expect(logged.error).toEqual([])
     })
 
     // discord.js passes on the gateway's close as a plain Error, with no code

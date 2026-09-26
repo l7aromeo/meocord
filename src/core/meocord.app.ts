@@ -57,7 +57,7 @@ import {
 import { classUnits, type LifecycleUnit } from '@src/core/lifecycle-order.js'
 import { type MeoCordApplication } from '@src/interface/index.js'
 import { stopRequests } from '@src/util/stop-request.util.js'
-import { explainLoginFailure, type FatalLoginCode, fatalLoginCode } from '@src/core/login-failure.js'
+import { explainLoginFailure, type FatalLoginCode, fatalLoginCode, isRefusedToken, tokenMessage } from '@src/core/login-failure.js'
 import { markExplained } from '@src/common/explained-error.js'
 import { isShardProcess } from '@src/util/sharding-mode.util.js'
 import { isShardMessage, type ShardMessage } from '@src/core/shard-messages.js'
@@ -300,7 +300,7 @@ export class MeoCordApp implements MeoCordApplication {
       runningApps.delete(this.close)
       const fatal = fatalLoginCode(error)
       // Read only for a failure that needs them: a hand-built client in a test may have no options
-      const explanation = fatal && explainLoginFailure(fatal, this.bot.options?.intents)
+      const explanation = fatal && explainLoginFailure(fatal, this.bot.options?.intents, this.discordToken)
       if (explanation) {
         // The explanation is what to act on, and the stack only for debugging. A shard's manager logs it instead.
         if (!isShardProcess()) this.logger.error(explanation)
@@ -352,13 +352,22 @@ export class MeoCordApp implements MeoCordApplication {
    * when every scope registered, `1` otherwise.
    */
   private async registerOnly(): Promise<never> {
+    if (!this.discordToken?.trim()) {
+      this.logger.error(tokenMessage(this.discordToken))
+      process.exit(1)
+    }
     const rest = new REST().setToken(this.discordToken)
     let applicationId: string
 
     try {
       applicationId = ((await rest.get(Routes.currentApplication())) as { id: string }).id
     } catch (error) {
-      this.logger.error('Could not read the application the token belongs to; check discordToken:', error)
+      if (isRefusedToken(error)) {
+        this.logger.error(tokenMessage(this.discordToken))
+        this.logger.debug('Reading the application failed:', error)
+      } else {
+        this.logger.error('Could not read the application the token belongs to; check discordToken:', error)
+      }
       process.exit(1)
     }
 
