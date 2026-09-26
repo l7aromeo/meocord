@@ -37,6 +37,7 @@
 - [Autocomplete](#autocomplete)
 - [Message commands](#message-commands)
   - [Typed params](#typed-params)
+  - [Flags and lists](#flags-and-lists)
   - [Usage errors](#usage-errors)
   - [Aliases, descriptions and scope](#aliases-descriptions-and-scope)
   - [A help command](#a-help-command)
@@ -855,6 +856,7 @@ export class DiceController {
 | `{name}`     | One word. Words in quotes, `"like this"` or `“like this”`, count as one, and the quotes are removed |
 | `{name...}`  | The rest of the message, as typed. Only last                                                        |
 | `{name?}`    | One word, or nothing. Only optional params follow it; `{name...?}` is the optional rest             |
+| `{--name}`   | A flag, `--name`, anywhere after the command word; see [Flags and lists](#flags-and-lists)          |
 
 A pattern without params, such as `'hello'`, matches exactly that message. The params arrive as the handler's second argument, so [`@Validate`](#validation-and-pipes), pipes and [`@Cooldown({ by })`](#counting-per-resource) work on them as they do on a component's, and stages read them with `getHandlerParams()`:
 
@@ -925,6 +927,31 @@ declare module 'meocord/interface' {
   }
 }
 ```
+
+### Flags and lists
+
+A flag, `{--name}`, may be given anywhere after the command's first word, apart from the words the pattern matches. Without a type it is `true` when given and `false` when not; with one, `{--name:type}`, it takes a value, `--name=value`, and is required unless it ends in `?`. A typed rest, `{name:type...}`, is a list: each word, or "quoted words", becomes a value of the type.
+
+```typescript
+import { type GuildMember, type Message, type User } from 'discord.js'
+
+// !purge 50 --bots    !purge --from=@ana 20
+@MessageHandler('purge {count:int} {--bots} {--from:user?}')
+async purge(message: Message, { count, bots, from }: { count: number; bots: boolean; from?: User }) {}
+
+// !poll "Lunch today?" pizza "fried rice" soup
+@MessageHandler('poll {question} {options:string...}')
+async poll(message: Message, { question, options }: { question: string; options: string[] }) {}
+
+// !kick @ana @ben 123456789012345678
+@MessageHandler('kick {targets:member...}')
+async kick(message: Message, { targets }: { targets: GuildMember[] }) {}
+```
+
+- A value with spaces goes in quotes, `--note="buy milk"`. A flag given twice takes its last value, and `--bots=no` gives `false`.
+- A flag the command does not have, a typed flag left out or given no value, and an item that is not a value of its type each get the [usage reply](#usage-errors): `--all is not an option of this command`.
+- Words in quotes are never flags, so `"--bots"` stays text. Only a message naming a command with flags is read for them, so a pattern with no flags reads `--bots` as an ordinary word and costs nothing more, and a rest takes the message's text without its flags.
+- The members a list, its params and its flags name are fetched together, in one request, as [typed params](#typed-params) are. `{name...}` with no type stays the rest of the message as text.
 
 ### Usage errors
 

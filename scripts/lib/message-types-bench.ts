@@ -15,13 +15,15 @@ const KINDS = [
   ['remind {after:duration} {what...}', '{ after: number; what: string }'],
   ['role add {who:member} {role:role}', '{ who: GuildMember; role: Role }'],
   ['config set {key:prefix|lang} {value...}', "{ key: 'prefix' | 'lang'; value: string }"],
+  ['purge {count:int} {--bots} {--from:user?}', '{ count: number; bots: boolean; from?: User }'],
+  ['kick {targets:member...}', '{ targets: GuildMember[] }'],
 ] as const
 
 function handlers(typed: boolean): string {
   const lines = [
-    `import { type GuildMember, type Message, type Role } from 'discord.js'`,
+    `import { type GuildMember, type Message, type Role, type User } from 'discord.js'`,
     `import { MessageHandler } from '@src/decorator/index.js'`,
-    'export type Resolved = [GuildMember, Role]',
+    'export type Resolved = [GuildMember, Role, User]',
     'export class Commands {',
   ]
   for (let i = 0; i < 200; i++) {

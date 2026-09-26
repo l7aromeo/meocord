@@ -2,7 +2,7 @@ import { Collection, type GuildMember, type Message, type Role, type TextChannel
 import { Controller, MeoCord, MessageHandler } from '@src/decorator/index.js'
 import { MessageUsageError } from '@src/common/errors.js'
 import { type MessageParamType } from '@src/interface/index.js'
-import { buildMessageRoutes, type MessageRoute } from '@src/core/message-routes.js'
+import { buildMessageRoutes, matchMessageRoute, type MessageRoute } from '@src/core/message-routes.js'
 import { fitsParamType, missingParams, resolveMessageParams, usageOf } from '@src/core/message-params.js'
 import { createMockGuild, createMockMessage } from '@src/testing/index.js'
 
@@ -191,6 +191,85 @@ describe('the form of a typed word', () => {
   })
 })
 
+describe('typed lists', () => {
+  it('turns each word of a typed rest into a value, quoted words as one', async () => {
+    const route = routeOf('poll {question} {options:string...}')
+    expect(await resolveMessageParams(route, { question: 'Lunch?', options: 'pizza "fried rice" soup' }, guildMessage().message, '!', undefined)).toEqual({
+      question: 'Lunch?',
+      options: ['pizza', 'fried rice', 'soup'],
+    })
+  })
+
+  it('names each item that is not a value of its type', async () => {
+    const route = routeOf('sum {numbers:int...}')
+    const error = await usageError(resolveMessageParams(route, { numbers: '1 two 3 four' }, guildMessage().message, '!', undefined))
+    expect(error.issues).toEqual([
+      { param: 'numbers', message: 'numbers: "two" is not a whole number' },
+      { param: 'numbers', message: 'numbers: "four" is not a whole number' },
+    ])
+  })
+
+  it('fetches the uncached members of a list together with the other params, in one request', async () => {
+    const { message, guild } = guildMessage({ members: [member(ID(1))] })
+    guild.members.fetch.mockResolvedValue(new Collection([[ID(2), member(ID(2))], [ID(3), member(ID(3))]]) as never)
+    const route = routeOf('kick {first:member} {rest:member...}')
+
+    const params = await resolveMessageParams(route, { first: ID(3), rest: `<@${ID(1)}> ${ID(2)}` }, message, '!', undefined)
+
+    expect(params).toEqual({ first: member(ID(3)), rest: [member(ID(1)), member(ID(2))] })
+    expect(guild.members.fetch).toHaveBeenCalledTimes(1)
+    expect(guild.members.fetch).toHaveBeenCalledWith({ user: [ID(3), ID(2)] })
+  })
+})
+
+describe('flags', () => {
+  const flagged = (content: string, pattern = 'purge {count:int} {--bots} {--from:member?} {--limit:int?}', guild = createMockGuild()) => {
+    const route = routeOf(pattern)
+    const message = createMockMessage({ content, guild })
+    const matched = matchMessageRoute([route], content, { prefixes: ['!'] })
+    return { route, message, matched, resolve: () => resolveMessageParams(route, matched!.params, message, matched!.start, undefined) }
+  }
+
+  it('turns a flag without a type into true or false, and a typed one into its value', async () => {
+    expect(await flagged('!purge --bots 50').resolve()).toEqual({ count: 50, bots: true })
+    expect(await flagged('!purge 50').resolve()).toEqual({ count: 50, bots: false })
+    expect(await flagged('!purge 50 --bots=no --limit=10').resolve()).toEqual({ count: 50, bots: false, limit: 10 })
+    expect(await flagged('!purge 50 --LIMIT=1 --limit=2').resolve()).toEqual({ count: 50, bots: false, limit: 2 })
+  })
+
+  it('names a flag the command does not have, one missing its value, and a value that is not of its type', async () => {
+    const error = await usageError(flagged('!purge 50 --bot --from --limit=lots --bots=maybe --bot').resolve())
+    expect(error.usage).toBe('!purge <count> [--bots] [--from=<from>] [--limit=<limit>]')
+    expect(error.issues).toEqual([
+      { param: 'limit', message: '--limit: "lots" is not a whole number' },
+      { message: '--bot is not an option of this command' },
+      { param: 'bots', message: '--bots: "maybe" is not yes or no' },
+      { param: 'from', message: '--from needs a value, such as --from=<from>' },
+    ])
+  })
+
+  it('names a required flag left out', async () => {
+    const error = await usageError(flagged('!remind 10m', 'remind {after:duration} {--note:string}').resolve())
+    expect(error.issues).toEqual([{ param: 'note', message: '--note is missing' }])
+    expect(await flagged('!remind 10m --note="buy milk"', 'remind {after:duration} {--note:string}').resolve()).toEqual({
+      after: 600_000,
+      note: 'buy milk',
+    })
+  })
+
+  it('fetches a member flag together with member params, and needs a server only for a flag given', async () => {
+    const guild = createMockGuild()
+    guild.members.fetch.mockResolvedValue(new Collection([[ID(4), member(ID(4))], [ID(5), member(ID(5))]]) as never)
+    const { resolve } = flagged(`!warn ${ID(4)} --by=<@${ID(5)}>`, 'warn {target:member} {--by:member?}', guild)
+
+    expect(await resolve()).toEqual({ target: member(ID(4)), by: member(ID(5)) })
+    expect(guild.members.fetch).toHaveBeenCalledWith({ user: [ID(4), ID(5)] })
+    expect(await flagged('!purge 5', undefined, null as never).resolve()).toEqual({ count: 5, bots: false })
+    const dm = await usageError(flagged(`!purge 5 --from=${ID(4)}`, undefined, null as never).resolve())
+    expect(dm.serverOnly).toBe(true)
+  })
+})
+
 describe('usage', () => {
   it('shows a route as the user types it, after the start the message used', () => {
     const route = routeOf('ban {target:member} {days:int} {reason...?}')
@@ -210,9 +289,9 @@ describe('usage', () => {
 })
 
 describe('typed patterns at startup', () => {
-  it('refuses a type no one declared, and a typed rest', () => {
+  it('refuses a type no one declared, for a param or a flag', () => {
     expect(() => routeOf('pay {amount:money}')).toThrow(/\{amount:money\} names no type/)
-    expect(() => routeOf('say {text:string...}')).toThrow(/a rest param takes no type/)
+    expect(() => routeOf('pay {amount:int} {--fee:money?}')).toThrow(/\{--fee:money\} names no type/)
   })
 
   it("refuses an app's own type before another optional param, since only its parse can tell its words", () => {

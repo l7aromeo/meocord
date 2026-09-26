@@ -18,7 +18,7 @@ export interface Measured {
   results: Results
 }
 
-/** A command word, sometimes a subcommand, then params, rests and optionals. */
+/** A command word, sometimes a subcommand, then params, rests, optionals and flags. */
 function patternFor(i: number): string {
   switch (i % 5) {
     case 0:
@@ -30,7 +30,7 @@ function patternFor(i: number): string {
     case 3:
       return `grp${i % 37} cmd${i} {z} {rest...?}`
     default:
-      return `cmd${i} {a} {b} {c}`
+      return `cmd${i} {a} {b} {c} {--all} {--limit:int?}`
   }
 }
 
@@ -96,8 +96,10 @@ export function run(): Measured {
     // As dispatch does: the route a message matches, or else the command it names, for its usage
     const match = (content: string) => matchMessageRoute(routes, content, starts) ?? matchMessageCommand(routes, content, starts)
     const hit = Math.floor(count / 2) + 1
-    const matching = [`!cmd${hit} alpha beta gamma`, `!CMD${hit} "two words" beta gamma`]
-    if (!match(matching[0])) throw new Error(`The benchmark's matching message reaches no route at ${count} routes.`)
+    const matching = [`!cmd${hit} alpha beta gamma`, `!CMD${hit} "two words" beta gamma`, '!cmd4 alpha --all beta --limit=5 gamma']
+    for (const message of matching) {
+      if (!matchMessageRoute(routes, message, starts)) throw new Error(`The benchmark's message ${message} reaches no route at ${count} routes.`)
+    }
     results[count] = {
       chatter: time(match, chatter, 400_000),
       unknown: time(match, unknown, 200_000),

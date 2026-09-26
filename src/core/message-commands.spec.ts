@@ -417,6 +417,19 @@ describe('typed message params and usage replies', () => {
     }
   }
 
+  @Controller()
+  class Cleanup {
+    @MessageHandler('purge {count:int} {--bots} {--from:member?}')
+    async purge(_message: Message, params: { count: number; bots: boolean; from?: GuildMember }) {
+      seen.push(['purge', params])
+    }
+
+    @MessageHandler('poll {question} {options:string...}')
+    async poll(_message: Message, params: { question: string; options: string[] }) {
+      seen.push(['poll', params])
+    }
+  }
+
   /** Sends a message in a guild whose member cache holds the target, and waits for dispatch. */
   async function sendIn(client: Client, content: string, guild: ReturnType<typeof createMockGuild> | null = createMockGuild({ members: [target] })) {
     const message = createMockMessage({ content, guild })
@@ -467,6 +480,24 @@ describe('typed message params and usage replies', () => {
     ])
     expect(wrong.reply).toHaveBeenCalledWith(
       expect.objectContaining({ content: 'Usage: !slowmode [mode] [seconds]\nseconds: "soon" is not a whole number' }),
+    )
+  })
+
+  it('gives a handler its flags from anywhere in the message, and its typed lists', async () => {
+    const client = await startApp({ controllers: [Cleanup], messages: { prefix: '!', deleteUsageRepliesAfter: 0 } })
+
+    await sendIn(client, `!purge --from=<@${TARGET}> 20 --bots`)
+    await sendIn(client, '!purge 5')
+    await sendIn(client, '!poll "Lunch today?" pizza "fried rice"')
+    const unknown = await sendIn(client, '!purge 5 --all')
+
+    expect(seen).toEqual([
+      ['purge', { count: 20, bots: true, from: target }],
+      ['purge', { count: 5, bots: false }],
+      ['poll', { question: 'Lunch today?', options: ['pizza', 'fried rice'] }],
+    ])
+    expect(unknown.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: 'Usage: !purge <count> [--bots] [--from=<from>]\n--all is not an option of this command' }),
     )
   })
 

@@ -189,6 +189,23 @@ describe('@MessageHandler typed params', () => {
         return undefined
       }
 
+      @MessageHandler('purge {count:int} {--bots} {--from:user?}')
+      async purge(_m: Message, _p: { count: number; bots: boolean; from?: User }) {
+        return undefined
+      }
+
+      // @ts-expect-error a flag without a type is a boolean
+      @MessageHandler('purge {count:int} {--bots}')
+      async flagText(_m: Message, _p: { count: number; bots: string }) {
+        return undefined
+      }
+
+      // @ts-expect-error a typed rest is a list
+      @MessageHandler('kick {targets:member...}')
+      async list(_m: Message, _p: { targets: GuildMember }) {
+        return undefined
+      }
+
       // @ts-expect-error a word the choices do not have
       @MessageHandler('mode {m:on|off}')
       async choice(_m: Message, _p: { m: 'on' | 'auto' }) {
@@ -203,5 +220,13 @@ describe('@MessageHandler typed params', () => {
       { target: GuildMember } & { duration?: number; reason?: string }
     >()
     expectTypeOf<ParamsOf<'hello'>>().toEqualTypeOf<{} & {}>()
+    expectTypeOf<ParamsOf<'purge {count:int} {--bots} {--from:user?} {ids:member...?}'>>().toEqualTypeOf<
+      { count: number; bots: boolean } & { from?: User; ids?: GuildMember[] }
+    >()
+    // Compared flattened: a literal `{ ... } & {}` reduces to its left side, while ParamsOf's two mapped halves
+    // stay an intersection, which expectTypeOf tells apart from a plain object. Flattening keeps each key's
+    // modifiers, so a readonly array, an optional key or an index signature would still fail here.
+    type Flat<T> = { [K in keyof T]: T[K] }
+    expectTypeOf<Flat<ParamsOf<'poll {question} {options:string...}'>>>().toEqualTypeOf<{ question: string; options: string[] }>()
   })
 })

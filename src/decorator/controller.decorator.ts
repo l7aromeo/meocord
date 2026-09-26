@@ -96,7 +96,9 @@ export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boole
  * only optional params follow one; of several, each takes a word only if it fits its type, and the
  * last takes any. `{name:type}` turns the word into a value of the type before any guard runs:
  * `int`, `number`, `bool`, `duration`, `member`, `user`, `role`, `channel`, words such as `on|off`, or
- * a type the app adds. The params arrive as the handler's second argument, where `@Validate`, pipes
+ * a type the app adds, and `{name:type...}` turns each word of the rest into one, as a list. `{--name}`
+ * is a flag, `true` when the message gives `--name` after the command; `{--name:type}` takes `--name=value`,
+ * required unless `?`. The params arrive as the handler's second argument, where `@Validate`, pipes
  * and `@Cooldown({ by })` see them too, and the params the handler declares are checked against them.
  *
  * A message that names the command, after a prefix or mention, but does not fit its pattern is
