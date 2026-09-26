@@ -87,6 +87,11 @@ describe('typed user params through dispatch and invoke', () => {
     who(_message: Message, { u }: { u: User }) {
       received.push(u.id)
     }
+
+    @MessageHandler('purge {count:int} {--from:user?}')
+    purge(_message: Message, { count, from }: { count: number; from?: User }) {
+      received.push(`${count} from ${from?.id}`)
+    }
   }
 
   @MeoCord({ controllers: [WhoController], messages: { prefix: '!', mention: true }, clientOptions: { intents: [] } })
@@ -121,6 +126,29 @@ describe('typed user params through dispatch and invoke', () => {
     await Promise.all(clients[0].rawListeners('messageCreate').map(listener => (listener as (m: unknown) => unknown)(message)))
 
     expect(received).toEqual([USER])
+  })
+
+  it('resolves a user given to a flag under invoke', async () => {
+    const module = MeoCordTestingModule.create({ app: App, controllers: [WhoController] }).compile()
+
+    const { ran } = await module.invoke(WhoController, 'purge', createMockMessage({ content: `!purge --from=<@${USER}> 20` }))
+
+    expect(ran).toBe(true)
+    expect(received).toEqual([`20 from ${USER}`])
+  })
+
+  it('resolves a user given to a flag under dispatch', async () => {
+    const clients: Client[] = []
+    vi.spyOn(Client.prototype, 'login').mockImplementation(function (this: Client) {
+      clients.push(this)
+      return Promise.resolve('token')
+    })
+    await MeoCordFactory.create(App).start()
+
+    const message = createMockMessage({ content: `!purge --from=<@${USER}> 20` })
+    await Promise.all(clients[0].rawListeners('messageCreate').map(listener => (listener as (m: unknown) => unknown)(message)))
+
+    expect(received).toEqual([`20 from ${USER}`])
   })
 
   it('matches a mention of the bot where a prefix goes, under invoke', async () => {
