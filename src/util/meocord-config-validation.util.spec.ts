@@ -33,14 +33,21 @@ describe('configProblems', () => {
     })
 
     expect(errors).toEqual([
-      'discordToken must be a string (got number)',
+      'discordToken must be a string (got 42)',
       "sharding.mode must be 'internal' or 'process' (got 'bogus')",
-      "sharding.shards must be 'auto' or a whole number of shards (got number)",
+      "sharding.shards must be 'auto' or a whole number of shards, 1 or more (got 0)",
       "commands.guilds must be an array of guild ids (got 'one')",
       "commands.register must be true or false (got 'yes')",
       "optionalExternals must be an array of package names (got 'sharp')",
-      'shutdownTimeout must be a number of milliseconds (got number)',
+      'shutdownTimeout must be a number of milliseconds, 0 or more (got -1)',
       'rsbuild must be a function (got object)',
+    ])
+  })
+
+  it('shows the number it got, so a shard count or timeout that is out of range says which', () => {
+    expect(configProblems({ sharding: { shards: 2.5 }, shutdownTimeout: Number.NaN }).errors).toEqual([
+      "sharding.shards must be 'auto' or a whole number of shards, 1 or more (got 2.5)",
+      'shutdownTimeout must be a number of milliseconds, 0 or more (got NaN)',
     ])
   })
 
@@ -58,7 +65,7 @@ describe('configProblems', () => {
 
   // jiti hands the CLI an interop proxy whose own keys are only `default`.
   it('reads through a module namespace with a default export', () => {
-    expect(configProblems({ default: { discordToken: 7 } }).errors).toEqual(['discordToken must be a string (got number)'])
+    expect(configProblems({ default: { discordToken: 7 } }).errors).toEqual(['discordToken must be a string (got 7)'])
   })
 
   it('refuses a default export that is not an object', () => {
