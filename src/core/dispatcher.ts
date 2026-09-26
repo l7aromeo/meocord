@@ -43,8 +43,7 @@ import {
   matchMessageCommand,
   matchMessageRoute,
   type MessageRoute,
-  messageStarts,
-  usesAppPrefix,
+  messageStartsFor,
 } from '@src/core/message-routes.js'
 import { assertMessageScope, hasTypedParams, missingParams, resolveMessageParams, usageOf } from '@src/core/message-params.js'
 import { CommandNotFoundError, MessageUsageError } from '@src/common/errors.js'
@@ -388,9 +387,7 @@ export class Dispatcher {
     let target: { route: MessageRoute; params: Record<string, string>; start: string; given?: number } | undefined
     try {
       if (this.messageRoutes.length > 0) {
-        const starts = usesAppPrefix(this.messageRoutes)
-          ? await messageStarts(this.messageOptions, message, this.options.botUserId(message))
-          : { prefixes: [] }
+        const starts = await messageStartsFor(this.messageRoutes, this.messageOptions, message, this.options.botUserId(message))
         target = matchMessageRoute(this.messageRoutes, message.content, starts)
         if (!target) {
           const named = matchMessageCommand(this.messageRoutes, message.content, starts)
