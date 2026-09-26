@@ -3,9 +3,9 @@ import { Client, type Message } from 'discord.js'
 import { Controller, Guard, MeoCord, MessageHandler, On, Service, UseGuard, UseTheme, Validate } from '@src/decorator/index.js'
 import { MeoCordFactory } from '@src/core/meocord-factory.js'
 import { GuardDeniedError, UserError } from '@src/common/index.js'
-import { type GuardInterface, type MessageCommandOptions, type StandardSchemaV1, type ThemeOverride } from '@src/interface/index.js'
+import { type GuardInterface, type MessageCommandOptions, type StandardSchemaV1, type ThemeOverride, type ThemeResolvers } from '@src/interface/index.js'
 import { DEFAULT_THEME } from '@src/core/theme-defaults.js'
-import { createMockMessage, MeoCordTestingModule } from '@src/testing/index.js'
+import { createMockGuild, createMockMessage, MeoCordTestingModule } from '@src/testing/index.js'
 
 vi.mock('@src/common/logger.js', async importOriginal => ({
   ...(await importOriginal<object>()),
@@ -73,25 +73,25 @@ class Watcher {
 }
 
 /** Starts an app with these message options and theme, logged in without a network. */
-async function startApp(messages: MessageCommandOptions, theme?: ThemeOverride): Promise<Client> {
+async function startApp(messages: MessageCommandOptions, theme?: ThemeOverride, themeFor?: ThemeResolvers): Promise<Client> {
   const clients: Client[] = []
   vi.spyOn(Client.prototype, 'login').mockImplementation(function (this: Client) {
     clients.push(this)
     return Promise.resolve('token')
   })
-  @MeoCord({ controllers: [Commands], services: [Watcher], messages: { prefix: '!', ...messages }, theme, clientOptions: { intents: [] } })
+  @MeoCord({ controllers: [Commands], services: [Watcher], messages: { prefix: '!', ...messages }, theme, themeFor, clientOptions: { intents: [] } })
   class App {}
   await MeoCordFactory.create(App).start()
   Object.defineProperty(clients[0], 'user', { value: { id: '111', setActivity: () => {} }, configurable: true })
   return clients[0]
 }
 
-/** The text of the replies each message got, sent in turn through every listener. */
-async function repliesTo(client: Client, contents: string[]): Promise<string[]> {
+/** The text of the replies each message got, sent in turn through every listener, by `author` in `guild`. */
+async function repliesTo(client: Client, contents: string[], { author = 'user-1', guild }: { author?: string; guild?: { id: string } | null } = {}): Promise<string[]> {
   const replies: string[] = []
   for (const content of contents) {
-    const message = createMockMessage({ content })
-    Object.assign(message.author, { bot: false, id: 'user-1' })
+    const message = createMockMessage({ content, ...(guild !== undefined && { guild: guild as never }) })
+    Object.assign(message.author, { bot: false, id: author })
     await Promise.all(client.rawListeners('messageCreate').map(listener => (listener as (m: unknown) => unknown)(message)))
     for (const [reply] of vi.mocked(message.reply).mock.calls) replies.push((reply as { content: string }).content)
   }
@@ -132,6 +132,24 @@ describe('messages.replyEmoji', () => {
     const client = await startApp({ deleteUsageRepliesAfter: 0, replyEmoji: true }, { emojis: { warning: '🚧' } })
 
     expect(await repliesTo(client, ['!link', '!vip'])).toEqual(['🚧 Link your account first.', '🎟️ Members only.'])
+  })
+
+  it("takes the emoji from themeFor: the server's, and the user's over it, in a server or a DM", async () => {
+    const castle = createMockGuild({ id: '300000000000000001' })
+    const client = await startApp({ deleteUsageRepliesAfter: 0, replyEmoji: true }, undefined, {
+      guild: ({ guild }) => (guild.id === castle.id ? { emojis: { warning: '🏰' } } : undefined),
+      user: ({ user }) => (user.id === 'vip' ? { emojis: { warning: '👑' } } : undefined),
+    })
+    const warning = DEFAULT_THEME.emojis.warning
+
+    expect(await repliesTo(client, ['!link', '!roll lots', 'spam'], { guild: castle })).toEqual([
+      '🏰 Link your account first.',
+      '🏰 Usage: !roll <sides>\nsides: "lots" is not a whole number',
+      '🏰 Slow down.',
+    ])
+    expect(await repliesTo(client, ['!link', 'spam'], { guild: castle, author: 'vip' })).toEqual(['👑 Link your account first.', '👑 Slow down.'])
+    expect(await repliesTo(client, ['!link'], { guild: null, author: 'vip' })).toEqual(['👑 Link your account first.'])
+    expect(await repliesTo(client, ['!link'], { guild: null })).toEqual([`${warning} Link your account first.`])
   })
 
   it('prefixes the replies module.dispatch sends, as the bot does', async () => {
