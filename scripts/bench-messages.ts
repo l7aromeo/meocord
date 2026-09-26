@@ -15,12 +15,12 @@ import { typedPatternInstantiations } from './lib/message-types-bench.js'
 
 /**
  * What a message may cost, at any number of routes, in calls of the reference workload, for each runtime.
- * The reference tracks Bun's matching closely on any machine, but on CI runners Node's matching slows about
- * twice as much as Node's reference does, so Node's budgets sit at 1.6x the highest it measured there.
+ * The reference tracks Bun's matching closely on any machine, but on CI runners Node's matching costs more
+ * of its reference than on a laptop, so Node's budgets sit at 1.7x and 2x the highest it measured there.
  */
 const BUDGET_REFERENCES: Record<'bun' | 'node', Record<Case, number>> = {
   bun: { chatter: 1, unknown: 8, matching: 10 },
-  node: { chatter: 1, unknown: 10, matching: 16 },
+  node: { chatter: 1, unknown: 8, matching: 12 },
 }
 /** What a message may cost on any machine, in nanoseconds, so a slowdown the reference shares still fails. */
 const CAP_NS = 10_000
