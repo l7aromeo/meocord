@@ -306,10 +306,36 @@ describe('a resolver that fails', () => {
       ['handler', DEFAULT_THEME.colors.primary, '#000022', DEFAULT_THEME.colors.success],
       ['handler', '#000021', '#000022', DEFAULT_THEME.colors.success],
     ])
+    // Once for each server whose lookups started failing, and once when the first answers again
     expect(errors.mock.calls.filter(([text]) => String(text).includes('themeFor.guild'))).toEqual([
-      [expect.stringContaining('themeFor.guild failed: database down. Calls use the theme without it')],
+      [expect.stringContaining(`themeFor.guild for guild ${GUILD} failed: database down. Its calls use the theme without it`)],
+      [expect.stringContaining(`themeFor.guild for guild ${OTHER_GUILD} failed: database down`)],
     ])
-    expect(logs).toHaveBeenCalledWith(expect.stringContaining('themeFor.guild answers again, after 2 failed lookup(s)'))
+    expect(logs).toHaveBeenCalledWith(expect.stringContaining(`themeFor.guild for guild ${GUILD} answers again, after 1 failed lookup(s)`))
+  })
+
+  it('logs a server whose lookups keep failing once, and never a healthy one beside it', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] })
+    const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {})
+    const logs = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => {})
+    const module = moduleWith(
+      {
+        guild: ({ guild }) => {
+          if (guild.id === GUILD) throw new Error('bad row')
+          return colour('#000041')
+        },
+      },
+      { themeCache: { ttlSeconds: 1 } },
+    )
+
+    for (let round = 0; round < 3; round++) {
+      await module.invoke(Panel, 'panel', press('panel'))
+      await module.invoke(Panel, 'panel', press('panel', { guildId: OTHER_GUILD }))
+      vi.advanceTimersByTime(10_001)
+    }
+
+    expect(errors.mock.calls.map(([text]) => String(text))).toEqual([expect.stringContaining(`themeFor.guild for guild ${GUILD} failed: bad row`)])
+    expect(logs.mock.calls.filter(([text]) => String(text).includes('answers again'))).toEqual([])
   })
 
   it('gives up waiting after themeForTimeoutMs, and the call goes on', async () => {
@@ -321,7 +347,7 @@ describe('a resolver that fails', () => {
 
     expect(performance.now() - started).toBeLessThan(200)
     expect(seen).toContainEqual(['handler', DEFAULT_THEME.colors.primary, DEFAULT_THEME.colors.info, DEFAULT_THEME.colors.success])
-    expect(errors).toHaveBeenCalledWith(expect.stringContaining('themeFor.guild did not answer within 20 ms'))
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining(`themeFor.guild for guild ${GUILD} did not answer within 20 ms`))
   })
 
   it('leaves out a result that is not a valid theme, warning once for the server', async () => {

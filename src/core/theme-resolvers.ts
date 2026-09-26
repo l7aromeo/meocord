@@ -35,7 +35,8 @@ class ResolverCache {
   private readonly pending = new Map<string, { token: object; result: Promise<ThemeOverride | undefined> }>()
   /** The ids already warned about for an invalid result, until one gives a valid result again. */
   private readonly warned = new Set<string>()
-  private outage: { failures: number; since: number } | undefined
+  /** The ids whose lookups are failing, each logged once when it started and once when it answers again. */
+  private readonly failing = new Map<string, { failures: number; since: number }>()
 
   constructor(
     private readonly kind: Kind,
@@ -66,11 +67,13 @@ class ResolverCache {
       this.entries.clear()
       this.pending.clear()
       this.warned.clear()
+      this.failing.clear()
       return
     }
     this.entries.delete(id)
     this.pending.delete(id)
     this.warned.delete(id)
+    this.failing.delete(id)
   }
 
   private async fetch(id: string, token: object): Promise<ThemeOverride | undefined> {
@@ -78,9 +81,9 @@ class ResolverCache {
     let keepMs = this.ttlMs
     try {
       layer = this.accept(id, await this.within(id))
-      this.recovered()
+      this.recovered(id)
     } catch (error) {
-      this.failed(error)
+      this.failed(id, error)
       layer = undefined
       keepMs = THEME_FAILURE_BACKOFF_MS
     }
@@ -127,21 +130,32 @@ class ResolverCache {
     return undefined
   }
 
-  private failed(error: unknown): void {
-    if (this.outage) {
-      this.outage.failures++
+  /**
+   * Logs a failed lookup once for its id, when its lookups start failing: a server or user whose lookup keeps failing
+   * is not logged again each time it is asked, and one that answers is never logged.
+   */
+  private failed(id: string, error: unknown): void {
+    const failing = this.failing.get(id)
+    if (failing) {
+      failing.failures++
       return
     }
-    this.outage = { failures: 1, since: Date.now() }
+    if (this.failing.size >= this.max) this.failing.clear()
+    this.failing.set(id, { failures: 1, since: Date.now() })
     const reason = error instanceof ThemeLookupTimeout ? `did not answer within ${this.timeoutMs} ms` : `failed: ${String((error as Error)?.message ?? error)}`
-    logger.error(`themeFor.${this.kind} ${reason}. Calls use the theme without it, and a ${this.kind} that failed is asked again after ${THEME_FAILURE_BACKOFF_MS / 1000}s.`)
+    logger.error(
+      `themeFor.${this.kind} for ${this.kind} ${id} ${reason}. Its calls use the theme without it, and it is asked again ` +
+        `after ${THEME_FAILURE_BACKOFF_MS / 1000}s.`,
+    )
   }
 
-  private recovered(): void {
-    if (!this.outage) return
-    const seconds = Math.round((Date.now() - this.outage.since) / 1000)
-    logger.log(`themeFor.${this.kind} answers again, after ${this.outage.failures} failed lookup(s) over ${seconds}s.`)
-    this.outage = undefined
+  /** Logs that an id whose lookups were failing answers again. */
+  private recovered(id: string): void {
+    const failing = this.failing.get(id)
+    if (!failing) return
+    this.failing.delete(id)
+    const seconds = Math.round((Date.now() - failing.since) / 1000)
+    logger.log(`themeFor.${this.kind} for ${this.kind} ${id} answers again, after ${failing.failures} failed lookup(s) over ${seconds}s.`)
   }
 }
 
