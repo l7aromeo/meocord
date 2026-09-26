@@ -1,5 +1,16 @@
 import { vi } from 'vitest'
-import { ButtonInteraction, Client, ComponentType, ContainerBuilder, EmbedBuilder, resolveColor, TextDisplayBuilder } from 'discord.js'
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonInteraction,
+  ButtonStyle,
+  Client,
+  ComponentType,
+  ContainerBuilder,
+  EmbedBuilder,
+  resolveColor,
+  TextDisplayBuilder,
+} from 'discord.js'
 import { Command, Controller, MeoCord, UseTheme } from '@src/decorator/index.js'
 import { CooldownError, respond } from '@src/common/index.js'
 import { CommandType } from '@src/enum/index.js'
@@ -81,6 +92,28 @@ describe('respond() in the theme of the call', () => {
 
     const [built, none, row] = sent(interaction.update).components!
     expect([built.accent_color, none.accent_color, row.accent_color]).toEqual([colour('#0000A1'), null, undefined])
+  })
+
+  it('passes on a coloured embed and a component that is not a container as the very objects the app gave', async () => {
+    const coloured = new EmbedBuilder().setDescription('coloured').setColor(0x123456)
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(new ButtonBuilder().setCustomId('b').setLabel('B').setStyle(ButtonStyle.Primary))
+    // Neither needs a colour, so neither is built into JSON here: discord.js builds each once, when it sends
+    const built = [vi.spyOn(coloured, 'toJSON'), vi.spyOn(row, 'toJSON')]
+    const interaction = press('same')
+
+    @Controller()
+    class Same {
+      @Command('same', CommandType.BUTTON)
+      async same(click: ButtonInteraction) {
+        await respond(click).send({ embeds: [coloured], components: [row] } as never)
+      }
+    }
+    await MeoCordTestingModule.create({ controllers: [Same] }).compile().invoke(Same, 'same', interaction)
+
+    const body = interaction.update.mock.calls[0][0] as { embeds: unknown[]; components: unknown[] }
+    expect(body.embeds[0]).toBe(coloured)
+    expect(body.components[0]).toBe(row)
+    expect(built.map(toJSON => toJSON.mock.calls.length)).toEqual([0, 0])
   })
 
   it('leaves what is sent around respond() as it is', async () => {
