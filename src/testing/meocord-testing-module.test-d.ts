@@ -1,6 +1,7 @@
 import { describe, expectTypeOf, it } from 'vitest'
-import { type ButtonInteraction, type Client, type Message } from 'discord.js'
-import { type InvocationResult, MeoCordTestingModule } from './meocord-testing-module.js'
+import { type ButtonInteraction, type Client, type Message, type MessageReaction, type User } from 'discord.js'
+import { type DispatchedCall, type InvocationResult, MeoCordTestingModule } from './meocord-testing-module.js'
+import { ReactionHandlerAction } from '@src/enum/index.js'
 import { createExecutionContext } from './execution-context.js'
 import { getResponse } from './response.js'
 
@@ -108,5 +109,21 @@ describe('TestingModule lifecycle', () => {
   it('takes only a ready client', () => {
     // @ts-expect-error onReady receives a client that has logged in
     void module.init({ ready: { client: {} as Client<false> } })
+  })
+})
+
+describe('TestingModule.dispatch', () => {
+  const module = MeoCordTestingModule.create({}).compile()
+
+  it('takes an interaction or a message alone, and a reaction with who reacted', () => {
+    expectTypeOf(module.dispatch({} as ButtonInteraction)).resolves.toEqualTypeOf<DispatchedCall>()
+    expectTypeOf(module.dispatch({} as Message)).resolves.toEqualTypeOf<DispatchedCall>()
+    void module.dispatch({} as MessageReaction, { user: {} as User })
+    void module.dispatch({} as MessageReaction, { user: {} as User, action: ReactionHandlerAction.REMOVE })
+  })
+
+  it('needs the user who reacted with a reaction', () => {
+    // @ts-expect-error a reaction is dispatched with the user who reacted
+    void module.dispatch({} as MessageReaction)
   })
 })
