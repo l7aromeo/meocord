@@ -524,6 +524,40 @@ describe('typed message params and usage replies', () => {
     expect(seen).toEqual([['settings', { key: 'lang' }], ['inbox']])
   })
 
+  it('runs the handler whose scope fits where the message was sent, before one of another scope', async () => {
+    @Controller()
+    class Scoped {
+      @MessageHandler('config {key}', { scope: 'dm' })
+      async personal(_message: Message, params: { key: string }) {
+        seen.push(['personal', params])
+      }
+
+      @MessageHandler('config {words...}')
+      async server(_message: Message, params: { words: string }) {
+        seen.push(['server', params])
+      }
+
+      @MessageHandler('help', { scope: 'guild' })
+      async guildHelp() {
+        seen.push(['guildHelp'])
+      }
+
+      @MessageHandler('help', { scope: 'dm' })
+      async dmHelp() {
+        seen.push(['dmHelp'])
+      }
+    }
+    const client = await startApp({ controllers: [Scoped], messages: { prefix: '!', deleteUsageRepliesAfter: 0 } })
+
+    const inServer = await sendIn(client, '!config volume')
+    await sendIn(client, '!config volume', null)
+    await sendIn(client, '!help')
+    await sendIn(client, '!help', null)
+
+    expect(seen).toEqual([['server', { words: 'volume' }], ['personal', { key: 'volume' }], ['guildHelp'], ['dmHelp']])
+    expect(inServer.reply).not.toHaveBeenCalled()
+  })
+
   it('stays quiet about scope when the message used no prefix', async () => {
     const client = await startApp({ controllers: [Places], messages: { deleteUsageRepliesAfter: 0 } })
 

@@ -985,7 +985,7 @@ async mute(message: Message, { target, duration, reason }: { target: GuildMember
 
 - `aliases` are other words for the command, each in place of the words the pattern begins with: `!m @ana 1h` runs `mute`. An alias can be several words, such as `'cfg set'` for `config set {key} {value...}`, is ranked by its own words, and answers a misuse with the usage as the user typed it. An alias another command already matches stops the bot at startup, as two patterns would.
 - `description` is what the command does, for a help listing.
-- `scope` is where the command works: `'guild'`, `'dm'` or `'any'`, the default. A message sent elsewhere is answered that the command works in a server only, or in direct messages only, before any other usage issue. A command with a `member`, `role` or `channel` param works in servers only whatever its scope says, and `scope: 'dm'` with one stops the bot at startup.
+- `scope` is where the command works: `'guild'`, `'dm'` or `'any'`, the default. A handler whose scope fits where the message was sent runs before one whose scope does not, so `help` can have a server handler and a DM handler; a message that only an out-of-scope handler matches is answered that the command works in a server only, or in direct messages only, before any other usage issue. A command with a `member`, `role` or `channel` param works in servers only whatever its scope says, and `scope: 'dm'` with one stops the bot at startup.
 
 ### A help command
 

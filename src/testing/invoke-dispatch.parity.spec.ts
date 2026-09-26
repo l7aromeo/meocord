@@ -6,8 +6,8 @@ import { createMockMessage } from '@src/testing/index.js'
 
 /*
  * invoke must take a message for exactly the handler dispatch gives it to: the one it matches, or the one
- * whose usage it answers. Random handler sets across controllers and random messages check that, with
- * dispatch's own choice as the definition.
+ * whose usage it answers, in a server or a DM. Random handler sets across controllers, with scopes, and
+ * random messages check that, with dispatch's own choice as the definition.
  */
 
 /** A small seeded generator (mulberry32), so a failure reproduces from its seed. */
@@ -40,7 +40,8 @@ function controllersFor(r: ReturnType<typeof random>): ControllerClass[] {
       for (let w = 1; w < 1 + Math.floor(r.next() * 3); w++) words.push(r.next() < 0.5 ? r.pick(WORDS) : r.next() < 0.8 ? `{p${w}}` : `{p${w}:int}`)
       if (r.next() < 0.3) words.push(r.pick(['{--f}', '{--n:int?}']))
       const prefix = r.pick([undefined, undefined, '?', false] as const)
-      MessageHandler(words.join(' '), prefix === undefined ? {} : { prefix })(
+      const scope = r.pick(['any', 'any', 'guild', 'dm'] as const)
+      MessageHandler(words.join(' '), { scope, ...(prefix !== undefined && { prefix }) })(
         Generated.prototype,
         method,
         Object.getOwnPropertyDescriptor(Generated.prototype, method) as never,
@@ -67,7 +68,7 @@ describe("invoke's message check", () => {
       }
       for (let m = 0; m < 25; m++) {
         const words = Array.from({ length: 1 + Math.floor(r.next() * 4) }, () => r.pick([...WORDS, '5', '--f', '--n=3']))
-        const message = createMockMessage({ content: r.pick(['!', '?', '', `<@${BOT}> `]) + words.join(' ') })
+        const message = createMockMessage({ content: r.pick(['!', '?', '', `<@${BOT}> `]) + words.join(' '), ...(r.next() < 0.3 && { guild: null }) })
         Object.defineProperty(message.client, 'user', { value: { id: BOT }, configurable: true })
         const starts = await messageStarts(options, message, BOT)
         const chosen = matchMessageRoute(routes, message.content, starts) ?? matchMessageCommand(routes, message.content, starts)
