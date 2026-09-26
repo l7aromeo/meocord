@@ -33,7 +33,7 @@ import { type Fallback } from '@src/core/fallback.js'
 import { handlerInputStages, prepareHandlerArgs, preparePipe } from '@src/core/input-runner.js'
 import { hasObservers, notifyObservers, notifyStart, outcomeOf, responsePhaseOf } from '@src/core/observer-runner.js'
 import { type DispatchOutcome, type DispatchResult } from '@src/interface/observer.interface.js'
-import { handlerCooldowns, methodCooldowns } from '@src/core/cooldown-runner.js'
+import { handlerCooldowns, methodCooldowns, peekCooldowns } from '@src/core/cooldown-runner.js'
 import { Logger } from '@src/common/logger.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
 import {
@@ -240,12 +240,12 @@ function assertInputStagesOnInteractions(controller: new (...args: any[]) => unk
 
 /** What a call the guards let through can do before its arguments are fetched. */
 export interface AdmittedCall {
-  /** Throws the error a cooldown would refuse the call with, without counting the call. */
+  /**
+   * Throws the error a cooldown would refuse the call with, without counting the call, so a refused call
+   * fetches nothing. Cooldowns with `by` are judged only when the call is counted, after validation.
+   */
   checkCooldowns(): Promise<void>
 }
-
-// Cooldowns are counted once the input is valid, after the fetch; nothing is checked ahead of it
-const ADMITTED: AdmittedCall = { checkCooldowns: () => Promise.resolve() }
 
 /** How a pipeline run ends an error: the fallback to answer one no filter handles, if any. */
 export interface RunOptions {
@@ -401,7 +401,10 @@ export async function runHandler(
       return { ran: false }
     }
     if (options.fetchArgs) {
-      args = await options.fetchArgs(args, ADMITTED)
+      // Checked in the context the cooldowns are later counted in, so a bypass is judged once per call
+      const cooldowns = handlerCooldowns(Object.getPrototypeOf(instance), methodName)
+      const admitted: AdmittedCall = { checkCooldowns: () => peekCooldowns(container, controller, methodName, cooldowns, contextOf) }
+      args = await options.fetchArgs(args, admitted)
       currentArgs.current = args
     }
 
