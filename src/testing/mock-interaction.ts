@@ -361,9 +361,11 @@ const nextSnowflake = (): string => String(++lastSnowflake)
 /** A mock user that is a person, with an id of its own unless given one. */
 const mockUser = (id = nextSnowflake()): object => stubDeep(Object.assign(Object.create(User.prototype), { id, bot: false }))
 
-let mockBotId: string | undefined
-/** The id of the bot every mock client is logged in as: one per run, so a test can mention it. */
-const botId = (): string => (mockBotId ??= nextSnowflake())
+/**
+ * The id of the bot every mock client is logged in as, so a test can mention it. Fixed, and below the
+ * ids other mocks take, so it is the same on every run and in any test order, and no mock shares it.
+ */
+const MOCK_BOT_ID = '1300000000000000000'
 
 // ---------------------------------------------------------------------------
 // createMockInteraction
@@ -705,7 +707,7 @@ export function createMockClient(): DeepMocked<Client> {
   instance.users = managerWith(UserManager.prototype, undefined)
   instance.channels = managerWith(ChannelManager.prototype, undefined)
   instance.guilds = stubDeep(Object.create(GuildManager.prototype))
-  instance.user = stubDeep(Object.assign(Object.create(ClientUser.prototype), { id: botId(), bot: true }))
+  instance.user = stubDeep(Object.assign(Object.create(ClientUser.prototype), { id: MOCK_BOT_ID, bot: true }))
   instance.application = stubDeep(appInstance)
 
   return stubDeep(instance) as DeepMocked<Client>
