@@ -21,6 +21,9 @@ debug('bot')('started')
 console.log('started')
 `
 
+/** The messages of the warnings the last build reported. */
+let warnings: string[] = []
+
 async function build(externals: { optionalExternals?: string[]; externals?: string[] }): Promise<string> {
   const cwd = vi.spyOn(process, 'cwd').mockReturnValue(fixture)
   try {
@@ -30,6 +33,9 @@ async function build(externals: { optionalExternals?: string[]; externals?: stri
         ...createRsbuildConfig({ mode: 'production', bundleDependencies: true, entry: path.join(fixture, 'src', 'main.ts'), ...externals }),
         performance: { printFileSize: false },
       },
+    })
+    rsbuild.onAfterBuild(({ stats }) => {
+      warnings = (stats?.toJson({ all: false, warnings: true }).warnings ?? []).map(warning => warning.message)
     })
     await rsbuild.build()
   } finally {
@@ -85,6 +91,12 @@ describe('optionalExternals, built and run with node', () => {
     expect(run.stdout).toContain('started')
   })
 
+  it('warns about nothing', async () => {
+    await build({ optionalExternals: ['supports-color'] })
+
+    expect(warnings).toEqual([])
+  })
+
   // The case optionalExternals exists for: externals hoists an import that fails before the bot runs
   it('is what keeps the bot starting: listed in externals instead, it fails at startup', async () => {
     const output = await build({ externals: ['supports-color'] })
@@ -93,5 +105,23 @@ describe('optionalExternals, built and run with node', () => {
     const run = runAlone()
     expect(run.status).not.toBe(0)
     expect(run.stderr).toContain('supports-color')
+  })
+}, 120_000)
+
+describe('supports-color missing and not in optionalExternals', () => {
+  it("replaces the bundler's raw warning with one naming optionalExternals", async () => {
+    await build({})
+
+    expect(warnings.join('\n')).not.toContain("Can't resolve")
+    expect(warnings).toEqual([expect.stringMatching(/⚠ debug tries to load supports-color, .*optionalExternals: \['supports-color'\]/)])
+  })
+
+  it('still starts without it', async () => {
+    await build({})
+
+    const run = runAlone()
+
+    expect(run.status).toBe(0)
+    expect(run.stdout).toContain('started')
   })
 }, 120_000)
