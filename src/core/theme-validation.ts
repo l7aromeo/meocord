@@ -63,6 +63,17 @@ const describe = (value: unknown): string =>
 
 const describeGroup = (value: unknown): string => (Array.isArray(value) ? 'an array' : describe(value))
 
+/** Whether a value is a plain object, as an object literal or `JSON.parse` makes: one a theme merges key by key. */
+const isPlainObject = (value: unknown): boolean => {
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+const PLAIN = 'return a plain object, such as the row\'s toObject() or { ...row }, since anything else would replace the whole'
+
+/** What a non-plain object is, by its class. */
+const describeInstance = (value: object): string => `a ${value.constructor?.name || 'object without a plain prototype'}`
+
 /** How each of MeoCord's groups checks a token, and what it asks for instead. */
 const GROUPS: Record<'colors' | 'emojis' | 'buttons', { check: (value: unknown) => boolean; what: string; instead: string }> = {
   colors: { check: isColour, what: 'a colour', instead: COLOUR },
@@ -83,6 +94,7 @@ export function themeProblems(theme: unknown, where?: string): string[] {
   if (typeof theme !== 'object' || theme === null || Array.isArray(theme)) {
     return [`${at}theme must be an object of groups (got ${describeGroup(theme)})`]
   }
+  if (!isPlainObject(theme)) return [`${at}theme must be a plain object of groups (got ${describeInstance(theme)}): ${PLAIN} theme`]
 
   const problems: string[] = []
   for (const [group, { check, what, instead }] of Object.entries(GROUPS)) {
@@ -91,6 +103,10 @@ export function themeProblems(theme: unknown, where?: string): string[] {
     if (roles === undefined) continue
     if (typeof roles !== 'object' || roles === null || Array.isArray(roles)) {
       problems.push(`${at}theme.${group} must be an object of roles (got ${describeGroup(roles)})`)
+      continue
+    }
+    if (!isPlainObject(roles)) {
+      problems.push(`${at}theme.${group} must be a plain object of roles (got ${describeInstance(roles)}): ${PLAIN} group`)
       continue
     }
     for (const [role, value] of Object.entries(roles)) {

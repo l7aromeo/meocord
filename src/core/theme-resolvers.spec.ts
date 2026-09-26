@@ -343,6 +343,33 @@ describe('a resolver that fails', () => {
   })
 })
 
+describe('a result that is not a plain object', () => {
+  it('is left out with a warning rather than becoming the theme, and @MeoCord refuses one too', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {})
+    class Row {
+      colors = { primary: '#000031' }
+    }
+    class Colours {
+      primary = '#000032'
+    }
+    const module = moduleWith({ guild: () => new Row() as never, user: () => ({ colors: new Colours() }) as never })
+
+    await module.invoke(Panel, 'panel', press('panel'))
+
+    expect(seen).toContainEqual(['handler', DEFAULT_THEME.colors.primary, DEFAULT_THEME.colors.info, DEFAULT_THEME.colors.success])
+    const warnings = warn.mock.calls.map(([text]) => String(text))
+    expect(warnings).toEqual([
+      expect.stringContaining(`themeFor.guild for guild ${GUILD}: theme must be a plain object of groups (got a Row): return a plain object`),
+      expect.stringContaining(`themeFor.user for user ${USER}: theme.colors must be a plain object of roles (got a Colours)`),
+    ])
+    expect(() => {
+      @MeoCord({ controllers: [], clientOptions: { intents: [] }, theme: new Row() as never })
+      class FromRow {}
+      return FromRow
+    }).toThrow('@MeoCord({ theme }) on FromRow: theme must be a plain object of groups (got a Row)')
+  })
+})
+
 describe('@MeoCord\'s theme options', () => {
   const declare = (options: object) => () => {
     @MeoCord({ controllers: [], clientOptions: { intents: [] }, ...options } as never)
