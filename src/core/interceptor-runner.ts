@@ -1,7 +1,7 @@
 import 'reflect-metadata'
 import { type Container } from 'inversify'
 import { type InterceptorInterface } from '@src/interface/index.js'
-import { injectedTokens, singletonContextError, sourcePrototype } from '@src/core/guard-runner.js'
+import { injectedTokens, perHandler, singletonContextError, sourcePrototype, stageClasses } from '@src/core/guard-runner.js'
 import { ExecutionContext, type HandlerExecutionContext } from '@src/common/execution-context.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { isAppClassToken } from '@src/core/lifecycle-order.js'
@@ -31,17 +31,14 @@ export const METHOD_INTERCEPTORS = Symbol('method_interceptors')
  * The interceptors around a handler: class interceptors from the controller up to the class declaring
  * the handler, subclass first, then the method's.
  */
-export function handlerInterceptors(prototype: object, methodName: string): InterceptorEntry[] {
+export const handlerInterceptors = perHandler((prototype: object, methodName: string): readonly InterceptorEntry[] => {
   const source = sourcePrototype(prototype, methodName)
   if (!source) return []
-
-  const entries: InterceptorEntry[] = []
-  for (let current: object | null = prototype; current; current = Object.getPrototypeOf(current)) {
-    entries.push(...((Reflect.getOwnMetadata(CLASS_INTERCEPTORS, current.constructor) as InterceptorEntry[]) ?? []))
-    if (current === source) break
-  }
-  return [...entries, ...((Reflect.getOwnMetadata(METHOD_INTERCEPTORS, source, methodName) as InterceptorEntry[]) ?? [])]
-}
+  return [
+    ...stageClasses(prototype, methodName).flatMap(cls => (Reflect.getOwnMetadata(CLASS_INTERCEPTORS, cls) as InterceptorEntry[]) ?? []),
+    ...((Reflect.getOwnMetadata(METHOD_INTERCEPTORS, source, methodName) as InterceptorEntry[]) ?? []),
+  ]
+})
 
 /** Binds `cls` and its unbound dependencies as singletons, refusing any that injects `ExecutionContext`. */
 export function bindShared(container: Container, cls: new (...args: any[]) => unknown): void {

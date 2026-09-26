@@ -309,6 +309,7 @@ what a bot does at runtime; each says what to check. Everything else in 4.1 is n
 [Adopting 4.1 patterns](#adopting-41-patterns) shows where it can replace code you wrote yourself.
 
 - [ ] Check class guards on controllers that extend another controller
+- [ ] Check subclasses of a controller with class-level guards, interceptors, filters or cooldowns
 - [ ] Check class guards on controllers with `@Autocomplete` handlers
 - [ ] Check what users see when a command throws after it replied or deferred
 - [ ] Fix any command builder that throws, since it now stops registration
@@ -336,6 +337,46 @@ In 4.1, `ModerationController`'s handlers, when reached through `AdminController
 first, then `ModerationController`'s own guards. If a bot relied on inherited handlers skipping the
 subclass's guards, move those handlers out of the subclass, or give the subclass a guard that allows
 them. The base controller itself is unaffected.
+
+### A base controller's class stages cover its subclasses
+
+Class-level `@UseGuard`, `@UseInterceptor`, `@UseFilter` and `@Cooldown` on a controller now also apply
+to the handlers a subclass declares itself, as they do in NestJS. In 4.0 and the earlier 4.1 betas they
+reached only the handlers the base class declared, so a subclass of a guarded base ran its own handlers
+unguarded:
+
+```typescript
+@Controller()
+@UseGuard(StaffGuard)
+export abstract class StaffController {}
+
+@Controller()
+export class BanController extends StaffController {
+  @Command('ban', BanCommandBuilder)
+  async ban(interaction: ChatInputCommandInteraction) {} // now runs StaffGuard first
+}
+```
+
+For each handler, the subclass's class stages come first, then each base's, then the method's: the
+order its inherited handlers already had. Filters are tried, and cooldowns counted, the other way
+round, from the base out. What a bot relying on the old rule sees:
+
+- A subclass's own handlers run the base's class guards, and are refused where those guards refuse.
+- They run inside the base's class interceptors, and the base's class filters handle their errors
+  before the built-in fallback.
+- The base's class cooldowns count their calls. Each cooldown counts under its position in the
+  handler's list, so a handler that had its own cooldowns counts them under new keys once, and a
+  shared cooldown store starts those counts afresh.
+- A direct call to a guarded handler runs the same guards in the same order as dispatch, where it ran
+  each decorator's guards in the order the decorators wrapped the method.
+
+To keep a subclass's handlers to its own class and method stages, set `inheritStages: false`. The
+handlers it inherits keep their base's stages:
+
+```typescript
+@Controller({ inheritStages: false })
+export class PublicController extends StaffController { ... }
+```
 
 ### Class guards now cover autocomplete handlers
 

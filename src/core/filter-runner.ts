@@ -2,7 +2,7 @@ import 'reflect-metadata'
 import { type Container } from 'inversify'
 import { type ExceptionFilter } from '@src/interface/index.js'
 import { type ExecutionContext } from '@src/common/execution-context.js'
-import { sourcePrototype } from '@src/core/guard-runner.js'
+import { perHandler, sourcePrototype, stageClasses } from '@src/core/guard-runner.js'
 import { bindShared } from '@src/core/interceptor-runner.js'
 
 export type FilterClass = new (...args: any[]) => ExceptionFilter
@@ -42,17 +42,21 @@ export function handlerFilterLevels(
   methodName: string,
   globals: readonly FilterEntry[],
 ): FilterEntry[][] {
-  const source = sourcePrototype(prototype, methodName)
-  if (!source) return [[], [], [...globals]]
-
-  const classes: FilterEntry[][] = []
-  for (let current: object | null = prototype; current; current = Object.getPrototypeOf(current)) {
-    classes.unshift((Reflect.getOwnMetadata(CLASS_FILTERS, current.constructor) as FilterEntry[]) ?? [])
-    if (current === source) break
-  }
-  const method = (Reflect.getOwnMetadata(METHOD_FILTERS, source, methodName) as FilterEntry[]) ?? []
-  return [[...method], classes.flat(), [...globals]]
+  const { method, classes } = ownFilterLevels(prototype, methodName)
+  return [[...method], [...classes], [...globals]]
 }
+
+/** A handler's method and class filters, the classes innermost first, resolved once. */
+const ownFilterLevels = perHandler((prototype: object, methodName: string) => {
+  const source = sourcePrototype(prototype, methodName)
+  if (!source) return { method: [] as FilterEntry[], classes: [] as FilterEntry[] }
+  return {
+    method: (Reflect.getOwnMetadata(METHOD_FILTERS, source, methodName) as FilterEntry[]) ?? [],
+    classes: [...stageClasses(prototype, methodName)]
+      .reverse()
+      .flatMap(cls => (Reflect.getOwnMetadata(CLASS_FILTERS, cls) as FilterEntry[]) ?? []),
+  }
+})
 
 /** Binds a filter as a singleton, after checking it is one. */
 export function prepareFilter(container: Container, entry: FilterEntry): void {

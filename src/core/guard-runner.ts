@@ -11,6 +11,13 @@ import {
 } from '@src/common/execution-context.js'
 import { appliesTo } from '@src/core/stage-scope.js'
 import { GuardDeniedError } from '@src/common/errors.js'
+import {
+  getAutocompleteHandlers,
+  getCommandMap,
+  getMessageHandlers,
+  getReactionHandlers,
+} from '@src/decorator/controller.decorator.js'
+import { getEventHandlers } from '@src/decorator/event.decorator.js'
 
 export type GuardClass = new (...args: any[]) => GuardInterface
 
@@ -198,16 +205,94 @@ export function sourcePrototype(prototype: object, methodName: string): object |
   return undefined
 }
 
-/** The guards dispatch runs before a handler, which are the guards its own wrappers would run. */
-export function handlerGuards(prototype: object, methodName: string): GuardEntry[] {
-  const owner = declaringPrototype(prototype, methodName)
-  return owner ? ((Reflect.getOwnMetadata(MetadataKey.Guards, owner, methodName) as GuardEntry[] | undefined) ?? []) : []
+/**
+ * Caches a function of a class's prototype and one of its handlers. Handler metadata is fixed once
+ * the classes are decorated, so dispatch resolves each handler's stages once, not on every call.
+ */
+export function perHandler<T>(resolve: (prototype: object, methodName: string) => T): (prototype: object, methodName: string) => T {
+  const cache = new WeakMap<object, Map<string, T>>()
+  return (prototype, methodName) => {
+    let byMethod = cache.get(prototype)
+    if (!byMethod) cache.set(prototype, (byMethod = new Map()))
+    if (!byMethod.has(methodName)) byMethod.set(methodName, resolve(prototype, methodName))
+    return byMethod.get(methodName)!
+  }
 }
 
-function wrapperCount(prototype: object, methodName: string): number {
+/** Private metadata: `false` when `@Controller({ inheritStages: false })` stops class stages at this class. */
+export const INHERIT_STAGES = Symbol('inherit_stages')
+
+/** Private metadata: the guards a class-level `@UseGuard` declares, kept on the class. */
+export const CLASS_LEVEL_GUARDS = Symbol('class_level_guards')
+
+/** Private metadata: the guards method-level `@UseGuard` applies to one method, in the order they run. */
+export const METHOD_GUARDS = Symbol('method_guards')
+
+/** A class a handler's class-level stages are read from. */
+export type StageClass = abstract new (...args: any[]) => unknown
+
+/**
+ * The classes whose class-level stages apply to a handler, outermost first: the class it is dispatched
+ * on, then each class it extends, through the one that declares the handler and on to the top of the
+ * chain, stopping after a class with `@Controller({ inheritStages: false })` at or above the
+ * declaring class. Guards and interceptors run in this order; filters are tried, and cooldowns
+ * counted, in reverse, from the innermost class out.
+ */
+export const stageClasses = perHandler(
+  (prototype: object, methodName: string): readonly StageClass[] => {
+    const source = sourcePrototype(prototype, methodName)
+    return source ? classChain(prototype, source) : []
+  },
+)
+
+/** {@link stageClasses}, uncached, for a handler `source` declares: read while classes are still being decorated. */
+export function classChain(prototype: object, source: object): StageClass[] {
+  const classes: StageClass[] = []
+  let declared = false
+  for (let current: object | null = prototype; current && current !== Object.prototype; current = Object.getPrototypeOf(current)) {
+    const cls = current.constructor as StageClass
+    classes.push(cls)
+    if (current === source) declared = true
+    if (declared && Reflect.getOwnMetadata(INHERIT_STAGES, cls) === false) break
+  }
+  return classes
+}
+
+/** The guards a class-level `@UseGuard` declares on `cls`. */
+export function classLevelGuards(cls: StageClass): GuardEntry[] {
+  return (Reflect.getOwnMetadata(CLASS_LEVEL_GUARDS, cls) as GuardEntry[] | undefined) ?? []
+}
+
+/** Every handler a class declares or inherits: commands, components, messages, reactions, autocomplete and events. */
+export function handlerMethods(prototype: object): Set<string> {
+  return new Set<string>([
+    ...Object.values(getCommandMap(prototype) ?? {})
+      .flat()
+      .map(command => command.methodName),
+    ...getMessageHandlers(prototype).map(handler => handler.method),
+    ...getReactionHandlers(prototype).map(handler => handler.method),
+    ...getAutocompleteHandlers(prototype).map(handler => handler.methodName),
+    ...getEventHandlers(prototype).map(handler => handler.method),
+  ])
+}
+
+/**
+ * The guards dispatch runs before a handler: its classes' class-level guards, outermost first, then
+ * the method's. A method that is no handler has only its own, since class guards apply to handlers.
+ */
+export const handlerGuards = perHandler((prototype: object, methodName: string): readonly GuardEntry[] => {
+  const source = sourcePrototype(prototype, methodName)
+  if (!source) return []
+  return [
+    ...(handlerMethods(prototype).has(methodName) ? stageClasses(prototype, methodName).flatMap(classLevelGuards) : []),
+    ...((Reflect.getOwnMetadata(METHOD_GUARDS, source, methodName) as GuardEntry[]) ?? []),
+  ]
+})
+
+const wrapperCount = perHandler((prototype: object, methodName: string): number => {
   const owner = declaringPrototype(prototype, methodName)
   return owner ? ((Reflect.getOwnMetadata(GUARD_WRAPPERS, owner, methodName) as number | undefined) ?? 0) : 0
-}
+})
 
 /**
  * Calls dispatch has already guarded, keyed by first argument and method, counting the wrappers still
@@ -231,6 +316,34 @@ export function consumeDispatchMark(first: unknown, instance: object, methodName
   if (remaining > 1) marks.set(methodName, remaining - 1)
   else marks.delete(methodName)
   return true
+}
+
+/**
+ * Runs a direct call to a guarded handler: the handler's guards, as dispatch resolves them, then the
+ * call with a pass for each wrapper inside the one entered, so no guard runs twice.
+ */
+export async function runDirectCall(
+  instance: object,
+  methodName: string,
+  args: unknown[],
+  call: () => unknown,
+): Promise<unknown> {
+  const prototype = Object.getPrototypeOf(instance) as object
+  const controller = instance.constructor as new (...args: any[]) => unknown
+  const container = Reflect.getMetadata(MetadataKey.Container, controller) as Container
+  if (!(await runGuards(handlerGuards(prototype, methodName), { container, controller, methodName, args }))) return undefined
+
+  const inner = wrapperCount(prototype, methodName) - 1
+  if (inner <= 0) return call()
+  const key = markKey(args[0], instance)
+  let marks = dispatched.get(key)
+  if (!marks) dispatched.set(key, (marks = new Map()))
+  marks.set(methodName, inner)
+  try {
+    return await call()
+  } finally {
+    marks.delete(methodName)
+  }
 }
 
 /**

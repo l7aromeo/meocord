@@ -168,13 +168,13 @@ describe('TestingModule.invoke', () => {
     expect(log).toEqual(['A', 'B', 'greet'])
   })
 
-  it('runs an inherited handler with the guards it was declared with', async () => {
+  it("runs an inherited handler with the guards it was declared with, and the subclass's own with its base's", async () => {
     const button = createMockInteraction(ButtonInteraction)
 
     await compile().invoke(ProfileButtonController, 'refresh', button)
     await compile().invoke(ProfileButtonController, 'profile', button, { id: '42' })
 
-    expect(log).toEqual(['A', 'B', 'refresh', 'B', 'profile:42'])
+    expect(log).toEqual(['A', 'B', 'refresh', 'A', 'B', 'profile:42'])
   })
 
   it('rejects with the error the handler throws', async () => {

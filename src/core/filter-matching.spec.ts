@@ -35,7 +35,7 @@ describe('filter matching', () => {
     expect(caught).toEqual(['BannedError'])
   })
 
-  it('takes class filters from the class declaring the handler down, never from a class above it', async () => {
+  it('takes class filters from every class in the chain, unless the declaring class opts out', async () => {
     @Catch()
     class Everything implements ExceptionFilter {
       catch() {
@@ -54,10 +54,19 @@ describe('filter matching', () => {
       }
     }
 
-    const module = MeoCordTestingModule.create({ controllers: [Parent] }).compile()
+    @Controller({ inheritStages: false })
+    class Standalone extends Grandparent {
+      @Command('alone', CommandType.SLASH)
+      async alone(_interaction: ChatInputCommandInteraction) {
+        throw new Error('unhandled')
+      }
+    }
 
-    await expect(module.invoke(Parent, 'fails', createMockInteraction(ChatInputCommandInteraction))).rejects.toThrow('unhandled')
-    expect(caught).toEqual([])
+    const module = MeoCordTestingModule.create({ controllers: [Parent, Standalone] }).compile()
+
+    await expect(module.invoke(Parent, 'fails', createMockInteraction(ChatInputCommandInteraction))).resolves.toMatchObject({ ran: true })
+    expect(caught).toEqual(['grandparent filter'])
+    await expect(module.invoke(Standalone, 'alone', createMockInteraction(ChatInputCommandInteraction))).rejects.toThrow('unhandled')
   })
 })
 

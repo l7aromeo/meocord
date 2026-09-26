@@ -996,9 +996,9 @@ Every handler — a command, a component, an autocomplete, a message, a reaction
 
 Validation and pipes apply to command, component and modal handlers, and to message handlers with a pattern, whose options, customId params, fields and pattern params they check. Cooldowns apply to those and to every message handler. An autocomplete handler, which must answer within three seconds, runs its guards and filters but no interceptors. `@Defer` applies to command, component and modal handlers only.
 
-Guards, interceptors and filters apply at three levels, which run in this order: globally, from `@MeoCord({ guards, interceptors, filters })`; on a controller, for every handler it declares or inherits; and on a method. Cooldowns apply on a controller or a method. A stage also sees what it is running for through `ExecutionContext`, whose `getType()` is `'interaction'`, `'autocomplete'`, `'message'`, `'reaction'` or `'event'`; a guard or interceptor declared with `types` runs only for those, and a subclass inherits them unless it declares its own. A `types` list that can match nothing — empty, or `['autocomplete']` on an interceptor, since interceptors skip autocomplete — throws when the class is decorated.
+Guards, interceptors and filters apply at three levels, which run in this order: globally, from `@MeoCord({ guards, interceptors, filters })`; on a controller, for every handler it declares or inherits, and for every handler of a class that extends it; and on a method. Cooldowns apply on a controller or a method. A handler's class stages come from its controller first, then each class it extends in turn, so a base controller's `@UseGuard` guards every subclass; filters are tried, and cooldowns counted, the other way round, from the base out. `@Controller({ inheritStages: false })` on a subclass limits the handlers it declares to its own class and method stages; the handlers it inherits keep their base's. The chain is resolved once per handler, so dispatch pays nothing for it. A stage also sees what it is running for through `ExecutionContext`, whose `getType()` is `'interaction'`, `'autocomplete'`, `'message'`, `'reaction'` or `'event'`; a guard or interceptor declared with `types` runs only for those, and a subclass inherits them unless it declares its own. A `types` list that can match nothing — empty, or `['autocomplete']` on an interceptor, since interceptors skip autocomplete — throws when the class is decorated.
 
-The stages run when MeoCord dispatches a handler, and when a test runs one with [`invoke`](#running-a-handler-with-invoke). A controller method called directly runs only its guards.
+The stages run when MeoCord dispatches a handler, and when a test runs one with [`invoke`](#running-a-handler-with-invoke). A controller method called directly runs only its guards, the same chain dispatch runs.
 
 ---
 
@@ -1049,13 +1049,18 @@ export class ProfileController { ... }
 
 The rate limiter shows how a guard takes options. To limit how often a handler runs, [`@Cooldown`](#cooldowns) does it without a guard of your own, and answers the caller with how long to wait.
 
-A class-level `@UseGuard` also guards the handlers a controller inherits. For a subclass, its own class guards run first, then the base class's guards, then the method's. A base class's class guards do not wrap the handlers a subclass declares itself:
+A class-level `@UseGuard` guards every handler of the controller, those it inherits included, and every handler of a class that extends it. For a subclass, its own class guards run first, then each base class's, then the method's:
 
 ```typescript
 @Controller()
 @UseGuard(StaffGuard)
-export class AdminController extends ModerationController { ... } // ModerationController's handlers run StaffGuard first
+export abstract class StaffController {}
+
+@Controller()
+export class BanController extends StaffController { ... } // Every handler here runs StaffGuard first
 ```
+
+A subclass that should not take its bases' class stages for the handlers it declares sets `@Controller({ inheritStages: false })`; the handlers it inherits keep them.
 
 To guard every handler in the bot, list guards in `@MeoCord({ guards })`. They take the same forms as `@UseGuard` and run first, before the controller's and the method's guards:
 
@@ -1068,7 +1073,7 @@ To guard every handler in the bot, list guards in `@MeoCord({ guards })`. They t
 class App {}
 ```
 
-Global guards run when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke). A controller method called directly runs only its own class and method guards.
+Global guards run when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke). A controller method called directly runs its class and method guards, its bases' class guards included, in the order dispatch runs them.
 
 ### Passing options to a guard
 
@@ -1196,7 +1201,7 @@ export class TimingInterceptor implements InterceptorInterface {
 export class ProfileController { ... }
 ```
 
-Apply them like guards: on a method, on a controller, or to every handler with `@MeoCord({ interceptors })`. Global interceptors are outermost, then the controller's, then the method's; within one decorator, the first listed is outermost. A class-level `@UseInterceptor` also covers the handlers a controller inherits.
+Apply them like guards: on a method, on a controller, or to every handler with `@MeoCord({ interceptors })`. Global interceptors are outermost, then the controller's, then the method's; within one decorator, the first listed is outermost. A class-level `@UseInterceptor` also covers the handlers a controller inherits, and those of a class that extends it, the subclass's outermost.
 
 One instance of an interceptor serves every call, so it can hold a cache or counters; keep per-call state in local variables. For per-use options, pass `{ provide, params }` and read them with `context.getParams()` — they are never assigned onto the shared instance. The call's own input is `context.getHandlerParams()`, validated and piped once `next.handle()` has run. For the same reason an interceptor cannot inject `ExecutionContext`; the bot refuses to start if one does.
 
@@ -1240,7 +1245,7 @@ export class RateLimitedFilter implements ExceptionFilter<RateLimitedError> {
 export class ProfileController { ... }
 ```
 
-Apply filters with `@UseFilter` on a method or a controller, or to every handler with `@MeoCord({ filters })`. The filter closest to the handler wins: the method's filters are tried first, then the controller's, then global ones; within one level, the first whose `@Catch` matches, in the order listed. For an inherited handler, the class that declares it comes before the subclass. A filter that throws is logged, and the built-in fallback answers the original error.
+Apply filters with `@UseFilter` on a method or a controller, or to every handler with `@MeoCord({ filters })`. The filter closest to the handler wins: the method's filters are tried first, then the controller's, then global ones; within one level, the first whose `@Catch` matches, in the order listed. Among classes, a base class's filters come before its subclass's, for inherited handlers and a subclass's own alike. A filter that throws is logged, and the built-in fallback answers the original error.
 
 Errors outside any handler reach global filters too. An interaction no handler matches raises `CommandNotFoundError` from `meocord/common`; there, `context.getController()` and `getHandler()` are `undefined`.
 
@@ -1346,7 +1351,7 @@ Stacked cooldowns are counted together, a controller's first: the call is checke
 
 A blocked call throws `CooldownError` (from `meocord/common`, with `retryAfterMs` and `per`), which the built-in fallback answers only to the caller: "Slow down: try again in 12s." `cooldownMessage(retryAfterMs)` builds that text; an [exception filter](#exception-filters) catching `CooldownError` can say it another way, or in the user's language.
 
-The cooldown is the [last stage](#how-a-handler-runs) before the handler: guards, validation and pipes have let the call through, so a denied call or bad input spends nothing. It applies to interaction and message handlers. On a controller, `@Cooldown` applies to each of those handlers separately and skips the controller's autocomplete, reaction and event handlers; on one of those handlers itself, the bot refuses to start.
+The cooldown is the [last stage](#how-a-handler-runs) before the handler: guards, validation and pipes have let the call through, so a denied call or bad input spends nothing. It applies to interaction and message handlers. On a controller, `@Cooldown` applies to each of those handlers separately, a subclass's included, and skips the controller's autocomplete, reaction and event handlers; on one of those handlers itself, the bot refuses to start.
 
 Cooldowns are counted under the controller's class name, so the bot refuses to start when two classes share a name and either has a cooldown; rename one of them.
 

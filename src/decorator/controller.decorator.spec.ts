@@ -1,7 +1,6 @@
 import {
   Autocomplete,
   Command,
-  Controller,
   getAutocompleteHandlers,
   findAmbiguousRoutes,
   getCommandMap,
@@ -10,6 +9,7 @@ import {
   MessageHandler,
   ReactionHandler,
 } from '@src/decorator/controller.decorator.js'
+import { Controller } from '@src/decorator/controller-class.decorator.js'
 import { CommandBuilder } from '@src/decorator/command-builder.decorator.js'
 import { SlashCommandBuilder } from 'discord.js'
 import { type ChatInputCommandInteraction } from 'discord.js'

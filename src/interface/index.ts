@@ -350,6 +350,17 @@ export interface ReactionHandlerSettings {
   bots?: boolean
 }
 
+/** How `@Controller` treats a class. */
+export interface ControllerOptions {
+  /**
+   * Whether the class-level guards, interceptors, filters and cooldowns of the classes this one
+   * extends also apply to the handlers it declares itself. `false` limits those handlers to this
+   * class's own class and method stages; handlers it inherits keep their base's stages either way.
+   * @defaultValue `true`
+   */
+  inheritStages?: boolean
+}
+
 /** One prefix or several, such as `'!'` or `['!', '?']`. `''` stands for no prefix. */
 export type MessagePrefix = string | readonly string[]
 

@@ -5,7 +5,7 @@ import { type ResponsePresenter } from '@src/interface/index.js'
 import { setPresenter } from '@src/common/response/presenter.js'
 import { type InteractionResponse, responseOf } from '@src/common/response/response-state.js'
 import { deferMisuseError, handlerDefer, nonInteractionHandler, startDefer } from '@src/core/defer.js'
-import { callGuardedHandler, type GuardEntry, handlerGuards, runGuards } from '@src/core/guard-runner.js'
+import { callGuardedHandler, type GuardEntry, handlerGuards, perHandler, runGuards } from '@src/core/guard-runner.js'
 import {
   bindShared,
   handlerInterceptors,
@@ -46,10 +46,10 @@ import { appliesTo } from '@src/core/stage-scope.js'
 
 /** The stages that run around one handler, in the order they run. */
 export interface HandlerStages {
-  guards: GuardEntry[]
-  interceptors: InterceptorEntry[]
+  readonly guards: readonly GuardEntry[]
+  readonly interceptors: readonly InterceptorEntry[]
   /** Filters by level, the level closest to the handler first: method, class, global. */
-  filters: FilterEntry[][]
+  readonly filters: readonly (readonly FilterEntry[])[]
 }
 
 /** The stages `@MeoCord` applies to every handler, which run before the controller's and method's. */
@@ -119,18 +119,30 @@ export interface HandlerOutcome {
   error?: unknown
 }
 
-/** The stages dispatch runs for `methodName`: the global ones, then the controller's metadata. */
+/**
+ * The stages dispatch runs for `methodName`: the global ones, then the controller's metadata. Resolved
+ * once per set of global stages and handler, then shared, so the lists must not be changed.
+ */
 export function handlerStages(
   prototype: object,
   methodName: string,
   globals: GlobalStages = NO_GLOBAL_STAGES,
 ): HandlerStages {
-  return {
-    guards: [...globals.guards, ...handlerGuards(prototype, methodName)],
-    interceptors: [...globals.interceptors, ...handlerInterceptors(prototype, methodName)],
-    filters: handlerFilterLevels(prototype, methodName, globals.filters),
+  let resolve = stagesByGlobals.get(globals)
+  if (!resolve) {
+    resolve = perHandler((handlerPrototype, handler): HandlerStages =>
+      Object.freeze({
+        guards: Object.freeze([...globals.guards, ...handlerGuards(handlerPrototype, handler)]),
+        interceptors: Object.freeze([...globals.interceptors, ...handlerInterceptors(handlerPrototype, handler)]),
+        filters: Object.freeze(handlerFilterLevels(handlerPrototype, handler, globals.filters).map(level => Object.freeze(level))),
+      }),
+    )
+    stagesByGlobals.set(globals, resolve)
   }
+  return resolve(prototype, methodName)
 }
+
+const stagesByGlobals = new WeakMap<GlobalStages, (prototype: object, methodName: string) => HandlerStages>()
 
 /**
  * Binds the interceptors and filters every handler of `controllers` uses, and the global ones, as
