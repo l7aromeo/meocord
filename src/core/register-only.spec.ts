@@ -110,6 +110,35 @@ describe('MeoCordApp.start() in register-only mode', () => {
     expect(error).toHaveBeenCalledWith(expect.stringContaining('check discordToken'), expect.any(Error))
   })
 
+  it('exits 1, saying Discord refused the token and where to get a new one, when it answers 401', async () => {
+    const unauthorized = Object.assign(new Error('401: Unauthorized'), { status: 401 })
+    rest.get.mockRejectedValue(unauthorized)
+    exit.mockImplementation((() => {
+      throw new Error('exited')
+    }) as never)
+
+    await expect(start()).rejects.toThrow('exited')
+
+    expect(exit).toHaveBeenCalledWith(1)
+    const logger = vi.mocked(Logger).mock.results.at(-1)?.value
+    expect(logger.error).toHaveBeenCalledTimes(1)
+    expect(logger.error).toHaveBeenCalledWith(expect.stringMatching(/^Discord refused the bot token\. .*Reset Token/))
+    expect(logger.debug).toHaveBeenCalledWith(expect.any(String), unauthorized)
+  })
+
+  it('exits 1 before asking Discord anything when the token is missing', async () => {
+    exit.mockImplementation((() => {
+      throw new Error('exited')
+    }) as never)
+
+    await expect(new MeoCordApp([PingController] as any, {} as any, client as any, '').start()).rejects.toThrow('exited')
+
+    expect(exit).toHaveBeenCalledWith(1)
+    expect(rest.get).not.toHaveBeenCalled()
+    const error = vi.mocked(Logger).mock.results.at(-1)?.value.error
+    expect(error).toHaveBeenCalledWith(expect.stringMatching(/^Discord token is missing: meocord\.config\.ts sets discordToken/))
+  })
+
   it('exits 1 when Discord rejects the commands', async () => {
     rest.put.mockRejectedValue(new Error('Invalid Form Body'))
 

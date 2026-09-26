@@ -138,7 +138,9 @@ npx meocord start --build --prod  # production build + start
 
 The token is read from the environment rather than written into `meocord.config.ts`,
 which is committed — `.env` is gitignored so a token cannot be pushed by accident.
-Building needs no token; only starting does.
+Building needs no token; only starting does. A token Discord refuses, or none at all, stops
+`start` and `register` with a line saying so and where to get a new one: Developer Portal →
+your application → Bot → Reset Token.
 
 ### Quick Example
 

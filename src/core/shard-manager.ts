@@ -10,6 +10,7 @@ import { type MeoCordConfig } from '@src/interface/index.js'
 import { bundleEntry } from '@src/util/bundle-entry.util.js'
 import { FORCE_REGISTER_ENV } from '@src/util/registration-mode.util.js'
 import { isShardMessage, type ShardMessage } from '@src/core/shard-messages.js'
+import { isRefusedToken, tokenMessage } from '@src/core/login-failure.js'
 import { stopRequests } from '@src/util/stop-request.util.js'
 
 
@@ -74,12 +75,12 @@ export class ShardManager implements MeoCordApplication {
    */
   async start(): Promise<void> {
     const { token, config } = this.options
-    if (!token) {
-      this.logger.error('discordToken is not set in meocord.config.ts, so no shard can log in.')
+    if (!token?.trim()) {
+      this.logger.error(tokenMessage(token))
       return this.exit(1)
     }
     this.logger.log('Starting shards in separate processes...')
-    await this.registerCommands()
+    if (!(await this.register())) return this.exit(1)
 
     process.on('SIGINT', () => void this.stop())
     process.on('SIGTERM', () => void this.stop())
@@ -89,7 +90,12 @@ export class ShardManager implements MeoCordApplication {
       const shards = config.sharding?.shards ?? 'auto'
       total = shards === 'auto' ? await (this.options.recommendedShardCount ?? fetchRecommendedShardCount)(token) : shards
     } catch (error) {
-      this.logger.error('Could not ask Discord how many shards to run; check discordToken:', error)
+      if (isRefusedToken(error)) {
+        this.logger.error(tokenMessage(token))
+        this.logger.debug('Asking for the shard count failed:', error)
+      } else {
+        this.logger.error('Could not ask Discord how many shards to run; check discordToken:', error)
+      }
       return this.exit(1)
     }
 
@@ -112,13 +118,18 @@ export class ShardManager implements MeoCordApplication {
 
   /**
    * Registers the commands over REST, once for every shard. A failure is logged and the shards start
-   * anyway, as a single process does.
+   * anyway, as a single process does, unless Discord refused the token, which no shard can log in with.
    */
   async registerCommands(): Promise<void> {
+    await this.register()
+  }
+
+  /** Registers the commands, resolving `false` when Discord refused the token. */
+  private async register(): Promise<boolean> {
     const { token, config, controllerClasses } = this.options
     if (config.commands?.register === false) {
       this.logger.log('Command registration is off (commands.register: false); run `meocord register` to register.')
-      return
+      return true
     }
 
     try {
@@ -134,8 +145,14 @@ export class ShardManager implements MeoCordApplication {
         force: process.env[FORCE_REGISTER_ENV] === '1',
       })
     } catch (error) {
+      if (isRefusedToken(error)) {
+        this.logger.error(tokenMessage(token))
+        this.logger.debug('Registering the commands failed:', error)
+        return false
+      }
       this.logger.error('Could not register the commands; starting the shards anyway:', error)
     }
+    return true
   }
 
   private watch(shard: Shard): void {

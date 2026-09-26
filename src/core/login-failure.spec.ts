@@ -1,5 +1,11 @@
 import { GatewayIntentBits } from 'discord.js'
-import { disallowedIntentsMessage, explainLoginFailure, fatalLoginCode } from '@src/core/login-failure.js'
+import {
+  disallowedIntentsMessage,
+  explainLoginFailure,
+  fatalLoginCode,
+  isRefusedToken,
+  tokenMessage,
+} from '@src/core/login-failure.js'
 
 describe('fatalLoginCode', () => {
   it("reads discord.js's codes, and the gateway's close messages that arrive without one", () => {
@@ -32,10 +38,38 @@ describe('disallowedIntentsMessage', () => {
 })
 
 describe('explainLoginFailure', () => {
-  it('explains refused intents only', () => {
-    expect(explainLoginFailure('DisallowedIntents', [GatewayIntentBits.GuildMembers])).toContain('(GuildMembers)')
-    expect(explainLoginFailure('InvalidIntents', [])).toContain('as invalid')
-    expect(explainLoginFailure('TokenInvalid', [])).toBeUndefined()
-    expect(explainLoginFailure(undefined, [])).toBeUndefined()
+  it('explains refused intents and a refused or missing token', () => {
+    expect(explainLoginFailure('DisallowedIntents', [GatewayIntentBits.GuildMembers], 'token')).toContain('(GuildMembers)')
+    expect(explainLoginFailure('InvalidIntents', [], 'token')).toContain('as invalid')
+    expect(explainLoginFailure('TokenInvalid', [], 'token')).toBe(tokenMessage('token'))
+    expect(explainLoginFailure('TokenInvalid', [], '')).toBe(tokenMessage(''))
+    expect(explainLoginFailure(undefined, [], 'token')).toBeUndefined()
+  })
+})
+
+describe('tokenMessage', () => {
+  it('says Discord refused a token that is set, and where to get a new one', () => {
+    expect(tokenMessage('abc')).toMatch(/^Discord refused the bot token\. .*Developer Portal → your application → Bot → Reset Token/)
+    expect(tokenMessage('abc')).toContain('DISCORD_TOKEN in .env')
+  })
+
+  it('says the token is missing when it is empty or only whitespace', () => {
+    for (const token of [undefined, '', '  ']) {
+      expect(tokenMessage(token)).toMatch(/^Discord token is missing: meocord\.config\.ts sets discordToken/)
+      expect(tokenMessage(token)).toContain('Reset Token')
+    }
+  })
+})
+
+describe('isRefusedToken', () => {
+  it("recognises discord.js's invalid token and a REST 401", () => {
+    expect(isRefusedToken(Object.assign(new Error('An invalid token was provided.'), { code: 'TokenInvalid' }))).toBe(true)
+    expect(isRefusedToken(Object.assign(new Error('401: Unauthorized'), { status: 401 }))).toBe(true)
+  })
+
+  it('leaves any other failure alone', () => {
+    expect(isRefusedToken(Object.assign(new Error('Missing Access'), { status: 403 }))).toBe(false)
+    expect(isRefusedToken(new Error('getaddrinfo ENOTFOUND discord.com'))).toBe(false)
+    expect(isRefusedToken(undefined)).toBe(false)
   })
 })

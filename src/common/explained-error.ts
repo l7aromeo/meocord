@@ -9,7 +9,7 @@ export function markExplained(error: unknown): void {
 
 /**
  * Whether MeoCord has already logged what went wrong and what to do about it, such as Discord refusing
- * a privileged intent at login. The error is the one discord.js raised, unchanged; logging it again
+ * the bot token or a privileged intent at login. The error is the one discord.js raised, unchanged; logging it again
  * would only repeat the explanation with a stack trace.
  *
  * @param error - An error `app.start()` rejected with.

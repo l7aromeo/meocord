@@ -34,12 +34,34 @@ export const INVALID_INTENTS_MESSAGE =
   'Discord refused the intents the bot requests as invalid. Check clientOptions.intents in @MeoCord: every value ' +
   'must be one of discord.js GatewayIntentBits.'
 
+/** Where a bot token comes from, for the messages that ask for one. */
+const TOKEN_SOURCE = 'Copy one from the Developer Portal → your application → Bot → Reset Token'
+
+/** What to do about a token Discord refuses, or about a missing one when `token` is empty. */
+export function tokenMessage(token: string | undefined): string {
+  if (!token?.trim()) {
+    return `Discord token is missing: meocord.config.ts sets discordToken, and a new app reads it from DISCORD_TOKEN in .env. ${TOKEN_SOURCE}.`
+  }
+  return (
+    `Discord refused the bot token. ${TOKEN_SOURCE} into discordToken in meocord.config.ts, which a new app reads ` +
+    `from DISCORD_TOKEN in .env, then try again.`
+  )
+}
+
+/** Whether Discord refused the token: discord.js's `TokenInvalid`, or a REST request answered 401. */
+export function isRefusedToken(error: unknown): boolean {
+  const { code, status } = (error ?? {}) as { code?: unknown; status?: unknown }
+  return code === 'TokenInvalid' || status === 401
+}
+
 /** What to act on for a fatal login failure MeoCord can explain, or undefined for one it cannot. */
 export function explainLoginFailure(
   code: FatalLoginCode | undefined,
   intents: BitFieldResolvable<GatewayIntentsString, number> | undefined,
+  token: string | undefined,
 ): string | undefined {
   if (code === 'DisallowedIntents') return disallowedIntentsMessage(intents)
   if (code === 'InvalidIntents') return INVALID_INTENTS_MESSAGE
+  if (code === 'TokenInvalid') return tokenMessage(token)
   return undefined
 }
