@@ -1,0 +1,115 @@
+import { ButtonStyle, Colors } from 'discord.js'
+import { type ReservedThemeRole } from '@src/interface/index.js'
+
+/**
+ * The role names MeoCord keeps for roles it may add, in any group: the runtime copy of `ReservedThemeRole`, which
+ * refuses them in TypeScript at the root theme, so that a JavaScript app is told too. A type test keeps the two equal.
+ */
+export const RESERVED_THEME_ROLES = [
+  'accent',
+  'muted',
+  'subtle',
+  'secondary',
+  'tertiary',
+  'attention',
+  'severe',
+  'error',
+  'done',
+  'brand',
+  'link',
+  'premium',
+] as const satisfies readonly ReservedThemeRole[]
+
+const reserved = new Set<string>(RESERVED_THEME_ROLES)
+
+const COLOUR = "a 6-digit hex string such as '#7680F4', a number from 0 to 0xFFFFFF, an [r, g, b] tuple of 0–255, or a discord.js colour name"
+const EMOJI = 'a unicode emoji, or a custom one written <:name:id> or <a:name:id>'
+const BUTTON = 'ButtonStyle.Primary, Secondary, Success or Danger'
+
+/** A custom emoji as Discord writes one in text: its name, 2 to 32 word characters, and its id. */
+const CUSTOM_EMOJI = /^<a?:\w{2,32}:\d{17,20}>$/
+
+/**
+ * One unicode emoji: a flag of two regional indicators, a keycap, or a pictograph with an optional presentation
+ * selector or skin tone, joined to others by zero-width joiners into one sequence.
+ */
+const UNICODE_EMOJI =
+  /^(?:\p{Regional_Indicator}{2}|[#*0-9]️?⃣|\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier})?(?:‍\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier})?)*)$/u
+
+const byte = (value: unknown) => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 255
+
+/** Whether discord.js resolves the value to a colour Discord takes. Stricter on tuples, whose channels it only sums. */
+function isColour(value: unknown): boolean {
+  if (typeof value === 'string') return /^#?[\da-f]{6}$/i.test(value) || value === 'Random' || value === 'Default' || Object.hasOwn(Colors, value)
+  if (typeof value === 'number') return Number.isInteger(value) && value >= 0 && value <= 0xffffff
+  return Array.isArray(value) && value.length === 3 && value.every(byte)
+}
+
+const isEmoji = (value: unknown) => typeof value === 'string' && (CUSTOM_EMOJI.test(value) || UNICODE_EMOJI.test(value))
+
+const THEMED_BUTTON_STYLES: readonly unknown[] = [ButtonStyle.Primary, ButtonStyle.Secondary, ButtonStyle.Success, ButtonStyle.Danger]
+const isButtonStyle = (value: unknown) => THEMED_BUTTON_STYLES.includes(value)
+
+const describe = (value: unknown): string =>
+  typeof value === 'string'
+    ? `'${value}'`
+    : Array.isArray(value)
+      ? `[${value.map(item => (typeof item === 'string' ? `'${item}'` : String(item))).join(', ')}]`
+      : value === null
+        ? 'null'
+        : typeof value === 'object'
+          ? 'an object'
+          : String(value)
+
+const describeGroup = (value: unknown): string => (Array.isArray(value) ? 'an array' : describe(value))
+
+/** How each of MeoCord's groups checks a token, and what it asks for instead. */
+const GROUPS: Record<'colors' | 'emojis' | 'buttons', { check: (value: unknown) => boolean; what: string; instead: string }> = {
+  colors: { check: isColour, what: 'a colour', instead: COLOUR },
+  emojis: { check: isEmoji, what: 'an emoji', instead: EMOJI },
+  buttons: { check: isButtonStyle, what: 'a button style a theme can map to', instead: BUTTON },
+}
+
+/**
+ * What is wrong with a theme, or part of one, one line per problem naming its key path: a colour discord.js cannot
+ * resolve, an emoji Discord would refuse, a button style other than Discord's four coloured ones, or a role name MeoCord
+ * reserves. MeoCord's groups are checked, whatever roles an app added to them; a group of the app's own is its to check.
+ *
+ * @param theme - A theme as an app wrote it, or any part of one.
+ * @param where - Where it was set, such as `@UseTheme on ShopController`, to begin each line with.
+ */
+export function themeProblems(theme: unknown, where?: string): string[] {
+  const at = where ? `${where}: ` : ''
+  if (typeof theme !== 'object' || theme === null || Array.isArray(theme)) {
+    return [`${at}theme must be an object of groups (got ${describeGroup(theme)})`]
+  }
+
+  const problems: string[] = []
+  for (const [group, { check, what, instead }] of Object.entries(GROUPS)) {
+    if (!(group in theme)) continue
+    const roles = (theme as Record<string, unknown>)[group]
+    if (roles === undefined) continue
+    if (typeof roles !== 'object' || roles === null || Array.isArray(roles)) {
+      problems.push(`${at}theme.${group} must be an object of roles (got ${describeGroup(roles)})`)
+      continue
+    }
+    for (const [role, value] of Object.entries(roles)) {
+      if (reserved.has(role)) problems.push(`${at}theme.${group}.${role}: MeoCord reserves the role name ${role} for a role it may add; rename yours`)
+      else if (value !== undefined && !check(value)) problems.push(`${at}theme.${group}.${role}: ${describe(value)} is not ${what}: give ${instead}`)
+    }
+  }
+  return problems
+}
+
+/**
+ * Throws when a theme has a problem, listing every one, so that a bad token stops the bot where it was set rather than
+ * reaching Discord, which would refuse the message.
+ *
+ * @param theme - A theme as an app wrote it, or any part of one.
+ * @param where - Where it was set, such as `@MeoCord({ theme }) on App`.
+ */
+export function assertValidTheme(theme: unknown, where: string): void {
+  const problems = themeProblems(theme, where)
+  if (problems.length === 0) return
+  throw new Error(`The theme has ${problems.length} problem${problems.length === 1 ? '' : 's'}:\n${problems.map(problem => `  ${problem}`).join('\n')}`)
+}

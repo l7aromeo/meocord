@@ -1,0 +1,100 @@
+import { ButtonStyle } from 'discord.js'
+import { assertValidTheme, RESERVED_THEME_ROLES, themeProblems } from '@src/core/theme-validation.js'
+
+describe('themeProblems', () => {
+  it('accepts every form a colour, an emoji and a button style may take', () => {
+    expect(
+      themeProblems({
+        colors: { primary: '#7680F4', neutral: '7680f4', success: 0x26a042, warning: [176, 132, 0], danger: 'Red', info: 'Default' },
+        emojis: {
+          loading: '⏳',
+          success: '✅',
+          warning: '⚠️',
+          danger: '<:nope:123456789012345678>',
+          info: '<a:spin:123456789012345678>',
+          flag: '🇮🇩',
+          keycap: '1️⃣',
+          family: '👨‍👩‍👧',
+          skin: '👍🏽',
+        },
+        buttons: { primary: ButtonStyle.Primary, neutral: ButtonStyle.Secondary, success: ButtonStyle.Success, danger: ButtonStyle.Danger },
+      }),
+    ).toEqual([])
+  })
+
+  it('accepts a partial theme, and groups of the app its own', () => {
+    expect(themeProblems({ colors: { danger: '#E3606D' } })).toEqual([])
+    expect(themeProblems({ charts: { axis: '#GGG', series: ['anything'] } })).toEqual([])
+    expect(themeProblems({})).toEqual([])
+  })
+
+  it('names the key path and says what is wrong with each bad token', () => {
+    expect(
+      themeProblems({
+        colors: { primary: '#GGG', neutral: '#FFF', success: [300, 0, 0], warning: [0, 0, 300], danger: -1, info: 0x1000000, vip: { r: 1 } },
+        emojis: { loading: 'hourglass', success: ':white_check_mark:', warning: '<:name>', danger: '', info: 7 },
+        buttons: { primary: ButtonStyle.Link, neutral: ButtonStyle.Premium, success: 0, danger: 'Danger' },
+      }),
+    ).toEqual([
+      "theme.colors.primary: '#GGG' is not a colour: give a 6-digit hex string such as '#7680F4', a number from 0 to 0xFFFFFF, an [r, g, b] tuple of 0–255, or a discord.js colour name",
+      "theme.colors.neutral: '#FFF' is not a colour: give a 6-digit hex string such as '#7680F4', a number from 0 to 0xFFFFFF, an [r, g, b] tuple of 0–255, or a discord.js colour name",
+      'theme.colors.success: [300, 0, 0] is not a colour: give a 6-digit hex string such as \'#7680F4\', a number from 0 to 0xFFFFFF, an [r, g, b] tuple of 0–255, or a discord.js colour name',
+      'theme.colors.warning: [0, 0, 300] is not a colour: give a 6-digit hex string such as \'#7680F4\', a number from 0 to 0xFFFFFF, an [r, g, b] tuple of 0–255, or a discord.js colour name',
+      'theme.colors.danger: -1 is not a colour: give a 6-digit hex string such as \'#7680F4\', a number from 0 to 0xFFFFFF, an [r, g, b] tuple of 0–255, or a discord.js colour name',
+      'theme.colors.info: 16777216 is not a colour: give a 6-digit hex string such as \'#7680F4\', a number from 0 to 0xFFFFFF, an [r, g, b] tuple of 0–255, or a discord.js colour name',
+      'theme.colors.vip: an object is not a colour: give a 6-digit hex string such as \'#7680F4\', a number from 0 to 0xFFFFFF, an [r, g, b] tuple of 0–255, or a discord.js colour name',
+      "theme.emojis.loading: 'hourglass' is not an emoji: give a unicode emoji, or a custom one written <:name:id> or <a:name:id>",
+      "theme.emojis.success: ':white_check_mark:' is not an emoji: give a unicode emoji, or a custom one written <:name:id> or <a:name:id>",
+      "theme.emojis.warning: '<:name>' is not an emoji: give a unicode emoji, or a custom one written <:name:id> or <a:name:id>",
+      "theme.emojis.danger: '' is not an emoji: give a unicode emoji, or a custom one written <:name:id> or <a:name:id>",
+      'theme.emojis.info: 7 is not an emoji: give a unicode emoji, or a custom one written <:name:id> or <a:name:id>',
+      'theme.buttons.primary: 5 is not a button style a theme can map to: give ButtonStyle.Primary, Secondary, Success or Danger',
+      'theme.buttons.neutral: 6 is not a button style a theme can map to: give ButtonStyle.Primary, Secondary, Success or Danger',
+      'theme.buttons.success: 0 is not a button style a theme can map to: give ButtonStyle.Primary, Secondary, Success or Danger',
+      "theme.buttons.danger: 'Danger' is not a button style a theme can map to: give ButtonStyle.Primary, Secondary, Success or Danger",
+    ])
+  })
+
+  it('refuses a group that is not an object', () => {
+    expect(themeProblems({ colors: 'red', emojis: null, buttons: [] })).toEqual([
+      "theme.colors must be an object of roles (got 'red')",
+      'theme.emojis must be an object of roles (got null)',
+      'theme.buttons must be an object of roles (got an array)',
+    ])
+    expect(themeProblems('dark')).toEqual(["theme must be an object of groups (got 'dark')"])
+  })
+
+  // TypeScript refuses these at the root theme; a JavaScript app is told at startup instead
+  it('refuses a role MeoCord reserves, in any group', () => {
+    expect(themeProblems({ colors: { accent: '#7680F4' }, emojis: { error: '❌' }, buttons: { link: ButtonStyle.Primary } })).toEqual([
+      'theme.colors.accent: MeoCord reserves the role name accent for a role it may add; rename yours',
+      'theme.emojis.error: MeoCord reserves the role name error for a role it may add; rename yours',
+      'theme.buttons.link: MeoCord reserves the role name link for a role it may add; rename yours',
+    ])
+  })
+
+  it('names where the theme came from', () => {
+    expect(themeProblems({ colors: { primary: '#GGG' } }, '@UseTheme on ShopController')[0]).toMatch(/^@UseTheme on ShopController: theme\.colors\.primary: /)
+  })
+})
+
+describe('assertValidTheme', () => {
+  it('throws every problem at once, one per line', () => {
+    expect(() => assertValidTheme({ colors: { primary: '#GGG' }, buttons: { danger: 5 } }, '@MeoCord({ theme }) on App')).toThrow(
+      /^The theme has 2 problems:\n {2}@MeoCord\(\{ theme \}\) on App: theme\.colors\.primary: .*\n {2}@MeoCord\(\{ theme \}\) on App: theme\.buttons\.danger: /,
+    )
+  })
+
+  it('returns nothing for a valid theme', () => {
+    expect(() => assertValidTheme({ colors: { primary: '#7680F4' } }, 'x')).not.toThrow()
+  })
+})
+
+describe('RESERVED_THEME_ROLES', () => {
+  it('lists the reserved names once each', () => {
+    expect(new Set(RESERVED_THEME_ROLES).size).toBe(RESERVED_THEME_ROLES.length)
+    expect([...RESERVED_THEME_ROLES].sort()).toEqual(
+      ['accent', 'attention', 'brand', 'done', 'error', 'link', 'muted', 'premium', 'secondary', 'severe', 'subtle', 'tertiary'],
+    )
+  })
+})
