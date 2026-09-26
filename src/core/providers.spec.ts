@@ -16,6 +16,18 @@ describe('providerMap', () => {
     expect(check({ provide: 'a', useValue: 1, useFactory: () => 1 })).toThrow('needs exactly one of useValue, useClass and useFactory')
   })
 
+  it('says a bare class needs no listing, and how to replace it', () => {
+    class Accounts {}
+    expect(check(Accounts)).toThrow(
+      `Accounts in ${where} is a class, not a provider: list a service in @MeoCord({ services }). To put something in its place, ` +
+        'write { provide: Accounts, useValue } or { provide: Accounts, useClass }.',
+    )
+    expect(() => providerMap([Accounts as never], "the testing module's providers")).toThrow(
+      "Accounts in the testing module's providers is a class, not a provider: a class a controller or service injects is bound " +
+        'for you, so it needs no listing.',
+    )
+  })
+
   it('keeps a value of undefined, which is still a way to provide', () => {
     expect(providerMap([{ provide: 'a', useValue: undefined }], where).get('a')).toEqual({ provide: 'a', useValue: undefined })
   })

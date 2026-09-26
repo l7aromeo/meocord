@@ -283,10 +283,8 @@ export interface ResponsePresenter {
  * @Catch(RateLimitedError)
  * export class RateLimitedFilter implements ExceptionFilter<RateLimitedError> {
  *   async catch(error: RateLimitedError, context: ExecutionContext) {
- *     const interaction = context.getInteraction()
- *     if (interaction?.isRepliable() && !interaction.replied && !interaction.deferred) {
- *       await interaction.reply({ content: `Slow down: try again in ${error.retryAfter}s.`, flags: MessageFlags.Ephemeral })
- *     }
+ *     // Private, and right wherever the answer stands: a reply, the deferred reply edited, or a follow-up
+ *     await context.response?.error(error, { message: `Slow down: try again in ${error.retryAfter}s.` })
  *   }
  * }
  * ```

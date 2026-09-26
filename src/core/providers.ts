@@ -38,6 +38,17 @@ export function providerMap(providers: readonly Provider[], where: string): Prov
   const map: ProviderMap = new Map()
   for (const provider of providers) {
     const entry = provider as Partial<ValueProvider & ClassProvider & FactoryProvider> | undefined
+    // A class listed alone, as Nest takes one: say where a class goes instead
+    if (typeof entry === 'function') {
+      const name = tokenName(entry)
+      const listing = where.startsWith('@MeoCord')
+        ? 'list a service in @MeoCord({ services })'
+        : 'a class a controller or service injects is bound for you, so it needs no listing'
+      throw new Error(
+        `${name} in ${where} is a class, not a provider: ${listing}. To put something in its place, write ` +
+          `{ provide: ${name}, useValue } or { provide: ${name}, useClass }.`,
+      )
+    }
     if (!entry || typeof entry !== 'object' || !isToken(entry.provide)) {
       throw new Error(`${where} has a provider without a token: set provide to a class, a string or a symbol.`)
     }

@@ -292,6 +292,8 @@ export class InteractionResponse implements ResponseState {
   /** Whether the locked message was answered, so nothing restores it again. */
   private settled = false
   private suppressNotifications = false
+  // Set by @Defer's first step, so an error can name what acknowledged the interaction
+  private underDefer = false
   private timer?: ReturnType<typeof setTimeout>
   /** A lock `@Defer({ mode: 'auto' })` asked for before acknowledging, applied once the timer acknowledges. */
   private pendingLock?: ResponseLockOptions
@@ -370,9 +372,10 @@ export class InteractionResponse implements ResponseState {
     }
   }
 
-  /** Sets what `@Defer` asks of every answer: notifications suppressed on new messages. */
+  /** Sets what `@Defer` asks of every answer, notifications suppressed on new messages, and marks the state as under `@Defer`. */
   configure({ suppressNotifications = false }: { suppressNotifications?: boolean }): void {
     this.suppressNotifications = suppressNotifications
+    this.underDefer = true
   }
 
   /**
@@ -594,7 +597,12 @@ export class InteractionResponse implements ResponseState {
     this.cancelScheduled()
     this.sync()
     if (this.phase !== 'unanswered' || this.acknowledging) {
-      throw new Error('A modal must be the first response to an interaction, and this one is already acknowledged.')
+      throw new Error(
+        this.underDefer
+          ? 'A modal must be the first response to an interaction, and @Defer acknowledged it before the handler ran. ' +
+              "Remove @Defer from a handler that shows a modal, or use @Defer({ mode: 'auto' }), which acknowledges only a slow handler."
+          : 'A modal must be the first response to an interaction, and this one is already acknowledged.',
+      )
     }
     if (!('showModal' in this.interaction)) throw new Error('This interaction cannot show a modal.')
     this.record('showModal', modal)
