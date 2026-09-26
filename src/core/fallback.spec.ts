@@ -7,6 +7,7 @@ import {
   MessageFlagsBitField,
   ModalSubmitInteraction,
   resolveColor,
+  MessageReaction,
 } from 'discord.js'
 import { vi } from 'vitest'
 import {
@@ -322,6 +323,36 @@ describe('the fallback', () => {
 })
 
 // Pinned against the fallback itself, so a branch added to one and not the other fails here
+/** A reaction as the fallback reads one: its class and its emoji. */
+const mockReaction = () => Object.defineProperty(Object.create(MessageReaction.prototype), 'emoji', { value: { name: '👍' } }) as MessageReaction
+
+describe('the fallback on a message a guard or validation refuses', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it.each([
+    ['a guard', () => new GuardDeniedError('Only moderators can ban.'), 'Only moderators can ban.'],
+    ['validation', () => new ValidationError([{ message: 'amount: must be at least 1', path: ['amount'] }]), 'amount: must be at least 1'],
+  ])('replies with the reason %s gives, without pinging, and deletes the reply as a usage reply', async (_by, makeError, text) => {
+    vi.useFakeTimers()
+    const message = Object.assign(createMockMessage(), { content: '!ban x' })
+    const logger = createLogger()
+
+    await createFallback(logger, () => 3)(makeError(), new UnroutedExecutionContext([message]))
+    const reply = await (vi.mocked(message.reply).mock.results[0]?.value as Promise<{ deleted: boolean }>)
+
+    expect(message.reply).toHaveBeenCalledWith({ content: expect.stringContaining(text), allowedMentions: { repliedUser: false, parse: [] } })
+    expect(logger.error).not.toHaveBeenCalled()
+    expect(logger.debug).toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(reply.deleted).toBe(true)
+  })
+
+  it('still reports a guard refusing a reaction, which has no message to answer', async () => {
+    const logger = await fail(mockReaction(), new GuardDeniedError('Not for you.'))
+    expect(logger.error).toHaveBeenCalled()
+  })
+})
+
 describe('isUserOutcome', () => {
   const errors: [string, () => unknown][] = [
     ['MessageUsageError', () => new MessageUsageError('!roll <sides>', [])],
@@ -339,6 +370,7 @@ describe('isUserOutcome', () => {
     ['a command', () => createMockInteraction(ChatInputCommandInteraction)],
     ['an autocomplete', () => createMockInteraction(AutocompleteInteraction)],
     ['a message', () => Object.assign(createMockMessage(), { content: '!roll' })],
+    ['a reaction', mockReaction],
   ]
 
   it.each(errors.flatMap(([name, error]) => calls.map(([on, call]) => [name, on, error, call] as const)))(

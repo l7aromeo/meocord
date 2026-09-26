@@ -13,7 +13,7 @@ import {
   Validate,
 } from '@src/decorator/index.js'
 import { MeoCordFactory } from '@src/core/meocord-factory.js'
-import { type ExecutionContext, MessageUsageError } from '@src/common/index.js'
+import { type ExecutionContext, GuardDeniedError, MessageUsageError } from '@src/common/index.js'
 import {
   type CallHandler,
   type ExceptionFilter,
@@ -565,6 +565,36 @@ describe('typed message params and usage replies', () => {
 
     expect(message.reply).not.toHaveBeenCalled()
     expect(seen).toEqual([])
+  })
+
+  it("answers a guard's reason and a validation failure with a reply it deletes, as it does the usage", async () => {
+    vi.useFakeTimers()
+    @Guard()
+    class ModeratorsOnly implements GuardInterface {
+      canActivate(): boolean {
+        throw new GuardDeniedError('Only moderators can do that.')
+      }
+    }
+    @Controller()
+    class Guarded {
+      @MessageHandler('purge {count:int}')
+      @UseGuard(ModeratorsOnly)
+      async purge() {
+        seen.push(['purge'])
+      }
+    }
+    const client = await startApp({ controllers: [Economy, Guarded], messages: { prefix: '!', deleteUsageRepliesAfter: 2 } })
+
+    const denied = await sendIn(client, '!purge 5')
+    const invalid = await sendIn(client, `!pay <@${TARGET}> 0`)
+
+    expect(denied.reply).toHaveBeenCalledWith({ content: 'Only moderators can do that.', allowedMentions: { repliedUser: false, parse: [] } })
+    expect(invalid.reply).toHaveBeenCalledWith(expect.objectContaining({ content: expect.stringContaining('Invalid') }))
+    expect(logged.error).toEqual([])
+    const replies = await Promise.all([replyOf(denied), replyOf(invalid)])
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(replies.map(reply => reply!.deleted)).toEqual([true, true])
+    expect(seen.filter(entry => ['purge', 'pay'].includes((entry as string[])[0]))).toEqual([])
   })
 
   it('answers a word of the wrong type with the usage, and deletes the answer after 10 seconds', async () => {
