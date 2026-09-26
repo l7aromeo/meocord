@@ -1,5 +1,5 @@
 import { Controller, MessageHandler } from '@src/decorator/index.js'
-import { buildMessageRoutes, matchMessageRoute, parseMessagePattern, type MessageStarts } from '@src/core/message-routes.js'
+import { buildMessageRoutes, matchMessageCommand, matchMessageRoute, parseMessagePattern, type MessageStarts } from '@src/core/message-routes.js'
 
 const RAW: MessageStarts = { prefixes: [''] }
 
@@ -32,6 +32,24 @@ describe('message patterns', () => {
     expect(capture('tag {name} {value}', 'tag "two words" 5')).toEqual({ name: 'two words', value: '5' })
     expect(capture('tag {name}', 'tag “smart quotes”')).toEqual({ name: 'smart quotes' })
     expect(capture('tag {name}', 'tag ""')).toEqual({ name: '' })
+  })
+
+  it('reads a command word given in quotes, straight or curly, as the word', () => {
+    @Controller()
+    class Quoted {
+      @MessageHandler('roll {sides}')
+      roll() {}
+
+      @MessageHandler('purge {count} {--bots}')
+      purge() {}
+    }
+    const routes = buildMessageRoutes([Quoted], { prefix: '!' })
+    const starts: MessageStarts = { prefixes: ['!'] }
+
+    expect(matchMessageRoute(routes, '!"roll" 20', starts)?.params).toEqual({ sides: '20' })
+    expect(matchMessageRoute(routes, '!“roll” 20', starts)?.params).toEqual({ sides: '20' })
+    expect(matchMessageRoute(routes, '!“purge” 5 --bots', starts)?.params).toEqual({ count: '5', bots: '' })
+    expect(matchMessageCommand(routes, '!“roll”', starts)).toMatchObject({ route: { method: 'roll' }, given: 0 })
   })
 
   it('reads an unclosed quote as an ordinary character', () => {

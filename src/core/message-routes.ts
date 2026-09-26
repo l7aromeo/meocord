@@ -363,11 +363,6 @@ interface RouteGroup {
   root: TrieNode
   /** The routes with flags, matched against a message's words once its flags are taken out. */
   flagged?: TrieNode
-  /**
-   * The first command words of the routes with flags, so only a message naming one is read for flags; `true`
-   * when a route with flags begins with a param, and any message may name it.
-   */
-  flagCommands: Set<string> | true
   /** Routes by rank, under the first of their command words, the literal words their patterns begin with. */
   commands: Map<string, number[]>
 }
@@ -433,13 +428,9 @@ function compileIndex(routes: readonly MessageRoute[]): MessageIndex {
     const key = `${startKey}|${route.caseSensitive}`
     let group = groups.get(key)
     if (!group) {
-      groups.set(key, (group = { prefix: route.prefix, caseSensitive: route.caseSensitive, root: trieNode(), commands: new Map(), flagCommands: new Set() }))
+      groups.set(key, (group = { prefix: route.prefix, caseSensitive: route.caseSensitive, root: trieNode(), commands: new Map() }))
     }
     const [first] = route.tokens
-    if (route.flags.length > 0 && group.flagCommands !== true) {
-      if ('literal' in first) group.flagCommands.add(wordKey(first.literal, route.caseSensitive))
-      else group.flagCommands = true
-    }
     if ('literal' in first) {
       const command = wordKey(first.literal, route.caseSensitive)
       group.commands.set(command, [...(group.commands.get(command) ?? []), rank])
@@ -483,10 +474,28 @@ function compileIndex(routes: readonly MessageRoute[]): MessageIndex {
   }
 }
 
-/** Whether a message whose first word is `first` may reach one of the group's routes with flags. */
-function namesFlaggedCommand(group: RouteGroup, first: { value: string } | undefined): boolean {
-  if (!group.flagged) return false
-  return group.flagCommands === true || (first !== undefined && group.flagCommands.has(wordKey(first.value, group.caseSensitive)))
+/**
+ * The key of the text's first word as typed, read up to the first space with no split; `undefined` when the
+ * text opens with a quote, whose word only a split reads.
+ */
+function firstWordKey(text: string, caseSensitive: boolean): string | undefined {
+  if (text[0] === '"' || text[0] === '“') return undefined
+  // Lowercasing allocates, so a word with no capital, as most are, is used as it is
+  let upper = false
+  let end = 0
+  for (; end < text.length && !isSpace(text, end); end++) {
+    const code = text.charCodeAt(end)
+    if ((code >= 65 && code <= 90) || code > 127) upper = true
+  }
+  const word = end === text.length ? text : text.slice(0, end)
+  return upper && !caseSensitive ? word.toLowerCase() : word
+}
+
+/** Whether words beginning with `first` may reach a route from `node`, so they are worth splitting and walking. */
+function mayEnter(node: TrieNode | undefined, first: string | undefined): node is TrieNode {
+  if (!node) return false
+  if (first === undefined || node.param || node.rests.length > 0 || node.tails.length > 0 || node.ends.length > 0) return true
+  return node.words.has(first)
 }
 
 /** The ranks of every route the words reach from `node`. Each node sits at one word depth, so each is visited once. */
@@ -580,19 +589,23 @@ export function matchMessageRoute(
         ? text
         : afterStart(text, group.prefix ?? starts.prefixes, starts.mention, group.caseSensitive)
     if (!rest) continue
-    const words = wordsOf(rest)
+    // A trie is split for and walked only when its first word could lead somewhere, so an unknown command costs
+    // no split, and a message naming a command with flags is not split a second time for the routes without
+    const first = firstWordKey(rest, group.caseSensitive)
     const found: number[] = []
-    reach(group.root, words, 0, rest, NONE, group.caseSensitive, found)
-    for (const rank of found) {
-      if (fitsScope(routes[rank].scope, starts.inGuild)) {
-        if (!best || rank < best.rank) best = { rank, words, rest, flags: NONE, cuts: NONE }
-      } else if (!outside || rank < outside.rank) outside = { rank, words, rest, flags: NONE, cuts: NONE }
+    if (mayEnter(group.root, first)) {
+      const words = wordsOf(rest)
+      reach(group.root, words, 0, rest, NONE, group.caseSensitive, found)
+      for (const rank of found) {
+        if (fitsScope(routes[rank].scope, starts.inGuild)) {
+          if (!best || rank < best.rank) best = { rank, words, rest, flags: NONE, cuts: NONE }
+        } else if (!outside || rank < outside.rank) outside = { rank, words, rest, flags: NONE, cuts: NONE }
+      }
     }
-    // Only a message naming a command with flags is read for them, so no message pays for another's flags
     const flagged = group.flagged
-    if (!flagged || !namesFlaggedCommand(group, words[0])) continue
+    if (!mayEnter(flagged, first)) continue
     // One pass takes out the flags, keeping each word's place in the text, and the rest is cut only for the route chosen
-    const scanned = rest.includes('--') ? splitFlagWords(rest) : { words, flags: NONE, cuts: NONE }
+    const scanned = rest.includes('--') ? splitFlagWords(rest) : { words: wordsOf(rest), flags: NONE, cuts: NONE }
     found.length = 0
     reach(flagged, scanned.words, 0, rest, scanned.cuts, group.caseSensitive, found)
     for (const rank of found) {
@@ -637,9 +650,12 @@ export function matchMessageCommand(
     if (group.prefix === false) continue
     const rest = afterStart(text, group.prefix ?? starts.prefixes, starts.mention, group.caseSensitive)
     if (!rest || rest.length === text.length) continue
+    // A message whose first word names no command is not split, unless it is quoted or a flag
+    const first = firstWordKey(rest, group.caseSensitive)
+    if (first !== undefined && !first.startsWith('--') && !group.commands.has(first)) continue
     const plain = splitWords(rest)
     // A route with flags counts the words left once the message's flags are taken out
-    const positional = namesFlaggedCommand(group, plain[0]) && rest.includes('--') ? splitFlagWords(rest).words : plain
+    const positional = mayEnter(group.flagged, first) && rest.includes('--') ? splitFlagWords(rest).words : plain
     const commandsOf = (words: { value: string }[]) => group.commands.get(wordKey(words[0]?.value ?? '', group.caseSensitive)) ?? []
     const candidates =
       positional === plain || positional[0]?.value === plain[0]?.value
