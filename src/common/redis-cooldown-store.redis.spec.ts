@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { Redis } from 'ioredis'
 import { createClient } from 'redis'
-import { RedisCooldownStore } from '@src/common/index.js'
-import { testCooldownStore } from '@src/testing/index.js'
+import { ChatInputCommandInteraction } from 'discord.js'
+import { vi } from 'vitest'
+import { CooldownStore, CooldownStoreError, Logger, RedisCooldownStore } from '@src/common/index.js'
+import { Command, Controller, Cooldown, MeoCord } from '@src/decorator/index.js'
+import { CommandType } from '@src/enum/index.js'
+import { createMockInteraction, MeoCordTestingModule, testCooldownStore } from '@src/testing/index.js'
 
 /**
  * RedisCooldownStore's script on a real server, through both clients the README shows. Runs where
@@ -39,6 +43,60 @@ describe.skipIf(!url)('RedisCooldownStore on a Redis server', () => {
   testCooldownStore('RedisCooldownStore through node-redis', () => new viaNodeRedis(), { describe, it, expect })
   testCooldownStore('RedisCooldownStore through ioredis', () => new viaIoredis(), { describe, it, expect })
   testCooldownStore('RedisCooldownStore through EVALSHA', () => new viaEvalSha(), { describe, it, expect })
+  const viaHashTag = RedisCooldownStore.using((script, keys, args) => ioredis.eval(script, keys.length, ...keys, ...args), {
+    prefix,
+    hashTag: 'handler',
+  })
+  testCooldownStore("RedisCooldownStore with hashTag: 'handler'", () => new viaHashTag(), { describe, it, expect })
+
+  describe('when the server fails', () => {
+    @Controller()
+    class DailyController {
+      @Command('daily', CommandType.SLASH)
+      @Cooldown({ seconds: 3 })
+      @Cooldown({ seconds: 60, uses: 5 })
+      daily(_interaction: ChatInputCommandInteraction) {}
+    }
+
+    const moduleOn = (store: CooldownStore, policy: { cooldownStoreFailure?: 'deny' | 'allow'; cooldownStoreTimeoutMs?: number }) => {
+      @MeoCord({ controllers: [DailyController], clientOptions: { intents: [] }, ...policy })
+      class App {}
+      return MeoCordTestingModule.create({ app: App, controllers: [DailyController], providers: [{ provide: CooldownStore, useValue: store }] }).compile()
+    }
+    const call = () => createMockInteraction(ChatInputCommandInteraction, { commandName: 'daily' })
+
+    beforeEach(() => {
+      vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined)
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined)
+      vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined)
+    })
+    afterEach(() => vi.restoreAllMocks())
+
+    // A server that is down: a port with nothing listening, and a client that does not reconnect
+    it('refuses a call, or lets it through, when the server is down', async () => {
+      const down = createClient({ url: 'redis://127.0.0.1:1', socket: { reconnectStrategy: false, connectTimeout: 500 } })
+      down.on('error', () => undefined)
+      const Store = RedisCooldownStore.using((script, keys, args) => down.eval(script, { keys, arguments: args }), { prefix })
+
+      await expect(moduleOn(new Store(), {}).invoke(DailyController, 'daily', call())).rejects.toBeInstanceOf(CooldownStoreError)
+      await expect(moduleOn(new Store(), { cooldownStoreFailure: 'allow' }).invoke(DailyController, 'daily', call())).resolves.toEqual({ ran: true })
+    })
+
+    // A server that is up but paused, as during a failover: the call waits past cooldownStoreTimeoutMs
+    it('refuses a call the paused server does not answer in time', async () => {
+      await ioredis.call('CLIENT', 'PAUSE', '1500', 'ALL')
+      try {
+        const error = await moduleOn(new viaNodeRedis(), { cooldownStoreTimeoutMs: 200 })
+          .invoke(DailyController, 'daily', call())
+          .catch((failure: unknown) => failure)
+
+        expect(error).toBeInstanceOf(CooldownStoreError)
+        expect((error as CooldownStoreError).timedOut).toBe(true)
+      } finally {
+        await ioredis.call('CLIENT', 'UNPAUSE')
+      }
+    })
+  })
 
   it('gives every key it writes an expiry no longer than its window', async () => {
     const store = new viaIoredis()

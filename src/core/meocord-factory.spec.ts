@@ -272,7 +272,7 @@ describe('MeoCordFactory.create()', () => {
     })
 
     it('resolves RedisCooldownStore.using, which runs its script through the function it was given', async () => {
-      const evaluate = vi.fn(() => Promise.resolve([0, 750]))
+      const evaluate = vi.fn(() => Promise.resolve([0, 750, 0]))
       const store = storeOf(MeoCordFactory.create(appWith(SharedRedisStore.using(evaluate)))) as InstanceType<typeof CooldownStore>
 
       expect(store).toBeInstanceOf(SharedRedisStore)

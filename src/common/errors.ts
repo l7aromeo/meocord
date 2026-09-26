@@ -136,3 +136,39 @@ export class CooldownError extends Error {
     this.name = 'CooldownError'
   }
 }
+
+/** The answer the built-in fallback gives a call {@link CooldownStoreError} refused. */
+export function cooldownStoreMessage(): string {
+  return "Cooldowns can't be checked right now: try again shortly."
+}
+
+/**
+ * Thrown when the cooldown store fails to answer, by rejecting or within `cooldownStoreTimeoutMs`, and
+ * `@MeoCord({ cooldownStoreFailure })` is `'deny'`, its default: the call is refused, as a cooldown that
+ * cannot be checked is not known to allow it. The built-in fallback answers only the caller, with
+ * {@link cooldownStoreMessage}; a filter can catch it to answer otherwise, or in the user's language.
+ * MeoCord logs the failure once per outage, with its cause, and again when the store answers.
+ *
+ * @example
+ * ```ts
+ * @Catch(CooldownStoreError)
+ * export class CooldownStoreFilter implements ExceptionFilter<CooldownStoreError> {
+ *   async catch(error: CooldownStoreError, context: ExecutionContext) {
+ *     await context.response?.error(error, { message: 'Hold on a moment and try again.', visibility: 'private' })
+ *   }
+ * }
+ * ```
+ */
+export class CooldownStoreError extends Error {
+  /**
+   * @param cause - What the store threw or rejected with; undefined when it did not answer in time.
+   * @param timedOut - Whether the store did not answer within `cooldownStoreTimeoutMs`.
+   */
+  constructor(
+    cause: unknown,
+    readonly timedOut: boolean,
+  ) {
+    super(cooldownStoreMessage(), { cause })
+    this.name = 'CooldownStoreError'
+  }
+}

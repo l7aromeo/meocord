@@ -87,7 +87,8 @@ describe('testCooldownStore', () => {
   })
 
   it('fails a store that counts every key together', async () => {
-    expect(await failures(() => new OneCountStore())).toEqual([expect.stringContaining('each key on its own')])
+    // The batch cases, which count several keys, fail it too
+    expect(await failures(() => new OneCountStore())).toContainEqual(expect.stringContaining('each key on its own'))
   })
 
   it('names its cases after the store, under one describe', () => {

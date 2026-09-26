@@ -1,5 +1,6 @@
 import 'reflect-metadata'
 import { Container, type ServiceIdentifier } from 'inversify'
+import { COOLDOWN_POLICY, DEFAULT_COOLDOWN_STORE_TIMEOUT_MS } from '@src/core/cooldown-runner.js'
 import { BaseInteraction, type ClientEvents, type Interaction, Message } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
@@ -403,6 +404,15 @@ export class TestingModuleBuilder {
 
     for (const [interceptorClass, stub] of this.interceptorOverrides) {
       container.bind(interceptorClass).toConstantValue(stub as InterceptorInterface)
+    }
+
+    // The app's cooldown policy, so a test of a failing store sees what the bot would do
+    const appOptions = this.options.app && (Reflect.getMetadata(MetadataKey.AppOptions, this.options.app) as { cooldownStoreFailure?: 'deny' | 'allow'; cooldownStoreTimeoutMs?: number })
+    if (appOptions && !container.isBound(COOLDOWN_POLICY)) {
+      container.bind(COOLDOWN_POLICY).toConstantValue({
+        failure: appOptions.cooldownStoreFailure ?? 'deny',
+        timeoutMs: appOptions.cooldownStoreTimeoutMs ?? DEFAULT_COOLDOWN_STORE_TIMEOUT_MS,
+      })
     }
 
     // The app's translator, unless a provider stands in for it

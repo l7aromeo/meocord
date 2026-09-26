@@ -1,5 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { type CooldownLimit, CooldownStore, type CooldownVerdict } from '@src/common/cooldown-store.js'
+import {
+  type CooldownBatchVerdict,
+  type CooldownEntry,
+  type CooldownLimit,
+  CooldownStore,
+  type CooldownVerdict,
+} from '@src/common/cooldown-store.js'
 
 /**
  * Runs a Lua script on the server, as a client's `EVAL` does: the script, the keys it touches, and its
@@ -19,31 +25,52 @@ export interface RedisCooldownStoreOptions {
    * each restart or `SCRIPT FLUSH`. Without it, every call sends the script with `EVAL`.
    */
   evalsha?: RedisEvalSha
+  /**
+   * `'handler'` puts each handler's keys in one Redis Cluster slot, as `{Controller.method}#…`, so its
+   * stacked cooldowns stay one step on Cluster as they are on one server. Every call to a handler then lands
+   * on that one slot, so a busy handler's slot carries all of its traffic. Without it, on Cluster, a
+   * handler's cooldowns are each counted by a script of their own, in order. A single server needs neither.
+   */
+  hashTag?: 'handler'
 }
 
 /**
- * One call, checked and recorded as one step on the server. A sorted set per key holds the time of each
- * call in the window: calls that have left it are trimmed, the rest counted, and this one added when the
- * limit allows, with the key set to expire when its window would be empty. Time is the server's, so every
- * process counts by one clock, and each member carries a nonce, so calls in the same microsecond stay
- * apart. A refusal reports how long until the oldest call still counting leaves the window.
+ * One call against every cooldown it counts against, checked and recorded as one step on the server. A
+ * sorted set per key holds the time of each call in the window: calls that have left it are trimmed and the
+ * rest counted, and only when every key allows the call is it added to all of them, each key set to expire
+ * when its window would be empty. Time is the server's, so every process counts by one clock, and each
+ * member carries a nonce, so calls in the same microsecond stay apart. A refusal reports the longest wait
+ * among the keys that refused, and which key that is.
  *
- * KEYS[1] the key; ARGV[1] uses; ARGV[2] windowMs; ARGV[3] a nonce for this call.
+ * KEYS the keys; ARGV[1] a nonce for this call, then uses and windowMs for each key in turn.
+ * Replies {1, 0, -1} when allowed, {0, retryAfterMs, index} when refused.
  */
 const SCRIPT = `local time = redis.call('TIME')
 local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
-local uses = tonumber(ARGV[1])
-local window = tonumber(ARGV[2])
-redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now - window)
-local count = redis.call('ZCARD', KEYS[1])
-if count < uses then
-  redis.call('ZADD', KEYS[1], now, time[1] .. '.' .. time[2] .. ':' .. ARGV[3])
-  redis.call('PEXPIRE', KEYS[1], window)
-  return {1, 0}
+local member = time[1] .. '.' .. time[2] .. ':' .. ARGV[1]
+local blocked, wait = 0, 0
+for i, key in ipairs(KEYS) do
+  local uses = tonumber(ARGV[i * 2])
+  local window = tonumber(ARGV[i * 2 + 1])
+  redis.call('ZREMRANGEBYSCORE', key, '-inf', now - window)
+  local count = redis.call('ZCARD', key)
+  if count >= uses then
+    local oldest = redis.call('ZRANGE', key, count - uses, count - uses, 'WITHSCORES')
+    local retry = math.max(tonumber(oldest[2]) + window - now, 1)
+    if retry > wait then
+      blocked, wait = i, retry
+    end
+    redis.call('PEXPIRE', key, window)
+  end
 end
-local oldest = redis.call('ZRANGE', KEYS[1], count - uses, count - uses, 'WITHSCORES')
-redis.call('PEXPIRE', KEYS[1], window)
-return {0, math.max(tonumber(oldest[2]) + window - now, 1)}
+if blocked > 0 then
+  return {0, wait, blocked - 1}
+end
+for i, key in ipairs(KEYS) do
+  redis.call('ZADD', key, now, member)
+  redis.call('PEXPIRE', key, tonumber(ARGV[i * 2 + 1]))
+end
+return {1, 0, -1}
 `
 
 const SCRIPT_SHA = createHash('sha1').update(SCRIPT).digest('hex')
@@ -126,10 +153,30 @@ export class RedisCooldownStore extends CooldownStore {
    * @param limit - The calls allowed, and the window they are counted over.
    * @returns Whether this call was recorded, and if not, how long until one can be.
    */
-  async consume(key: string, { uses, windowMs }: CooldownLimit): Promise<CooldownVerdict> {
-    const keys = [`${this.prefix}${key}`]
-    const args = [String(uses), String(windowMs), randomUUID()]
-    return verdictOf(await this.run(keys, args))
+  async consume(key: string, limit: CooldownLimit): Promise<CooldownVerdict> {
+    const { allowed, retryAfterMs } = await this.consumeMany([{ key, limit }])
+    return { allowed, retryAfterMs }
+  }
+
+  /**
+   * Records a call against every entry if all allow it, as one script: one round trip, however many
+   * cooldowns a handler stacks. On Redis Cluster, where a handler's keys sit in different slots and one
+   * script cannot reach them all, each key is counted by a script of its own, in order, so a call one
+   * cooldown refuses has counted against those before it; `hashTag: 'handler'` keeps them in one slot.
+   *
+   * @param entries - The keys and limits the call counts against.
+   * @returns Whether the call was recorded, and if not, how long until it can be and which entry refused it.
+   */
+  async consumeMany(entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
+    if (entries.length === 0) return { allowed: true, retryAfterMs: 0 }
+    const keys = entries.map(({ key }) => `${this.prefix}${this.options.hashTag === 'handler' ? handlerTagged(key) : key}`)
+    const args = [randomUUID(), ...entries.flatMap(({ limit: { uses, windowMs } }) => [String(uses), String(windowMs)])]
+    try {
+      return verdictOf(await this.run(keys, args), entries.length)
+    } catch (error) {
+      if (entries.length === 1 || !messageOf(error).includes('CROSSSLOT')) throw error
+      return super.consumeMany(entries)
+    }
   }
 
   private async run(keys: string[], args: string[]): Promise<unknown> {
@@ -139,20 +186,30 @@ export class RedisCooldownStore extends CooldownStore {
       return await evalsha(SCRIPT_SHA, keys, args)
     } catch (error) {
       // The server has not seen the script since it started, or its scripts were flushed: EVAL loads it.
-      if (!String((error as Error | undefined)?.message ?? error).includes('NOSCRIPT')) throw error
+      if (!messageOf(error).includes('NOSCRIPT')) throw error
       return this.evaluate(SCRIPT, keys, args)
     }
   }
 }
 
-/** The script's `{allowed, retryAfterMs}` reply, as a verdict. */
-function verdictOf(reply: unknown): CooldownVerdict {
-  const [allowed, retryAfterMs] = Array.isArray(reply) ? reply.map(Number) : []
-  if ((allowed !== 0 && allowed !== 1) || !Number.isFinite(retryAfterMs)) {
+/** A key with its handler part, `Controller.method`, as a Redis Cluster hash tag: `{Controller.method}#0:user:1`. */
+function handlerTagged(key: string): string {
+  const end = key.indexOf('#')
+  return end === -1 ? `{${key}}` : `{${key.slice(0, end)}}${key.slice(end)}`
+}
+
+const messageOf = (error: unknown): string => String((error as Error | undefined)?.message ?? error)
+
+/** The script's `{allowed, retryAfterMs, index}` reply, as a verdict. */
+function verdictOf(reply: unknown, count: number): CooldownBatchVerdict {
+  const [allowed, retryAfterMs, blocked] = Array.isArray(reply) ? reply.map(Number) : []
+  const valid =
+    (allowed === 1 && blocked === -1) || (allowed === 0 && Number.isInteger(blocked) && blocked >= 0 && blocked < count)
+  if (!valid || !Number.isFinite(retryAfterMs)) {
     throw new Error(
-      `RedisCooldownStore's script replied ${JSON.stringify(reply)}, where it returns [allowed, retryAfterMs]. ` +
+      `RedisCooldownStore's script replied ${JSON.stringify(reply)}, where it returns [allowed, retryAfterMs, index]. ` +
         'Check that the function given to RedisCooldownStore.using resolves to what the client’s eval returns.',
     )
   }
-  return { allowed: allowed === 1, retryAfterMs: allowed === 1 ? 0 : retryAfterMs }
+  return allowed === 1 ? { allowed: true, retryAfterMs: 0 } : { allowed: false, retryAfterMs, blocked }
 }

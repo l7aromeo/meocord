@@ -1,8 +1,9 @@
 import 'reflect-metadata'
 import { type Container } from 'inversify'
 import { BaseInteraction, Message } from 'discord.js'
-import { CooldownError, type CooldownScope } from '@src/common/errors.js'
-import { CooldownStore, MemoryCooldownStore } from '@src/common/cooldown-store.js'
+import { CooldownError, type CooldownScope, CooldownStoreError } from '@src/common/errors.js'
+import { type CooldownBatchVerdict, type CooldownEntry, CooldownStore, MemoryCooldownStore } from '@src/common/cooldown-store.js'
+import { Logger } from '@src/common/logger.js'
 import { type ExecutionContext, type HandlerExecutionContext } from '@src/common/execution-context.js'
 import { sourcePrototype } from '@src/core/guard-runner.js'
 
@@ -73,6 +74,80 @@ function scopeId(per: CooldownScope, first: unknown): string {
   return `user:${user ?? 'unknown'}`
 }
 
+/** What a call gets when the cooldown store fails to answer: refused, or let through uncounted. */
+export type CooldownStoreFailure = 'deny' | 'allow'
+
+/** How `@Cooldown` treats its store: `@MeoCord({ cooldownStoreFailure, cooldownStoreTimeoutMs })`. */
+export interface CooldownPolicy {
+  failure: CooldownStoreFailure
+  timeoutMs: number
+}
+
+/** How long a call waits for the cooldown store before it counts as a failure, unless the app says otherwise. */
+export const DEFAULT_COOLDOWN_STORE_TIMEOUT_MS = 1_000
+
+/** Private binding: the app's cooldown policy. */
+export const COOLDOWN_POLICY = Symbol('meocord.cooldownPolicy')
+
+const DEFAULT_POLICY: CooldownPolicy = { failure: 'deny', timeoutMs: DEFAULT_COOLDOWN_STORE_TIMEOUT_MS }
+
+/** The app's cooldown policy, else refusing calls after a second without an answer. */
+export function cooldownPolicyOf(container: Container): CooldownPolicy {
+  return container.isBound(COOLDOWN_POLICY) ? container.get<CooldownPolicy>(COOLDOWN_POLICY) : DEFAULT_POLICY
+}
+
+const logger = new Logger('Cooldown')
+
+/** The failing calls of each store that has not answered since its last failure. */
+const outages = new WeakMap<CooldownStore, { failures: number; since: number }>()
+
+/** Logs a store's failure once per outage: the first, with its cause and what calls get until it answers. */
+function reportFailure(store: CooldownStore, error: CooldownStoreError, { failure, timeoutMs }: CooldownPolicy): void {
+  const outage = outages.get(store)
+  if (outage) {
+    outage.failures++
+    return
+  }
+  outages.set(store, { failures: 1, since: Date.now() })
+  const name = store.constructor.name
+  const reason = error.timedOut ? `did not answer within ${timeoutMs} ms` : `failed: ${String((error.cause as Error | undefined)?.message ?? error.cause)}`
+  if (failure === 'allow') logger.warn(`The cooldown store ${name} ${reason}. Calls run uncounted until it answers again.`)
+  else logger.error(`The cooldown store ${name} ${reason}. Calls with a cooldown are refused until it answers again.`, error.cause ?? '')
+}
+
+/** Logs that a store answers again, after an outage. */
+function reportRecovery(store: CooldownStore): void {
+  const outage = outages.get(store)
+  if (!outage) return
+  outages.delete(store)
+  const seconds = Math.round((Date.now() - outage.since) / 1000)
+  logger.log(`The cooldown store ${store.constructor.name} answers again, after ${outage.failures} failed call(s) over ${seconds}s.`)
+}
+
+/**
+ * Asks the store once, for every entry, and fails with {@link CooldownStoreError} when it throws, rejects or
+ * does not answer within `timeoutMs`. An answer that comes later is dropped: nothing counts the call a second time.
+ */
+async function consumeWithin(store: CooldownStore, entries: CooldownEntry[], timeoutMs: number): Promise<CooldownBatchVerdict> {
+  // A store given as a value, rather than a class extending CooldownStore, may have only consume()
+  const consumeMany = typeof store.consumeMany === 'function' ? store.consumeMany : CooldownStore.prototype.consumeMany
+  const attempt = Promise.resolve().then(() => consumeMany.call(store, entries))
+  // A rejection after the timeout has nobody left to hear it
+  attempt.catch(() => undefined)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new CooldownStoreError(undefined, true)), timeoutMs)
+    timer.unref?.()
+  })
+  try {
+    return await Promise.race([attempt, timeout])
+  } catch (error) {
+    throw error instanceof CooldownStoreError ? error : new CooldownStoreError(error, false)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** The store `@Cooldown` counts in: the one bound, else an in-memory one shared by the container. */
 export function cooldownStoreOf(container: Container): CooldownStore {
   if (!container.isBound(CooldownStore)) container.bind(CooldownStore).toConstantValue(new MemoryCooldownStore())
@@ -80,13 +155,14 @@ export function cooldownStoreOf(container: Container): CooldownStore {
 }
 
 /**
- * Counts the call against each of the handler's cooldowns in order, and throws at the first that is
- * exhausted. A call a later cooldown blocks has still counted against the earlier ones, as any burst
- * of calls would; each store call stays one atomic step. Every key is worked out first, so a `bypass`
- * or `by` that throws leaves every count untouched.
+ * Counts the call against all of the handler's cooldowns in one store call, `consumeMany`. With a store
+ * that overrides it, as the built-in ones do, a call one cooldown refuses counts against none. Every key is
+ * worked out first, so a `bypass` or `by` that throws leaves every count untouched. A store that fails is
+ * handled by the app's policy: the call is refused with CooldownStoreError, or runs uncounted.
  *
  * @param params - The handler's second argument, as the handler receives it, for `by`.
- * @throws CooldownError with the time until the blocking cooldown allows another call.
+ * @throws CooldownError with the time until every cooldown allows another call.
+ * @throws CooldownStoreError when the store fails and the policy is `'deny'`.
  */
 export async function consumeCooldowns(
   container: Container,
@@ -114,8 +190,22 @@ export async function consumeCooldowns(
     counted.push({ key: `${controller.name}.${methodName}#${index}:${per}:${scopeId(per, first)}${suffix}`, seconds, uses, per })
   }
 
-  for (const { key, seconds, uses, per } of counted) {
-    const { allowed, retryAfterMs } = await store.consume(key, { uses, windowMs: seconds * 1000 })
-    if (!allowed) throw new CooldownError(retryAfterMs, per)
+  if (counted.length === 0) return
+
+  const policy = cooldownPolicyOf(container)
+  let verdict: CooldownBatchVerdict
+  try {
+    verdict = await consumeWithin(
+      store,
+      counted.map(({ key, seconds, uses }) => ({ key, limit: { uses, windowMs: seconds * 1000 } })),
+      policy.timeoutMs,
+    )
+  } catch (error) {
+    const failure = error as CooldownStoreError
+    reportFailure(store, failure, policy)
+    if (policy.failure === 'allow') return
+    throw failure
   }
+  reportRecovery(store)
+  if (!verdict.allowed) throw new CooldownError(verdict.retryAfterMs, counted[verdict.blocked ?? 0]?.per ?? counted[0].per)
 }

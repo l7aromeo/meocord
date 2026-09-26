@@ -44,6 +44,14 @@ class DailyController {
     ran.push('burst')
   }
 
+  // The long window first: a call the short one refuses must not spend a use of the long one
+  @Command('longfirst', CommandType.SLASH)
+  @Cooldown({ uses: 2, seconds: 60 })
+  @Cooldown({ seconds: 3 })
+  async longfirst(_interaction: ChatInputCommandInteraction) {
+    ran.push('longfirst')
+  }
+
   @Command('server', CommandType.SLASH)
   @Cooldown({ seconds: 10, per: 'guild' })
   async server(_interaction: ChatInputCommandInteraction) {
@@ -149,6 +157,26 @@ describe('@Cooldown', () => {
     vi.advanceTimersByTime(51_000)
     await module.invoke(DailyController, 'burst', slash())
     expect(ran).toHaveLength(4)
+  })
+
+  it('counts a call against all stacked cooldowns or none, so one refused spends no other', async () => {
+    await module.invoke(DailyController, 'longfirst', slash())
+    await expect(module.invoke(DailyController, 'longfirst', slash())).rejects.toMatchObject({ retryAfterMs: 3_000 })
+    await expect(module.invoke(DailyController, 'longfirst', slash())).rejects.toBeInstanceOf(CooldownError)
+
+    // Had the refused calls counted against the 60-second cooldown, its two uses would be gone
+    vi.advanceTimersByTime(3_000)
+    await module.invoke(DailyController, 'longfirst', slash())
+    expect(ran).toEqual(['longfirst', 'longfirst'])
+  })
+
+  it('waits the longest wait among the cooldowns that refuse a call', async () => {
+    await module.invoke(DailyController, 'longfirst', slash())
+    vi.advanceTimersByTime(3_000)
+    await module.invoke(DailyController, 'longfirst', slash())
+
+    // Both refuse now: the 3-second one for 3s, the 60-second one for 57s
+    await expect(module.invoke(DailyController, 'longfirst', slash())).rejects.toMatchObject({ retryAfterMs: 57_000, per: 'user' })
   })
 
   describe('scopes', () => {
