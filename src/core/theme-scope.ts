@@ -48,7 +48,10 @@ function mergeInto(base: unknown, layer: unknown): unknown {
   if (layer === undefined) return base
   if (!isPlainObject(base) || !isPlainObject(layer)) return layer
   const merged: Record<string, unknown> = { ...base }
-  for (const key of Object.keys(layer)) merged[key] = mergeInto(base[key], layer[key])
+  // Defined rather than assigned, so a key such as __proto__ from JSON stays a key rather than setting the prototype
+  for (const key of Object.keys(layer)) {
+    Object.defineProperty(merged, key, { value: mergeInto(base[key], layer[key]), enumerable: true, writable: true, configurable: true })
+  }
   return merged
 }
 

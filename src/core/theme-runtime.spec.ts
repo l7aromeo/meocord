@@ -158,6 +158,24 @@ describe('the layers a handler\'s theme is built from', () => {
     expect(seen).toEqual([{ palette: false, series: false, lookup: false, plain: true, steps: true }])
   })
 
+  it('keeps a __proto__ key from JSON as a key when a layer merges it', async () => {
+    @Controller()
+    @UseTheme(JSON.parse('{"charts":{"__proto__":{"injected":"yes"}}}'))
+    class Chart {
+      @Command('proto', CommandType.BUTTON)
+      proto() {
+        const { charts } = useTheme() as unknown as { charts: Record<string, unknown> }
+        seen.push([Object.keys(charts).sort(), (charts as { injected?: string }).injected, Object.getPrototypeOf(charts) === Object.prototype])
+      }
+    }
+    @MeoCord({ controllers: [Chart], clientOptions: { intents: [] }, theme: { charts: { axis: '#000001' } } as never })
+    class App {}
+
+    await MeoCordTestingModule.create({ app: App, controllers: [Chart] }).compile().invoke(Chart, 'proto', press('proto'))
+
+    expect(seen).toEqual([[['__proto__', 'axis'], undefined, true]])
+  })
+
   it('never freezes the object an app gives @UseTheme', () => {
     const brand = { colors: { primary: '#000006' } } as const
 
