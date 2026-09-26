@@ -19,7 +19,7 @@ import {
 import { isCustomIdRouted, matchesCommandType } from '@src/util/interaction.util.js'
 import { BUILDER_GUILDS } from '@src/decorator/command-builder.decorator.js'
 import { routeSpecificity } from '@src/core/route-specificity.js'
-import { type Route } from '@src/common/route.js'
+import { type Route, type RouteParams } from '@src/common/route.js'
 
 const COMMAND_METADATA_KEY = Symbol('commands')
 const MESSAGE_HANDLER_METADATA_KEY = Symbol('message_handlers')
@@ -278,6 +278,37 @@ export function createRegexFromPattern(pattern: string): { regex: RegExp; params
   return { regex, params, specificity }
 }
 
+/** The keys a select menu's handler gets beside its route's params: its choices. */
+type ChoiceKeys<T> = T extends CommandType.SELECT_MENU
+  ? 'values'
+  : T extends CommandType.USER_SELECT_MENU
+    ? 'values' | 'users' | 'members'
+    : T extends CommandType.ROLE_SELECT_MENU
+      ? 'values' | 'roles'
+      : T extends CommandType.CHANNEL_SELECT_MENU
+        ? 'values' | 'channels'
+        : T extends CommandType.MENTIONABLE_SELECT_MENU
+          ? 'values' | 'users' | 'members' | 'roles'
+          : never
+
+type RequiredKeys<P> = { [K in keyof P]-?: object extends Pick<P, K> ? never : K }[keyof P]
+
+/**
+ * Allows the handler when each key its params require is one a call to it gets: a param of its route, or a
+ * select menu's choice. Value types are left to `@Validate`. Plain strings, modals, whose fields are keyed by
+ * customId, and params with an index signature, as a handler without them infers, are unchecked.
+ */
+type RouteAccepts<N, T, P> =
+  N extends Route<infer Pattern>
+    ? string extends Pattern | keyof P
+      ? unknown
+      : T extends CommandType.MODAL_SUBMIT
+        ? unknown
+        : [Exclude<RequiredKeys<P>, RouteParams<Pattern> | ChoiceKeys<T>>] extends [never]
+          ? unknown
+          : { "The handler's params name keys its route does not capture": Exclude<RequiredKeys<P>, RouteParams<Pattern> | ChoiceKeys<T>> }
+    : unknown
+
 /**
  * Decorator to register command methods in a controller.
  *
@@ -285,7 +316,8 @@ export function createRegexFromPattern(pattern: string): { regex: RegExp; params
  *   Discord use their name, and a subcommand its full path — `settings notify email`,
  *   parts separated by a space, the way Discord displays it. Components use a customId
  *   pattern, where `{name}` captures one `/`-separated segment, or a {@link Route}
- *   made from one, which also builds the customIds it matches.
+ *   made from one, which also builds the customIds it matches. With a route, each key
+ *   the handler's params require must be one of its params, or a select menu's choice.
  * @param builderOrType - A command builder class, or a `CommandType` for a handler that
  *   registers nothing of its own: every component, and every subcommand of a command
  *   whose builder already describes it.
@@ -320,18 +352,21 @@ export function createRegexFromPattern(pattern: string): { regex: RegExp; params
  * }
  * ```
  */
-export function Command<CBC extends BuildableCommandType, T extends CommandBuilderConstructor<CBC> | CommandType>(
-  name: string | Route,
-  builderOrType: T,
-) {
-  const commandName = typeof name === 'string' ? name : name.pattern
+export function Command<
+  CBC extends BuildableCommandType,
+  T extends CommandBuilderConstructor<CBC> | CommandType,
+  N extends string | Route = string,
+>(name: N, builderOrType: T) {
+  const commandName = typeof name === 'string' ? name : (name as Route).pattern
   return function <P extends Record<string, any>, R extends Promise<void> | void>(
     target: object,
     propertyKey: string,
-    _descriptor:
+    _descriptor: (
       | TypedPropertyDescriptor<(interaction: CommandInteractionType<CBC, T>, params: P) => R>
       | TypedPropertyDescriptor<(interaction: CommandInteractionType<CBC, T>) => R>
-      | TypedPropertyDescriptor<() => R>,
+      | TypedPropertyDescriptor<() => R>
+    ) &
+      RouteAccepts<N, T, P>,
   ) {
     const originalMethod = _descriptor.value
     if (!originalMethod) {
