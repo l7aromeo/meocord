@@ -4,6 +4,7 @@ import { CommandNotFoundError, CooldownError, CooldownStoreError, GuardDeniedErr
 import { type Logger } from '@src/common/logger.js'
 import { respond } from '@src/common/response/response-state.js'
 import { describeInteraction } from '@src/util/interaction.util.js'
+import { getMessageHandlers } from '@src/decorator/controller.decorator.js'
 
 /** Answers an error no filter handled, for the call `context` describes. Never throws. */
 export type Fallback = (error: unknown, context: ExecutionContext) => Promise<void>
@@ -49,6 +50,13 @@ async function tellAuthor(context: ExecutionContext, error: UserError, logger: L
   }
 }
 
+/** Whether the call is a message command: a `@MessageHandler` with a pattern, not a listener for every message. */
+function isCommand(context: ExecutionContext): boolean {
+  const controller = context.getController()
+  const method = context.getHandlerName()
+  return controller !== undefined && getMessageHandlers(controller.prototype).some(handler => handler.method === method && handler.pattern !== undefined)
+}
+
 /** How long a reply showing a command's usage stays, in seconds, when the app does not say. */
 export const DEFAULT_USAGE_REPLY_SECONDS = 10
 
@@ -76,8 +84,9 @@ async function answerUsage(error: Error, context: ExecutionContext, logger: Logg
  * The built-in fallback: logs an error no filter handled, then answers the interaction through
  * `respond(interaction).error()` if it can still take an answer. A message that names a command but does
  * not fit it is answered with the command's usage, and one a guard denies or validation refuses with the
- * reason, each deleted after `usageReplySeconds()` seconds; one a `UserError` refused with that error's
- * message; other errors of messages, reactions and events are only logged.
+ * reason, each deleted after `usageReplySeconds()` seconds; a listener's denial only at debug level, since
+ * its guard filters messages; one a `UserError` refused with that error's message; other errors of messages,
+ * reactions and events are only logged.
  */
 export function createFallback(logger: Logger, usageReplySeconds: () => number | undefined = () => undefined): Fallback {
   return async (error, context) => {
@@ -89,10 +98,10 @@ export function createFallback(logger: Logger, usageReplySeconds: () => number |
         else await answerUsage(error, context, logger, usageReplySeconds() ?? DEFAULT_USAGE_REPLY_SECONDS)
         return
       }
-      // The sender's own outcome, a guard's reason or what is wrong with the input, answered like the usage
       if ((error instanceof GuardDeniedError || error instanceof ValidationError) && context.getMessage()) {
         logger.debug(`${error instanceof GuardDeniedError ? 'Denied' : 'Invalid input for'} ${describeCall(context)}: ${error.message}`)
-        await answerUsage(error, context, logger, usageReplySeconds() ?? DEFAULT_USAGE_REPLY_SECONDS)
+        // A command's sender addressed the bot, so is told why, as with the usage; a listener's guard only filters
+        if (isCommand(context)) await answerUsage(error, context, logger, usageReplySeconds() ?? DEFAULT_USAGE_REPLY_SECONDS)
         return
       }
       // A message sent too often is ignored, as a cooldown means; it is not a fault to report.

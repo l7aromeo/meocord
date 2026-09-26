@@ -8,6 +8,7 @@ import {
   Interceptor,
   MeoCord,
   MessageHandler,
+  On,
   UseGuard,
   UseInterceptor,
   Validate,
@@ -595,6 +596,37 @@ describe('typed message params and usage replies', () => {
     await vi.advanceTimersByTimeAsync(2_000)
     expect(replies.map(reply => reply!.deleted)).toEqual([true, true])
     expect(seen.filter(entry => ['purge', 'pay'].includes((entry as string[])[0]))).toEqual([])
+  })
+
+  it('answers nothing, and logs no error, when a guard refuses a message listener', async () => {
+    @Guard()
+    class OnlyInGeneral implements GuardInterface {
+      canActivate(): boolean {
+        throw new GuardDeniedError('Only in #general.')
+      }
+    }
+    @Controller()
+    class Listeners {
+      @MessageHandler()
+      @UseGuard(OnlyInGeneral)
+      async everything() {
+        seen.push(['everything'])
+      }
+
+      @On('messageCreate')
+      @UseGuard(OnlyInGeneral)
+      async watch() {
+        seen.push(['watch'])
+      }
+    }
+    const client = await startApp({ controllers: [Listeners], messages: { prefix: '!', deleteUsageRepliesAfter: 0 } })
+
+    const message = await sendIn(client, 'just chatting')
+    await Promise.all(client.rawListeners('messageCreate').map(listener => (listener as (m: unknown) => unknown)(message)))
+
+    expect(message.reply).not.toHaveBeenCalled()
+    expect(logged.error).toEqual([])
+    expect(seen).toEqual([])
   })
 
   it('answers a word of the wrong type with the usage, and deletes the answer after 10 seconds', async () => {
