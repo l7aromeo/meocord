@@ -13,7 +13,7 @@ import { missingTranslatorError, Translator } from '@src/common/translator.js'
 import { CooldownStore, MemoryCooldownStore } from '@src/common/cooldown-store.js'
 import { handlerCooldowns } from '@src/core/cooldown-runner.js'
 import { getCommandMap, getMessageHandlers } from '@src/decorator/controller.decorator.js'
-import { GUARD_CLASS, injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
+import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import { appStages, bindAppPresenter, bindGlobalStages, prepareHandlerStages } from '@src/core/handler-pipeline.js'
 import { appObservers, bindObservers } from '@src/core/observer-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
@@ -247,15 +247,6 @@ export class MeoCordFactory {
     // Stamp each class with the container so @UseGuard can resolve guards on a direct call
     for (const cls of appClasses) {
       Reflect.defineMetadata(MetadataKey.Container, container, cls)
-    }
-
-    for (const svc of (options.services ?? []) as (new (...args: any[]) => unknown)[]) {
-      if (!Reflect.hasOwnMetadata(GUARD_CLASS, svc)) continue
-      this.logger.warn(
-        `${svc.name} is a guard listed in @MeoCord({ services }), which makes it one shared instance: ` +
-          `overlapping calls would overwrite each other's { provide, params }. Remove it from services; ` +
-          `guards are resolved for each call.`,
-      )
     }
 
     prepareHandlerStages(container, appClasses)

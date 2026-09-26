@@ -1,4 +1,5 @@
 import 'reflect-metadata'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { Container, LazyServiceIdentifier } from 'inversify'
 import { type GuardInterface } from '@src/interface/index.js'
 import { MetadataKey } from '@src/enum/index.js'
@@ -123,6 +124,79 @@ function resolveGuard(container: Container, guard: GuardClass, context: HandlerE
   return child.get(guard, { autobind: true })
 }
 
+/** The params of the guard call in progress, which a guard shared as one instance reads through {@link readPerCall}. */
+const callParams = new AsyncLocalStorage<Record<string, unknown>>()
+
+const sharedGuards = new WeakMap<Container, Map<GuardClass, boolean>>()
+
+/**
+ * Whether a guard resolves to one instance shared by every call: bound as a provider, a service or a
+ * dependency, where an unbound guard is made for each call. Read before the guard is first resolved,
+ * since resolving an unbound guard binds it.
+ */
+function isShared(container: Container, guard: GuardClass): boolean {
+  let known = sharedGuards.get(container)
+  if (!known) sharedGuards.set(container, (known = new Map()))
+  let shared = known.get(guard)
+  if (shared === undefined) known.set(guard, (shared = container.isBound(guard)))
+  return shared
+}
+
+const perCallKeys = new WeakMap<object, Set<string>>()
+
+/**
+ * Makes these properties of a shared guard read the params of the call in progress, so calls that
+ * overlap each see their own. Outside a call, or in one that does not give the property, it keeps its
+ * own value. A property the class defines as a getter or setter is left as it is.
+ */
+function readPerCall(instance: object, keys: readonly string[]): void {
+  let done = perCallKeys.get(instance)
+  if (!done) perCallKeys.set(instance, (done = new Set()))
+  for (const key of keys) {
+    if (done.has(key)) continue
+    done.add(key)
+    if (!Object.prototype.hasOwnProperty.call(instance, key) && key in instance) continue
+    let own = (instance as Record<string, unknown>)[key]
+    Object.defineProperty(instance, key, {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        const store = callParams.getStore()
+        return store && key in store ? store[key] : own
+      },
+      set: (value: unknown) => {
+        const store = callParams.getStore()
+        if (store && key in store) store[key] = value
+        else own = value
+      },
+    })
+  }
+}
+
+/** Whether each of these properties can be made to read the call's params, which a frozen or sealed instance's cannot. */
+function canReadPerCall(instance: object, keys: readonly string[]): boolean {
+  return keys.every(key => {
+    const own = Object.getOwnPropertyDescriptor(instance, key)
+    return own ? own.configurable === true : Object.isExtensible(instance) || key in instance
+  })
+}
+
+/** Sets a call's params on a guard instance: each property, and the whole under `params` where the instance can take it. */
+function assignParams(guardClass: GuardClass, instance: object, params: Record<string, any>): void {
+  try {
+    Object.assign(instance, params)
+    // A sealed instance without the property takes each param but not the whole
+    Reflect.set(instance, 'params', params)
+  } catch (error) {
+    if (!(error instanceof TypeError) || Object.isExtensible(instance)) throw error
+    throw new Error(
+      `${guardClass.name} cannot take the params its { provide, params } entry gives: its instance is frozen or ` +
+        `sealed, so they cannot be set on it. Leave the instance open to new properties, or give the guard no params.`,
+      { cause: error },
+    )
+  }
+}
+
 /** One guarded call: the container guards resolve from, and what the context describes. */
 export interface GuardedCall {
   container: Container
@@ -153,9 +227,21 @@ export async function runGuards(guards: readonly GuardEntry[], call: GuardedCall
 
   for (const guard of applicable) {
     const [guardClass, params] = isGuardWithParams(guard) ? [guard.provide, guard.params] : [guard, undefined]
+    const shared = isShared(container, guardClass)
     const guardInstance = resolveGuard(container, guardClass, context.withParams(params))
-    // Each property, and the whole under `params`, which a guard declares to have them typed
-    if (params) Object.assign(guardInstance, params, { params })
+    // Each property, and the whole under `params`, which a guard declares to have them typed. A shared
+    // instance reads them from the call instead, and a call without params reads the instance's own values;
+    // one frozen or sealed cannot, and takes them as a guard made for the call does.
+    let callStore: Record<string, unknown> | undefined
+    const perCall = params && shared ? { ...params, params } : undefined
+    if (perCall && canReadPerCall(guardInstance, Object.keys(perCall))) {
+      callStore = perCall
+      readPerCall(guardInstance, Object.keys(perCall))
+    } else if (params) {
+      assignParams(guardClass, guardInstance, params)
+    } else if (shared && perCallKeys.has(guardInstance)) {
+      callStore = {}
+    }
 
     if (typeof guardInstance.canActivate !== 'function') {
       throw new Error(
@@ -165,7 +251,8 @@ export async function runGuards(guards: readonly GuardEntry[], call: GuardedCall
 
     let allowed: boolean
     try {
-      allowed = await guardInstance.canActivate(...(call.args as Parameters<GuardInterface['canActivate']>))
+      const args = call.args as Parameters<GuardInterface['canActivate']>
+      allowed = await (callStore ? callParams.run(callStore, () => guardInstance.canActivate(...args)) : guardInstance.canActivate(...args))
     } catch (error) {
       if (error instanceof GuardDeniedError && call.denial) call.denial.by = guardClass
       throw error
