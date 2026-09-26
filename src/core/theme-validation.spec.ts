@@ -24,6 +24,8 @@ describe('themeProblems', () => {
 
   it('accepts a partial theme, and groups of the app its own', () => {
     expect(themeProblems({ colors: { danger: '#E3606D' } })).toEqual([])
+    // An override may leave a group or a role undefined, as a spread of optional values does
+    expect(themeProblems({ colors: undefined, emojis: { loading: undefined } })).toEqual([])
     expect(themeProblems({ charts: { axis: '#GGG', series: ['anything'] } })).toEqual([])
     expect(themeProblems({})).toEqual([])
   })
@@ -55,6 +57,10 @@ describe('themeProblems', () => {
     ])
   })
 
+  it('shows a tuple of the wrong kind as written', () => {
+    expect(themeProblems({ colors: { primary: ['1', '2', '3'] } })[0]).toMatch(/^theme\.colors\.primary: \['1', '2', '3'\] is not a colour/)
+  })
+
   it('refuses a group that is not an object', () => {
     expect(themeProblems({ colors: 'red', emojis: null, buttons: [] })).toEqual([
       "theme.colors must be an object of roles (got 'red')",
@@ -83,6 +89,10 @@ describe('assertValidTheme', () => {
     expect(() => assertValidTheme({ colors: { primary: '#GGG' }, buttons: { danger: 5 } }, '@MeoCord({ theme }) on App')).toThrow(
       /^The theme has 2 problems:\n {2}@MeoCord\(\{ theme \}\) on App: theme\.colors\.primary: .*\n {2}@MeoCord\(\{ theme \}\) on App: theme\.buttons\.danger: /,
     )
+  })
+
+  it('says one problem in the singular', () => {
+    expect(() => assertValidTheme({ buttons: { danger: 5 } }, 'x')).toThrow(/^The theme has 1 problem:\n/)
   })
 
   it('returns nothing for a valid theme', () => {
