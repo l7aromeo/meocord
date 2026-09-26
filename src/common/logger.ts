@@ -9,16 +9,6 @@ import { LOG_LEVEL_ENV, LOG_LEVEL_RANK, logThreshold, takeRejectedLogLevel } fro
 dayjs.extend(utc)
 dayjs.extend(timezone)
 
-/** Whether a line of this level prints, warning once about a `MEOCORD_LOG_LEVEL` that names no level. */
-function shows(level: 'debug' | 'log' | 'warn' | 'error'): boolean {
-  const threshold = logThreshold()
-  const rejected = takeRejectedLogLevel()
-  if (rejected !== undefined) {
-    new Logger('Logger').warn(`${LOG_LEVEL_ENV} is "${rejected}", which is not a log level: use debug, log, warn, error or silent.`)
-  }
-  return LOG_LEVEL_RANK[level] >= threshold
-}
-
 export class Logger {
   private readonly colorMap: Record<string, (msg: string) => string> = {
     LOG: chalk.green,
@@ -30,28 +20,43 @@ export class Logger {
 
   constructor(private context?: string) {}
 
+  /**
+   * Whether a line of this level prints. An unknown `MEOCORD_LOG_LEVEL` is reported once, whatever the
+   * level, since the level it falls back to may hide warnings.
+   */
+  private static shows(level: 'debug' | 'log' | 'warn' | 'error'): boolean {
+    const threshold = logThreshold()
+    const rejected = takeRejectedLogLevel()
+    if (rejected !== undefined) {
+      new Logger('Logger').logWithContext('warn', [
+        `${LOG_LEVEL_ENV} is "${rejected}", which is not a log level: use debug, log, warn, error or silent.`,
+      ])
+    }
+    return LOG_LEVEL_RANK[level] >= threshold
+  }
+
   log(...args: any[]): void {
-    if (shows('log')) this.logWithContext('log', args)
+    if (Logger.shows('log')) this.logWithContext('log', args)
   }
 
   info(...args: any[]): void {
-    if (shows('log')) this.logWithContext('log', args)
+    if (Logger.shows('log')) this.logWithContext('log', args)
   }
 
   warn(...args: any[]): void {
-    if (shows('warn')) this.logWithContext('warn', args)
+    if (Logger.shows('warn')) this.logWithContext('warn', args)
   }
 
   error(...args: any[]): void {
-    if (shows('error')) this.logWithContext('error', args)
+    if (Logger.shows('error')) this.logWithContext('error', args)
   }
 
   debug(...args: any[]): void {
-    if (shows('debug')) this.logWithContext('debug', args)
+    if (Logger.shows('debug')) this.logWithContext('debug', args)
   }
 
   verbose(...args: any[]): void {
-    if (shows('log')) this.logWithContext('log', args)
+    if (Logger.shows('log')) this.logWithContext('log', args)
   }
 
   private formatMessage(message: any, logType: string): string {

@@ -24,8 +24,10 @@ export function logThreshold(): number {
   if (threshold === undefined) {
     // The config first: loading it runs its `import 'dotenv/config'`, which may set the variable
     const configured = loadMeoCordConfig()?.logLevel
-    const fromEnv = process.env[LOG_LEVEL_ENV]
-    rejectedEnv = fromEnv && !isLogLevel(fromEnv) ? fromEnv : undefined
+    const raw = process.env[LOG_LEVEL_ENV]
+    // An environment variable is often written in capitals, DEBUG for debug
+    const fromEnv = raw?.toLowerCase()
+    rejectedEnv = raw && !isLogLevel(fromEnv) ? raw : undefined
     const level = isLogLevel(fromEnv) ? fromEnv : isLogLevel(configured) ? configured : process.env.NODE_ENV === 'development' ? 'debug' : 'log'
     threshold = LOG_LEVEL_RANK[level]
   }

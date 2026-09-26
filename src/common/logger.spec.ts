@@ -165,6 +165,27 @@ describe('Logger levels', () => {
     expect(levelsShown()).toBe('WARN,WARN,WARN,ERROR,ERROR')
   })
 
+  it.each(['error', 'silent'] as const)('warns about an unknown MEOCORD_LOG_LEVEL under logLevel %s, which hides warnings', level => {
+    vi.stubEnv('MEOCORD_LOG_LEVEL', 'verbose')
+    vi.mocked(loadMeoCordConfig).mockReturnValue({ discordToken: 'token', logLevel: level } as MeoCordConfig)
+
+    logEveryLevel()
+    logEveryLevel()
+
+    expect(printed().filter(line => line.includes('MEOCORD_LOG_LEVEL'))).toEqual([
+      expect.stringContaining('MEOCORD_LOG_LEVEL is "verbose", which is not a log level: use debug, log, warn, error or silent.'),
+    ])
+    expect(printed().filter(line => !line.includes('MEOCORD_LOG_LEVEL'))).toHaveLength(level === 'error' ? 2 : 0)
+  })
+
+  it.each(['DEBUG', 'Debug'])('reads MEOCORD_LOG_LEVEL=%s as debug', value => {
+    vi.stubEnv('MEOCORD_LOG_LEVEL', value)
+
+    logEveryLevel()
+
+    expect(levelsShown()).toBe('DEBUG,LOG,LOG,LOG,WARN,ERROR')
+  })
+
   it('reads MEOCORD_LOG_LEVEL after loading the config, which may load it from .env', () => {
     vi.mocked(loadMeoCordConfig).mockImplementation(() => {
       process.env.MEOCORD_LOG_LEVEL = 'error'
