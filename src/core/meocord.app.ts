@@ -40,6 +40,7 @@ import { markExplained } from '@src/common/explained-error.js'
 import { GuardDeniedError, UserError } from '@src/common/errors.js'
 import { isShardProcess } from '@src/util/sharding-mode.util.js'
 import { isShardMessage, type ShardMessage } from '@src/core/shard-messages.js'
+import { releaseAmbientAppTheme } from '@src/core/theme-runtime.js'
 import { registerCommands } from '@src/core/command-registration.js'
 import { Dispatcher } from '@src/core/dispatcher.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
@@ -211,6 +212,7 @@ export class MeoCordApp implements MeoCordApplication {
       try {
         await this.startup()
       } catch (error) {
+        releaseAmbientAppTheme(this.container)
         if (process.exitCode === undefined || process.exitCode === 0) {
           process.exitCode = 1
           MeoCordApp.failedLoginSetExitCode = true
@@ -261,6 +263,8 @@ export class MeoCordApp implements MeoCordApplication {
       await this.bot.login(this.discordToken)
     } catch (error) {
       runningApps.delete(this.close)
+      // A bot that never came online is not the app whose theme is read outside calls
+      releaseAmbientAppTheme(this.container)
       const fatal = fatalLoginCode(error)
       // Read only for a failure that needs them: a hand-built client in a test may have no options
       const explanation = fatal && explainLoginFailure(fatal, this.bot.options?.intents, this.discordToken)
@@ -487,6 +491,7 @@ export class MeoCordApp implements MeoCordApplication {
   private async closeClient(): Promise<boolean> {
     this.closing = true
     runningApps.delete(this.close)
+    releaseAmbientAppTheme(this.container)
     this.logger.log('Shutting down bot...')
     if (this.activityInterval) clearInterval(this.activityInterval)
 

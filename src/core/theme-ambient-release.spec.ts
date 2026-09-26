@@ -1,0 +1,40 @@
+import { vi } from 'vitest'
+import { Client } from 'discord.js'
+import { Command, Controller, MeoCord } from '@src/decorator/index.js'
+import { useTheme } from '@src/common/index.js'
+import { CommandType } from '@src/enum/index.js'
+import { MeoCordFactory } from '@src/core/meocord-factory.js'
+import { DEFAULT_THEME } from '@src/core/theme-defaults.js'
+
+vi.mock('@src/util/meocord-config-loader.util.js', () => ({ loadMeoCordConfig: () => ({ discordToken: 'token' }) }))
+vi.mock('@src/util/platform.util.js', () => ({ assertBuiltForThisPlatform: () => {} }))
+
+@Controller()
+class Plain {
+  @Command('plain', CommandType.BUTTON)
+  plain() {}
+}
+
+// A file of its own: which app's theme is read outside calls is one value for the whole process
+describe('the theme read outside calls', () => {
+  it('goes to the app that comes online, not one whose login was refused, and back to the defaults once it shuts down', async () => {
+    const login = vi
+      .spyOn(Client.prototype, 'login')
+      .mockRejectedValueOnce(Object.assign(new Error('An invalid token was provided.'), { code: 'TokenInvalid' }))
+    vi.spyOn(Client.prototype, 'destroy').mockResolvedValue(undefined)
+    @MeoCord({ controllers: [Plain], clientOptions: { intents: [] }, theme: { colors: { primary: '#0F0F02' } } })
+    class Refused {}
+    await MeoCordFactory.create(Refused).start().catch(() => {})
+    process.exitCode = undefined
+
+    login.mockResolvedValue('token')
+    @MeoCord({ controllers: [Plain], clientOptions: { intents: [] }, theme: { colors: { primary: '#0F0F03' } } })
+    class Running {}
+    const app = MeoCordFactory.create(Running)
+    await app.start()
+    const online = useTheme().colors.primary
+    await (Reflect.get(app, 'close') as () => Promise<boolean>)()
+
+    expect([online, useTheme().colors.primary]).toEqual(['#0F0F03', DEFAULT_THEME.colors.primary])
+  })
+})
