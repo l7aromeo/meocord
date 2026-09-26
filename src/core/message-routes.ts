@@ -2,11 +2,13 @@ import { type Message } from 'discord.js'
 import { getMessageHandlers } from '@src/decorator/controller.decorator.js'
 import { type ControllerClass } from '@src/core/component-routes.js'
 import { routeSpecificity } from '@src/core/route-specificity.js'
-import { BUILT_IN_TYPES, isKnownParamType } from '@src/core/message-params.js'
+import { BUILT_IN_TYPES, fitsParamType, isKnownParamType } from '@src/core/message-params.js'
 import { type MessageCommandOptions, type MessagePrefix } from '@src/interface/index.js'
 
 /** One word of a message pattern: a literal word, or a param with the type it declares, if any. */
 export type PatternToken = { literal: string } | { param: string; rest: boolean; optional: boolean; type?: string }
+
+type ParamToken = Extract<PatternToken, { param: string }>
 
 /** A `@MessageHandler` pattern read into its words, with its rank. */
 export interface MessagePattern {
@@ -37,8 +39,9 @@ export interface MessageStarts {
 const PARAM = /^\{(\w+)(?::([\w-]+(?:\|[\w-]+)*))?(\.\.\.)?(\?)?\}$/
 
 /**
- * Reads a pattern into its words. Throws for a param that is not a whole word, a name given twice, or
- * a rest or optional param that is not last.
+ * Reads a pattern into its words. Throws for a param that is not a whole word, a name given twice, a rest
+ * param that is not last, a word after an optional param that is not optional too, and an untyped optional
+ * before another, which would take every word.
  */
 export function parseMessagePattern(pattern: string): MessagePattern {
   const words = pattern.trim().split(/\s+/)
@@ -59,9 +62,22 @@ export function parseMessagePattern(pattern: string): MessagePattern {
     names.add(name)
     const last = index === words.length - 1
     if (rest && !last) throw new Error(`{${name}...} takes the rest of the message, so it must be last.`)
-    if (optional && !last) throw new Error(`{${name}${rest ? '...' : ''}?} is optional, so it must be last.`)
     if (rest && type) throw new Error(`{${name}:${type}...}: the rest of a message is text, so a rest param takes no type.`)
     tokens.push({ param: name, rest: Boolean(rest), optional: Boolean(optional), ...(type && { type }) })
+  })
+
+  tokens.forEach((token, index) => {
+    const next = tokens[index + 1]
+    if (!('param' in token) || !token.optional || !next) return
+    if (!('param' in next) || !next.optional) {
+      throw new Error(`{${token.param}?} is optional, so only optional params may follow it; "${'param' in next ? `{${next.param}}` : next.literal}" is not.`)
+    }
+    if (token.type === undefined || token.type === 'string') {
+      throw new Error(
+        `{${token.param}${token.type ? ':string' : ''}?} comes before another optional param, so it needs a type that tells its words ` +
+          `from the next param's, such as {${token.param}:int?}: as text, it would take every word.`,
+      )
+    }
   })
 
   const params = tokens.filter(token => 'param' in token)
@@ -124,6 +140,16 @@ export function buildMessageRoutes(controllerClasses: readonly ControllerClass[]
                 `words to choose from such as {mode:on|off}, and those @MeoCord({ messages: { types } }) adds.`,
             )
           }
+        }
+        // Which optional takes a word is decided by the word alone, which an app's parse(word, message) cannot tell
+        const own = parsed.tokens
+          .slice(0, -1)
+          .find((token): token is ParamToken => 'param' in token && token.optional && !isBuiltInType(token.type ?? 'string'))
+        if (own) {
+          throw new Error(
+            `{${own.param}:${own.type}?} comes before another optional param, which only a built-in type or words to choose ` +
+              `from can: make it required, or put it last.`,
+          )
         }
       } catch (error) {
         throw new Error(`@MessageHandler('${pattern}') in ${controllerClass.name}.${method}: ${(error as Error).message}`)
@@ -251,6 +277,8 @@ interface TrieNode {
   ends: number[]
   /** Routes, by rank, whose rest param starts here and takes one word or more. */
   rests: number[]
+  /** Routes, by rank, whose two or more trailing optional params start here, and those params. */
+  tails: { rank: number; tokens: ParamToken[] }[]
 }
 
 /** Routes that share how a message starts for them, and their words compiled into one trie. */
@@ -274,7 +302,42 @@ interface MessageIndex {
   ownFirsts: Set<string>
 }
 
-const trieNode = (): TrieNode => ({ words: new Map(), ends: [], rests: [] })
+/** Whether a param type is built in or words to choose from, whose words the word alone tells apart. */
+const isBuiltInType = (type: string) => type in BUILT_IN_TYPES || type.includes('|')
+
+const trieNode = (): TrieNode => ({ words: new Map(), ends: [], rests: [], tails: [] })
+
+/** Where a route's trailing optional params start, when it has two or more; which of them a word goes to depends on the word. */
+function tailStart(tokens: PatternToken[]): number {
+  const first = tokens.findIndex(token => 'param' in token && token.optional)
+  return first !== -1 && first < tokens.length - 1 ? first : -1
+}
+
+/**
+ * Gives a message's last words, from `from`, to a route's trailing optional params, left to right: one that
+ * another follows takes a word only if the word fits its type, and is left out otherwise. The last takes
+ * any word, and a rest the words that remain. `undefined` when words are left over.
+ */
+function assignTail(
+  tail: ParamToken[],
+  words: { value: string; start: number }[],
+  from: number,
+  text: string,
+  caseSensitive: boolean,
+): Record<string, string> | undefined {
+  const params: Record<string, string> = {}
+  let w = from
+  for (let t = 0; t < tail.length && w < words.length; t++) {
+    const token = tail[t]
+    if (token.rest) {
+      params[token.param] = text.slice(words[w].start).trimEnd()
+      return params
+    }
+    if (t < tail.length - 1 && !fitsParamType(token.type!, words[w].value, caseSensitive)) continue
+    params[token.param] = words[w++].value
+  }
+  return w === words.length ? params : undefined
+}
 const wordKey = (word: string, caseSensitive: boolean) => (caseSensitive ? word : word.toLowerCase())
 
 /** Compiles ranked routes into tries, one per group; a route keeps its rank, its position in `routes`. */
@@ -292,7 +355,12 @@ function compileIndex(routes: readonly MessageRoute[]): MessageIndex {
     }
 
     let node = group.root
-    for (const token of route.tokens) {
+    const tail = tailStart(route.tokens)
+    for (const [i, token] of route.tokens.entries()) {
+      if (i === tail) {
+        node.tails.push({ rank, tokens: route.tokens.slice(tail) as ParamToken[] })
+        return
+      }
       if ('literal' in token) {
         const key = wordKey(token.literal, route.caseSensitive)
         let next = node.words.get(key)
@@ -325,21 +393,23 @@ function compileIndex(routes: readonly MessageRoute[]): MessageIndex {
 }
 
 /** The ranks of every route the words reach from `node`. Each node sits at one word depth, so each is visited once. */
-function reach(node: TrieNode, words: { value: string }[], i: number, caseSensitive: boolean, found: number[]): void {
+function reach(node: TrieNode, words: { value: string; start: number }[], i: number, text: string, caseSensitive: boolean, found: number[]): void {
+  for (const tail of node.tails) if (assignTail(tail.tokens, words, i, text, caseSensitive)) found.push(tail.rank)
   if (i === words.length) {
     for (const rank of node.ends) found.push(rank)
     return
   }
   for (const rank of node.rests) found.push(rank)
   const next = node.words.get(wordKey(words[i].value, caseSensitive))
-  if (next) reach(next, words, i + 1, caseSensitive, found)
-  if (node.param) reach(node.param, words, i + 1, caseSensitive, found)
+  if (next) reach(next, words, i + 1, text, caseSensitive, found)
+  if (node.param) reach(node.param, words, i + 1, text, caseSensitive, found)
 }
 
 /** The params a route's words capture, given words its pattern is known to match. */
 function paramsOf(route: MessageRoute, words: { value: string; start: number }[], text: string): Record<string, string> {
-  const params: Record<string, string> = {}
-  for (let i = 0; i < route.tokens.length && i < words.length; i++) {
+  const tail = tailStart(route.tokens)
+  const params: Record<string, string> = tail === -1 ? {} : assignTail(route.tokens.slice(tail) as ParamToken[], words, tail, text, route.caseSensitive)!
+  for (let i = 0; i < (tail === -1 ? route.tokens.length : tail) && i < words.length; i++) {
     const token = route.tokens[i]
     if ('literal' in token) continue
     if (token.rest) {
@@ -398,7 +468,7 @@ export function matchMessageRoute(
     let words = split.get(rest)
     if (!words) split.set(rest, (words = splitWords(rest)))
     const found: number[] = []
-    reach(group.root, words, 0, group.caseSensitive, found)
+    reach(group.root, words, 0, rest, group.caseSensitive, found)
     for (const rank of found) if (!best || rank < best.rank) best = { rank, words, text: rest }
   }
   if (!best) return undefined

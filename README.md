@@ -852,7 +852,7 @@ export class DiceController {
 | `roll`       | The word `roll`, in any case unless `caseSensitive` is set                                          |
 | `{name}`     | One word. Words in quotes, `"like this"` or `“like this”`, count as one, and the quotes are removed |
 | `{name...}`  | The rest of the message, as typed. Only last                                                        |
-| `{name?}`    | One word, or nothing. Only last; `{name...?}` is the optional rest                                  |
+| `{name?}`    | One word, or nothing. Only optional params follow it; `{name...?}` is the optional rest             |
 
 A pattern without params, such as `'hello'`, matches exactly that message. The params arrive as the handler's second argument, so [`@Validate`](#validation-and-pipes), pipes and [`@Cooldown({ by })`](#counting-per-resource) work on them as they do on a component's, and stages read them with `getHandlerParams()`:
 
@@ -862,7 +862,7 @@ A pattern without params, such as `'hello'`, matches exactly that message. The p
 async roll(message: Message, { sides }: { sides: number }) {}
 ```
 
-A pattern that cannot be read — `{rest...}` before another word, a name used twice, a type no one declared — and two handlers whose patterns match exactly the same messages stop the bot at startup, naming the handlers.
+A pattern that cannot be read — `{rest...}` before another word, a required word after an optional one, a name used twice, a type no one declared — and two handlers whose patterns match exactly the same messages stop the bot at startup, naming the handlers.
 
 ### Typed params
 
@@ -892,6 +892,17 @@ async pay(message: Message, { to, amount, note }: { to: GuildMember; amount: num
 | your own, from `messages: { types }` | what its `parse` returns  | What its `parse` accepts                                    |
 
 The handler's params are checked against the pattern: a name the pattern does not have, a type its param's value does not fit, or an optional param declared as always there fails to compile. `ParamsOf<'pay {to:member} {amount:int}'>` from `meocord/interface` is the type the pattern gives. A param with no type is text, which `@Validate` or a pipe may turn into anything, so it is not checked; neither are params declared as `Record<string, string>`.
+
+Several optional params may end a pattern. Each one that another follows takes a word only if the word fits its type, and is left out otherwise, so the word goes on to the next:
+
+```typescript
+// !ban @ana spamming      gives { target, reason: 'spamming' }
+// !ban @ana 7d spamming   gives { target, duration: 604_800_000, reason: 'spamming' }
+@MessageHandler('ban {target:member} {duration:duration?} {reason...?}')
+async ban(message: Message, { target, duration, reason }: { target: GuildMember; duration?: number; reason?: string }) {}
+```
+
+Whether a word fits is read from the word alone: a number, a length of time, one of the words to choose from, or a mention or ID for a member, user, role or channel. So an optional param that another follows needs a built-in type or words to choose from; text, or an app's own type, would stop the bot at startup. The last optional takes any word, and a word of the wrong type there gets the usage reply.
 
 Resolving costs no request where discord.js already knows the answer: a mentioned member arrives with the message, roles and channels are cached with the `Guilds` intent, and a cached member or user is used as it is. Members the cache lacks are fetched together, in one request however many a message names. Nothing is resolved before the message's route is chosen, so chat costs nothing.
 

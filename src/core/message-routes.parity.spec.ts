@@ -50,6 +50,9 @@ function splitWords(text: string) {
   return words
 }
 
+const fits = (type: string, word: string, exact: boolean) =>
+  type === 'int' ? /^[+-]?\d+$/.test(word) : type.split('|').some(choice => (exact ? choice === word : choice.toLowerCase() === word.toLowerCase()))
+
 function scanMatch(routes: readonly MessageRoute[], content: string, starts: MessageStarts) {
   const text = content.trim()
   for (const route of routes) {
@@ -59,7 +62,10 @@ function scanMatch(routes: readonly MessageRoute[], content: string, starts: Mes
     const params: Record<string, string> = {}
     let matched = true
     let done = false
-    for (let i = 0; i < route.tokens.length && !done; i++) {
+    // Two or more trailing optionals take the words after the others, each only a word that fits it unless it is last
+    const firstOptional = route.tokens.findIndex(token => 'param' in token && token.optional)
+    const tailAt = firstOptional !== -1 && firstOptional < route.tokens.length - 1 ? firstOptional : route.tokens.length
+    for (let i = 0; i < tailAt && !done; i++) {
       const token = route.tokens[i]
       const word = words[i]
       if ('literal' in token) {
@@ -81,7 +87,21 @@ function scanMatch(routes: readonly MessageRoute[], content: string, starts: Mes
       }
       params[token.param] = word.value
     }
-    const complete = done ? matched : words.length === route.tokens.length
+    let complete = done ? matched : words.length === route.tokens.length
+    if (!done && tailAt < route.tokens.length) {
+      let w = tailAt
+      for (const [t, token] of route.tokens.slice(tailAt).entries()) {
+        if (w >= words.length || !('param' in token)) break
+        if (token.rest) {
+          params[token.param] = rest.slice(words[w].start).trimEnd()
+          w = words.length
+          break
+        }
+        if (tailAt + t < route.tokens.length - 1 && !fits(token.type!, words[w].value, route.caseSensitive)) continue
+        params[token.param] = words[w++].value
+      }
+      complete = words.length >= tailAt && w === words.length
+    }
     if (complete) return { route, params }
   }
   return undefined
@@ -114,6 +134,13 @@ const APP_STARTS: MessageStarts[] = [
 function randomPattern(r: ReturnType<typeof random>): string {
   const length = 1 + Math.floor(r.next() * 4)
   const words: string[] = []
+  if (r.next() < 0.25) {
+    for (let i = 0; i < length - 1; i++) words.push(r.next() < 0.6 ? r.pick(WORDS) : `{p${i}}`)
+    const typed = 1 + Math.floor(r.next() * 2)
+    for (let i = 0; i < typed; i++) words.push(`{t${i}:${r.pick(['int', 'on|off', 'roll|ban'])}?}`)
+    words.push(r.pick(['{last?}', '{last...?}', '{last:int?}']))
+    return words.join(' ')
+  }
   for (let i = 0; i < length; i++) {
     const last = i === length - 1
     const kind = r.next()
@@ -136,7 +163,7 @@ function randomMessage(r: ReturnType<typeof random>): string {
     else if (kind < 0.62) words.push('"two words"')
     else if (kind < 0.68) words.push('“smart quotes”')
     else if (kind < 0.72) words.push('"open')
-    else words.push(r.pick(['20', 'value', 'ROLL', '<@222>']))
+    else words.push(r.pick(['20', 'value', 'ROLL', '<@222>', 'on', 'OFF', '-3']))
   }
   return start + words.join(r.pick([' ', ' ', '  ', '\n', '\t']))
 }

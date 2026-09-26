@@ -70,6 +70,26 @@ export function isKnownParamType(type: string, types: Record<string, MessagePara
   return type in BUILT_IN_TYPES || Boolean(choicesOf(type)) || Boolean(types && type in types)
 }
 
+/**
+ * Whether a word has the form of a value of a built-in type, telling without the message whether an optional
+ * param that another follows takes the word. Members, users, roles and channels take a mention or an ID.
+ */
+export function fitsParamType(type: string, word: string, caseSensitive: boolean): boolean {
+  const choices = choicesOf(type)
+  if (choices) return choices.some(choice => (caseSensitive ? choice === word : choice.toLowerCase() === word.toLowerCase()))
+  switch (type) {
+    case 'member':
+    case 'user':
+      return idOf(word, USER_MENTION) !== undefined
+    case 'role':
+      return idOf(word, ROLE_MENTION) !== undefined
+    case 'channel':
+      return idOf(word, CHANNEL_MENTION) !== undefined
+    default:
+      return (BUILT_IN_TYPES[type as keyof typeof BUILT_IN_TYPES] as (word: string) => unknown)(word) !== undefined
+  }
+}
+
 /** How the usage shows one param: `<name>`, `[name]` when optional, with `…` for the rest of the message. */
 function usageWord(token: ParamToken): string {
   const name = `${token.param}${token.rest ? '…' : ''}`
