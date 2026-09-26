@@ -23,7 +23,8 @@ import {
   ValidationError,
 } from '@src/common/index.js'
 import { Logger } from '@src/common/logger.js'
-import { UnroutedExecutionContext } from '@src/common/execution-context.js'
+import { HandlerExecutionContext, UnroutedExecutionContext } from '@src/common/execution-context.js'
+import { MessageHandler, On } from '@src/decorator/index.js'
 import { createFallback, isUserOutcome } from '@src/core/fallback.js'
 import { createMockInteraction, createMockMessage } from '@src/testing/index.js'
 
@@ -329,15 +330,28 @@ const mockReaction = () => Object.defineProperty(Object.create(MessageReaction.p
 describe('the fallback on a message a guard or validation refuses', () => {
   afterEach(() => vi.useRealTimers())
 
+  class Moderation {
+    @MessageHandler('ban {target}')
+    ban() {}
+
+    @MessageHandler()
+    everything() {}
+
+    @On('messageCreate')
+    watch() {}
+  }
+  const contextFor = (methodName: string, message: Message) =>
+    new HandlerExecutionContext({ controller: Moderation, methodName, args: [message], type: 'message' })
+
   it.each([
     ['a guard', () => new GuardDeniedError('Only moderators can ban.'), 'Only moderators can ban.'],
     ['validation', () => new ValidationError([{ message: 'amount: must be at least 1', path: ['amount'] }]), 'amount: must be at least 1'],
-  ])('replies with the reason %s gives, without pinging, and deletes the reply as a usage reply', async (_by, makeError, text) => {
+  ])('replies to a command with the reason %s gives, without pinging, and deletes the reply as a usage reply', async (_by, makeError, text) => {
     vi.useFakeTimers()
     const message = Object.assign(createMockMessage(), { content: '!ban x' })
     const logger = createLogger()
 
-    await createFallback(logger, () => 3)(makeError(), new UnroutedExecutionContext([message]))
+    await createFallback(logger, () => 3)(makeError(), contextFor('ban', message))
     const reply = await (vi.mocked(message.reply).mock.results[0]?.value as Promise<{ deleted: boolean }>)
 
     expect(message.reply).toHaveBeenCalledWith({ content: expect.stringContaining(text), allowedMentions: { repliedUser: false, parse: [] } })
@@ -346,6 +360,20 @@ describe('the fallback on a message a guard or validation refuses', () => {
     await vi.advanceTimersByTimeAsync(3_000)
     expect(reply.deleted).toBe(true)
   })
+
+  it.each(['everything', 'watch'])(
+    'answers nothing when a guard refuses a message listener, %s, as its guard filters messages rather than answers a command',
+    async methodName => {
+      const message = Object.assign(createMockMessage(), { content: 'hello' })
+      const logger = createLogger()
+
+      await createFallback(logger)(new GuardDeniedError('Not in this channel.'), contextFor(methodName, message))
+
+      expect(message.reply).not.toHaveBeenCalled()
+      expect(logger.error).not.toHaveBeenCalled()
+      expect(logger.debug).toHaveBeenCalled()
+    },
+  )
 
   it('still reports a guard refusing a reaction, which has no message to answer', async () => {
     const logger = await fail(mockReaction(), new GuardDeniedError('Not for you.'))

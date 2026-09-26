@@ -36,6 +36,7 @@ import { type MeoCordApplication } from '@src/interface/index.js'
 import { stopRequests } from '@src/util/stop-request.util.js'
 import { explainLoginFailure, type FatalLoginCode, fatalLoginCode, isRefusedToken, tokenMessage } from '@src/core/login-failure.js'
 import { markExplained } from '@src/common/explained-error.js'
+import { GuardDeniedError } from '@src/common/errors.js'
 import { isShardProcess } from '@src/util/sharding-mode.util.js'
 import { isShardMessage, type ShardMessage } from '@src/core/shard-messages.js'
 import { registerCommands } from '@src/core/command-registration.js'
@@ -355,8 +356,12 @@ export class MeoCordApp implements MeoCordApplication {
       for (const { event, method, once } of getEventHandlers(lifecycleClass.prototype)) {
         const logError = (error: unknown) =>
           this.logger.error(`Error handling event "${event}" in ${lifecycleClass.name}.${method}:`, error)
-        // An event has no one to answer, so an error no filter handles is only logged, with the handler
-        const fallback: Fallback = async error => logError(error)
+        // An event has no one to answer, so an error no filter handles is only logged, with the handler.
+        // A guard denying one only filters which events the handler takes, which is no fault.
+        const fallback: Fallback = async error => {
+          if (error instanceof GuardDeniedError) this.logger.debug(`Denied event "${event}" in ${lifecycleClass.name}.${method}: ${error.message}`)
+          else logError(error)
+        }
         const listener = async (...args: unknown[]) => {
           try {
             const instance = this.container.get(lifecycleClass)
