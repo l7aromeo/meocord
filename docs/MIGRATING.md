@@ -454,7 +454,8 @@ the bare message `{ prefix: false }`:
   same, and add `'src/**/*.d.ts'` to `coverage.exclude` in `vitest.config.ts`, where istanbul would try to
   read it as code.
 - `meocord generate` writes components in 4.1's style, answering with `respond()`, and derives each
-  button's, modal's, select menu's and message handler's customId or pattern from its name. Files you
+  button's, modal's, select menu's and message handler's customId or pattern from its name. A nested
+  name gives its whole path to the class: `admin/ban` makes `AdminBanButtonController`. Files you
   generated before keep theirs; one whose `'baka'` pattern clashes with the sample's stops the bot at
   startup, and renaming either fixes it.
 - `process.env` values that `meocord.config.ts` loads are set before any application module runs,

@@ -87,7 +87,9 @@ describe('validateAndFormatName', () => {
     const result = validateAndFormatName('subdir/MyGuard')
     expect(result.parts).toEqual(['subdir'])
     expect(result.kebabCaseName).toBe('my-guard')
-    expect(result.className).toBe('MyGuard')
+    // The whole path, so a nested name and a flat one never make two classes of one name
+    expect(result.className).toBe('SubdirMyGuard')
+    expect(validateAndFormatName('admin/users/ban').className).toBe('AdminUsersBan')
   })
 
   it('calls process.exit when name is undefined', () => {

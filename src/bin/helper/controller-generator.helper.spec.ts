@@ -110,7 +110,7 @@ describe('ControllerGeneratorHelper', () => {
       generate('admin/ban', ControllerType.SLASH)
       generate('ban', ControllerType.SLASH)
 
-      expect(read('slash', 'admin', 'ban.slash.controller.ts')).toContain("@Command('admin-ban', BanCommandBuilder)")
+      expect(read('slash', 'admin', 'ban.slash.controller.ts')).toContain("@Command('admin-ban', AdminBanCommandBuilder)")
       expect(read('slash', 'admin', 'builders', 'ban.builder.ts')).toContain("setName('admin-ban')")
       expect(read('slash', 'ban.slash.controller.ts')).toContain("@Command('ban', BanCommandBuilder)")
     })

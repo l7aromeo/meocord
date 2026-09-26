@@ -387,7 +387,7 @@ describe('namePathProblem', () => {
 describe('nextStepFor', () => {
   it.each([
     ['controller', 'ticket', ControllerType.BUTTON, 'Next: add TicketButtonController to @MeoCord({ controllers }) in src/app.ts.'],
-    ['controller', 'admin/ban', ControllerType.SLASH, 'Next: add BanSlashController to @MeoCord({ controllers }) in src/app.ts.'],
+    ['controller', 'admin/ban', ControllerType.SLASH, 'Next: add AdminBanSlashController to @MeoCord({ controllers }) in src/app.ts.'],
     ['controller', 'pick', ControllerType.USER_SELECT_MENU, 'Next: add PickUserSelectMenuController to @MeoCord({ controllers }) in src/app.ts.'],
     ['observer', 'metrics', undefined, 'Next: add MetricsObserver to @MeoCord({ observers }) in src/app.ts.'],
   ] as const)('names the list a %s %s goes in', (component, name, type, next) => {
@@ -406,6 +406,6 @@ describe('nextStepFor', () => {
   })
 
   it('says a service is bound when something injects it', () => {
-    expect(nextStepFor('service', 'billing/invoice')).toContain('inject InvoiceService')
+    expect(nextStepFor('service', 'billing/invoice')).toContain('inject BillingInvoiceService')
   })
 })

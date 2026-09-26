@@ -537,7 +537,7 @@ src/controllers/<type>/
 
 A builder is generated only for the three types Discord registers by name. Everything else is addressed by `customId` or, for autocomplete, by the command path it completes — there is nothing to register.
 
-Each controller gets its own builder, `<Name>CommandBuilder`, and registers a command named after it: `npx meocord g co slash Greeting` registers `/greeting`. A nested name uses its whole path, so `admin/ban` registers `/admin-ban` — Discord command names are global to the application, while folders only keep files apart. An autocomplete controller completes the slash command of the same name.
+Each controller gets its own builder, `<Name>CommandBuilder`, and registers a command named after it: `npx meocord g co slash Greeting` registers `/greeting`. A nested name uses its whole path, so `admin/ban` registers `/admin-ban` from `AdminBanSlashController` — Discord command names are global to the application, while folders only keep files apart. An autocomplete controller completes the slash command of the same name.
 
 Buttons, modals, select menus and message handlers take the same name: `npx meocord g co button ticket` routes the customIds `ticket` and `ticket/{id}`, and `npx meocord g co message ping` matches `ping`. Two generated components never share a route, nor share one with the samples `meocord create` writes.
 

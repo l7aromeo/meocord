@@ -86,9 +86,9 @@ function createApp(tarball: string): void {
  * generated guards, interceptors, filters, pipes, services and controllers too.
  */
 function generateComponents(): void {
-  // Two of each kind, one nested, with names of their own: a generated component must never collide
-  // with another of its kind, nor with the samples the template ships
-  const commands = ['Generated', 'admin/second'].flatMap(name => [
+  // Each kind under three names, one nested under a folder named like another: a generated component
+  // must never collide with another, nor with the samples the template ships
+  const commands = ['Generated', 'second', 'admin/second'].flatMap(name => [
     ...Object.values(ControllerType).map(type => ['g', 'co', type, name]),
     ['g', 's', name],
     ['g', 'gu', name],

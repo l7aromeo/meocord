@@ -27,7 +27,8 @@ export function toClassName(originalName: string): string {
 }
 
 /**
- * Splits a name like `admin/ban` into its folders, kebab-case file name, class name and command name.
+ * Splits a name like `admin/ban` into its folders, its kebab-case file name, its class name from the whole
+ * path (`AdminBan`), and its command name (`admin-ban`).
  * @throws Exits the process when the name is missing or invalid.
  */
 export function validateAndFormatName(originalName?: string): {
@@ -50,7 +51,9 @@ export function validateAndFormatName(originalName?: string): {
   }
 
   const kebabCaseName = kebabCase(fileName)
-  const className = toClassName(fileName)
+  // The whole path, so admin/ban and ban are AdminBan and Ban: two classes of one name would collide
+  // under process sharding and in cooldown keys
+  const className = toClassName([...parts, fileName].join(' '))
 
   return { parts, kebabCaseName, className, commandName: commandNameFor(parts, kebabCaseName) }
 }
