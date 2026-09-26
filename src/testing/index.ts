@@ -17,7 +17,7 @@ export {
   createMockChannel,
   createMockMessage,
 } from './mock-interaction.js'
-export type { DeepMocked, ChatInputOptions, MockMessageOverrides, MockProps } from './mock-interaction.js'
+export type { DeepMocked, ChatInputOptions, MockGuildOverrides, MockMessageOverrides, MockProps } from './mock-interaction.js'
 
 export { clearAllMocks, createMockFn, isMockFunction, resetAllMocks } from './mock-fn.js'
 export type { Mock, MockedFunction, MockInstance, MockResult, MockState } from './mock-fn.js'

@@ -41,10 +41,19 @@ import {
   findComponentRouteConflicts,
   matchComponentRoute,
 } from '@src/core/component-routes.js'
-import { globalStagesOf, handleUnroutedError, observeUnclaimed, runHandler } from '@src/core/handler-pipeline.js'
+import { globalStagesOf, handleUnroutedError, observeUnclaimed, type RunOptions, runHandler } from '@src/core/handler-pipeline.js'
 import { closeAutocomplete, createFallback, type Fallback } from '@src/core/fallback.js'
 import { handlerInput } from '@src/core/handler-input.js'
-import { buildMessageRoutes, matchMessageRoute, type MessageRoute, messageStarts, usesAppPrefix } from '@src/core/message-routes.js'
+import {
+  buildMessageRoutes,
+  matchMessageCommand,
+  matchMessageRoute,
+  type MessageRoute,
+  messageStarts,
+  usesAppPrefix,
+} from '@src/core/message-routes.js'
+import { hasTypedParams, missingParams, resolveMessageParams, usageOf } from '@src/core/message-params.js'
+import { MessageUsageError } from '@src/common/errors.js'
 import { CommandNotFoundError } from '@src/common/errors.js'
 import { stageClass, stageTypes } from '@src/core/stage-scope.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
@@ -130,7 +139,7 @@ async function reportFatalLogin(code: FatalLoginCode, reason: string): Promise<v
 
 export class MeoCordApp implements MeoCordApplication {
   private readonly logger = new Logger(MeoCordApp.name)
-  private readonly fallback: Fallback = createFallback(this.logger)
+  private readonly fallback: Fallback = createFallback(this.logger, () => this.messageOptions?.deleteUsageRepliesAfter)
   private readonly bot: Client
   private activityInterval: ReturnType<typeof setInterval> | null = null
   private controllerInstancesCache = new Map<any, any>()
@@ -666,10 +675,16 @@ export class MeoCordApp implements MeoCordApplication {
     methodName: string,
     args: unknown[],
     startedAt?: number,
+    resolveArgs?: RunOptions['resolveArgs'],
   ): Promise<boolean> {
     const handler = `${instance.constructor.name}.${methodName}`
     const onUnanswered = this.warnUnanswered ? (phase: 'unanswered' | 'deferred') => this.warnUnansweredOnce(handler, phase) : undefined
-    const { ran } = await runHandler(this.container, instance, methodName, args, { fallback: this.fallback, startedAt, onUnanswered })
+    const { ran } = await runHandler(this.container, instance, methodName, args, {
+      fallback: this.fallback,
+      startedAt,
+      onUnanswered,
+      resolveArgs,
+    })
     return ran
   }
 
@@ -690,26 +705,36 @@ export class MeoCordApp implements MeoCordApplication {
   }
 
   /**
-   * Runs the most specific patterned handler the message matches, then every listener. A failure to
-   * read the prefixes goes to the global filters, then the fallback; the listeners still run.
+   * Runs the most specific patterned handler the message matches, then every listener. Its typed params
+   * are resolved before its guards, and a message that names a command but does not fit its pattern gets
+   * the command's usage, through that handler's filters. A failure to read the prefixes goes to the global
+   * filters, then the fallback; the listeners still run.
    */
   private async handleMessage(message: Message) {
     if (message.author.bot || !message.content?.trim()) return
 
-    let matched: ReturnType<typeof matchMessageRoute>
+    let target: { route: MessageRoute; params: Record<string, string>; start: string; given?: number } | undefined
     try {
       if (this.messageRoutes.length > 0) {
         const starts = usesAppPrefix(this.messageRoutes)
           ? await messageStarts(this.messageOptions, message, this.bot.user?.id)
           : { prefixes: [] }
-        matched = matchMessageRoute(this.messageRoutes, message.content, starts)
+        target = matchMessageRoute(this.messageRoutes, message.content, starts)
+        if (!target) {
+          const named = matchMessageCommand(this.messageRoutes, message.content, starts)
+          if (named) target = { ...named, params: {} }
+        }
       }
     } catch (error) {
       await handleUnroutedError(this.container, [message], error, { fallback: this.fallback })
     }
-    if (matched) {
-      const { route, params } = matched
-      await this.invokeHandler(this.getInstance(route.controllerClass), route.method, [message, params])
+    if (target) {
+      const { route, params, start, given } = target
+      const types = this.messageOptions.types
+      await this.invokeHandler(this.getInstance(route.controllerClass), route.method, [message, params], undefined, async args => {
+        if (given !== undefined) throw new MessageUsageError(usageOf(route, start), missingParams(route, given))
+        return hasTypedParams(route) ? [args[0], await resolveMessageParams(route, params, message, start, types)] : args
+      })
     }
 
     for (const { controllerClass, method } of this.messageListeners) {

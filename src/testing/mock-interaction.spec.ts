@@ -939,6 +939,21 @@ describe('createMockMessage', () => {
     expect(msg.author.bot).toBe(false)
   })
 
+  it('is a DM when given no guild, and sits in the guild it is given', () => {
+    expect([createMockMessage({ guild: null }).guild, createMockMessage({ guild: null }).guildId]).toEqual([null, null])
+    const guild = createMockGuild({ id: '300' })
+    const message = createMockMessage({ guild })
+    expect([message.guild, message.guildId]).toEqual([guild, '300'])
+  })
+
+  it("keeps a guild's members, roles and channels in real caches, by id", () => {
+    const member = createMock<GuildMember>({ id: '1' })
+    const guild = createMockGuild({ members: [member] })
+    expect(guild.members.cache.get('1')).toBe(member)
+    expect(guild.roles.cache.size).toBe(0)
+    expect(createMockMessage().guild!.members.cache.get('1')).toBeUndefined()
+  })
+
   it('starts as an empty message: no flags, components, embeds or attachments', () => {
     const msg = createMockMessage()
 

@@ -1,6 +1,7 @@
-import { describe, it } from 'vitest'
-import { type Message } from 'discord.js'
+import { describe, expectTypeOf, it } from 'vitest'
+import { type GuildMember, type Message, type User } from 'discord.js'
 import { MeoCord, MessageHandler } from '@src/decorator/index.js'
+import { type ParamsOf } from '@src/interface/index.js'
 
 /** Runs under `vitest --typecheck`: what `@MessageHandler` and `@MeoCord({ messages })` accept. */
 
@@ -105,5 +106,77 @@ describe('@MeoCord({ messages })', () => {
     class Wrong {}
 
     void [One, Many, PerGuild, Wrong]
+  })
+})
+
+declare module '@src/interface/index.js' {
+  interface MessageParamTypes {
+    color: number
+  }
+}
+
+describe('@MessageHandler typed params', () => {
+  it('types each param from the pattern, and checks the handler against it', () => {
+    class Typed {
+      @MessageHandler('ban {target:member} {duration:duration?} {reason...?}')
+      async ban(_m: Message, _p: { target: GuildMember; duration?: number; reason?: string }) {
+        return undefined
+      }
+
+      @MessageHandler('paint {shade:color} {mode:on|off}')
+      async paint(_m: Message, _p: { shade: number; mode: 'on' | 'off' }) {
+        return undefined
+      }
+
+      // A param with no type is text, which @Validate or a pipe may turn into anything
+      @MessageHandler('roll {sides}')
+      async roll(_m: Message, _p: { sides: number }) {
+        return undefined
+      }
+
+      // Any params at all are not checked
+      @MessageHandler('echo {text...}')
+      async echo(_m: Message, _p: Record<string, string>) {
+        return undefined
+      }
+
+      // A wider type than the param's value is fine
+      @MessageHandler('who {target:user}')
+      async who(_m: Message, _p: { target: User | GuildMember }) {
+        return undefined
+      }
+
+      // @ts-expect-error a name the pattern does not have
+      @MessageHandler('dice {sides:int}')
+      async typo(_m: Message, _p: { sids: number }) {
+        return undefined
+      }
+
+      // @ts-expect-error a type the param's value is not
+      @MessageHandler('pay {to:member} {amount:int}')
+      async wrongType(_m: Message, _p: { to: GuildMember; amount: string }) {
+        return undefined
+      }
+
+      // @ts-expect-error an optional typed param declared as always there
+      @MessageHandler('avatar {who:user?}')
+      async required(_m: Message, _p: { who: User }) {
+        return undefined
+      }
+
+      // @ts-expect-error a word the choices do not have
+      @MessageHandler('mode {m:on|off}')
+      async choice(_m: Message, _p: { m: 'on' | 'auto' }) {
+        return undefined
+      }
+    }
+    void Typed
+  })
+
+  it('reads the params a pattern gives with ParamsOf', () => {
+    expectTypeOf<ParamsOf<'ban {target:member} {duration:duration?} {reason...?}'>>().toEqualTypeOf<
+      { target: GuildMember } & { duration?: number; reason?: string }
+    >()
+    expectTypeOf<ParamsOf<'hello'>>().toEqualTypeOf<{} & {}>()
   })
 })

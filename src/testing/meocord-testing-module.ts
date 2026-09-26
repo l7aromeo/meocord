@@ -24,6 +24,7 @@ import {
   type MessageCommandOptions,
 } from '@src/interface/index.js'
 import { buildMessageRoutes, messageParamsFor } from '@src/core/message-routes.js'
+import { hasTypedParams, resolveMessageParams } from '@src/core/message-params.js'
 import { appObservers, assertObservers, bindObservers } from '@src/core/observer-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
@@ -254,8 +255,9 @@ export class TestingModule {
    *   a select menu's choices.
    *   An interaction's customId or command name must be one dispatch could route to the handler; a mock
    *   built without one is not checked. With a message alone, a patterned `@MessageHandler` gets the
-   *   params its pattern captures from the content, after the prefix of the module's `app`; a message
-   *   without content gets `{}`.
+   *   params its pattern captures from the content, after the prefix of the module's `app`, with typed
+   *   params resolved as dispatch resolves them, from the message's guild caches first; a message
+   *   without content gets `{}`. A word that is not a value of its type rejects with a `MessageUsageError`.
    * @returns Whether the handler ran, and the error a filter handled, if any. Rejects with an error no
    *   filter handles, or with the error a filter throws: the built-in fallback, which answers such
    *   errors in the bot, does not run here. Rejects before running anything with an interaction or a
@@ -287,6 +289,7 @@ export class TestingModule {
     const [first] = args as unknown[]
     const mismatch = first instanceof BaseInteraction ? routeMismatch(controller, methodName, first as Interaction) : undefined
     if (mismatch) throw new Error(mismatch)
+    let resolveArgs: ((args: unknown[]) => Promise<unknown[]>) | undefined
     let callArgs =
       args.length === 1 && first instanceof BaseInteraction
         ? [first, handlerInput(first as Interaction, routeParamsFor(controller.prototype as object, methodName, first as Interaction)).params]
@@ -295,11 +298,16 @@ export class TestingModule {
       const input = await messageParamsFor(controller, methodName, first, this.messageOptions)
       if (input && 'mismatch' in input) throw new Error(input.mismatch)
       if (input) callArgs = [first, input.params]
+      if (input && 'route' in input && input.route && hasTypedParams(input.route)) {
+        const { route, params, start = '' } = input
+        const types = this.messageOptions.types
+        resolveArgs = async args => [args[0], await resolveMessageParams(route, params, first, start, types)]
+      }
     }
     const presenter = appPresenterOf(this.container)
     const client = first instanceof BaseInteraction ? first.client : undefined
     if (presenter && client) setPresenter(client, presenter)
-    const { ran, error } = await runHandler(this.container, instance, methodName, callArgs, { awaitObservers: true })
+    const { ran, error } = await runHandler(this.container, instance, methodName, callArgs, { awaitObservers: true, resolveArgs })
     return error === undefined ? { ran } : { ran, error }
   }
 

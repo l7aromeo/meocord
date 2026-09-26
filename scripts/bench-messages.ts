@@ -3,13 +3,15 @@
  * server is matched, so an accidental cost per route would slow a busy bot's whole event loop. A message's
  * cost is measured against a reference workload run on the same machine in the same run, so the budgets
  * hold on a laptop and on a shared CI runner alike. A scan over the routes, which costs hundreds of times
- * more at 1000 routes than at 10, fails the flatness check whatever the machine.
+ * more at 1000 routes than at 10, fails the flatness check whatever the machine. Also checks what typed
+ * patterns cost the type checker, which every app with message commands pays on each build.
  */
 import { spawnSync } from 'child_process'
 import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import path from 'path'
 import { CASES, type Case, type Measured, ROUTE_COUNTS, run } from './lib/message-bench.js'
+import { typedPatternInstantiations } from './lib/message-types-bench.js'
 
 /** What a message may cost, at any number of routes, in calls of the reference workload. */
 const BUDGET_REFERENCES: Record<Case, number> = { chatter: 1, unknown: 8, matching: 10 }
@@ -17,6 +19,8 @@ const BUDGET_REFERENCES: Record<Case, number> = { chatter: 1, unknown: 8, matchi
 const CAP_NS = 10_000
 /** How much more a message may cost at 1000 routes than at 10: the index keeps it flat. */
 const MAX_GROWTH = 3
+/** Instantiations that checking 200 handlers against typed patterns may add to the same handlers untyped. */
+const TYPES_BUDGET = 100_000
 
 function underNode(): Measured {
   const dir = mkdtempSync(path.join(tmpdir(), 'meocord-bench-'))
@@ -61,6 +65,10 @@ for (const [runtime, { referenceNs, results }] of [
     }
   }
 }
+
+const { typed, untyped } = typedPatternInstantiations()
+console.log(`types: 200 typed handlers ${typed} instantiations, untyped ${untyped}, added ${typed - untyped} (budget ${TYPES_BUDGET})`)
+if (typed - untyped > TYPES_BUDGET) failures.push(`typed patterns add ${typed - untyped} instantiations for 200 handlers, over ${TYPES_BUDGET}`)
 
 if (failures.length > 0) {
   console.error(`\nMessage matching is over budget:\n${failures.map(f => `  ${f}`).join('\n')}`)

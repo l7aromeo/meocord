@@ -8,6 +8,7 @@ import {
   Embed,
   type JSONEncodable,
   type MessageFlagsResolvable,
+  type GuildBasedChannel,
   ApplicationCommandManager,
   ApplicationCommandOptionType,
   ApplicationCommandType,
@@ -703,18 +704,46 @@ export function createMockClient(): DeepMocked<Client> {
   return stubDeep(instance) as DeepMocked<Client>
 }
 
+/** What {@link createMockGuild} puts in the guild's caches, as the gateway would have filled them. */
+export interface MockGuildOverrides {
+  /** The guild's id. */
+  id?: string
+  /** Members in `members.cache`, by their id. */
+  members?: readonly GuildMember[]
+  /** Roles in `roles.cache`, by their id. */
+  roles?: readonly Role[]
+  /** Channels in `channels.cache`, by their id. */
+  channels?: readonly GuildBasedChannel[]
+}
+
+/** A manager whose `cache` is a real collection of `items`, by id, empty without them, and whose methods are stubs. */
+function managerWith(prototype: object, items: readonly { id: string; user?: { id: string } }[] | undefined): object {
+  const manager = Object.create(prototype) as object
+  const cache = new Collection((items ?? []).map(item => [String(item.id ?? item.user?.id), item]))
+  Object.defineProperty(manager, 'cache', { value: cache, writable: true })
+  return stubDeep(manager)
+}
+
 /**
  * Creates a mock {@link Guild}, with the `members`, `channels`, `roles` and `bans` managers ready
  * to stub. A manager's `fetch(id)`, `create()` and `edit()` resolve to a mock of its item, and a list
- * fetch to an empty collection.
+ * fetch to an empty collection. Members, roles and channels given are put in their managers' caches,
+ * where dispatch looks first when resolving a message's typed params.
+ *
+ * @example
+ * ```ts
+ * const target = createMock<GuildMember>({ id: '111' })
+ * const message = createMockMessage({ content: '!ban 111 spam', guild: createMockGuild({ members: [target] }) })
+ * ```
  */
-export function createMockGuild(): DeepMocked<Guild> {
+export function createMockGuild(overrides: MockGuildOverrides = {}): DeepMocked<Guild> {
   const instance = Object.create(Guild.prototype) as Record<string, unknown>
   instance.id = nextSnowflake()
 
-  instance.members = stubDeep(Object.create(GuildMemberManager.prototype))
-  instance.channels = stubDeep(Object.create(GuildChannelManager.prototype))
-  instance.roles = stubDeep(Object.create(RoleManager.prototype))
+  if (overrides.id !== undefined) instance.id = overrides.id
+  instance.members = managerWith(GuildMemberManager.prototype, overrides.members as never)
+  instance.channels = managerWith(GuildChannelManager.prototype, overrides.channels as never)
+  instance.roles = managerWith(RoleManager.prototype, overrides.roles as never)
   instance.bans = stubDeep(Object.create(GuildBanManager.prototype))
 
   return stubDeep(instance) as DeepMocked<Guild>
@@ -755,9 +784,9 @@ export function createMockChannel<T extends BaseChannel>(Class: InteractionClass
 function createMockGuildForMessage(): object {
   const guild = Object.create(Guild.prototype) as Record<string, unknown>
   guild.id = nextSnowflake()
-  guild.members = stubDeep(Object.create(GuildMemberManager.prototype))
-  guild.channels = stubDeep(Object.create(GuildChannelManager.prototype))
-  guild.roles = stubDeep(Object.create(RoleManager.prototype))
+  guild.members = managerWith(GuildMemberManager.prototype, undefined)
+  guild.channels = managerWith(GuildChannelManager.prototype, undefined)
+  guild.roles = managerWith(RoleManager.prototype, undefined)
   guild.bans = stubDeep(Object.create(GuildBanManager.prototype))
   return stubDeep(guild)
 }
@@ -777,6 +806,8 @@ export interface MockMessageOverrides {
   embeds?: readonly (APIEmbed | JSONEncodable<APIEmbed>)[]
   /** Its flags: a number, flag names or a `MessageFlagsBitField`. */
   flags?: MessageFlagsResolvable
+  /** The guild it was sent in, such as one from `createMockGuild` with members in its cache; `null` for a DM. */
+  guild?: Guild | null
 }
 
 /**
@@ -840,12 +871,12 @@ export function createMockMessage(overrides: MockMessageOverrides = {}): DeepMoc
     writable: true,
   })
   const channel = stubDeep(Object.assign(Object.create(TextChannel.prototype), { id: nextSnowflake() })) as { id: string }
-  const guild = createMockGuildForMessage() as { id: string }
+  const guild = (overrides.guild === undefined ? createMockGuildForMessage() : overrides.guild) as { id: string } | null
   Object.defineProperty(instance, 'channel', { value: channel, writable: true })
   Object.defineProperty(instance, 'guild', { value: guild, writable: true })
-  // In a server's text channel, the ids matching the objects
+  // In a server's text channel, the ids matching the objects; with no guild, a DM
   instance.channelId = channel.id
-  instance.guildId = guild.id
+  instance.guildId = guild?.id ?? null
   Object.defineProperty(instance, 'thread', {
     value: stubDeep(Object.create(ThreadChannel.prototype)),
     writable: true,

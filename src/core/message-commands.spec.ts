@@ -1,25 +1,28 @@
 import { vi } from 'vitest'
-import { Client, type Message } from 'discord.js'
+import { Client, type GuildMember, type Message } from 'discord.js'
 import {
   Catch,
   Controller,
   Cooldown,
+  Guard,
   Interceptor,
   MeoCord,
   MessageHandler,
+  UseGuard,
   UseInterceptor,
   Validate,
 } from '@src/decorator/index.js'
 import { MeoCordFactory } from '@src/core/meocord-factory.js'
-import { type ExecutionContext } from '@src/common/index.js'
+import { type ExecutionContext, MessageUsageError } from '@src/common/index.js'
 import {
   type CallHandler,
   type ExceptionFilter,
+  type GuardInterface,
   type InterceptorInterface,
   type MessageCommandOptions,
   type StandardSchemaV1,
 } from '@src/interface/index.js'
-import { createMockMessage } from '@src/testing/index.js'
+import { createMockGuild, createMockMessage } from '@src/testing/index.js'
 
 const { logged } = vi.hoisted(() => ({ logged: { error: [] as unknown[][], warn: [] as unknown[][] } }))
 
@@ -358,5 +361,141 @@ describe('message command startup errors', () => {
       all() {}
     }
     expect(create(Listening)).toThrow(/Listening\.all is a message handler without a pattern/)
+  })
+})
+
+describe('typed message params and usage replies', () => {
+  const TARGET = '200000000000000001'
+  const target = { id: TARGET, user: { id: TARGET } } as unknown as GuildMember
+  const seen: unknown[] = []
+
+  @Guard()
+  class SeesParams implements GuardInterface {
+    canActivate(_message: Message, params: Record<string, unknown>) {
+      seen.push(['guard', params])
+      return true
+    }
+  }
+
+  @Controller()
+  class Economy {
+    @MessageHandler('pay {to:member} {amount:int} {note...?}')
+    @UseGuard(SeesParams)
+    @Validate(
+      schema<{ to: GuildMember; amount: number; note?: string }>(({ to, amount, note }) =>
+        (amount as number) > 0 ? { to: to as GuildMember, amount: amount as number, note: note as string | undefined } : undefined,
+      ),
+    )
+    async pay(_message: Message, params: { to: GuildMember; amount: number; note?: string }) {
+      seen.push(['pay', params])
+    }
+  }
+
+  /** Sends a message in a guild whose member cache holds the target, and waits for dispatch. */
+  async function sendIn(client: Client, content: string, guild: ReturnType<typeof createMockGuild> | null = createMockGuild({ members: [target] })) {
+    const message = createMockMessage({ content, guild })
+    Object.assign(message.author, { bot: false, id: 'user-1' })
+    await Promise.all(client.rawListeners('messageCreate').map(listener => (listener as (m: unknown) => unknown)(message)))
+    return message
+  }
+
+  /** The reply dispatch sent, and whether it has been deleted. */
+  async function replyOf(message: Message) {
+    const sent = vi.mocked(message.reply).mock.results[0]?.value as Promise<Message & { deleted: boolean }> | undefined
+    return sent && (await sent)
+  }
+
+  beforeEach(() => {
+    seen.length = 0
+  })
+
+  afterEach(() => vi.useRealTimers())
+
+  it('resolves typed params before the guards, so every stage sees members and numbers', async () => {
+    const client = await startApp({ controllers: [Economy], messages: { prefix: '!' } })
+
+    await sendIn(client, `!pay <@${TARGET}> 25 for lunch`)
+
+    expect(seen).toEqual([
+      ['guard', { to: target, amount: 25, note: 'for lunch' }],
+      ['pay', { to: target, amount: 25, note: 'for lunch' }],
+    ])
+  })
+
+  it('answers a word of the wrong type with the usage, and deletes the answer after 10 seconds', async () => {
+    vi.useFakeTimers()
+    const client = await startApp({ controllers: [Economy], messages: { prefix: '!' } })
+
+    const message = await sendIn(client, `!pay <@${TARGET}> lots`)
+    const reply = await replyOf(message)
+
+    expect(seen).toEqual([])
+    expect(message.reply).toHaveBeenCalledWith({
+      content: 'Usage: !pay <to> <amount> [note…]\namount: "lots" is not a whole number',
+      allowedMentions: { repliedUser: false, parse: [] },
+    })
+    await vi.advanceTimersByTimeAsync(9_999)
+    expect(reply!.deleted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(reply!.deleted).toBe(true)
+  })
+
+  it('answers a command left without its params, naming what is missing', async () => {
+    const client = await startApp({ controllers: [Economy], messages: { prefix: '!', deleteUsageRepliesAfter: 0 } })
+
+    const message = await sendIn(client, `!PAY <@${TARGET}>`)
+
+    expect(message.reply).toHaveBeenCalledWith(expect.objectContaining({ content: 'Usage: !pay <to> <amount> [note…]\namount is missing' }))
+    await vi.waitFor(async () => expect((await replyOf(message))!.deleted).toBe(false))
+  }, 10_000)
+
+  it('keeps a usage reply when told 0, and only logs a reply it could not delete', async () => {
+    vi.useFakeTimers()
+    const client = await startApp({ controllers: [Economy], messages: { prefix: '!', deleteUsageRepliesAfter: 2 } })
+
+    const message = await sendIn(client, `!pay <@${TARGET}> 0.5`)
+    const reply = await replyOf(message)
+    vi.mocked(reply!.delete).mockRejectedValue(new Error('Missing Permissions'))
+    await vi.advanceTimersByTimeAsync(2_000)
+
+    expect(reply!.delete).toHaveBeenCalledTimes(1)
+    expect(logged.error).toEqual([])
+  })
+
+  it('says a command with a member param works in a server only, when sent in a DM', async () => {
+    const client = await startApp({ controllers: [Economy], messages: { prefix: '!', deleteUsageRepliesAfter: 0 } })
+
+    const message = await sendIn(client, `!pay <@${TARGET}> 5`, null)
+
+    expect(message.reply).toHaveBeenCalledWith(expect.objectContaining({ content: 'This command works in a server only.' }))
+    expect(seen).toEqual([])
+  })
+
+  it('stays quiet when the message used no prefix, as chat that begins with a command word', async () => {
+    const client = await startApp({ controllers: [Economy], messages: { deleteUsageRepliesAfter: 0 } })
+
+    const typo = await sendIn(client, `pay <@${TARGET}> lots`)
+    const short = await sendIn(client, 'pay')
+
+    expect(typo.reply).not.toHaveBeenCalled()
+    expect(short.reply).not.toHaveBeenCalled()
+    expect(logged.error).toEqual([])
+  })
+
+  it('lets an exception filter answer a usage error instead', async () => {
+    const caught: unknown[] = []
+
+    @Catch(MessageUsageError)
+    class UsageFilter implements ExceptionFilter<MessageUsageError> {
+      catch(error: MessageUsageError) {
+        caught.push(error.usage)
+      }
+    }
+
+    const client = await startApp({ controllers: [Economy], messages: { prefix: '!' }, filters: [UsageFilter] })
+    const message = await sendIn(client, `!pay <@${TARGET}> lots`)
+
+    expect(caught).toEqual(['!pay <to> <amount> [note…]'])
+    expect(message.reply).not.toHaveBeenCalled()
   })
 })
