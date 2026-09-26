@@ -195,24 +195,22 @@ describe('the layers themeFor adds', () => {
 
 describe('the cache of themeFor\'s results', () => {
   it('looks each server and user up once, for calls in flight and after, and both at the same time', async () => {
-    const guild = vi.fn(async () => {
-      await pause(40)
-      return colour('#00001A')
-    })
-    const user = vi.fn(async (): Promise<ThemeOverride> => {
-      await pause(40)
-      return { colors: { info: '#00001B' } }
-    })
+    // Each lookup waits until released, so the test sees both in flight at once rather than timing them
+    const release: (() => void)[] = []
+    const held = <T,>(value: T) => new Promise<T>(resolve => release.push(() => resolve(value)))
+    const guild = vi.fn(() => held(colour('#00001A')))
+    const user = vi.fn(() => held<ThemeOverride>({ colors: { info: '#00001B' } }))
     const module = moduleWith({ guild, user })
 
-    const started = performance.now()
-    await Promise.all(Array.from({ length: 50 }, () => module.invoke(Panel, 'panel', press('panel'))))
-    const tookMs = performance.now() - started
+    const calls = Promise.all(Array.from({ length: 50 }, () => module.invoke(Panel, 'panel', press('panel'))))
+    // Both started before either answered: the server's and the user's are looked up together
+    await vi.waitFor(() => expect(release).toHaveLength(2))
+    expect(seen).toEqual([])
+    for (const answer of release) answer()
+    await calls
     await module.invoke(Panel, 'panel', press('panel'))
 
     expect([guild.mock.calls.length, user.mock.calls.length]).toEqual([1, 1])
-    // The two lookups ran together: about 40 ms, not 80
-    expect(tookMs).toBeLessThan(75)
     expect(seen.filter(entry => (entry as string[])[0] === 'handler')).toHaveLength(51)
   })
 
@@ -339,13 +337,15 @@ describe('a resolver that fails', () => {
   })
 
   it('gives up waiting after themeForTimeoutMs, and the call goes on', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] })
     const errors = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {})
     const module = moduleWith({ guild: () => new Promise<ThemeOverride>(() => {}) }, { themeForTimeoutMs: 20 })
 
-    const started = performance.now()
-    await module.invoke(Panel, 'panel', press('panel'))
+    const call = module.invoke(Panel, 'panel', press('panel'))
+    // The resolver never answers: the call goes on once the timeout passes
+    await vi.advanceTimersByTimeAsync(20)
+    await call
 
-    expect(performance.now() - started).toBeLessThan(200)
     expect(seen).toContainEqual(['handler', DEFAULT_THEME.colors.primary, DEFAULT_THEME.colors.info, DEFAULT_THEME.colors.success])
     expect(errors).toHaveBeenCalledWith(expect.stringContaining(`themeFor.guild for guild ${GUILD} did not answer within 20 ms`))
   })
