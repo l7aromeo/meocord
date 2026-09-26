@@ -257,10 +257,11 @@ describe('flags', () => {
     })
   })
 
-  it('fetches a member flag together with member params, and needs a server only for a flag given', async () => {
+  it('fetches an uncached member flag together with uncached member params, in one request, and needs a server only for a flag given', async () => {
     const guild = createMockGuild()
     guild.members.fetch.mockResolvedValue(new Collection([[ID(4), member(ID(4))], [ID(5), member(ID(5))]]) as never)
-    const { resolve } = flagged(`!warn ${ID(4)} --by=<@${ID(5)}>`, 'warn {target:member} {--by:member?}', guild)
+    // Bare ids: a mention would arrive cached with the message, as the gateway delivers it
+    const { resolve } = flagged(`!warn ${ID(4)} --by=${ID(5)}`, 'warn {target:member} {--by:member?}', guild)
 
     expect(await resolve()).toEqual({ target: member(ID(4)), by: member(ID(5)) })
     expect(guild.members.fetch).toHaveBeenCalledWith({ user: [ID(4), ID(5)] })
