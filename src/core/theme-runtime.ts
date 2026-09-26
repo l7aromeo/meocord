@@ -9,6 +9,7 @@ import {
   hasAmbientTheme,
   mergeTheme,
   ownsAmbientTheme,
+  releaseAmbientTheme,
   type ResolvedTheme,
   themeLayersVersion,
 } from '@src/core/theme-scope.js'
@@ -119,4 +120,9 @@ export function callTheme(container: Container, prototype?: object, methodName?:
 /** Makes the app's theme the one read outside a call, unless another app in the process already has. */
 export function claimAmbientAppTheme(container: Container): void {
   claimAmbientTheme(container, () => appTheme(container))
+}
+
+/** Gives up the app's theme as the one read outside a call: its start failed, or it has shut down. */
+export function releaseAmbientAppTheme(container: Container): void {
+  releaseAmbientTheme(container)
 }
