@@ -336,7 +336,7 @@ MeoCord builds with [Rsbuild](https://rsbuild.rs). The hook receives its configu
 
 See [Self-contained builds](#self-contained-builds) for when to turn on `bundleDependencies`.
 
-Some dependencies try to load a package and carry on without it: `debug`, which axios and the HTTP proxy agents bring in, probes for `supports-color` inside a `try`. With `bundleDependencies` on, each such package warns at every build. List it in `optionalExternals`: it stays a `require` where the dependency calls it, so a missing package is caught by the dependency, and it is copied into `dist/node_modules` when it is installed. Do not put it in `externals` as well, where it becomes an import that runs before the bot and fails when the package is missing; MeoCord warns if you do.
+Some dependencies try to load a package and carry on without it: `debug`, which axios and the HTTP proxy agents bring in, probes for `supports-color` inside a `try`. With `bundleDependencies` on, the bundler warns at every build about each such package that is not installed; for `supports-color`, the build says which dependency probes for it and that the bot runs without it. List it in `optionalExternals`: it stays a `require` where the dependency calls it, so a missing package is caught by the dependency, and it is copied into `dist/node_modules` when it is installed. Do not put it in `externals` as well, where it becomes an import that runs before the bot and fails when the package is missing; MeoCord warns if you do.
 
 ```typescript
 optionalExternals: ['supports-color'],

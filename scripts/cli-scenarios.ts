@@ -188,6 +188,12 @@ const optionalColor = {
   'node_modules/optional-color/index.js': "module.exports = 'with color'\n",
 }
 
+/** An installed package that probes for supports-color inside a try, as debug does. */
+const colorProbe = {
+  'node_modules/color-probe/package.json': JSON.stringify({ name: 'color-probe', version: '1.0.0', main: 'index.js' }),
+  'node_modules/color-probe/index.js': "let color = 'none'\ntry {\n  color = require('supports-color')\n} catch {}\nmodule.exports = color\n",
+}
+
 /** The binary a runtime is launched with. */
 function runtimeBinary(runtime: Runtime): string {
   if (runtime === 'bun') return process.versions.bun ? process.execPath : 'bun'
@@ -448,6 +454,24 @@ const scenarios: Scenario[] = [
     files: { '.env': 'DISCORD_TOKEN=\n' },
     argv: ['start', '--prod'],
     expect: { code: 1, says: ['Discord token is missing', 'discordToken', 'meocord.config.ts', '.env'] },
+  },
+  {
+    name: 'a bundled build names optionalExternals for a missing supports-color, instead of a raw resolve warning',
+    tier: 'fast',
+    files: {
+      ...colorProbe,
+      'node_modules/supports-color': null,
+      'src/main.ts': `import colorProbe from 'color-probe'\nconsole.log(colorProbe)\n${templateMain}`,
+      'meocord.config.ts': configWith('bundleDependencies: true,'),
+      dist: null,
+    },
+    argv: ['build', '--prod'],
+    expect: {
+      code: 0,
+      says: ['color-probe tries to load supports-color', "optionalExternals: ['supports-color']"],
+      never: ["Can't resolve"],
+      creates: ['dist/main.js'],
+    },
   },
   {
     name: 'build refuses a config of the wrong shape, listing every problem',

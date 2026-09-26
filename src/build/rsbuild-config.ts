@@ -1,6 +1,7 @@
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { type RsbuildConfig } from '@rsbuild/core'
+import { OptionalProbesPlugin } from '@src/build/optional-probes.js'
 import { RunnableBundlePlugin } from '@src/build/runnable-bundle.js'
 import { prepareModifiedTsConfig } from '@src/util/tsconfig.util.js'
 
@@ -111,6 +112,8 @@ export function createRsbuildConfig(options: RsbuildConfigOptions): RsbuildConfi
         }
         // Keeps the bundle starting under Node and Bun alike, whatever devtool or dependencies it has.
         chain.plugin('meocord-runnable-bundle').use(RunnableBundlePlugin)
+        // Says a missing package a dependency only probes for is harmless, and how to silence it
+        chain.plugin('meocord-optional-probes').use(OptionalProbesPlugin)
       },
       swc: {
         jsc: {
