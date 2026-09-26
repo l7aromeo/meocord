@@ -1,8 +1,10 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import {
   type ButtonInteraction,
+  type ChatInputCommandInteraction,
   type ModalSubmitInteraction,
   type StringSelectMenuInteraction,
+  type User,
   type UserSelectMenuInteraction,
 } from 'discord.js'
 import { route } from '@src/common/index.js'
@@ -155,6 +157,17 @@ describe('@Command(route) and the handler params', () => {
       }
     }
     expectTypeOf(Reports).toBeConstructibleWith()
+  })
+
+  it("leaves a command's options unchecked, since only components route by customId", () => {
+    const ping = route('ping')
+    class Commands {
+      @Command(ping, CommandType.SLASH)
+      ping(_interaction: ChatInputCommandInteraction, _params: { user: User }) {
+        return undefined
+      }
+    }
+    expectTypeOf(Commands).toBeConstructibleWith()
   })
 
   it('leaves a plain string pattern unchecked', () => {
