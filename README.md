@@ -11,7 +11,9 @@
 [![node](https://img.shields.io/node/v/meocord)](https://www.npmjs.com/package/meocord)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-**MeoCord** is a decorator-based Discord bot framework built on top of discord.js. It brings a NestJS-style architecture — controllers, services, guards, interceptors, exception filters and dependency injection — to bot development, with a full CLI, TypeScript-first design, and testing utilities included out of the box.
+**MeoCord** is a decorator-based framework for Discord bots, built on discord.js. Controllers handle slash commands, context menus, buttons, selects, modals, message commands and reactions; guards, interceptors, pipes and exception filters run around them; services reach them through dependency injection. A CLI scaffolds, builds and runs the bot, and `meocord/testing` drives its handlers without Discord.
+
+If you know NestJS, the shape will feel familiar.
 
 > **Upgrading from 3.x or 4.0?** Follow the [migration guide](https://github.com/meocord/meocord/blob/main/docs/MIGRATING.md).
 
