@@ -2,6 +2,15 @@ import 'reflect-metadata'
 import { type Container } from 'inversify'
 import { type ThemeOverride } from '@src/interface/index.js'
 import { sourcePrototype, stageClasses } from '@src/core/guard-runner.js'
+import { makeInjectable } from '@src/util/injectable.util.js'
+import {
+  attachThemeCache,
+  lookupLayers,
+  resolverCaches,
+  ThemeCache,
+  type ThemeResolverCaches,
+  type ThemeResolverOptions,
+} from '@src/core/theme-resolvers.js'
 import {
   ambientThemeVersion,
   claimAmbientTheme,
@@ -12,6 +21,7 @@ import {
   releaseAmbientTheme,
   type ResolvedTheme,
   themeLayersVersion,
+  type ThemeScope,
 } from '@src/core/theme-scope.js'
 
 /** Private metadata: the theme layer a class-level `@UseTheme` sets, kept on the class. */
@@ -35,6 +45,8 @@ interface AppThemes {
   app: ResolvedTheme
   /** The theme a call of a handler without a `@UseTheme` runs with, or `undefined` when it needs no scope. */
   scoped: ResolvedTheme | undefined
+  /** The caches of the app's `themeFor`, when it sets a resolver. */
+  resolvers: ThemeResolverCaches | undefined
   handlers: WeakMap<object, Map<string, ResolvedTheme>>
 }
 
@@ -53,9 +65,21 @@ function chainOf(cls: object): object[] {
  * Records an app's theme and whether its handlers can differ in theme, at startup. `layer` is the app's
  * `@MeoCord({ theme })`, already checked and copied.
  */
-export function configureThemes(container: Container, layer: ThemeOverride | undefined, classes: readonly object[]): void {
+export function configureThemes(
+  container: Container,
+  layer: ThemeOverride | undefined,
+  classes: readonly object[],
+  resolverOptions?: ThemeResolverOptions,
+): void {
   const varies = classes.some(cls => chainOf(cls).some(link => THEMED_CLASSES.has(link)))
-  apps.set(container, { layer, varies, version: -1, ambientVersion: -1, app: defaultTheme(), scoped: undefined, handlers: new WeakMap() })
+  const resolvers = resolverCaches(resolverOptions)
+  apps.set(container, { layer, varies, version: -1, ambientVersion: -1, app: defaultTheme(), scoped: undefined, resolvers, handlers: new WeakMap() })
+  // The instance the app's code injects, whether bound here or already as a dependency of one of its classes
+  if (!container.isBound(ThemeCache)) {
+    makeInjectable(ThemeCache)
+    container.bind(ThemeCache).toSelf().inSingletonScope()
+  }
+  attachThemeCache(container.get(ThemeCache), resolvers)
 }
 
 /** The app's themes, built again when the layers beneath the app's have changed. */
@@ -107,14 +131,34 @@ function handlerTheme(themes: AppThemes, prototype: object, methodName: string):
 }
 
 /**
- * The theme a call runs with, or `undefined` when it needs no scope of its own: the app's handlers share one theme,
- * and that is MeoCord's defaults or the theme read outside any call. So an app that sets no `@UseTheme` pays one
- * check per call. Without a handler, as for an error no route took, the app's theme.
+ * The theme scope a call runs in, or `undefined` when it needs none: its handlers share one theme, the one read
+ * outside any call, and no resolver applies to it. So an app with neither a `@UseTheme` nor `themeFor` pays one
+ * check per call. The scope holds the handler's theme, with the call's server's and user's themes over it; when
+ * those are still being looked up, `ready` settles once they are in the scope. Without a handler, as for an error
+ * no route took, the app's theme.
  */
-export function callTheme(container: Container, prototype?: object, methodName?: string): ResolvedTheme | undefined {
+export function beginCallTheme(
+  container: Container,
+  args: readonly unknown[],
+  prototype?: object,
+  methodName?: string,
+): { scope: ThemeScope; ready?: Promise<void> } | undefined {
   const themes = current(container)
-  if (!themes?.scoped) return undefined
-  return themes.varies && prototype && methodName ? handlerTheme(themes, prototype, methodName) : themes.scoped
+  if (!themes) return undefined
+  const layers = themes.resolvers && lookupLayers(themes.resolvers, args)
+  if (!layers && !themes.scoped) return undefined
+  const base = themes.varies && prototype && methodName ? handlerTheme(themes, prototype, methodName) : themes.app
+  if (!layers) return { scope: { theme: base } }
+  if (!(layers instanceof Promise)) {
+    const theme = mergeTheme(mergeTheme(base, layers[0]), layers[1])
+    return theme === base && !themes.scoped ? undefined : { scope: { theme } }
+  }
+  // Until the server's and user's themes are found, the call has the handler's; the pipeline waits for them
+  const scope: ThemeScope = { theme: base }
+  const ready = layers.then(([guild, user]) => {
+    scope.theme = mergeTheme(mergeTheme(base, guild), user)
+  })
+  return { scope, ready }
 }
 
 /** Makes the app's theme the one read outside a call, unless another app in the process already has. */

@@ -1,7 +1,7 @@
 import 'reflect-metadata'
 import { type Container } from 'inversify'
 import { MetadataKey } from '@src/enum/index.js'
-import { type ResponsePresenter, type ThemeOverride } from '@src/interface/index.js'
+import { type ResponsePresenter, type ThemeOverride, type ThemeResolvers } from '@src/interface/index.js'
 import { setPresenter } from '@src/common/response/presenter.js'
 import { type InteractionResponse, responseOf } from '@src/common/response/response-state.js'
 import { deferMisuseError, handlerDefer, nonInteractionHandler, startDefer } from '@src/core/defer.js'
@@ -35,8 +35,9 @@ import { hasObservers, notifyObservers, notifyStart, outcomeOf, responsePhaseOf 
 import { type DispatchOutcome, type DispatchResult } from '@src/interface/observer.interface.js'
 import { handlerCooldowns, methodCooldowns, peekCooldowns } from '@src/core/cooldown-runner.js'
 import { Logger } from '@src/common/logger.js'
-import { callTheme, configureThemes } from '@src/core/theme-runtime.js'
-import { runWithTheme } from '@src/core/theme-scope.js'
+import { beginCallTheme, configureThemes } from '@src/core/theme-runtime.js'
+import { runInThemeScope } from '@src/core/theme-scope.js'
+import { type ThemeResolverOptions } from '@src/core/theme-resolvers.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
 import {
   getAutocompleteHandlers,
@@ -61,6 +62,8 @@ export interface GlobalStages {
   filters: readonly FilterEntry[]
   /** The app's `@MeoCord({ theme })`, as `@MeoCord` checked and copied it, beneath every `@UseTheme`. */
   theme?: ThemeOverride
+  /** The app's `@MeoCord({ themeFor })`, with its cache's options. */
+  themeFor?: ThemeResolverOptions
 }
 
 const NO_GLOBAL_STAGES: GlobalStages = { guards: [], interceptors: [], filters: [] }
@@ -71,7 +74,15 @@ const GLOBAL_STAGES = Symbol('global_stages')
 /** The global stages declared by `@MeoCord` on an application class. */
 export function appStages(app: object): GlobalStages {
   const options = Reflect.getMetadata(MetadataKey.AppOptions, app) as
-    | { guards?: GuardEntry[]; interceptors?: InterceptorEntry[]; filters?: FilterEntry[]; theme?: ThemeOverride }
+    | {
+        guards?: GuardEntry[]
+        interceptors?: InterceptorEntry[]
+        filters?: FilterEntry[]
+        theme?: ThemeOverride
+        themeFor?: ThemeResolvers
+        themeCache?: ThemeResolverOptions['cache']
+        themeForTimeoutMs?: number
+      }
     | undefined
   if (!options) {
     throw new Error(`${(app as { name?: string }).name || 'The app'} is not decorated with @MeoCord().`)
@@ -81,6 +92,9 @@ export function appStages(app: object): GlobalStages {
     interceptors: [...(options.interceptors ?? [])],
     filters: [...(options.filters ?? [])],
     ...(options.theme !== undefined && { theme: options.theme }),
+    ...(options.themeFor !== undefined && {
+      themeFor: { resolvers: options.themeFor, cache: options.themeCache, timeoutMs: options.themeForTimeoutMs },
+    }),
   }
 }
 
@@ -156,7 +170,7 @@ const stagesByGlobals = new WeakMap<GlobalStages, (prototype: object, methodName
 export function prepareHandlerStages(container: Container, controllers: readonly (new (...args: any[]) => unknown)[]): void {
   assertDistinctNamesWhereKeyed(controllers)
   const globals = globalStagesOf(container)
-  configureThemes(container, globals.theme, controllers)
+  configureThemes(container, globals.theme, controllers, globals.themeFor)
   for (const entry of globals.interceptors) prepareInterceptor(container, entry)
   for (const entry of globals.filters) prepareFilter(container, entry)
 
@@ -368,10 +382,10 @@ export async function runHandler(
   args: unknown[],
   options: RunOptions = {},
 ): Promise<HandlerOutcome> {
-  // The handler's theme, for everything the call runs, when the app's handlers can differ in theme
-  const theme = callTheme(container, Object.getPrototypeOf(instance), methodName)
+  // The handler's theme, with the call's server's and user's over it, for everything the call runs
+  const theme = beginCallTheme(container, args, Object.getPrototypeOf(instance), methodName)
   return theme
-    ? runWithTheme(theme, () => runPipeline(container, instance, methodName, args, options))
+    ? runInThemeScope(theme.scope, () => runPipeline(container, instance, methodName, args, options, theme.ready))
     : runPipeline(container, instance, methodName, args, options)
 }
 
@@ -382,6 +396,7 @@ async function runPipeline(
   methodName: string,
   args: unknown[],
   options: RunOptions,
+  themeReady?: Promise<void>,
 ): Promise<HandlerOutcome> {
   const controller = instance.constructor as new (...args: any[]) => unknown
   const { guards, interceptors, filters } = handlerStages(
@@ -413,6 +428,8 @@ async function runPipeline(
   try {
     // @Defer's first step, inside the filters so a failed acknowledgement reaches them.
     if (response) await startDefer(response, defer!, receivedAt)
+    // After @Defer's acknowledgement, which cannot wait, and before anything reads or renders the theme
+    if (themeReady) await themeReady
     if (options.parseArgs) {
       args = await options.parseArgs(args)
       currentArgs.current = args
@@ -472,9 +489,12 @@ export async function handleUnroutedError(
   error: unknown,
   options: RunOptions = {},
 ): Promise<void> {
-  const theme = callTheme(container)
-  if (theme) return runWithTheme(theme, () => answerUnrouted(container, args, error, options))
-  return answerUnrouted(container, args, error, options)
+  const theme = beginCallTheme(container, args)
+  if (!theme) return answerUnrouted(container, args, error, options)
+  return runInThemeScope(theme.scope, async () => {
+    await theme.ready
+    return answerUnrouted(container, args, error, options)
+  })
 }
 
 /** {@link handleUnroutedError}'s answer, in the app's theme. */

@@ -5,8 +5,8 @@ import { DEFAULT_THEME } from '@src/core/theme-defaults.js'
 /** A resolved theme: every role present, frozen, since one theme is shared by every call it applies to. */
 export type ResolvedTheme = DeepReadonly<MeoCordTheme>
 
-/** The theme of the call in progress. */
-interface ThemeScope {
+/** The theme of the call in progress. A per-server or per-user theme still being looked up replaces it once found. */
+export interface ThemeScope {
   theme: ResolvedTheme
 }
 
@@ -138,6 +138,11 @@ export function ownsAmbientTheme(owner: object): boolean {
 /** Runs `fn` with `theme` as the theme of the call, for everything it runs, awaits or starts. */
 export function runWithTheme<T>(theme: ResolvedTheme, fn: () => T): T {
   return scope.run({ theme }, fn)
+}
+
+/** Runs `fn` in `themeScope`, whose theme may be replaced while it runs, as a per-server theme is found. */
+export function runInThemeScope<T>(themeScope: ThemeScope, fn: () => T): T {
+  return scope.run(themeScope, fn)
 }
 
 /**

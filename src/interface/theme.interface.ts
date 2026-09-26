@@ -149,3 +149,26 @@ type ReservedTaken = {
 export type RootTheme = [ReservedTaken] extends [never]
   ? UncheckedRootTheme
   : { 'MeoCord reserves these theme roles; rename yours': ReservedTaken }
+
+/** What a per-server theme resolver is given: the server a call came from. */
+export interface GuildThemeTarget {
+  guild: { id: string }
+}
+
+/** What a per-user theme resolver is given: the user a call came from. */
+export interface UserThemeTarget {
+  user: { id: string }
+}
+
+/**
+ * Themes that depend on where a call comes from, as `@MeoCord({ themeFor })` takes them: each resolver returns part
+ * of a theme, or `undefined` for none, at once or as a promise. A server's theme goes over the handler's, and a
+ * user's over the server's. Each result is cached, so a resolver runs once per server or user until the cache
+ * expires; `ThemeCache` clears it sooner.
+ */
+export interface ThemeResolvers {
+  /** The theme for calls from a server; not asked for a call from a DM. */
+  guild?: (target: GuildThemeTarget) => ThemeOverride | undefined | Promise<ThemeOverride | undefined>
+  /** The theme for calls from a user, in a server or a DM. */
+  user?: (target: UserThemeTarget) => ThemeOverride | undefined | Promise<ThemeOverride | undefined>
+}

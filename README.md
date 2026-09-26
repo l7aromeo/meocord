@@ -1321,7 +1321,30 @@ await respond(interaction).send({
 - **A controller method called directly** from another handler keeps the caller's theme: the theme belongs to the call answering the user.
 - **Outside any call,** such as in a scheduled job, it is the theme of the app the bot runs, or MeoCord's defaults before an app has started. It never throws.
 - **A theme is frozen,** since one theme is shared by every call it applies to. A colour is kept as written, so `useTheme().colors.primary` reads back what was set.
-- **A bot that sets no `@UseTheme` pays one check per call:** its handlers share the app's theme, which is built once at startup.
+- **A bot that sets neither `@UseTheme` nor `themeFor` pays one check per call:** its handlers share the app's theme, which is built once at startup.
+
+### Themes per server and per user
+
+`@MeoCord({ themeFor })` looks a theme up by where a call comes from: `guild` for a server's, which goes over the handler's, and `user` for a user's, which goes over the server's, in a server or a DM. Each returns part of a theme, or `undefined` for none, at once or as a promise:
+
+```typescript
+@MeoCord({
+  controllers: [ShopController],
+  clientOptions: { intents: [] },
+  themeFor: {
+    guild: async ({ guild }) => (await db.guildTheme(guild.id)) ?? undefined,
+    user: ({ user }) => premiumUsers.get(user.id),
+  },
+  themeCache: { ttlSeconds: 300, maxGuilds: 10_000, maxUsers: 50_000 },
+  themeForTimeoutMs: 1_000,
+})
+class App {}
+```
+
+- **When it runs:** as a call starts, while `@Defer` acknowledges, and before the guards, so every stage and the handler read the whole theme. A call from a DM asks only `user`; a message's author and a reaction's user count as the call's user.
+- **Cached:** each result is kept for `ttlSeconds` (300 unless set), up to `maxGuilds` servers (10,000) and `maxUsers` users (50,000), the oldest dropped first. Calls that ask at the same time share one lookup, and a server's and a user's are looked up together. To have a change show at once, inject `ThemeCache` from `meocord/common` and call `invalidateGuild(guildId)` or `invalidateUser(userId)`; without an id, each clears every result.
+- **A result that is not a valid theme** is left out: calls from that server or user use the theme without it, and the bot warns once, naming the resolver, the id and each problem. It is kept as no theme until it expires or is cleared, so a bad row is not read again on every call.
+- **A resolver that fails** by throwing, rejecting or passing `themeForTimeoutMs` (1,000 unless set) leaves its theme out of the call, and the call goes on. The bot logs it once, and again when it answers, and does not ask that server or user again for 10 seconds.
 
 ### Replies to messages
 

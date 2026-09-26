@@ -874,6 +874,7 @@ export type {
 export type {
   DeepPartial,
   DeepReadonly,
+  GuildThemeTarget,
   MeoCordTheme,
   ReservedThemeRole,
   RootTheme,
@@ -882,4 +883,6 @@ export type {
   ThemeColors,
   ThemeEmojis,
   ThemeOverride,
+  ThemeResolvers,
+  UserThemeTarget,
 } from './theme.interface.js'
