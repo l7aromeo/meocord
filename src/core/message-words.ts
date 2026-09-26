@@ -50,21 +50,27 @@ export interface GivenFlag {
   value: string | undefined
 }
 
-const NO_FLAGS: readonly GivenFlag[] = Object.freeze([])
-
 const isFlagNameChar = (code: number, first: boolean) =>
   (code >= 97 && code <= 122) || (code >= 65 && code <= 90) || (!first && ((code >= 48 && code <= 57) || code === 95))
 
+/** A message's words with its flags left out, the flags, and where each flag sits in the text. */
+export interface FlagWords {
+  /** The words that are not flags, each with where it starts in the text. */
+  words: { value: string; start: number }[]
+  flags: GivenFlag[]
+  /** Where each flag starts and ends in the text, in pairs, to leave out of a rest. */
+  cuts: number[]
+}
+
 /**
- * A message's flags, `--name` or `--name=value` with the value in quotes when it has spaces, and its text
- * without them, for the words. A word in quotes is never a flag, so `"--bots"` stays text.
+ * A message's words and flags in one pass: `--name` or `--name=value`, with the value in quotes when it has
+ * spaces, is a flag, and a word in quotes never is, so `"--bots"` stays text. Words keep where they start
+ * in the text given, so a rest is cut from it with {@link restFrom}.
  */
-export function scanFlags(text: string): { text: string; flags: readonly GivenFlag[] } {
-  // Most messages have no flags, and cost this one search
-  if (!text.includes('--')) return { text, flags: NO_FLAGS }
+export function splitFlagWords(text: string): FlagWords {
+  const words: { value: string; start: number }[] = []
   const flags: GivenFlag[] = []
-  const kept: string[] = []
-  let from = 0
+  const cuts: number[] = []
   let i = 0
   while (i < text.length) {
     if (isSpace(text, i)) {
@@ -74,16 +80,17 @@ export function scanFlags(text: string): { text: string; flags: readonly GivenFl
     const start = i
     const quoted = quoteEnd(text, i)
     if (quoted !== -1) {
+      words.push({ value: text.slice(i + 1, quoted), start })
       i = quoted + 1
       continue
     }
     if (text.charCodeAt(i) === 45 && text.charCodeAt(i + 1) === 45 && isFlagNameChar(text.charCodeAt(i + 2), true)) {
       let j = i + 3
       while (j < text.length && isFlagNameChar(text.charCodeAt(j), false)) j++
-      if (j === text.length || isSpace(text, j) || text[j] === '=') {
+      if (j === text.length || isSpace(text, j) || text.charCodeAt(j) === 61) {
         const name = text.slice(i + 2, j)
         let value: string | undefined
-        if (text[j] === '=') {
+        if (text.charCodeAt(j) === 61) {
           const end = quoteEnd(text, j + 1)
           if (end !== -1) {
             value = text.slice(j + 2, end)
@@ -95,20 +102,32 @@ export function scanFlags(text: string): { text: string; flags: readonly GivenFl
           }
         }
         flags.push({ name, value })
-        kept.push(text.slice(from, start))
-        from = i = j
+        cuts.push(start, j)
+        i = j
         continue
       }
     }
     while (i < text.length && !isSpace(text, i)) i++
+    words.push({ value: text.slice(start, i), start })
   }
-  if (flags.length === 0) return { text, flags }
-  kept.push(text.slice(from))
-  return {
-    text: kept
-      .map(part => part.trim())
-      .filter(Boolean)
-      .join(' '),
-    flags,
+  return { words, flags, cuts }
+}
+
+/**
+ * The text from `start` to the end, as a rest param takes it: without the flags `cuts` marks, the text
+ * around each kept as it is and joined by a space.
+ */
+export function restFrom(text: string, start: number, cuts: readonly number[]): string {
+  if (cuts.length === 0 || cuts[cuts.length - 1] <= start) return text.slice(start).trimEnd()
+  const parts: string[] = []
+  let from = start
+  for (let c = 0; c < cuts.length; c += 2) {
+    if (cuts[c + 1] <= start) continue
+    const part = text.slice(from, cuts[c]).trim()
+    if (part) parts.push(part)
+    from = cuts[c + 1]
   }
+  const last = text.slice(from).trim()
+  if (last) parts.push(last)
+  return parts.join(' ')
 }
