@@ -930,7 +930,7 @@ declare module 'meocord/interface' {
 
 ### Flags and lists
 
-A flag, `{--name}`, may be given anywhere after the command's first word, apart from the words the pattern matches. Without a type it is `true` when given and `false` when not; with one, `{--name:type}`, it takes a value, `--name=value`, and is required unless it ends in `?`. A typed rest, `{name:type...}`, is a list: each word, or "quoted words", becomes a value of the type.
+A flag, `{--name}`, may be given anywhere after the command's first word, apart from the words the pattern matches. One before it, as in `!--bots purge 5`, is not read, and the message names no command. Without a type it is `true` when given and `false` when not; with one, `{--name:type}`, it takes a value, `--name=value`, and is required unless it ends in `?`. A typed rest, `{name:type...}`, is a list: each word, or "quoted words", becomes a value of the type.
 
 ```typescript
 import { type GuildMember, type Message, type User } from 'discord.js'
@@ -950,7 +950,7 @@ async kick(message: Message, { targets }: { targets: GuildMember[] }) {}
 
 - A value with spaces goes in quotes, `--note="buy milk"`. A flag given twice takes its last value, and `--bots=no` gives `false`.
 - A flag the command does not have, a typed flag left out or given no value, and an item that is not a value of its type each get the [usage reply](#usage-errors): `--all is not an option of this command`.
-- Words in quotes are never flags, so `"--bots"` stays text. Only a message naming a command with flags is read for them, so a pattern with no flags reads `--bots` as an ordinary word and costs nothing more, and a rest takes the message's text without its flags.
+- Words in quotes are never flags, so `"--bots"` stays text. Only a message naming a command with flags is read for them, so a pattern with no flags reads `--bots` as an ordinary word and costs nothing more, and a rest takes the message's text without its flags, keeping its own spacing and line breaks.
 - The members a list, its params and its flags name are fetched together, in one request, as [typed params](#typed-params) are. `{name...}` with no type stays the rest of the message as text.
 
 ### Usage errors

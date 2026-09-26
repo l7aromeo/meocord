@@ -81,6 +81,8 @@ export function parseMessagePattern(pattern: string): MessagePattern {
       const flag = FLAG.exec(word)
       if (!flag) return true
       const [, name, type, optional] = flag
+      // A message's `--2fa` is a word: a flag it can give starts with a letter
+      if (!/^[A-Za-z]/.test(name)) throw new Error(`${word}: a flag's name starts with a letter, as a message could not give it otherwise.`)
       claim(name)
       if (optional && !type) throw new Error(`${word}: a flag without a type is optional already; write {--${name}}.`)
       flags.push({ flag: name, optional: Boolean(optional), ...(type && { type }) })
@@ -554,7 +556,7 @@ export function matchMessageRoute(
   }
   // One shape for every candidate, so the engine keeps this code monomorphic. A route whose scope does not fit
   // runs only when none that fits matches, so dispatch can say where it works
-  type Candidate = { rank: number; words: { value: string; start: number }[]; rest: string; flags: readonly GivenFlag[]; cuts: readonly number[] }
+  interface Candidate { rank: number; words: { value: string; start: number }[]; rest: string; flags: readonly GivenFlag[]; cuts: readonly number[] }
   let best: Candidate | undefined
   let outside: Candidate | undefined
   for (const group of index.groups) {
