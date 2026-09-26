@@ -369,6 +369,35 @@ describe('a resolver that fails', () => {
   })
 })
 
+describe('a resolver', () => {
+  it('runs outside the theme of any call, even one the lookup starts inside', async () => {
+    const module = moduleWith({
+      guild: async () => {
+        seen.push(['resolver', primary()])
+        await pause(1)
+        seen.push(['resolver after await', primary()])
+        return undefined
+      },
+    })
+    @Controller()
+    @UseTheme({ colors: { primary: '#000091' } })
+    class Outer {
+      @Command('outer', CommandType.BUTTON)
+      async outer() {
+        // A call made inside another's theme scope, as a handler that dispatches another does
+        await module.invoke(Panel, 'panel', press('panel'))
+      }
+    }
+
+    await MeoCordTestingModule.create({ controllers: [Outer] }).compile().invoke(Outer, 'outer', press('outer'))
+
+    expect(seen.slice(0, 2)).toEqual([
+      ['resolver', DEFAULT_THEME.colors.primary],
+      ['resolver after await', DEFAULT_THEME.colors.primary],
+    ])
+  })
+})
+
 describe('a resolver with no theme to give', () => {
   it('returns null or undefined, as a database does for a missing row, and nothing is warned about', async () => {
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {})
