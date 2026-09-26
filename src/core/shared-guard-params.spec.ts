@@ -156,6 +156,21 @@ describe('a guard whose instance is frozen or sealed', () => {
 
     expect(seen).toEqual(['sealed admin', 'sealed admin'])
   })
+
+  it('is warned about once when shared, since its calls cannot be kept apart', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {})
+    const perCall = MeoCordTestingModule.create({ controllers: [Locked] }).compile()
+    const shared = MeoCordTestingModule.create({ controllers: [Locked], providers: [{ provide: SealedGuard, useClass: SealedGuard }] }).compile()
+
+    await perCall.invoke(Locked, 'sealed', press('sealed'))
+    expect(warn).not.toHaveBeenCalled()
+    await shared.invoke(Locked, 'sealed', press('sealed'))
+    await shared.invoke(Locked, 'sealed', press('sealed'))
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('SealedGuard is one instance every call shares, and its instance is sealed'))
+    vi.restoreAllMocks()
+  })
 })
 
 describe('shared guards that call each other', () => {
