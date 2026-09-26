@@ -1405,7 +1405,7 @@ Every handler — a command, a component, an autocomplete, a message, a reaction
 
 **Exception filters** surround all of it: an error from any stage or the handler reaches them, and one no filter handles goes to the built-in fallback. The handler, its interceptors and filters, and the fallback all answer through [`respond()`](#interaction-responses), so each sees where the others left the answer.
 
-**[Observers](#observers)** frame all of it: an observer's `onStart` is called as the call begins, before `@Defer` and the guards, and its `onSettled` once the call has settled and been answered, whatever the outcome, with how it ended and how long it took. The call waits for neither. They also hear about an interaction no handler matches.
+**[Observers](#observers)** frame all of it: an observer's `onStart` is called as the call begins, before `@Defer` and the guards, and its `onSettled` once the call has settled and been answered, whatever the outcome, with how it ended and how long it took. The call waits for neither. They also hear about an interaction no handler matches and nothing else answers.
 
 Validation and pipes apply to command, component and modal handlers, and to message handlers with a pattern, whose options, customId params, fields and pattern params they check. Cooldowns apply to those and to every message handler. An autocomplete handler, which must answer within three seconds, runs its guards and filters but no interceptors. `@Defer` applies to command, component and modal handlers only.
 
@@ -2004,7 +2004,7 @@ with `db.cooldowns.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })`.
 
 ## Observers
 
-An observer is told about every call MeoCord dispatches, once it has settled: commands, components, modals, autocomplete, message, reaction and event handlers, and interactions no handler matches. It is where metrics and audit logs go, since no other stage sees every outcome. Guards run before anything is decided, interceptors never see a call a guard denied or autocomplete, and filters see only errors.
+An observer is told about every call MeoCord dispatches, once it has settled: commands, components, modals, autocomplete, message, reaction and event handlers, and interactions no handler matches and nothing else answers. It is where metrics and audit logs go, since no other stage sees every outcome. Guards run before anything is decided, interceptors never see a call a guard denied or autocomplete, and filters see only errors.
 
 ```typescript
 import { Observer } from 'meocord/decorator'
@@ -2048,7 +2048,7 @@ class App {}
 
 `response` catches a handler that left an interaction hanging: `'deferred'` means the user still sees "thinking…".
 
-What is reported: every interaction, the ones no handler matches included; every message and reaction a handler runs for; and every event handler call. A message no handler matches is not reported: messages are not commands, and most of a server's traffic would reach the observers for nothing.
+What is reported: every interaction, the ones no handler matches included, except a component or modal a collector or another listener answers, which is that listener's call; every message and reaction a handler runs for; and every event handler call. A message no handler matches is not reported: messages are not commands, and most of a server's traffic would reach the observers for nothing.
 
 - **Read-only.** An observer runs outside the call, and the call waits for none of its methods, so a slow observer never delays a handler. One that throws is logged through `Logger`, and the others still run.
 - **In order.** Observers are told one after another, in the order `observers` lists them.

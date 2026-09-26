@@ -275,9 +275,9 @@ export class Dispatcher {
     // grace to answer, and MeoCord says no handler matched only if nothing did
     if (hasCustomId(interaction) && othersListening(interaction.client)) {
       await new Promise(resolve => setTimeout(resolve, UNROUTED_COMPONENT_GRACE_MS))
+      // Another listener's to report: MeoCord neither answered nor failed it, so the observers are not told
       if (answered(interaction)) {
         this.logger.debug(`No handler matched ${describeInteraction(interaction)}; another listener answered it.`)
-        await observeUnclaimed(this.container, [interaction], this.runOptions(call))
         return
       }
     }

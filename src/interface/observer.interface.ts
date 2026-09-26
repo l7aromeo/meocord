@@ -11,8 +11,8 @@ import { type ExecutionContext } from '@src/common/execution-context.js'
  * - `'refused'`: a `UserError` told the user what to fix, such as too few coins: their mistake, not a
  *   fault of the bot.
  * - `'error'`: anything else was thrown, by the handler, a pipe, an interceptor or a guard.
- * - `'not-found'`: an interaction no handler matches, such as a button whose customId no pattern
- *   routes, or an autocomplete no `@Autocomplete` claims.
+ * - `'not-found'`: an interaction no handler matches and nothing else answers, such as a button whose
+ *   customId no pattern routes, or an autocomplete no `@Autocomplete` claims.
  */
 export type DispatchOutcome = 'ran' | 'denied' | 'cooldown' | 'invalid' | 'refused' | 'error' | 'not-found'
 
@@ -46,8 +46,8 @@ export interface DispatchResult {
 
 /**
  * Observes every call MeoCord dispatches: commands, components, modals, autocomplete, message, reaction
- * and event handlers, and interactions no handler matches. A message no handler matches is not a call
- * and is not reported. Declare it with `@Observer()`, optionally limited to some `types`, and list it in
+ * and event handlers, and interactions no handler matches and nothing else, such as a collector, answers.
+ * A message no handler matches is not a call and is not reported. Declare it with `@Observer()`, optionally limited to some `types`, and list it in
  * `@MeoCord({ observers })`.
  *
  * An observer cannot change a call: `onStart` sees it begin and `onSettled` sees it end, and the call
