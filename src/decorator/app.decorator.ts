@@ -16,6 +16,7 @@ import { type Translator } from '@src/common/translator.js'
 import { type CooldownStore } from '@src/common/cooldown-store.js'
 import { type Provider } from '@src/interface/provider.interface.js'
 import { providerMap } from '@src/core/providers.js'
+import { BUILT_IN_TYPES } from '@src/core/message-params.js'
 import { assertObservers } from '@src/core/observer-runner.js'
 import { type CooldownStoreFailure } from '@src/core/cooldown-runner.js'
 import { type CheckedEntry } from '@src/decorator/stage-entry.js'
@@ -30,6 +31,16 @@ function assertMessageOptions(messages: MessageCommandOptions | undefined): void
   }
   for (const [name, value] of Object.entries({ mention, caseSensitive })) {
     if (value !== undefined && typeof value !== 'boolean') throw new TypeError(`@MeoCord({ messages: { ${name} } }) takes true or false.`)
+  }
+  const { types, deleteUsageRepliesAfter } = messages
+  if (deleteUsageRepliesAfter !== undefined && !(typeof deleteUsageRepliesAfter === 'number' && deleteUsageRepliesAfter >= 0 && Number.isFinite(deleteUsageRepliesAfter))) {
+    throw new TypeError('@MeoCord({ messages: { deleteUsageRepliesAfter } }) takes a number of seconds, or 0 to keep usage replies.')
+  }
+  for (const [name, type] of Object.entries(types ?? {})) {
+    if (name in BUILT_IN_TYPES) throw new TypeError(`@MeoCord({ messages: { types } }): "${name}" is a built-in type; give yours another name.`)
+    if (typeof type?.parse !== 'function') {
+      throw new TypeError(`@MeoCord({ messages: { types } }): "${name}" needs a parse(word, message) function.`)
+    }
   }
 }
 
@@ -66,7 +77,8 @@ function assertMessageOptions(messages: MessageCommandOptions | undefined): void
  *   from the container. Without one, MeoCord's own styling is used.
  * @param options.messages - How `@MessageHandler` patterns match: the `prefix` a message starts with,
  *   a list of them or a function of the message returning them; `mention` to accept a mention of the
- *   bot as well; and `caseSensitive` for the prefix and literal words.
+ *   bot as well; `caseSensitive` for the prefix and literal words; `types` of the app's own for
+ *   `{name:type}` params; and `deleteUsageRepliesAfter`, the seconds a usage reply stays (10, or 0 to keep).
  * @param options.observers - `@Observer` classes told about every dispatched call once it has settled,
  *   with its outcome and duration, in the order listed. The call never waits for them.
  * @param options.warnUnanswered - Warns, once per handler, when a handler finishes without answering

@@ -1,6 +1,9 @@
 import {
   BaseInteraction,
   type Client,
+  type GuildBasedChannel,
+  type GuildMember,
+  type Role,
   type ColorResolvable,
   type Interaction,
   type JSONEncodable,
@@ -388,7 +391,138 @@ export interface MessageCommandOptions {
   mention?: boolean
   /** Matches the prefix and a pattern's literal words in the case written; param values always are. @defaultValue `false` */
   caseSensitive?: boolean
+  /**
+   * Param types of the app's own, used in patterns as `{name:type}` by their key here. Declare each in
+   * {@link MessageParamTypes} as well, so a handler's params are typed from its pattern.
+   */
+  types?: Record<string, MessageParamType>
+  /**
+   * How long a reply showing a command's usage stays before it is deleted, in seconds. `0` keeps it.
+   * @defaultValue `10`
+   */
+  deleteUsageRepliesAfter?: number
 }
+
+/**
+ * A param type an app adds for its patterns: turns the word a message gives into a value, or into
+ * `undefined` when the word is not one, which the user is told with the command's usage.
+ *
+ * @example
+ * ```ts
+ * const color: MessageParamType<number> = {
+ *   label: 'color',
+ *   parse: word => (/^#?[0-9a-f]{6}$/i.test(word) ? parseInt(word.replace('#', ''), 16) : undefined),
+ * }
+ * // @MeoCord({ messages: { types: { color } } }), and in a .d.ts of the app:
+ * declare module 'meocord/interface' {
+ *   interface MessageParamTypes { color: number }
+ * }
+ * ```
+ */
+export interface MessageParamType<T = unknown> {
+  /** What the usage calls a value of this type, such as `color`. Defaults to the type's key. */
+  label?: string
+  /** The value a word stands for, or `undefined` when it stands for none. */
+  parse(word: string, message: Message): T | undefined | Promise<T | undefined>
+}
+
+/**
+ * What each param type in a message pattern gives the handler, by the name a pattern uses for it:
+ * `{amount:int}` gives a `number`, `{target:member}` a `GuildMember`. An app adds its own types here by
+ * declaration merging, beside registering them in `@MeoCord({ messages: { types } })`.
+ */
+export interface MessageParamTypes {
+  /** A word, or "quoted words". The type of a param that names none. */
+  string: string
+  /** A whole number, such as `50` or `-3`. */
+  int: number
+  /** A number, such as `2.5`. */
+  number: number
+  /** `yes`, `no`, `true`, `false`, `on` or `off`. */
+  bool: boolean
+  /** A length of time such as `10m`, `2h30m` or `7d`, in milliseconds. */
+  duration: number
+  /** A member of the message's server, by mention or ID. */
+  member: GuildMember
+  /** A user, by mention or ID. */
+  user: User
+  /** A role of the message's server, by mention, ID or name. */
+  role: Role
+  /** A channel of the message's server, by mention or ID. */
+  channel: GuildBasedChannel
+}
+
+/** Splits a pattern into its words, at most 16 of them, so the checker's work stays small. */
+type PatternWords<S extends string, Acc extends string[] = []> = Acc['length'] extends 16
+  ? Acc
+  : S extends `${infer Word} ${infer Rest}`
+    ? PatternWords<Rest, Word extends '' ? Acc : [...Acc, Word]>
+    : S extends ''
+      ? Acc
+      : [...Acc, S]
+
+/**
+ * The value a param's type gives: a named type, or one of the words `a|b` lists. An app's type not declared
+ * in {@link MessageParamTypes} is not checked.
+ */
+type ParamValue<T extends string> = T extends keyof MessageParamTypes
+  ? MessageParamTypes[T]
+  : T extends `${string}|${string}`
+    ? SplitChoices<T>
+    : any
+
+type SplitChoices<T extends string> = T extends `${infer Head}|${infer Rest}` ? Head | SplitChoices<Rest> : T
+
+type ParamSpec<W extends string> = W extends `{${infer Body}}`
+  ? Body extends `${infer Head}?`
+    ? RestSpec<Head, true>
+    : RestSpec<Body, false>
+  : never
+
+type RestSpec<B extends string, Optional extends boolean> = B extends `${infer Head}...` ? TypedSpec<Head, Optional> : TypedSpec<B, Optional>
+
+type TypedSpec<B extends string, Optional extends boolean> = B extends `${infer Name}:${infer Type}`
+  ? { name: Name; value: ParamValue<Type>; optional: Optional; typed: true }
+  : { name: B; value: string; optional: Optional; typed: false }
+
+type PatternSpecs<P extends string> = ParamSpec<PatternWords<P>[number]>
+
+/**
+ * The params a message pattern gives its handler, read from the pattern itself.
+ *
+ * @example
+ * ```ts
+ * type Ban = ParamsOf<'ban {target:member} {duration:duration?} {reason...?}'>
+ * // { target: GuildMember } & { duration?: number; reason?: string }
+ * ```
+ */
+export type ParamsOf<P extends string> = {
+  [S in PatternSpecs<P> as S['optional'] extends true ? never : S['name']]: S['value']
+} & {
+  [S in PatternSpecs<P> as S['optional'] extends true ? S['name'] : never]?: S['value']
+}
+
+/**
+ * The params a handler of pattern `P` is called with, for checking the params it declares, `Declared`: a
+ * name the pattern does not have comes as a value saying so, a typed param as its value, and an optional
+ * one with `undefined`, so a declaration that cannot take them fails to compile, naming the param. A handler that takes any params,
+ * such as `Record<string, string>`, is not checked.
+ */
+export type CheckedParams<P extends string, Declared> = string extends keyof Declared
+  ? Declared
+  : {
+      [K in keyof Declared]: K extends PatternSpecs<P>['name']
+        ? Extract<PatternSpecs<P>, { name: K }> extends infer S extends { value: unknown; optional: boolean; typed: boolean }
+          ? S['typed'] extends true
+            ? S['optional'] extends true
+              ? (S['value'] | undefined) extends Declared[K] ? Declared[K] : S['value'] | undefined
+              : S['value'] extends Declared[K] ? Declared[K] : S['value']
+            : S['optional'] extends true
+              ? undefined extends Declared[K] ? Declared[K] : Declared[K] | undefined
+              : Declared[K]
+          : never
+        : { readonly 'not a param of the pattern': K }
+    }
 
 /** What a patterned `@MessageHandler` sets for itself, over the app's `messages` options. */
 export interface MessageHandlerOptions {

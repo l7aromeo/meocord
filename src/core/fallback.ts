@@ -1,6 +1,6 @@
 import { type AutocompleteInteraction } from 'discord.js'
 import { type ExecutionContext } from '@src/common/execution-context.js'
-import { CommandNotFoundError, CooldownError, CooldownStoreError, GuardDeniedError, UserError, ValidationError } from '@src/common/errors.js'
+import { CommandNotFoundError, CooldownError, CooldownStoreError, GuardDeniedError, MessageUsageError, UserError, ValidationError } from '@src/common/errors.js'
 import { type Logger } from '@src/common/logger.js'
 import { respond } from '@src/common/response/response-state.js'
 import { describeInteraction } from '@src/util/interaction.util.js'
@@ -49,15 +49,45 @@ async function tellAuthor(context: ExecutionContext, error: UserError, logger: L
   }
 }
 
+/** How long a reply showing a command's usage stays, in seconds, when the app does not say. */
+export const DEFAULT_USAGE_REPLY_SECONDS = 10
+
+/**
+ * Replies to a message with a command's usage, then deletes the reply after `seconds`, unless `0`. A reply
+ * or deletion that fails, for a missing permission or a message already gone, is logged and left.
+ */
+async function answerUsage(error: MessageUsageError, context: ExecutionContext, logger: Logger, seconds: number): Promise<void> {
+  const message = context.getMessage()
+  if (!message) return
+  try {
+    const reply = await message.reply({ content: error.message, allowedMentions: { repliedUser: false, parse: [] } })
+    if (seconds > 0) {
+      setTimeout(() => {
+        reply.delete().catch(failure => logger.debug(`Could not delete a usage reply: ${String(failure)}`))
+      }, seconds * 1000).unref?.()
+    }
+  } catch (failure) {
+    logger.debug(`Could not reply with a command's usage: ${String(failure)}`)
+  }
+}
+
 /**
  * The built-in fallback: logs an error no filter handled, then answers the interaction through
- * `respond(interaction).error()` if it can still take an answer. Messages, reactions and events are
- * only logged, except that a message gets a `UserError`'s message as a reply.
+ * `respond(interaction).error()` if it can still take an answer. A message that names a command but does
+ * not fit it is answered with the command's usage, deleted after `usageReplySeconds()` seconds, and one a
+ * `UserError` refused with that error's message; other errors of messages, reactions and events are only
+ * logged.
  */
-export function createFallback(logger: Logger): Fallback {
+export function createFallback(logger: Logger, usageReplySeconds: () => number | undefined = () => undefined): Fallback {
   return async (error, context) => {
     const interaction = context.getInteraction()
     if (!interaction) {
+      if (error instanceof MessageUsageError) {
+        // With no prefix or mention the message may be chat that happens to begin with a command's words
+        if (error.quiet) logger.debug(`Usage not shown for ${describeCall(context)}: ${error.message}`)
+        else await answerUsage(error, context, logger, usageReplySeconds() ?? DEFAULT_USAGE_REPLY_SECONDS)
+        return
+      }
       // A message sent too often is ignored, as a cooldown means; it is not a fault to report.
       if (error instanceof CooldownError) logger.debug(`Cooldown (${error.per}) skipped ${describeCall(context)}`)
       // Logged once per outage where the store failed, rather than for every call it refused

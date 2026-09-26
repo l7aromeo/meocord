@@ -2,10 +2,11 @@ import { type Message } from 'discord.js'
 import { getMessageHandlers } from '@src/decorator/controller.decorator.js'
 import { type ControllerClass } from '@src/core/component-routes.js'
 import { routeSpecificity } from '@src/core/route-specificity.js'
+import { BUILT_IN_TYPES, isKnownParamType } from '@src/core/message-params.js'
 import { type MessageCommandOptions, type MessagePrefix } from '@src/interface/index.js'
 
-/** One word of a message pattern: a literal word, or a param. */
-type PatternToken = { literal: string } | { param: string; rest: boolean; optional: boolean }
+/** One word of a message pattern: a literal word, or a param with the type it declares, if any. */
+export type PatternToken = { literal: string } | { param: string; rest: boolean; optional: boolean; type?: string }
 
 /** A `@MessageHandler` pattern read into its words, with its rank. */
 export interface MessagePattern {
@@ -33,7 +34,7 @@ export interface MessageStarts {
   mention?: string
 }
 
-const PARAM = /^\{(\w+)(\.\.\.)?(\?)?\}$/
+const PARAM = /^\{(\w+)(?::([\w-]+(?:\|[\w-]+)*))?(\.\.\.)?(\?)?\}$/
 
 /**
  * Reads a pattern into its words. Throws for a param that is not a whole word, a name given twice, or
@@ -48,18 +49,19 @@ export function parseMessagePattern(pattern: string): MessagePattern {
     const match = PARAM.exec(word)
     if (!match) {
       if (/[{}]/.test(word)) {
-        throw new Error(`"${word}" is not a param: a param is a whole word, such as {name}, {name...} or {name?}.`)
+        throw new Error(`"${word}" is not a param: a param is a whole word, such as {name}, {name:type}, {name...} or {name?}.`)
       }
       tokens.push({ literal: word })
       return
     }
-    const [, name, rest, optional] = match
+    const [, name, type, rest, optional] = match
     if (names.has(name)) throw new Error(`{${name}} appears twice; give each param its own name.`)
     names.add(name)
     const last = index === words.length - 1
     if (rest && !last) throw new Error(`{${name}...} takes the rest of the message, so it must be last.`)
     if (optional && !last) throw new Error(`{${name}${rest ? '...' : ''}?} is optional, so it must be last.`)
-    tokens.push({ param: name, rest: Boolean(rest), optional: Boolean(optional) })
+    if (rest && type) throw new Error(`{${name}:${type}...}: the rest of a message is text, so a rest param takes no type.`)
+    tokens.push({ param: name, rest: Boolean(rest), optional: Boolean(optional), ...(type && { type }) })
   })
 
   const params = tokens.filter(token => 'param' in token)
@@ -115,6 +117,14 @@ export function buildMessageRoutes(controllerClasses: readonly ControllerClass[]
       let parsed: MessagePattern
       try {
         parsed = parseMessagePattern(pattern)
+        for (const token of parsed.tokens) {
+          if ('param' in token && token.type && !isKnownParamType(token.type, options.types)) {
+            throw new Error(
+              `{${token.param}:${token.type}} names no type. The types are ${Object.keys(BUILT_IN_TYPES).join(', ')}, ` +
+                `words to choose from such as {mode:on|off}, and those @MeoCord({ messages: { types } }) adds.`,
+            )
+          }
+        }
       } catch (error) {
         throw new Error(`@MessageHandler('${pattern}') in ${controllerClass.name}.${method}: ${(error as Error).message}`)
       }
@@ -249,6 +259,8 @@ interface RouteGroup {
   prefix: false | readonly string[] | undefined
   caseSensitive: boolean
   root: TrieNode
+  /** Routes by rank, under the first of their command words, the literal words their patterns begin with. */
+  commands: Map<string, number[]>
 }
 
 /** Routes compiled once for dispatch: grouped by how a message starts for them, each group a trie of words. */
@@ -272,7 +284,12 @@ function compileIndex(routes: readonly MessageRoute[]): MessageIndex {
     const startKey = route.prefix === undefined ? 'app' : route.prefix === false ? 'none' : JSON.stringify(route.prefix)
     const key = `${startKey}|${route.caseSensitive}`
     let group = groups.get(key)
-    if (!group) groups.set(key, (group = { prefix: route.prefix, caseSensitive: route.caseSensitive, root: trieNode() }))
+    if (!group) groups.set(key, (group = { prefix: route.prefix, caseSensitive: route.caseSensitive, root: trieNode(), commands: new Map() }))
+    const [first] = route.tokens
+    if ('literal' in first) {
+      const command = wordKey(first.literal, route.caseSensitive)
+      group.commands.set(command, [...(group.commands.get(command) ?? []), rank])
+    }
 
     let node = group.root
     for (const token of route.tokens) {
@@ -359,7 +376,7 @@ export function matchMessageRoute(
   routes: readonly MessageRoute[],
   content: string,
   starts: MessageStarts,
-): { route: MessageRoute; params: Record<string, string> } | undefined {
+): { route: MessageRoute; params: Record<string, string>; start: string } | undefined {
   let index = indexes.get(routes)
   if (!index) indexes.set(routes, (index = compileIndex(routes)))
 
@@ -386,20 +403,66 @@ export function matchMessageRoute(
   }
   if (!best) return undefined
   const route = routes[best.rank]
-  return { route, params: paramsOf(route, best.words, best.text) }
+  return { route, params: paramsOf(route, best.words, best.text), start: text.slice(0, text.length - best.text.length) }
+}
+
+/** A route's command words: the literal words its pattern begins with. */
+function commandWords(route: MessageRoute): string[] {
+  const words: string[] = []
+  for (const token of route.tokens) {
+    if (!('literal' in token)) break
+    words.push(token.literal)
+  }
+  return words
+}
+
+/**
+ * The command a message names when no pattern matches it: the best-ranked route whose command words the
+ * message begins with, after a prefix or mention it used. A message with no prefix or mention names none, so
+ * ordinary chat is never taken for a command. Only the routes that share the message's first word are read.
+ */
+export function matchMessageCommand(
+  routes: readonly MessageRoute[],
+  content: string,
+  starts: MessageStarts,
+): { route: MessageRoute; start: string; given: number } | undefined {
+  let index = indexes.get(routes)
+  if (!index) indexes.set(routes, (index = compileIndex(routes)))
+  let first = 0
+  while (first < content.length && isSpace(content, first)) first++
+  if (first === content.length || !mayStart(index, starts, content[first])) return undefined
+  const text = content.trim()
+
+  let best: { rank: number; start: string; given: number } | undefined
+  for (const group of index.groups) {
+    if (group.prefix === false) continue
+    const rest = afterStart(text, group.prefix ?? starts.prefixes, starts.mention, group.caseSensitive)
+    if (!rest || rest.length === text.length) continue
+    const words = splitWords(rest)
+    for (const rank of group.commands.get(wordKey(words[0]?.value ?? '', group.caseSensitive)) ?? []) {
+      if (best && rank >= best.rank) break
+      const command = commandWords(routes[rank])
+      if (command.every((word, i) => words[i] && wordKey(words[i].value, group.caseSensitive) === wordKey(word, group.caseSensitive))) {
+        best = { rank, start: text.slice(0, text.length - rest.length), given: words.length - command.length }
+        break
+      }
+    }
+  }
+  return best && { route: routes[best.rank], start: best.start, given: best.given }
 }
 
 /**
  * What a test calling a handler with a message alone passes as its params, as dispatch would build
  * them: `undefined` for a listener, which takes none; `{}` for a message without content; otherwise
- * what the handler's pattern captures, or why the content does not reach it.
+ * what the handler's pattern captures, with the route and the start the message used, or why the content
+ * does not reach it.
  */
 export async function messageParamsFor(
   controllerClass: ControllerClass,
   methodName: string,
   message: Message,
   options: MessageCommandOptions,
-): Promise<{ params: Record<string, string> } | { mismatch: string } | undefined> {
+): Promise<{ params: Record<string, string>; route?: MessageRoute; start?: string } | { mismatch: string } | undefined> {
   const route = buildMessageRoutes([controllerClass], options).find(candidate => candidate.method === methodName)
   if (!route) return undefined
   if (typeof message.content !== 'string') return { params: {} }
@@ -407,6 +470,6 @@ export async function messageParamsFor(
   const botId = message.client?.user?.id
   const starts = await messageStarts(options, message, typeof botId === 'string' ? botId : undefined)
   const matched = matchMessageRoute([route], message.content, starts)
-  if (matched) return { params: matched.params }
+  if (matched) return { params: matched.params, route, start: matched.start }
   return { mismatch: `message '${message.content}' does not match ${controllerClass.name}.${methodName}'s pattern '${route.pattern}'.` }
 }

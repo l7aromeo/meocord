@@ -1,9 +1,16 @@
-import { ButtonInteraction, ChatInputCommandInteraction, type Message } from 'discord.js'
+import { ButtonInteraction, ChatInputCommandInteraction, type GuildMember, type Message } from 'discord.js'
 import { Command, Controller, Guard, MeoCord, MessageHandler, Service, UseGuard } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { type GuardInterface } from '@src/interface/index.js'
-import { createMetadata, ExecutionContext } from '@src/common/index.js'
-import { createChatInputOptions, createMockInteraction, createMockMessage, MeoCordTestingModule } from '@src/testing/index.js'
+import { createMetadata, ExecutionContext, MessageUsageError } from '@src/common/index.js'
+import {
+  createChatInputOptions,
+  createMock,
+  createMockGuild,
+  createMockInteraction,
+  createMockMessage,
+  MeoCordTestingModule,
+} from '@src/testing/index.js'
 
 const log: string[] = []
 const Label = createMetadata<string>('label')
@@ -305,5 +312,41 @@ describe('TestingModule.invoke with a message', () => {
     await module.invoke(DiceController, 'everything', createMockMessage({ content: 'anything' }))
 
     expect(received).toEqual([{ sides: '4' }, {}, 'listener'])
+  })
+})
+
+describe('TestingModule.invoke with typed message params', () => {
+  const received: unknown[] = []
+  const TARGET = '200000000000000002'
+
+  @Controller()
+  class PayController {
+    @MessageHandler('pay {to:member} {amount:int}')
+    async pay(_message: Message, params: { to: GuildMember; amount: number }) {
+      received.push(params)
+    }
+  }
+
+  beforeEach(() => {
+    received.length = 0
+  })
+
+  it('resolves them as dispatch does, from the message guild caches', async () => {
+    const to = createMock<GuildMember>({ id: TARGET })
+    const module = MeoCordTestingModule.create({ controllers: [PayController] }).compile()
+    const message = createMockMessage({ content: `pay <@${TARGET}> 25`, guild: createMockGuild({ members: [to] }) })
+
+    await module.invoke(PayController, 'pay', message)
+
+    expect(received).toEqual([{ to, amount: 25 }])
+  })
+
+  it('rejects with the usage when a word is not a value of its type', async () => {
+    const module = MeoCordTestingModule.create({ controllers: [PayController] }).compile()
+    const message = createMockMessage({ content: `pay <@${TARGET}> lots`, guild: createMockGuild() })
+
+    await expect(module.invoke(PayController, 'pay', message)).rejects.toThrow(MessageUsageError)
+    await expect(module.invoke(PayController, 'pay', message)).rejects.toThrow('amount: "lots" is not a whole number')
+    expect(received).toEqual([])
   })
 })

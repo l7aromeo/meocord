@@ -36,9 +36,11 @@
 - [Subcommands](#subcommands)
 - [Autocomplete](#autocomplete)
 - [Message commands](#message-commands)
-- [Reactions](#reactions)
+  - [Typed params](#typed-params)
+  - [Usage errors](#usage-errors)
   - [Prefixes](#prefixes)
   - [Which handler runs](#which-handler-runs)
+- [Reactions](#reactions)
 - [Interaction responses](#interaction-responses)
   - [Where the interaction happened](#where-the-interaction-happened)
   - [Presenters](#presenters)
@@ -860,7 +862,71 @@ A pattern without params, such as `'hello'`, matches exactly that message. The p
 async roll(message: Message, { sides }: { sides: number }) {}
 ```
 
-A pattern that cannot be read — `{rest...}` before another word, a name used twice — and two handlers whose patterns match exactly the same messages stop the bot at startup, naming the handlers.
+A pattern that cannot be read — `{rest...}` before another word, a name used twice, a type no one declared — and two handlers whose patterns match exactly the same messages stop the bot at startup, naming the handlers.
+
+### Typed params
+
+A param can name a type, `{name:type}`. Its word is turned into that value before any guard runs, so every stage and the handler receive members and numbers rather than text:
+
+```typescript
+import { type GuildMember, type Message } from 'discord.js'
+
+// !pay @ana 25 for lunch    !pay 123456789012345678 25
+@MessageHandler('pay {to:member} {amount:int} {note...?}')
+async pay(message: Message, { to, amount, note }: { to: GuildMember; amount: number; note?: string }) {
+  await message.reply(`Paid ${to.displayName} ${amount}${note ? ` ${note}` : ''}`)
+}
+```
+
+| Type                                 | Gives                     | Accepts                                                     |
+| ------------------------------------ | ------------------------- | ----------------------------------------------------------- |
+| none, or `string`                    | `string`                  | A word, or "quoted words"                                   |
+| `int`, `number`                      | `number`                  | `50`, `-3`; `number` also `2.5`                             |
+| `bool`                               | `boolean`                 | `yes`, `no`, `true`, `false`, `on`, `off`                   |
+| `duration`                           | `number`, in milliseconds | `90s`, `10m`, `2h30m`, `7d`, `1w`                           |
+| `member`                             | `GuildMember`             | A mention or an ID, of a member of the message's server     |
+| `user`                               | `User`                    | A mention or an ID                                          |
+| `role`                               | `Role`                    | A mention, an ID or the role's name                         |
+| `channel`                            | `GuildBasedChannel`       | A mention or an ID                                          |
+| words, such as `on\|off`             | `'on' \| 'off'`           | One of the words, in any case unless `caseSensitive` is set |
+| your own, from `messages: { types }` | what its `parse` returns  | What its `parse` accepts                                    |
+
+The handler's params are checked against the pattern: a name the pattern does not have, a type its param's value does not fit, or an optional param declared as always there fails to compile. `ParamsOf<'pay {to:member} {amount:int}'>` from `meocord/interface` is the type the pattern gives. A param with no type is text, which `@Validate` or a pipe may turn into anything, so it is not checked; neither are params declared as `Record<string, string>`.
+
+Resolving costs no request where discord.js already knows the answer: a mentioned member arrives with the message, roles and channels are cached with the `Guilds` intent, and a cached member or user is used as it is. Members the cache lacks are fetched together, in one request however many a message names. Nothing is resolved before the message's route is chosen, so chat costs nothing.
+
+An app adds its own types in `@MeoCord({ messages: { types } })`, and declares what each gives in `MessageParamTypes`, so handlers using it are typed:
+
+```typescript
+import { type MessageParamType } from 'meocord/interface'
+
+const color: MessageParamType<number> = {
+  label: 'hex colour',
+  parse: word => (/^#[0-9a-f]{6}$/i.test(word) ? parseInt(word.slice(1), 16) : undefined),
+}
+
+// @MeoCord({ messages: { prefix: '!', types: { color } } }), and in a .d.ts of the app:
+declare module 'meocord/interface' {
+  interface MessageParamTypes {
+    color: number
+  }
+}
+```
+
+### Usage errors
+
+A message that names a command, after a prefix or mention, but does not fit its pattern gets the command's usage in reply, and the handler does not run:
+
+```
+!pay @ana lots       ->  Usage: !pay <to> <amount> [note…]
+                         amount: "lots" is not a whole number
+!pay @ana            ->  Usage: !pay <to> <amount> [note…]
+                         amount is missing
+```
+
+The reply is deleted after 10 seconds; `@MeoCord({ messages: { deleteUsageRepliesAfter } })` sets another number of seconds, and `0` keeps it. A reply the bot cannot send or delete, for a missing permission or a message already gone, is logged and left. A command with a `member`, `role` or `channel` param, sent in a DM, is answered that it works in a server only.
+
+The error is a `MessageUsageError` from `meocord/common`, carrying `usage` and `issues`, and goes through the handler's [exception filters](#exception-filters) first, so a filter can answer it in the app's own words or language. A message with no prefix or mention is never taken for a command: in an app without a prefix, `pay @ana lots` is chat that happens to begin with a command's word, and gets no reply.
 
 ### Prefixes
 
@@ -2096,7 +2162,7 @@ it('schedules the reminders it loaded at startup', () => {
 
 ### Running a handler with `invoke`
 
-`module.invoke(Controller, 'method', ...args)` runs a handler through the [pipeline](#how-a-handler-runs) dispatch runs: `@Defer`, its guards, class guards first and each once, then its interceptors around validation, pipes, cooldowns and the handler, all inside its exception filters. Guards resolve from the module, so `overrideGuard` stubs and injected `ExecutionContext` work as they do in the bot. Pass the arguments dispatch would: the interaction, message or reaction, then the handler's params. An interaction must be one dispatch could route to the handler: a customId its pattern matches, or the command or subcommand path it handles. One that could not, such as `'something/else'` for `'profile/{id}'`, rejects with a message naming both, so a typo in a test does not pass silently. A mock built without a customId or command name is not checked. A message passed alone to a [patterned `@MessageHandler`](#message-commands) is checked the same way, and the handler gets the params its pattern captures, after the prefix of the module's `app`: `invoke(DiceController, 'roll', createMockMessage({ content: '!roll 20' }))`.
+`module.invoke(Controller, 'method', ...args)` runs a handler through the [pipeline](#how-a-handler-runs) dispatch runs: `@Defer`, its guards, class guards first and each once, then its interceptors around validation, pipes, cooldowns and the handler, all inside its exception filters. Guards resolve from the module, so `overrideGuard` stubs and injected `ExecutionContext` work as they do in the bot. Pass the arguments dispatch would: the interaction, message or reaction, then the handler's params. An interaction must be one dispatch could route to the handler: a customId its pattern matches, or the command or subcommand path it handles. One that could not, such as `'something/else'` for `'profile/{id}'`, rejects with a message naming both, so a typo in a test does not pass silently. A mock built without a customId or command name is not checked. A message passed alone to a [patterned `@MessageHandler`](#message-commands) is checked the same way, and the handler gets the params its pattern captures, after the prefix of the module's `app`: `invoke(DiceController, 'roll', createMockMessage({ content: '!roll 20' }))`. [Typed params](#typed-params) are resolved as dispatch resolves them, from the message's guild: `createMockMessage({ content: '!pay <@1> 25', guild: createMockGuild({ members: [member] }) })` puts `member` in the cache it is read from, `guild: null` makes a DM, and a word that is not a value of its type rejects with the `MessageUsageError` the user would be shown.
 
 ```typescript
 import { ButtonInteraction } from 'discord.js'

@@ -39,7 +39,10 @@ export interface ResolvedRoute {
    * `expect(route?.handler).toBe(ProfileController.prototype.showProfile)`.
    */
   handler: (...args: any[]) => unknown
-  /** The values captured by the pattern's params. */
+  /**
+   * The words the pattern's params captured. A message's typed params are left as their words: dispatch
+   * and `invoke` resolve them against the message's guild.
+   */
   params: Record<string, string>
 }
 

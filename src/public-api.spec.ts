@@ -43,6 +43,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'GuardDeniedError',
     'Logger',
     'MemoryCooldownStore',
+    'MessageUsageError',
     'RedisCooldownStore',
     'SetMetadata',
     'ShardedCooldownStore',

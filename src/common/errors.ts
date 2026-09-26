@@ -135,6 +135,53 @@ export class ValidationError extends Error {
   }
 }
 
+/** One thing wrong with a message's command: a param whose word is not a value of its type, or a missing one. */
+export interface MessageUsageIssue {
+  /** The param it is about, if it is about one. */
+  param?: string
+  /** What is wrong, for the user. */
+  message: string
+}
+
+/**
+ * Thrown when a message names a command, by its prefix and command words, but its params do not fit the
+ * command's pattern: a word that is not a value of its param's type, a param missing, or a command that
+ * works only in a server sent elsewhere. The handler does not run. The user is answered with a reply
+ * showing {@link MessageUsageError.usage} and the issues, deleted after
+ * `@MeoCord({ messages: { deleteUsageRepliesAfter } })` seconds; an exception filter can answer otherwise.
+ *
+ * @example
+ * ```ts
+ * @Catch(MessageUsageError)
+ * export class UsageFilter implements ExceptionFilter<MessageUsageError> {
+ *   async catch(error: MessageUsageError, context: ExecutionContext) {
+ *     await context.getMessage()?.reply(`Try \`${error.usage}\``)
+ *   }
+ * }
+ * ```
+ */
+export class MessageUsageError extends Error {
+  /** Whether the command works only in a server and the message was sent elsewhere. */
+  readonly serverOnly: boolean
+  /** Whether the message used no prefix or mention, so it may be ordinary chat, which is not answered. */
+  readonly quiet: boolean
+
+  /**
+   * @param usage - The command as the user should type it, such as `!ban <target> [reason…]`.
+   * @param issues - Each thing wrong, in the order of the command's params.
+   */
+  constructor(
+    readonly usage: string,
+    readonly issues: MessageUsageIssue[],
+    { serverOnly = false, quiet = false }: { serverOnly?: boolean; quiet?: boolean } = {},
+  ) {
+    super(serverOnly ? issues.map(issue => issue.message).join('\n') : [`Usage: ${usage}`, ...issues.map(issue => issue.message)].join('\n'))
+    this.name = 'MessageUsageError'
+    this.serverOnly = serverOnly
+    this.quiet = quiet
+  }
+}
+
 /** The scope a cooldown counts calls in. */
 export type CooldownScope = 'user' | 'guild' | 'channel' | 'global'
 

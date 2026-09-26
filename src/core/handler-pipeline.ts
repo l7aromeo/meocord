@@ -242,6 +242,11 @@ function assertInputStagesOnInteractions(controller: new (...args: any[]) => unk
 export interface RunOptions {
   /** Answers an error no filter handled. Without it, such an error rejects the call. */
   fallback?: Fallback
+  /**
+   * Turns the call's arguments into the ones the stages and the handler receive, before the guards and
+   * inside the filters: a message's typed params resolved, or a usage error thrown for the filters.
+   */
+  resolveArgs?: (args: unknown[]) => Promise<unknown[]>
   /** What the call handles, when its first argument cannot say, as for an event whose first argument is a message. */
   type?: ExecutionContextType
   /**
@@ -371,6 +376,10 @@ export async function runHandler(
   try {
     // @Defer's first step, inside the filters so a failed acknowledgement reaches them.
     if (response) await startDefer(response, defer!, receivedAt)
+    if (options.resolveArgs) {
+      args = await options.resolveArgs(args)
+      currentArgs.current = args
+    }
     if (!(await runGuards(guards, { container, controller, methodName, args, type, currentArgs, denial }))) {
       outcome = 'denied'
       await response?.abandon()

@@ -7,7 +7,7 @@ import {
   type PartialMessageReaction,
 } from 'discord.js'
 import { CommandType, MetadataKey } from '@src/enum/index.js'
-import { type MessageHandlerOptions, type ReactionHandlerOptions, type ReactionHandlerSettings } from '@src/interface/index.js'
+import { type CheckedParams, type MessageHandlerOptions, type ReactionHandlerOptions, type ReactionHandlerSettings } from '@src/interface/index.js'
 import {
   type AutocompleteMetadata,
   type BuildableCommandType,
@@ -52,6 +52,23 @@ export interface MessageHandlerMetadata {
 }
 
 /**
+ * What `@MessageHandler(pattern)` returns: a decorator for a handler taking no arguments, the message, or
+ * the message and its params, whose declared type is checked against the pattern. The last form comes last
+ * so a mismatch is explained against it.
+ */
+export interface PatternedMessageHandlerDecorator<T, R, Pattern extends string> {
+  (target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<() => R>): void
+  (target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(message: T) => R>): void
+  <P extends Record<string, any>>(
+    target: object,
+    propertyKey: string,
+    descriptor: TypedPropertyDescriptor<(message: T, params: P) => R> & {
+      value?: (message: T, params: CheckedParams<Pattern, P>) => R
+    },
+  ): void
+}
+
+/**
  * Registers a listener for every message not sent by a bot. It runs after the patterned handler the
  * message matched, if any; see the overload taking a pattern for message commands.
  *
@@ -76,8 +93,13 @@ export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boole
  * A pattern is matched word by word. A literal word matches itself, in any case unless
  * `caseSensitive` is set. `{name}` captures one word, and words in quotes count as one. `{name...}`
  * captures the rest of the message as typed. `{name?}` and `{name...?}` are optional. The last three
- * come only at the end. The params arrive as the handler's second argument, where `@Validate`, pipes
- * and `@Cooldown({ by })` see them too.
+ * come only at the end. `{name:type}` turns the word into a value of the type before any guard runs:
+ * `int`, `number`, `bool`, `duration`, `member`, `user`, `role`, `channel`, words such as `on|off`, or
+ * a type the app adds. The params arrive as the handler's second argument, where `@Validate`, pipes
+ * and `@Cooldown({ by })` see them too, and the params the handler declares are checked against them.
+ *
+ * A message that names the command, after a prefix or mention, but does not fit its pattern is
+ * answered with the command's usage, as a `MessageUsageError` its filters see first.
  *
  * Only the most specific matching pattern runs, across every controller: more literal words first,
  * then a fixed number of words before a rest, then fewer params.
@@ -88,9 +110,14 @@ export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boole
  *
  * @example
  * ```typescript
- * @MessageHandler('roll {sides} {note...?}')
- * async roll(message: Message, { sides, note }: { sides: string; note?: string }) {
+ * @MessageHandler('roll {sides:int} {note...?}')
+ * async roll(message: Message, { sides, note }: { sides: number; note?: string }) {
  *   await message.reply(`Rolling d${sides}${note ? ` (${note})` : ''}`)
+ * }
+ *
+ * @MessageHandler('ban {target:member} {reason...?}')
+ * async ban(message: Message, { target, reason }: { target: GuildMember; reason?: string }) {
+ *   await target.ban({ reason })
  * }
  *
  * @MessageHandler('hello', { prefix: false })
@@ -99,17 +126,11 @@ export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boole
  * }
  * ```
  */
-export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boolean>>, R extends void | Promise<void>>(
-  pattern: string,
-  options?: MessageHandlerOptions,
-): <P extends Record<string, any>>(
-  target: object,
-  propertyKey: string,
-  _descriptor:
-    | TypedPropertyDescriptor<(message: T, params: P) => R>
-    | TypedPropertyDescriptor<(message: T) => R>
-    | TypedPropertyDescriptor<() => R>,
-) => void
+export function MessageHandler<
+  T extends OmitPartialGroupDMChannel<Message<boolean>>,
+  R extends void | Promise<void>,
+  const Pattern extends string = string,
+>(pattern: Pattern, options?: MessageHandlerOptions): PatternedMessageHandlerDecorator<T, R, Pattern>
 export function MessageHandler(pattern?: string, options: MessageHandlerOptions = {}) {
   return function (target: object, propertyKey: string) {
     const handlers = ownHandlerList<MessageHandlerMetadata>(MESSAGE_HANDLER_METADATA_KEY, target)

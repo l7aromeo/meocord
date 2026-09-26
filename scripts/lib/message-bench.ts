@@ -6,7 +6,7 @@
  */
 import 'reflect-metadata'
 import { MessageHandler } from '../../src/decorator/controller.decorator.js'
-import { buildMessageRoutes, matchMessageRoute } from '../../src/core/message-routes.js'
+import { buildMessageRoutes, matchMessageCommand, matchMessageRoute } from '../../src/core/message-routes.js'
 
 export const ROUTE_COUNTS = [10, 100, 1000] as const
 export const CASES = ['chatter', 'unknown', 'matching'] as const
@@ -93,7 +93,8 @@ export function run(): Measured {
   for (const count of ROUTE_COUNTS) {
     const routes = routesFor(count)
     const starts = { prefixes: ['!'] }
-    const match = (content: string) => matchMessageRoute(routes, content, starts)
+    // As dispatch does: the route a message matches, or else the command it names, for its usage
+    const match = (content: string) => matchMessageRoute(routes, content, starts) ?? matchMessageCommand(routes, content, starts)
     const hit = Math.floor(count / 2) + 1
     const matching = [`!cmd${hit} alpha beta gamma`, `!CMD${hit} "two words" beta gamma`]
     if (!match(matching[0])) throw new Error(`The benchmark's matching message reaches no route at ${count} routes.`)
