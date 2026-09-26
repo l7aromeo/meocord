@@ -684,9 +684,9 @@ export async function messageParamsFor(
   if (typeof message.content !== 'string') return { params: {} }
 
   const botId = message.client?.user?.id
-  const starts = await messageStarts(options, message, typeof botId === 'string' ? botId : undefined)
-  // The handler dispatch gives the message to, among every handler of the module: the best match, else the command it names
   const all = buildMessageRoutes(controllers, options)
+  const starts = await messageStartsFor(all, options, message, typeof botId === 'string' ? botId : undefined)
+  // The handler dispatch gives the message to, among every handler of the module: the best match, else the command it names
   const target = matchMessageRoute(all, message.content, starts) ?? matchMessageCommand(all, message.content, starts)
   if (target && (target.route.controllerClass !== controllerClass || target.route.method !== methodName)) {
     const other = `${target.route.controllerClass.name}.${target.route.method}`

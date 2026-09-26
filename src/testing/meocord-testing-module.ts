@@ -14,7 +14,6 @@ import {
 } from 'discord.js'
 import { MetadataKey, ReactionHandlerAction } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
-import { MessageUsageError } from '@src/common/errors.js'
 import { missingTranslatorError, Translator } from '@src/common/translator.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import {
@@ -23,6 +22,7 @@ import {
   bindAppPresenter,
   bindGlobalStages,
   prepareHandlerStages,
+  type RunOptions,
   runHandler,
 } from '@src/core/handler-pipeline.js'
 import { setPresenter } from '@src/common/response/presenter.js'
@@ -35,7 +35,7 @@ import {
   type MessageCommandOptions,
 } from '@src/interface/index.js'
 import { buildMessageRoutes, messageParamsFor } from '@src/core/message-routes.js'
-import { assertMessageScope, hasTypedParams, missingParams, resolveMessageParams, usageOf } from '@src/core/message-params.js'
+import { messageCommandHooks } from '@src/core/message-params.js'
 import { appObservers, assertObservers, bindObservers } from '@src/core/observer-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
@@ -336,7 +336,7 @@ export class TestingModule {
     const [first] = args as unknown[]
     const mismatch = first instanceof BaseInteraction ? routeMismatch(controller, methodName, first as Interaction) : undefined
     if (mismatch) throw new Error(mismatch)
-    let resolveArgs: ((args: unknown[]) => Promise<unknown[]>) | undefined
+    let hooks: Pick<RunOptions, 'parseArgs' | 'fetchArgs'> = {}
     let callArgs =
       args.length === 1 && first instanceof BaseInteraction
         ? [first, handlerInput(first as Interaction, routeParamsFor(controller.prototype as object, methodName, first as Interaction)).params]
@@ -347,18 +347,13 @@ export class TestingModule {
       if (input) callArgs = [first, input.params]
       if (input && 'route' in input && input.route) {
         const { route, params, start = '', given } = input
-        const types = this.messageOptions.types
-        resolveArgs = async args => {
-          assertMessageScope(route, first, start)
-          if (given !== undefined) throw new MessageUsageError(usageOf(route, start), missingParams(route, given))
-          return hasTypedParams(route) ? [args[0], await resolveMessageParams(route, params, first, start, types)] : args
-        }
+        hooks = messageCommandHooks(route, params, first, start, given, this.messageOptions.types)
       }
     }
     const presenter = appPresenterOf(this.container)
     const client = first instanceof BaseInteraction ? first.client : undefined
     if (presenter && client) setPresenter(client, presenter)
-    const { ran, error } = await runHandler(this.container, instance, methodName, callArgs, { awaitObservers: true, resolveArgs })
+    const { ran, error } = await runHandler(this.container, instance, methodName, callArgs, { awaitObservers: true, ...hooks })
     return error === undefined ? { ran } : { ran, error }
   }
 

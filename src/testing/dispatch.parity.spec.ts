@@ -18,11 +18,12 @@ const B = '100000000000000002'
 const BOT = createMockClient().user!.id
 const ran: string[] = []
 
+// An entity shows as its ID; one a handler receives still as a ref, with `resolve`, shows marked
 const shown = (value: unknown): unknown =>
   Array.isArray(value)
     ? value.map(shown)
     : value && typeof value === 'object' && 'id' in value
-      ? `#${(value as { id: string }).id}`
+      ? `${typeof (value as { resolve?: unknown }).resolve === 'function' ? 'ref' : ''}#${(value as { id: string }).id}`
       : value && typeof value === 'object'
         ? Object.fromEntries(Object.entries(value).map(([key, item]) => [key, shown(item)]))
         : value
@@ -147,5 +148,7 @@ describe('module.dispatch and the bot', () => {
     await module.dispatch(dispatched as unknown as Message)
 
     expect({ ran: [...ran], replies: replies(dispatched) }).toEqual(inBot)
+    // Handlers get members, users and channels, never the refs guards see
+    expect(inBot.ran.join('\n')).not.toContain('ref#')
   })
 })

@@ -422,8 +422,13 @@ export interface MessageCommandOptions {
 export interface MessageParamType<T = unknown> {
   /** What the usage calls a value of this type, such as `color`. Defaults to the type's key. */
   label?: string
-  /** The value a word stands for, or `undefined` when it stands for none. */
-  parse(word: string, message: Message): T | undefined | Promise<T | undefined>
+  /**
+   * The value a word stands for, or `undefined` when it stands for none. It runs before the handler's guards,
+   * so a caller they refuse can reach it: it should not call Discord. For something that needs a request,
+   * return an {@link EntityRef}, whose `resolve()` runs only once the guards let the call through; guards see
+   * the ref, and the handler the value it resolves to.
+   */
+  parse(word: string, message: Message): T | EntityRef<T> | undefined | Promise<T | EntityRef<T> | undefined>
 }
 
 /**
@@ -452,6 +457,30 @@ export interface MessageParamTypes {
   channel: GuildBasedChannel
 }
 
+/**
+ * A member, user, role or channel a message names, as a guard sees it: before the guards let the call
+ * through, nothing is fetched from Discord, so a caller they refuse costs no request. The handler receives
+ * the entity itself.
+ *
+ * @example
+ * ```ts
+ * async canActivate(message: Message, { target }: ParamRefsOf<'ban {target:member} {reason...?}'>) {
+ *   // Cheap checks first; fetch only when the author may ban at all
+ *   if (!message.member?.permissions.has('BanMembers')) return false
+ *   const member = target.cached ?? (await target.resolve())
+ *   return !member || member.roles.highest.position < message.member.roles.highest.position
+ * }
+ * ```
+ */
+export interface EntityRef<T> {
+  /** The ID the message gave, by mention or as a bare ID. */
+  readonly id: string
+  /** The entity when discord.js already has it, with no request; `undefined` otherwise. */
+  readonly cached: T | undefined
+  /** Fetches the entity, once however many callers ask at the same time; `undefined` when there is none. */
+  resolve(): Promise<T | undefined>
+}
+
 /** Splits a pattern into its words, at most 16 of them, so the checker's work stays small. */
 type PatternWords<S extends string, Acc extends string[] = []> = Acc['length'] extends 16
   ? Acc
@@ -473,6 +502,20 @@ type ParamValue<T extends string> = T extends keyof MessageParamTypes
 
 type SplitChoices<T extends string> = T extends `${infer Head}|${infer Rest}` ? Head | SplitChoices<Rest> : T
 
+/** The types whose values name something on Discord, which guards see as refs. */
+type EntityType = 'member' | 'user' | 'role' | 'channel'
+
+/**
+ * What a guard sees for a param of type `T`: a ref for a member, user, role or channel, since nothing is
+ * fetched before the guards; a scalar or a choice as its value; an app's type as its value, or the ref its
+ * `parse` gives.
+ */
+type GuardValue<T extends string> = T extends EntityType
+  ? EntityRef<ParamValue<T>>
+  : T extends 'string' | 'int' | 'number' | 'bool' | 'duration' | `${string}|${string}`
+    ? ParamValue<T>
+    : ParamValue<T> | EntityRef<ParamValue<T>>
+
 type ParamSpec<W extends string> = W extends `{--${infer Body}}`
   ? Body extends `${infer Head}?`
     ? FlagSpec<Head, true>
@@ -485,19 +528,19 @@ type ParamSpec<W extends string> = W extends `{--${infer Body}}`
 
 /** A flag without a type is `true` when given and `false` when not, so it is always there. */
 type FlagSpec<B extends string, Optional extends boolean> = B extends `${infer Name}:${infer Type}`
-  ? { name: Name; value: ParamValue<Type>; optional: Optional; typed: true }
-  : { name: B; value: boolean; optional: false; typed: true }
+  ? { name: Name; value: ParamValue<Type>; guard: GuardValue<Type>; optional: Optional; typed: true }
+  : { name: B; value: boolean; guard: boolean; optional: false; typed: true }
 
 /** A rest with a type is a list of values; without one, the rest of the message as text. */
 type RestSpec<B extends string, Optional extends boolean> = B extends `${infer Head}...`
   ? Head extends `${infer Name}:${infer Type}`
-    ? { name: Name; value: ParamValue<Type>[]; optional: Optional; typed: true }
+    ? { name: Name; value: ParamValue<Type>[]; guard: GuardValue<Type>[]; optional: Optional; typed: true }
     : TypedSpec<Head, Optional>
   : TypedSpec<B, Optional>
 
 type TypedSpec<B extends string, Optional extends boolean> = B extends `${infer Name}:${infer Type}`
-  ? { name: Name; value: ParamValue<Type>; optional: Optional; typed: true }
-  : { name: B; value: string; optional: Optional; typed: false }
+  ? { name: Name; value: ParamValue<Type>; guard: GuardValue<Type>; optional: Optional; typed: true }
+  : { name: B; value: string; guard: string; optional: Optional; typed: false }
 
 type PatternSpecs<P extends string> = ParamSpec<PatternWords<P>[number]>
 
@@ -516,6 +559,23 @@ export type ParamsOf<P extends string> = {
   [S in PatternSpecs<P> as S['optional'] extends true ? never : S['name']]: S['value']
 } & {
   [S in PatternSpecs<P> as S['optional'] extends true ? S['name'] : never]?: S['value']
+}
+
+/**
+ * The params of a message pattern as they stand before anything is fetched from Discord, which is how its
+ * guards see them: those {@link ParamsOf} gives, with each member, user, role and channel as an
+ * {@link EntityRef}. Nothing is fetched until the guards let the call through.
+ *
+ * @example
+ * ```ts
+ * type Ban = ParamRefsOf<'ban {target:member} {days:int?}'>
+ * // { target: EntityRef<GuildMember> } & { days?: number }
+ * ```
+ */
+export type ParamRefsOf<P extends string> = {
+  [S in PatternSpecs<P> as S['optional'] extends true ? never : S['name']]: S['guard']
+} & {
+  [S in PatternSpecs<P> as S['optional'] extends true ? S['name'] : never]?: S['guard']
 }
 
 /**

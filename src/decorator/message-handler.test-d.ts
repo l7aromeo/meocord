@@ -1,7 +1,7 @@
 import { describe, expectTypeOf, it } from 'vitest'
-import { type GuildMember, type Message, type User } from 'discord.js'
+import { type GuildMember, type Message, type Role, type User } from 'discord.js'
 import { MeoCord, MessageHandler } from '@src/decorator/index.js'
-import { type MessageScope, type ParamsOf } from '@src/interface/index.js'
+import { type EntityRef, type MessageScope, type ParamRefsOf, type ParamsOf } from '@src/interface/index.js'
 import { type MessageHandlerEntry } from '@src/core/index.js'
 
 /** Runs under `vitest --typecheck`: what `@MessageHandler` and `@MeoCord({ messages })` accept. */
@@ -213,6 +213,26 @@ describe('@MessageHandler typed params', () => {
       }
     }
     void Typed
+  })
+
+  it('reads the params guards see with ParamRefsOf: entities as refs, everything else as its value', () => {
+    type Refs = ParamRefsOf<'ban {target:member} {days:int?} {--by:user?} {also:role...?} {mode:on|off?}'>
+    expectTypeOf<Refs['target']>().toEqualTypeOf<EntityRef<GuildMember>>()
+    expectTypeOf<Refs['days']>().toEqualTypeOf<number | undefined>()
+    expectTypeOf<Refs['by']>().toEqualTypeOf<EntityRef<User> | undefined>()
+    expectTypeOf<Refs['also']>().toEqualTypeOf<EntityRef<Role>[] | undefined>()
+    expectTypeOf<Refs['mode']>().toEqualTypeOf<'on' | 'off' | undefined>()
+    // An app's own type is its value, or the ref its parse gives
+    expectTypeOf<ParamRefsOf<'paint {shade:color}'>['shade']>().toEqualTypeOf<number | EntityRef<number>>()
+
+    class BanGuard {
+      async canActivate(message: Message, { target }: ParamRefsOf<'ban {target:member} {reason...?}'>) {
+        if (!message.member?.permissions.has('BanMembers')) return false
+        const member = target.cached ?? (await target.resolve())
+        return !member || member.roles.highest.position < message.member.roles.highest.position
+      }
+    }
+    void BanGuard
   })
 
   it('reads the params a pattern gives with ParamsOf', () => {

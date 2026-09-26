@@ -295,6 +295,25 @@ describe('TestingModule.invoke with a message', () => {
     expect(received).toEqual([{ sides: '6' }])
   })
 
+  it("leaves the app's prefix function uncalled when every handler has its own prefix, as dispatch does", async () => {
+    const prefix = vi.fn(() => '!')
+    @Controller()
+    class Own {
+      @MessageHandler('roll {sides}', { prefix: '?' })
+      async roll(_message: Message, params: { sides: string }) {
+        received.push(params)
+      }
+    }
+    @MeoCord({ controllers: [Own], clientOptions: { intents: [] }, messages: { prefix } })
+    class App {}
+    const module = MeoCordTestingModule.create({ controllers: [Own], app: App }).compile()
+
+    await module.invoke(Own, 'roll', createMockMessage({ content: '?roll 6' }))
+
+    expect(received).toEqual([{ sides: '6' }])
+    expect(prefix).not.toHaveBeenCalled()
+  })
+
   it("rejects content the handler's pattern does not match, naming both", async () => {
     const module = MeoCordTestingModule.create({ controllers: [DiceController] }).compile()
 
