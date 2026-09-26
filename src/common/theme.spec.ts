@@ -1,13 +1,11 @@
 import { vi } from 'vitest'
-import { ButtonInteraction } from 'discord.js'
-import { Logger, Theme, useTheme } from '@src/common/index.js'
+import { ButtonInteraction, resolveColor } from 'discord.js'
+import { Logger, respond, Theme, useTheme } from '@src/common/index.js'
 import { resetThemeStatics } from '@src/common/theme.js'
-import { defaultPresenter } from '@src/common/response/presenter.js'
 import { DEFAULT_THEME } from '@src/core/theme-defaults.js'
-import { Command, Controller, MeoCord, UseTheme } from '@src/decorator/index.js'
+import { Command, Controller, Defer, MeoCord, UseTheme } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
-import { type ResponseContext } from '@src/interface/index.js'
-import { createMockInteraction, MeoCordTestingModule } from '@src/testing/index.js'
+import { createMockInteraction, createMockMessage, getResponse, MeoCordTestingModule } from '@src/testing/index.js'
 
 const read: unknown[] = []
 
@@ -17,6 +15,20 @@ class Scoped {
   @Command('scoped', CommandType.BUTTON)
   scoped() {
     read.push(Theme.primaryColor, Theme.errorColor)
+  }
+}
+
+@Controller()
+class Answering {
+  @Command('crash', CommandType.BUTTON)
+  crash() {
+    throw new Error('crash')
+  }
+
+  @Command('slow', CommandType.BUTTON)
+  @Defer()
+  async slow(interaction: ButtonInteraction) {
+    await respond(interaction).send({ embeds: [{ description: 'done' }] })
   }
 }
 
@@ -71,14 +83,32 @@ describe('Theme, deprecated', () => {
     expect(read).toEqual(['#123456', '#00FF00'])
   })
 
-  it('recolours the default presenter by assignment, as it did in 4.0', () => {
+  it('recolours what respond() sends when assigned after the app has answered, as it did in 4.0', async () => {
+    @MeoCord({ controllers: [Answering], clientOptions: { intents: [] }, theme: { colors: { info: '#00FF00' } } })
+    class App {}
+    const module = MeoCordTestingModule.create({ app: App, controllers: [Answering] }).compile()
+    // A call first: the app's theme is built lazily, so without it the assignment would never have to rebuild it
+    await module.dispatch(press('crash')).catch(() => undefined)
     Theme.primaryColor = '#0A0B0C'
     Theme.errorColor = '#0D0E0F'
-    // The theme respond() gives a presenter outside a @UseTheme, as a call reads it
-    const context = { theme: useTheme() } as ResponseContext
+    const crashed = press('crash')
+    const deferred = createMockInteraction(ButtonInteraction, {
+      customId: 'slow',
+      message: createMockMessage({ embeds: [{ description: 'card' }], components: [] }),
+    })
 
-    expect(defaultPresenter.loading?.(context)).toMatchObject({ color: '#0A0B0C' })
-    expect(defaultPresenter.error?.(context, { message: 'x', error: new Error('x'), tone: 'danger' })).toMatchObject({ color: '#0D0E0F' })
+    await module.dispatch(crashed).catch(() => undefined)
+    await module.dispatch(deferred)
+
+    const colours = (interaction: ButtonInteraction) =>
+      getResponse(interaction).calls.map(call => [call.method, (call.payload as { embeds?: { color?: number }[] } | undefined)?.embeds?.at(-1)?.color])
+    expect(colours(crashed)).toEqual([['reply', resolveColor('#0D0E0F')]])
+    // The loading view Defer puts under the card, then the answer
+    expect(colours(deferred)).toEqual([
+      ['deferUpdate', undefined],
+      ['editReply', resolveColor('#0A0B0C')],
+      ['editReply', resolveColor('#0A0B0C')],
+    ])
   })
 
   it('warns once for each property set, and never when one is read', () => {
