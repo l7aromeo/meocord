@@ -19,6 +19,7 @@ import {
   getCommandMap,
   getMessageHandlers,
   getReactionHandlers,
+  matchesEmoji,
   type ReactionHandlerMetadata,
   PARAM_SEPARATOR,
 } from '@src/decorator/controller.decorator.js'
@@ -700,7 +701,7 @@ export class MeoCordApp implements MeoCordApplication {
     reaction: MessageReaction | PartialMessageReaction,
     { user, action }: ReactionHandlerOptions,
   ) {
-    const forEmoji = (handler: ReactionHandlerMetadata) => !handler.emoji || handler.emoji === reaction.emoji.name
+    const forEmoji = (handler: ReactionHandlerMetadata) => !handler.emoji || matchesEmoji(handler.emoji, reaction.emoji)
     const matching = this.controllerClasses
       .map(controllerClass => ({
         controllerClass,

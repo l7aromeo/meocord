@@ -121,7 +121,7 @@ export function MessageHandler(pattern?: string, options: MessageHandlerOptions 
 
 /** A `@ReactionHandler` as the decorator stores it. */
 export interface ReactionHandlerMetadata {
-  /** The emoji's name, or `undefined` for a handler that takes every emoji. */
+  /** The emoji as declared: a name, a custom emoji's id or its `<:name:id>`; `undefined` for every emoji. */
   emoji: string | undefined
   method: string
   settings: ReactionHandlerSettings
@@ -141,7 +141,9 @@ type ReactionHandlerDecorator<T extends MessageReaction | PartialMessageReaction
  * or every reaction without one. Reactions from bots, the bot's own included, are skipped unless the
  * handler sets `bots: true`.
  *
- * @param emoji - The emoji's name: the character for a standard emoji, the name for a custom one.
+ * @param emoji - The emoji: the character for a standard emoji; for a custom one its id, the `<:name:id>`
+ *   Discord shows for it (`\:party:` in a message), or its name. A name matches every custom emoji of that
+ *   name, one from each server; an id matches that emoji alone.
  * @param settings - `bots: true` to also run for reactions from bots.
  *
  * @example
@@ -150,6 +152,10 @@ type ReactionHandlerDecorator<T extends MessageReaction | PartialMessageReaction
  * async handleThumbsUpReaction(reaction: MessageReaction, { user }: ReactionHandlerOptions) {
  *   console.log(`User ${user.username} reacted with 👍`)
  * }
+ *
+ * // One server's custom emoji, by its id
+ * @ReactionHandler('<:party:1234567890123456789>')
+ * async celebrate(reaction: MessageReaction) {}
  *
  * @ReactionHandler()
  * async handleAnyReaction(reaction: MessageReaction, { user }: ReactionHandlerOptions) {
@@ -178,6 +184,19 @@ export function ReactionHandler(
     handlers.push({ emoji, method: propertyKey.toString(), settings: own })
     Reflect.defineMetadata(REACTION_HANDLER_METADATA_KEY, handlers, target)
   }
+}
+
+/** A custom emoji as Discord writes it in a message: `<:name:id>`, or `<a:name:id>` for an animated one. */
+const CUSTOM_EMOJI = /^<a?:\w+:(\d+)>$/
+
+/**
+ * Whether a reaction's emoji is the one a handler declared: by id, from a bare id or a `<:name:id>`, or
+ * by name, for a standard emoji's character or a custom emoji's name.
+ */
+export function matchesEmoji(declared: string, emoji: { id?: string | null; name?: string | null }): boolean {
+  const id = CUSTOM_EMOJI.exec(declared)?.[1]
+  if (id) return emoji.id === id
+  return (!!emoji.id && emoji.id === declared) || (!!emoji.name && emoji.name === declared)
 }
 
 /**

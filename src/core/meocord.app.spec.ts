@@ -291,6 +291,36 @@ describe('MeoCordApp', () => {
       ])
     })
 
+    // Two servers can each have a custom emoji called party; only its id tells them apart
+    it('matches a custom emoji by its id, or the <:name:id> Discord shows, as well as by name', async () => {
+      const calls: string[] = []
+
+      @Controller()
+      class PartyController {
+        @ReactionHandler('111')
+        async byId() {
+          calls.push('by id')
+        }
+
+        @ReactionHandler('<a:party:111>')
+        async byMention() {
+          calls.push('by mention')
+        }
+
+        @ReactionHandler('party')
+        async byName() {
+          calls.push('by name')
+        }
+      }
+
+      const listener = await startWith(PartyController)
+      const custom = (id: string, name: string) => ({ ...reactionTo(name), emoji: { id, name } })
+      await listener(custom('111', 'party'), users.person)
+      await listener(custom('222', 'party'), users.person)
+
+      expect(calls).toEqual(['by id', 'by mention', 'by name', 'by name'])
+    })
+
     it('fetches a partial user to tell whether it is a bot, and skips it when that fails', async () => {
       const calls: string[] = []
 
