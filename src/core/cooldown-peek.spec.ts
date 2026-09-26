@@ -32,25 +32,32 @@ class Shop {
   @Command('item', CommandType.BUTTON)
   @Cooldown<{ item: string }>({ seconds: 60, by: (_context, { item }) => item })
   item() {}
+
+  // A cooldown the peek checks, and a `by` one it leaves to the consume
+  @Command('sell', CommandType.BUTTON)
+  @Cooldown({ seconds: 3600, uses: 100 })
+  @Cooldown<{ item: string }>({ seconds: 3600, uses: 1, by: (_context, { item }) => item })
+  sell() {}
 }
 
 /** A store that counts in memory and records what it was asked, or fails every call until `failing` is unset. */
 class Recording extends MemoryCooldownStore {
   readonly asked: string[] = []
   failing: 'reject' | 'hang' | undefined
+  failingPeeks = false
 
   peekMany(entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
     this.asked.push('peek')
-    return this.failing ? this.fail() : super.peekMany(entries)
+    return this.failing || this.failingPeeks ? this.fail() : super.peekMany(entries)
   }
 
   consumeMany(entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
-    this.asked.push('consume')
+    this.asked.push(`consume ${entries.map(({ key }) => key.slice(0, key.indexOf(':'))).join(' ')}`)
     return this.failing ? this.fail() : super.consumeMany(entries)
   }
 
   private fail(): Promise<never> {
-    return this.failing === 'reject' ? Promise.reject(new Error('ECONNREFUSED')) : new Promise<never>(() => undefined)
+    return this.failing === 'hang' ? new Promise<never>(() => undefined) : Promise.reject(new Error('ECONNREFUSED'))
   }
 }
 
@@ -58,7 +65,7 @@ function app(store: CooldownStore, failure: 'deny' | 'allow' = 'deny', timeoutMs
   const container = new Container()
   container.bind(CooldownStore).toConstantValue(store)
   container.bind(COOLDOWN_POLICY).toConstantValue({ failure, timeoutMs })
-  return (methodName: 'buy' | 'owned' | 'item', userId = '1') => {
+  return (methodName: 'buy' | 'owned' | 'item' | 'sell', userId = '1') => {
     const interaction = createMockInteraction(ButtonInteraction, { customId: methodName, user: createMockInteraction(User, { id: userId }) })
     const context = new HandlerExecutionContext({ controller: Shop, methodName, args: [interaction] })
     const cooldowns = handlerCooldowns(Shop.prototype, methodName)
@@ -121,7 +128,7 @@ describe('peekCooldowns', () => {
     await call.peek()
     await call.consume({ item: 'sword' })
 
-    expect(store.asked).toEqual(['consume'])
+    expect(store.asked).toEqual(['consume Shop.item#0'])
   })
 
   it('asks a bypass once per call, for the peek and the consume both', async () => {
@@ -136,7 +143,7 @@ describe('peekCooldowns', () => {
     await bypassed.consume()
 
     expect(owner).toHaveBeenCalledTimes(2)
-    expect(store.asked).toEqual(['peek', 'consume'])
+    expect(store.asked).toEqual(['peek', 'consume Shop.owned#0'])
   })
 
   it("refuses with CooldownStoreError when the store fails under 'deny', logging the outage once", async () => {
@@ -159,6 +166,27 @@ describe('peekCooldowns', () => {
     await call.consume()
 
     expect(store.asked).toEqual(['peek'])
+  })
+
+  it("under 'allow', still counts the cooldowns with by after a failed peek, which never checked them", async () => {
+    const store = new Recording()
+    const call = app(store, 'allow')
+    const sell = async () => {
+      const sale = call('sell')
+      await sale.peek()
+      return sale.consume({ item: 'sword' }).then(() => 'ran', (error: unknown) => (error as Error).name)
+    }
+
+    expect(await sell()).toBe('ran')
+    expect(await sell()).toBe('CooldownError')
+    store.failingPeeks = true
+    // The peek fails, the store answers the consume: the item's one sale an hour still holds
+    expect(await sell()).toBe('CooldownError')
+    expect(store.asked.at(-1)).toBe('consume Shop.sell#1')
+
+    store.failing = 'reject'
+    // Down for the consume too: 'allow' lets it run uncounted
+    expect(await sell()).toBe('ran')
   })
 
   it('refuses a peek the store does not answer within the timeout', async () => {
