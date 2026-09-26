@@ -15,6 +15,8 @@ export function isSpace(text: string, i: number): boolean {
 /** A message's words, where text in quotes is one word, each with where it starts in the text. One pass. */
 export function splitWords(text: string): { value: string; start: number }[] {
   const words: { value: string; start: number }[] = []
+  // Where a quote was first found never to close
+  let unclosed = Infinity
   let i = 0
   while (i < text.length) {
     if (isSpace(text, i)) {
@@ -22,8 +24,9 @@ export function splitWords(text: string): { value: string; start: number }[] {
       continue
     }
     const start = i
-    const end = quoteEnd(text, i)
-    if (end !== -1) {
+    const end = quoteEnd(text, i, unclosed)
+    if (end === -2) unclosed = Math.min(unclosed, i)
+    if (end >= 0) {
       words.push({ value: text.slice(i + 1, end), start })
       i = end + 1
       continue
@@ -34,14 +37,19 @@ export function splitWords(text: string): { value: string; start: number }[] {
   return words
 }
 
-/** Where the quote opening at `i` closes, at a closing quote that ends a word; `-1` when none opens or it never closes. */
-function quoteEnd(text: string, i: number): number {
+/**
+ * Where the quote opening at `i` closes, at a closing quote that ends a word, searching no further than
+ * `before`: `-1` when none opens there, and `-2` when it never closes. Both quotes close on the same
+ * characters, so once one finds no close, no later one can; a read passes that place as `before`, which keeps
+ * a text of unclosed quotes to one pass.
+ */
+function quoteEnd(text: string, i: number, before: number): number {
   const closers = QUOTES.get(text[i])
   if (!closers) return -1
+  if (i >= before) return -2
   let end = i + 1
   while (end < text.length && !(closers.includes(text[end]) && (end + 1 === text.length || isSpace(text, end + 1)))) end++
-  // A quote never closed is an ordinary character
-  return end < text.length ? end : -1
+  return end < text.length ? end : -2
 }
 
 /** A flag as a message gives it: its name, and its value, or `undefined` when given bare. */
@@ -71,6 +79,8 @@ export function splitFlagWords(text: string): FlagWords {
   const words: { value: string; start: number }[] = []
   const flags: GivenFlag[] = []
   const cuts: number[] = []
+  // Where a quote was first found never to close
+  let unclosed = Infinity
   let i = 0
   while (i < text.length) {
     if (isSpace(text, i)) {
@@ -78,8 +88,9 @@ export function splitFlagWords(text: string): FlagWords {
       continue
     }
     const start = i
-    const quoted = quoteEnd(text, i)
-    if (quoted !== -1) {
+    const quoted = quoteEnd(text, i, unclosed)
+    if (quoted === -2) unclosed = Math.min(unclosed, i)
+    if (quoted >= 0) {
       words.push({ value: text.slice(i + 1, quoted), start })
       i = quoted + 1
       continue
@@ -91,8 +102,9 @@ export function splitFlagWords(text: string): FlagWords {
         const name = text.slice(i + 2, j)
         let value: string | undefined
         if (text.charCodeAt(j) === 61) {
-          const end = quoteEnd(text, j + 1)
-          if (end !== -1) {
+          const end = quoteEnd(text, j + 1, unclosed)
+          if (end === -2) unclosed = Math.min(unclosed, j + 1)
+          if (end >= 0) {
             value = text.slice(j + 2, end)
             j = end + 1
           } else {
