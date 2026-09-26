@@ -298,7 +298,7 @@ export class TestingModule {
         ? [first, handlerInput(first as Interaction, routeParamsFor(controller.prototype as object, methodName, first as Interaction)).params]
         : (args as unknown[])
     if (args.length === 1 && first instanceof Message) {
-      const input = await messageParamsFor(controller, methodName, first, this.messageOptions)
+      const input = await messageParamsFor(controller, methodName, first, this.messageOptions, this.controllers)
       if (input && 'mismatch' in input) throw new Error(input.mismatch)
       if (input) callArgs = [first, input.params]
       if (input && 'route' in input && input.route) {
