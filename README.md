@@ -2043,7 +2043,7 @@ const controller = module.get(GreetingSlashController)
 
 #### Lifecycle hooks in a test
 
-`init()` runs no [lifecycle hook](#lifecycle-hooks). `init({ ready: true })` also runs every `onReady` once, as the bot does when it comes online, and `close()` runs the `onShutdown` hooks, so a test can check what a service does at startup and close what a provider opened:
+`init()` runs no `onReady` [hook](#lifecycle-hooks). `init({ ready: true })` also runs every `onReady` once, as the bot does when it comes online, and `close()` runs the `onShutdown` hooks, so a test can check what a service does at startup and close what a provider opened:
 
 ```typescript
 import { MeoCordTestingModule, type TestingModule } from 'meocord/testing'
@@ -2069,7 +2069,8 @@ it('schedules the reminders it loaded at startup', () => {
 - **Order.** The hooks run as the bot runs them: `onReady` one at a time, each class after the classes and providers it injects, the observers last; `onShutdown` in reverse, so a provided value such as a connection pool closes after everything that uses it.
 - **The client.** `onReady` receives a client from `createMockClient` and `{ primary: true }`. Pass your own with `init({ ready: { client, primary: false } })`.
 - **Failures.** Every hook runs even when one throws. Then `init` or `close` rejects with that error, or with an `AggregateError` naming each hook when several threw, where the bot would log them.
-- **Once.** A second `init({ ready: true })` or `close()` runs nothing more. As in the bot, a module that was never readied runs no `onShutdown`.
+- **What `close()` shuts down.** Every class and provided value the module has constructed, whether or not `init({ ready: true })` ran: the pool a factory made in `init()`, a service a test resolved with `get`, what `invoke` and `emit` built. Nothing is constructed just to be shut down.
+- **Once.** A second `init({ ready: true })` or `close()` runs nothing more.
 
 ### Running a handler with `invoke`
 

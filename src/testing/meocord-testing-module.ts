@@ -122,13 +122,13 @@ export class TestingModule {
     private readonly order: readonly unknown[] = [],
     private readonly messageOptions: MessageCommandOptions = {},
     private readonly lifecycle: readonly LifecycleUnit[] = [],
+    /** The lifecycle units the container has constructed, which `close()` shuts down. */
+    private readonly constructed: ReadonlySet<unknown> = new Set(),
   ) {}
 
   private resolving?: Promise<void>
   private readying?: Promise<void>
   private closing?: Promise<void>
-  /** The units whose `onReady` stage was reached, which `close()` shuts down. */
-  private readonly readied: LifecycleEntry[] = []
 
   /**
    * Resolves the module's `useFactory` providers, awaiting those that return a promise, in dependency
@@ -169,11 +169,11 @@ export class TestingModule {
   }
 
   /**
-   * Runs the `onShutdown` hooks of what `init({ ready: true })` readied, once, as the bot does when it
-   * stops: one at a time, in reverse, so a class stops before the classes and providers it uses. A
-   * provided value with an `onShutdown`, such as a connection pool, is closed after everything that
-   * injects it. Every hook runs even when one fails. As in the bot, a module that was never readied
-   * runs none. Calling it again does nothing more.
+   * Runs the `onShutdown` hooks of every class and provided value the module has constructed, once, as
+   * the bot does when it stops: one at a time, in reverse, so a class stops before the classes and
+   * providers it uses. A factory's value, such as a connection pool `init()` made, is closed after
+   * everything that injects it, whether or not `init({ ready: true })` ran. Nothing is constructed
+   * just to be shut down. Every hook runs even when one fails. Calling it again does nothing more.
    *
    * @returns Once every hook has run. Rejects with the error of a hook that failed, or an
    *   `AggregateError` naming each when several did.
@@ -182,7 +182,7 @@ export class TestingModule {
    * ```ts
    * const module = await MeoCordTestingModule.create({ providers: [{ provide: POOL, useFactory: createPool }] })
    *   .compile()
-   *   .init({ ready: true })
+   *   .init()
    *
    * await module.close()
    *
@@ -191,10 +191,14 @@ export class TestingModule {
    */
   async close(): Promise<void> {
     this.closing ??= (async () => {
-      // A close during init waits for the hooks it started, so it shuts down whatever they readied
+      // A close during init waits for the hooks it started, so it shuts down whatever they constructed
       await this.readying?.catch(() => undefined)
+      const entries: LifecycleEntry[] = this.lifecycle
+        .filter(unit => this.constructed.has(unit.token))
+        // Already made, so this returns the instance; a provided value may be anything, null included
+        .map(unit => ({ name: unit.name, instance: (this.container.get(unit.token as ServiceIdentifier) as LifecycleEntry['instance'] | null) ?? {} }))
       const failures: { name: string; error: unknown }[] = []
-      await runShutdownHooks(this.readied, (name, error) => failures.push({ name, error }))
+      await runShutdownHooks(entries, (name, error) => failures.push({ name, error }))
       throwFailures('onShutdown', failures)
     })()
     await this.closing
@@ -204,7 +208,8 @@ export class TestingModule {
     const failures: { name: string; error: unknown }[] = []
     const failed = (unit: LifecycleUnit, error: unknown) => failures.push({ name: unit.name, error })
     // No warning for a hook whose dependency failed: the test sees the dependency's own error
-    await runReadyHooks(this.container, this.lifecycle, client, { primary }, this.readied, { resolveFailed: failed, hookFailed: failed })
+    // What close() shuts down is what was constructed, so the entries the runner records are not kept
+    await runReadyHooks(this.container, this.lifecycle, client, { primary }, [], { resolveFailed: failed, hookFailed: failed })
     throwFailures('onReady', failures)
   }
 
@@ -564,8 +569,16 @@ export class TestingModuleBuilder {
       ...(this.options.controllers ?? []),
       ...observers,
     ]).map(token => ({ token, name: tokenName(token), dependencies: tokenDependencies(container, providers, token) }))
+    // Recorded as the container makes each one, so close() shuts down exactly what exists
+    const constructed = new Set<unknown>()
+    for (const { token } of lifecycle) {
+      container.onActivation(token as ServiceIdentifier, (_context, instance) => {
+        constructed.add(token)
+        return instance
+      })
+    }
 
-    return new TestingModule(container, [...(this.options.controllers ?? [])], appClasses, providers, order, messages, lifecycle)
+    return new TestingModule(container, [...(this.options.controllers ?? [])], appClasses, providers, order, messages, lifecycle, constructed)
   }
 }
 
