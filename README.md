@@ -616,7 +616,17 @@ export class LaunchCommandBuilder {
 
 ## Command Parameters
 
-Buttons, select menus and modals route on their `customId`, and a pattern can capture parts of it. Captured values arrive as the handler's second argument. A modal handler's second argument also carries the submitted fields, keyed by their customId: a text input's text, a select's chosen values. When a field and a captured value share a name, the captured value wins, and development logs a warning.
+Buttons, select menus and modals route on their `customId`, and a pattern can capture parts of it. Captured values arrive as the handler's second argument. A modal handler's second argument also carries the submitted fields, keyed by their customId: a text input's text, a select's chosen values. A select menu handler's carries what the user chose:
+
+| Select menu | Second argument, beside the captured values                                    |
+| ----------- | ------------------------------------------------------------------------------ |
+| String      | `values`: the chosen options' values                                           |
+| User        | `values`, the chosen ids; `users`, the `User`s; `members`, those in the server |
+| Role        | `values`; `roles`, the `Role`s                                                 |
+| Channel     | `values`; `channels`, the channels                                             |
+| Mentionable | `values`; `users`, `members` and `roles`, as they were chosen                  |
+
+So [`@Validate`](#validation-and-pipes), pipes and [`@Cooldown({ by })`](#counting-per-resource) see a choice as they see a modal field: `@Cooldown({ seconds: 3600, per: 'global', by: (_context, { values }: { values: string[] }) => values[0] })` limits each option of a poll on its own. When a field or a choice and a captured value share a name, the captured value wins, and development logs a warning.
 
 ```typescript
 @Command('profile/{ownerId}/{uid}', CommandType.BUTTON)
@@ -1125,7 +1135,7 @@ async ban(interaction: ChatInputCommandInteraction) { ... }
 
 Use params for configuring one guard (`{ provide, params }`, [above](#passing-options-to-a-guard)), and `createMetadata` for facts about a handler that any guard can read. `ExecutionContext` is injected only into guards: each call gets its own, so a controller or service, which is shared across calls, cannot inject it. The context also gives the handler's arguments (`getArgs()`, `getInteraction()`, `getMessage()`, `getReaction()`), what it is handling (`getType()`), the controller and method (`getController()`, `getHandlerName()`), and the guard's own params (`getParams()`). Values declared with `SetMetadata` are read with their key: `this.context.get<string[]>('roles')`.
 
-`getHandlerParams<P>()` is the handler's params, its second argument: a command's options, a component's customId params or a modal's fields. It is not `getParams()`, which is the running stage's own `{ provide, params }` configuration. The value is read as it stands when a stage asks:
+`getHandlerParams<P>()` is the handler's params, its second argument: a command's options, a component's customId params, a modal's fields or a select menu's choices. It is not `getParams()`, which is the running stage's own `{ provide, params }` configuration. The value is read as it stands when a stage asks:
 
 - A guard sees the params raw.
 - An interceptor sees them raw before `next.handle()`, and validated and piped after it, as the handler received them.
@@ -1271,7 +1281,7 @@ import { Command, Validate } from 'meocord/decorator'
 async remind(interaction: ChatInputCommandInteraction, { minutes, note }: { minutes: number; note: string }) {}
 ```
 
-The input is one object: a chat command's options, a component's customId params together with a modal's fields, or a [message pattern's](#message-commands) params — what the handler's second argument holds anyway. The handler receives the schema's output, so defaults and coercions apply, and its second parameter is type-checked against it: `{ minutes: string }` above fails to compile.
+The input is one object: a chat command's options, a component's customId params together with a modal's fields or a select menu's choices, or a [message pattern's](#message-commands) params — what the handler's second argument holds anyway. The handler receives the schema's output, so defaults and coercions apply, and its second parameter is type-checked against it: `{ minutes: string }` above fails to compile.
 
 Invalid input stops the call with a `ValidationError` (from `meocord/common`) whose `issues` list each problem and where it is. The user gets a private reply with them. Schema libraries write their messages in English; an exception filter that maps issues to your own words is the place to localise them.
 
@@ -1353,7 +1363,7 @@ For a reusable exemption, compose it: `const Limited = (seconds: number) => appl
 async checkIn(interaction: ButtonInteraction, { uid }: { ownerId: string; uid: string }) {}
 ```
 
-- `by` receives the call's `ExecutionContext` and the handler's params as the handler receives them: a component's customId params, a command's options, a modal's fields, after `@Validate` and pipes. For a piped object, return a stable id from it, such as `({ account }) => account.uid`.
+- `by` receives the call's `ExecutionContext` and the handler's params as the handler receives them: a component's customId params, a command's options, a modal's fields, a select menu's choices, after `@Validate` and pipes. For a piped object, return a stable id from it, such as `({ account }) => account.uid`.
 - Declare the params `by` reads, or pass them as the type argument, `@Cooldown<{ uid: string }>({ … })`, and a key the handler does not receive, or receives as another type, fails to compile. Undeclared, they are `Record<string, unknown>`.
 - With `per: 'global'`, the limit is per resource across every user.
 - Returning `undefined` counts the call as though there were no `by`. An error `by` throws goes to the [exception filters](#exception-filters), and no cooldown on the handler counts the call.
@@ -1953,7 +1963,7 @@ await module.invoke(ProfileController, 'showProfile', interaction, { ownerId: '1
 
 `invoke` resolves to `{ ran }`, which is `false` when a guard denied the call or an interceptor skipped the handler, with `error` set when a filter handled one. An error no filter handles rejects the call, since the built-in fallback does not run in tests. The method name and arguments are type-checked against the handler. Calling the controller method directly runs its guards but no interceptors, validation or filters; `invoke` is the way to test everything dispatch runs around a handler.
 
-Pass the interaction alone and `invoke` builds the params as dispatch does: a command's or an autocomplete's options, or the handler's customId params and a modal's fields. `createModalFields({ body: 'It crashed' })` gives a mock `ModalSubmitInteraction` its submitted fields, which discord.js does not let a test construct.
+Pass the interaction alone and `invoke` builds the params as dispatch does: a command's or an autocomplete's options, or the handler's customId params with a modal's fields or a select menu's choices, from the mock's `values`, `users`, `members`, `roles` and `channels`. `createModalFields({ body: 'It crashed' })` gives a mock `ModalSubmitInteraction` its submitted fields, which discord.js does not let a test construct.
 
 To send a client event to the module's `@On` and `@Once` handlers, use [`emit`](#gateway-events).
 

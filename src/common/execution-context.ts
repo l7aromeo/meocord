@@ -113,7 +113,7 @@ export abstract class ExecutionContext {
 
   /**
    * The handler's params, its second argument: a command's options, a component's customId params, a
-   * modal's fields or a message pattern's params. They are read as they stand when the stage asks. A guard sees them raw. An
+   * modal's fields, a select menu's choices or a message pattern's params. They are read as they stand when the stage asks. A guard sees them raw. An
    * interceptor sees them raw before `next.handle()` and validated and piped after it. A filter sees
    * them as they were when the error was thrown. Not the same as {@link ExecutionContext.getParams},
    * which is the running stage's own configuration.

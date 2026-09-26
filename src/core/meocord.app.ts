@@ -544,7 +544,7 @@ export class MeoCordApp implements MeoCordApplication {
       if (this.warnedCollisions.has(key)) continue
       this.warnedCollisions.add(key)
       this.logger.warn(
-        `"${name}" is both a customId param and a modal field of ${methodName}; the handler receives the customId ` +
+        `"${name}" is both a customId param and a modal field or select menu choice of ${methodName}; the handler receives the customId ` +
           `param. Rename one to receive both.`,
       )
     }
