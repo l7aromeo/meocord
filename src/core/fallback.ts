@@ -1,6 +1,6 @@
 import { type AutocompleteInteraction } from 'discord.js'
 import { type ExecutionContext } from '@src/common/execution-context.js'
-import { CommandNotFoundError, CooldownError, GuardDeniedError, ValidationError } from '@src/common/errors.js'
+import { CommandNotFoundError, CooldownError, CooldownStoreError, GuardDeniedError, ValidationError } from '@src/common/errors.js'
 import { type Logger } from '@src/common/logger.js'
 import { respond } from '@src/common/response/response-state.js'
 import { describeInteraction } from '@src/util/interaction.util.js'
@@ -48,6 +48,8 @@ export function createFallback(logger: Logger): Fallback {
     if (!interaction) {
       // A message sent too often is ignored, as a cooldown means; it is not a fault to report.
       if (error instanceof CooldownError) logger.debug(`Cooldown (${error.per}) skipped ${describeCall(context)}`)
+      // Logged once per outage where the store failed, rather than for every call it refused
+      else if (error instanceof CooldownStoreError) logger.debug(`Cooldown store down; skipped ${describeCall(context)}`)
       else logger.error(`Error handling ${describeCall(context)}:`, error)
       return
     }
@@ -76,6 +78,9 @@ export function createFallback(logger: Logger): Fallback {
       await respond(interaction).error(error, { message: error.message, visibility: 'private' })
     } else if (error instanceof CooldownError) {
       logger.debug(`Cooldown (${error.per}) blocked ${describeInteraction(interaction)} for ${error.retryAfterMs} ms`)
+      await respond(interaction).error(error, { message: error.message, visibility: 'private' })
+    } else if (error instanceof CooldownStoreError) {
+      logger.debug(`Cooldown store down; refused ${describeInteraction(interaction)}`)
       await respond(interaction).error(error, { message: error.message, visibility: 'private' })
     } else if (error instanceof ValidationError) {
       // The caller's own input is wrong: only they need to see which part, and it is no fault to log.

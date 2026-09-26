@@ -295,9 +295,10 @@ describe('ShardManager', () => {
     await manager.start()
     const limit = { uses: 1, windowMs: 60_000 }
 
-    shards[0].emit('message', { meocord: 'cooldown', id: 'zero:0', key: 'Ping.run#0:per:user:1', limit })
+    const entries = [{ key: 'Ping.run#0:per:user:1', limit }]
+    shards[0].emit('message', { meocord: 'cooldown', id: 'zero:0', entries })
     await vi.waitFor(() => expect(shards[0].sent).toHaveLength(1))
-    shards[1].emit('message', { meocord: 'cooldown', id: 'one:0', key: 'Ping.run#0:per:user:1', limit })
+    shards[1].emit('message', { meocord: 'cooldown', id: 'one:0', entries })
     await vi.waitFor(() => expect(shards[1].sent).toHaveLength(1))
 
     expect(shards[0].sent[0]).toEqual({ meocord: 'cooldown-verdict', id: 'zero:0', verdict: { allowed: true, retryAfterMs: 0 } })

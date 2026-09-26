@@ -6,8 +6,8 @@ const limit = { uses: 2, windowMs: 5_000 }
 const sha1 = (text: string) => createHash('sha1').update(text).digest('hex')
 
 describe('RedisCooldownStore', () => {
-  it('runs one script with the prefixed key, the limit and a nonce for the call', async () => {
-    const evaluate = createMockFn<RedisEval>(() => Promise.resolve([1, 0]))
+  it('runs one script with the prefixed key, a nonce for the call, and the limit', async () => {
+    const evaluate = createMockFn<RedisEval>(() => Promise.resolve([1, 0, -1]))
     const store = new RedisCooldownStore(evaluate)
 
     await store.consume('Ping.run#0:per:user:1', limit)
@@ -16,40 +16,99 @@ describe('RedisCooldownStore', () => {
     const [[script, keys, args], [, , second]] = evaluate.mock.calls
     expect(script).toContain("redis.call('TIME')")
     expect(keys).toEqual(['meocord:cooldown:Ping.run#0:per:user:1'])
-    expect(args.slice(0, 2)).toEqual(['2', '5000'])
-    expect(args[2]).not.toBe(second[2])
+    expect(args.slice(1)).toEqual(['2', '5000'])
+    expect(args[0]).not.toBe(second[0])
+  })
+
+  it("sends every cooldown of a call in one script, each key's limit after the nonce", async () => {
+    const evaluate = createMockFn<RedisEval>(() => Promise.resolve([1, 0, -1]))
+
+    await new RedisCooldownStore(evaluate).consumeMany([
+      { key: 'Ping.run#0:user:user:1', limit: { uses: 1, windowMs: 3_000 } },
+      { key: 'Ping.run#1:user:user:1', limit: { uses: 5, windowMs: 60_000 } },
+    ])
+
+    expect(evaluate).toHaveBeenCalledTimes(1)
+    const [, keys, args] = evaluate.mock.calls[0]
+    expect(keys).toEqual(['meocord:cooldown:Ping.run#0:user:user:1', 'meocord:cooldown:Ping.run#1:user:user:1'])
+    expect(args.slice(1)).toEqual(['1', '3000', '5', '60000'])
   })
 
   it('puts its own prefix before every key', async () => {
-    const evaluate = createMockFn<RedisEval>(() => Promise.resolve([1, 0]))
+    const evaluate = createMockFn<RedisEval>(() => Promise.resolve([1, 0, -1]))
 
     await new RedisCooldownStore(evaluate, { prefix: 'bot:cd:' }).consume('k', limit)
 
     expect(evaluate.mock.calls[0][1]).toEqual(['bot:cd:k'])
   })
 
+  it("with hashTag: 'handler', puts a handler's keys in one Cluster slot", async () => {
+    const evaluate = createMockFn<RedisEval>(() => Promise.resolve([1, 0, -1]))
+
+    await new RedisCooldownStore(evaluate, { hashTag: 'handler' }).consumeMany([
+      { key: 'Ping.run#0:user:user:1', limit },
+      { key: 'Ping.run#1:guild:guild:2', limit },
+    ])
+
+    expect(evaluate.mock.calls[0][1]).toEqual([
+      'meocord:cooldown:{Ping.run}#0:user:user:1',
+      'meocord:cooldown:{Ping.run}#1:guild:guild:2',
+    ])
+  })
+
   it.each([
-    [[1, 0], { allowed: true, retryAfterMs: 0 }],
-    [[0, 1234], { allowed: false, retryAfterMs: 1234 }],
+    [[1, 0, -1], { allowed: true, retryAfterMs: 0 }],
+    [[0, 1234, 0], { allowed: false, retryAfterMs: 1234, blocked: 0 }],
     // Some clients reply with strings
-    [['0', '42'], { allowed: false, retryAfterMs: 42 }],
+    [['0', '42', '0'], { allowed: false, retryAfterMs: 42, blocked: 0 }],
   ])('reads the reply %j as %j', async (reply, verdict) => {
     const store = new RedisCooldownStore(() => Promise.resolve(reply))
 
-    expect(await store.consume('k', limit)).toEqual(verdict)
+    expect(await store.consumeMany([{ key: 'k', limit }])).toEqual(verdict)
   })
 
-  it.each([null, 'OK', [2, 0], [0]])('says what it expected when the adapter resolves to %j', async reply => {
+  it('reports a single consume without the index of the key that refused it', async () => {
+    const store = new RedisCooldownStore(() => Promise.resolve([0, 900, 0]))
+
+    expect(await store.consume('k', limit)).toEqual({ allowed: false, retryAfterMs: 900 })
+  })
+
+  it.each([null, 'OK', [2, 0, -1], [0], [1, 0], [0, 10, 3]])('says what it expected when the adapter resolves to %j', async reply => {
     const store = new RedisCooldownStore(() => Promise.resolve(reply))
 
-    await expect(store.consume('k', limit)).rejects.toThrow(/replied .*where it returns \[allowed, retryAfterMs\]/)
+    await expect(store.consume('k', limit)).rejects.toThrow(/replied .*where it returns \[allowed, retryAfterMs, index\]/)
+  })
+
+  it('on Redis Cluster, counts keys in other slots with a script each, in order, stopping at a refusal', async () => {
+    const replies = [
+      [1, 0, -1],
+      [0, 2_000, 0],
+    ]
+    const evaluate = createMockFn<RedisEval>((_script, keys) =>
+      keys.length > 1
+        ? Promise.reject(new Error("CROSSSLOT Keys in request don't hash to the same slot"))
+        : Promise.resolve(replies.shift()),
+    )
+
+    const verdict = await new RedisCooldownStore(evaluate).consumeMany([
+      { key: 'a', limit },
+      { key: 'b', limit },
+      { key: 'c', limit },
+    ])
+
+    expect(verdict).toEqual({ allowed: false, retryAfterMs: 2_000, blocked: 1 })
+    expect(evaluate.mock.calls.map(([, keys]) => keys)).toEqual([
+      ['meocord:cooldown:a', 'meocord:cooldown:b', 'meocord:cooldown:c'],
+      ['meocord:cooldown:a'],
+      ['meocord:cooldown:b'],
+    ])
   })
 
   it('sends the script by its SHA1 when given evalsha, and in full only when the server answers NOSCRIPT', async () => {
-    const evaluate = createMockFn<RedisEval>(() => Promise.resolve([1, 0]))
+    const evaluate = createMockFn<RedisEval>(() => Promise.resolve([1, 0, -1]))
     let loaded = false
     const evalsha = createMockFn<RedisEvalSha>(() =>
-      loaded ? Promise.resolve([1, 0]) : Promise.reject(new Error('NOSCRIPT No matching script. Please use EVAL.')),
+      loaded ? Promise.resolve([1, 0, -1]) : Promise.reject(new Error('NOSCRIPT No matching script. Please use EVAL.')),
     )
     const store = new RedisCooldownStore(evaluate, { evalsha })
 
@@ -62,7 +121,7 @@ describe('RedisCooldownStore', () => {
   })
 
   it('passes on an error from evalsha that is not NOSCRIPT', async () => {
-    const evaluate = createMockFn<RedisEval>(() => Promise.resolve([1, 0]))
+    const evaluate = createMockFn<RedisEval>(() => Promise.resolve([1, 0, -1]))
     const store = new RedisCooldownStore(evaluate, { evalsha: () => Promise.reject(new Error('READONLY replica')) })
 
     await expect(store.consume('k', limit)).rejects.toThrow('READONLY replica')
@@ -71,7 +130,7 @@ describe('RedisCooldownStore', () => {
 
   describe('using', () => {
     it('makes a class @MeoCord({ cooldownStore }) can resolve, with nothing to inject', async () => {
-      const evaluate = createMockFn<RedisEval>(() => Promise.resolve([0, 900]))
+      const evaluate = createMockFn<RedisEval>(() => Promise.resolve([0, 900, 0]))
       const Store = RedisCooldownStore.using(evaluate, { prefix: 'p:' })
       const store = new Store()
 

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { CooldownStore, CooldownVerdict } from '@src/common/cooldown-store.js'
+import { CooldownStore, type CooldownVerdict } from '@src/common/cooldown-store.js'
 
 /** The assertions the suite makes, which both Vitest's and Jest's `expect` provide. */
 interface Expectation {
@@ -119,5 +119,54 @@ export function testCooldownStore(
 
       expect(verdicts.filter(verdict => verdict.allowed).length).toBe(1)
     })
+
+    test('counts a call against all of a batch at once, and names the longest wait when one refuses', async store => {
+      const short = { uses: 2, windowMs: 1_000 }
+      const long = { uses: 1, windowMs: 2_000 }
+      const batch = [
+        { key: key('batch-short'), limit: short },
+        { key: key('batch-long'), limit: long },
+      ]
+      expect(await store.consumeMany(batch)).toEqual({ allowed: true, retryAfterMs: 0 })
+
+      const refused = await store.consumeMany(batch)
+      expect(refused.allowed).toBe(false)
+      expect(refused.blocked).toBe(1)
+      expect(refused.retryAfterMs).toBeGreaterThan(short.windowMs)
+      expect(refused.retryAfterMs).toBeLessThanOrEqual(long.windowMs)
+    })
+
+    // The default consumeMany counts in order, as custom stores always have, so these hold for a store
+    // that overrides it: a store that does not passes them without them being checked
+    test('records nothing when one cooldown of a batch refuses it, for a store that overrides consumeMany', async store => {
+      if (!overridesConsumeMany(store)) return
+      const limit = { uses: 1, windowMs: 2_000 }
+      await store.consume(key('taken'), limit)
+
+      const refused = await store.consumeMany([
+        { key: key('free'), limit },
+        { key: key('taken'), limit },
+      ])
+      expect(refused.allowed).toBe(false)
+      expect(refused.blocked).toBe(1)
+      expect((await store.consume(key('free'), limit)).allowed).toBe(true)
+    })
+
+    test('lets exactly one of several concurrent batches take the last use of each, for a store that overrides consumeMany', async store => {
+      if (!overridesConsumeMany(store)) return
+      const limit = { uses: 1, windowMs: 2_000 }
+      const batch = [
+        { key: key('concurrent-a'), limit },
+        { key: key('concurrent-b'), limit },
+      ]
+      const verdicts = await Promise.all(Array.from({ length: 8 }, () => store.consumeMany(batch)))
+
+      expect(verdicts.filter(verdict => verdict.allowed).length).toBe(1)
+    })
   })
+}
+
+/** Whether a store overrides `consumeMany`, as a store that counts a batch at once does. */
+function overridesConsumeMany(store: CooldownStore): boolean {
+  return store.consumeMany !== CooldownStore.prototype.consumeMany
 }

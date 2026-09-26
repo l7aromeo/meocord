@@ -17,6 +17,7 @@ import { type CooldownStore } from '@src/common/cooldown-store.js'
 import { type Provider } from '@src/interface/provider.interface.js'
 import { providerMap } from '@src/core/providers.js'
 import { assertObservers } from '@src/core/observer-runner.js'
+import { type CooldownStoreFailure } from '@src/core/cooldown-runner.js'
 
 /** Refuses a `messages` option of the wrong type where the app is declared, rather than at the first message. */
 function assertMessageOptions(messages: MessageCommandOptions | undefined): void {
@@ -53,6 +54,11 @@ function assertMessageOptions(messages: MessageCommandOptions | undefined): void
  *   errors outside any handler, such as `CommandNotFoundError`.
  * @param options.cooldownStore - Where `@Cooldown` counts calls, in place of this process's memory: a
  *   class extending `CooldownStore`, resolved like a service so it can inject its client.
+ * @param options.cooldownStoreFailure - What a call with a cooldown gets when the store throws, rejects or
+ *   does not answer in time: `'deny'`, the default, refuses it with `CooldownStoreError`, which the fallback
+ *   answers privately; `'allow'` runs it uncounted. Either way the failure is logged once per outage.
+ * @param options.cooldownStoreTimeoutMs - How long a call waits for the cooldown store before it counts as
+ *   a failure. Defaults to `1000`.
  * @param options.i18n - The translator `createTranslator` made, injected as `Translator` wherever a class
  *   asks for one.
  * @param options.presenter - The `ResponsePresenter` that styles loading and error views, resolved once
@@ -100,6 +106,8 @@ export function MeoCord(options: {
   )[]
   i18n?: Translator<any>
   cooldownStore?: new (...args: any[]) => CooldownStore
+  cooldownStoreFailure?: CooldownStoreFailure
+  cooldownStoreTimeoutMs?: number
   presenter?: new (...args: any[]) => ResponsePresenter
   messages?: MessageCommandOptions
   observers?: (new (...args: any[]) => DispatchObserver)[]
@@ -112,8 +120,27 @@ export function MeoCord(options: {
     // Checked where the app is declared, so a malformed provider fails at import rather than at start
     providerMap(options.providers ?? [], '@MeoCord({ providers })')
     assertMessageOptions(options.messages)
+    assertCooldownPolicy(target.name, options)
     makeInjectable(target)
 
     Reflect.defineMetadata(MetadataKey.AppOptions, options, target)
+  }
+}
+
+/** Refuses a cooldown policy the runner cannot follow, where the app is declared. */
+function assertCooldownPolicy(
+  appName: string,
+  { cooldownStoreFailure, cooldownStoreTimeoutMs }: { cooldownStoreFailure?: unknown; cooldownStoreTimeoutMs?: unknown },
+): void {
+  if (cooldownStoreFailure !== undefined && cooldownStoreFailure !== 'deny' && cooldownStoreFailure !== 'allow') {
+    throw new TypeError(`@MeoCord({ cooldownStoreFailure }) on ${appName} must be 'deny' or 'allow' (got ${JSON.stringify(cooldownStoreFailure)}).`)
+  }
+  if (
+    cooldownStoreTimeoutMs !== undefined &&
+    !(typeof cooldownStoreTimeoutMs === 'number' && Number.isFinite(cooldownStoreTimeoutMs) && cooldownStoreTimeoutMs > 0)
+  ) {
+    throw new TypeError(
+      `@MeoCord({ cooldownStoreTimeoutMs }) on ${appName} must be a number of milliseconds above 0 (got ${JSON.stringify(cooldownStoreTimeoutMs)}).`,
+    )
   }
 }

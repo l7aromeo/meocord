@@ -13,6 +13,8 @@ import {
   CommandNotFoundError,
   CooldownError,
   cooldownMessage,
+  CooldownStoreError,
+  cooldownStoreMessage,
   GuardDeniedError,
   Theme,
   ValidationError,
@@ -69,6 +71,14 @@ describe('the fallback', () => {
     expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('Cooldown (channel)'))
   })
 
+  // The runner logs a failing store once per outage; each call it refused is not logged again
+  it('logs a message a failing cooldown store refused at debug level only', async () => {
+    const logger = await fail(createMockMessage(), new CooldownStoreError(new Error('down'), false))
+
+    expect(logger.error).not.toHaveBeenCalled()
+    expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('Cooldown store down'))
+  })
+
   it('still logs any other error from a message as an error', async () => {
     const logger = await fail(createMockMessage())
 
@@ -104,6 +114,17 @@ describe('the fallback', () => {
 
       const payload = sent(interaction.reply)
       expect(describedAs(payload)).toBe('Owners only.')
+      expect(payload.flags).toBe(Ephemeral)
+      expect(logger.error).not.toHaveBeenCalled()
+    })
+
+    it('tells a caller a failing cooldown store refused, privately, logging it only at debug level', async () => {
+      const interaction = createMockInteraction(ChatInputCommandInteraction)
+
+      const logger = await fail(interaction, new CooldownStoreError(undefined, true))
+
+      const payload = sent(interaction.reply)
+      expect(describedAs(payload)).toBe(cooldownStoreMessage())
       expect(payload.flags).toBe(Ephemeral)
       expect(logger.error).not.toHaveBeenCalled()
     })

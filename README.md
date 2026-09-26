@@ -1322,7 +1322,7 @@ import { Cooldown } from 'meocord/decorator'
 async daily(interaction: ChatInputCommandInteraction) {}
 ```
 
-Stacked cooldowns are counted in the order they read, a controller's first, and a call blocked by one has already spent those above it. Put the short one first, as here: a call made 1 second after the last is refused by the 3-second cooldown before it reaches the per-minute one. Written the other way round, each such call would spend one of the 5 before being refused.
+Stacked cooldowns are counted together, a controller's first: the call is checked against every one of them, and counted against all of them only if all allow it, so a call one cooldown refuses spends none of the others. It waits the longest wait among those that refuse it. That holds for every store MeoCord ships; a store of your own counts them one after another unless it overrides `consumeMany` (see [Any other database](#where-calls-are-counted)).
 
 | Option    | Default  | Description                                                                                                                               |
 | --------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1379,7 +1379,7 @@ import { ShardedCooldownStore } from 'meocord/common'
 export default class App {}
 ```
 
-The manager's counts are kept while it runs: a shard that restarts keeps them, but they start again when the whole bot restarts, as the default store's do. If the manager does not answer within a second, a shard counts the call itself and logs a warning, once. Without process sharding it counts in the one process, which is exact there too.
+The manager's counts are kept while it runs: a shard that restarts keeps them, but they start again when the whole bot restarts, as the default store's do. A handler's stacked cooldowns go to the manager as one message. A manager that does not answer in time is a store failure, handled as [below](#when-the-store-fails). Without process sharding it counts in the one process, which is exact there too.
 
 **Redis, and servers that speak its protocol.** `RedisCooldownStore` from `meocord/common` counts each key in a sorted set, trimmed, counted and added to by one Lua script, timed by the server's `TIME` so every process counts by one clock, with every key set to expire. MeoCord depends on no Redis client: give `RedisCooldownStore.using` a function that runs a script with the one you have.
 
@@ -1399,11 +1399,33 @@ export default class App {}
 
 With ioredis, run it as `(script, keys, args) => redis.eval(script, keys.length, ...keys, ...args)`. Keys start with `meocord:cooldown:`; pass `{ prefix }` for your own. Pass `{ evalsha }`, such as `(sha, keys, args) => redis.evalSha(sha, { keys, arguments: args })`, to send the script by its SHA1, and in full only when the server answers `NOSCRIPT`.
 
+One script counts all of a handler's stacked cooldowns, so a call costs one round trip however many it has. On **Redis Cluster** a handler's keys usually sit in different slots, which one script cannot reach: the store then counts each key with a script of its own, in order, so there a call one cooldown refuses has counted against those before it. Pass `{ hashTag: 'handler' }` to keep each handler's keys in one slot, `{Controller.method}#…`, and its cooldowns one step; every call to that handler then lands on that one slot.
+
 The same script runs on Redis 5 and later, Valkey, KeyDB, Dragonfly and Upstash, which runs `EVAL`. Garnet runs Lua only in part: check it with [`testCooldownStore`](#checking-a-store) before relying on it.
 
-**Any other database.** Extend `CooldownStore`. It is resolved like a service, so it can inject its client, and its `consume` must check and record a call in one step, so two calls at the limit cannot both pass. See [Store recipes](#store-recipes) for Postgres, SQLite and MongoDB, and check yours with [`testCooldownStore`](#checking-a-store).
+**Any other database.** Extend `CooldownStore`. It is resolved like a service, so it can inject its client, and its `consume` must check and record a call in one step, so two calls at the limit cannot both pass. `@Cooldown` calls `consumeMany(entries)` once per call, with every stacked cooldown; its default calls `consume` for each in order and stops at the first refusal. Override it to check them all and record the call against all only if all allow it, in one round trip, as the built-in stores do — worth it for any store behind a network. See [Store recipes](#store-recipes) for Postgres, SQLite and MongoDB, and check yours with [`testCooldownStore`](#checking-a-store).
 
 In tests, each `MeoCordTestingModule` counts in a fresh in-memory store; provide `{ provide: CooldownStore, useValue }` to use another. `inspectHandler(Controller, 'method').cooldowns` lists a handler's cooldowns with their defaults.
+
+### When the store fails
+
+A shared store can be down, restarting or cut off. When it throws, rejects or does not answer within `cooldownStoreTimeoutMs` (a second by default), `cooldownStoreFailure` decides what the call gets:
+
+```typescript
+@MeoCord({
+  controllers: [...],
+  clientOptions: {...},
+  cooldownStore: RedisStore,
+  cooldownStoreFailure: 'allow', // 'deny' by default
+  cooldownStoreTimeoutMs: 500,
+})
+export default class App {}
+```
+
+- **`'deny'`**, the default, refuses the call with `CooldownStoreError` from `meocord/common`: a cooldown that cannot be checked is not known to allow it. The fallback answers only the caller, "Cooldowns can't be checked right now: try again shortly.", through the presenter's error view; a filter catching `CooldownStoreError` can say it otherwise, or in the user's language. Observers see `outcome: 'error'` with that error.
+- **`'allow'`** runs the call without counting it, keeping the bot available while the store is down.
+
+Either way the failure is logged once per outage, with its cause, and again when the store answers. MeoCord never counts a call itself or asks twice, so a store that answers after the timeout records the call once, in the store; under `'deny'` that call was refused and still spent a use there.
 
 ### Checking a store
 

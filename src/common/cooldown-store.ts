@@ -13,6 +13,18 @@ export interface CooldownVerdict {
   retryAfterMs: number
 }
 
+/** One cooldown a call counts against: the key it counts under, and its limit. */
+export interface CooldownEntry {
+  key: string
+  limit: CooldownLimit
+}
+
+/** Whether a call may run against every cooldown it counts against, and if not, which refused it. */
+export interface CooldownBatchVerdict extends CooldownVerdict {
+  /** The index of the entry that refused the call; with several, the one with the longest wait. */
+  blocked?: number
+}
+
 /**
  * Where `@Cooldown` counts calls. The default keeps them in memory, in this process; bind another with
  * `@MeoCord({ cooldownStore })` so shards or several processes share one count: `ShardedCooldownStore`,
@@ -46,6 +58,38 @@ export abstract class CooldownStore {
    * @returns Whether this call was recorded, and if not, how long until one can be.
    */
   abstract consume(key: string, limit: CooldownLimit): Promise<CooldownVerdict>
+
+  /**
+   * Records a call against every entry: all of a handler's stacked cooldowns, in one step. `@Cooldown`
+   * calls this, once per call.
+   *
+   * This default calls {@link consume} for each entry in order and stops at the first that refuses, so
+   * the entries before it have counted the call. Override it to check every entry and record the call
+   * against all of them only if all allow it, in one round trip: the built-in stores do, and a store
+   * behind a network should.
+   *
+   * @param entries - The keys and limits the call counts against, in the order the cooldowns are declared.
+   * @returns Whether the call was recorded, and if not, how long until it can be and which entry refused it.
+   */
+  async consumeMany(entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
+    for (const [index, { key, limit }] of entries.entries()) {
+      const verdict = await this.consume(key, limit)
+      if (!verdict.allowed) return { ...verdict, blocked: index }
+    }
+    return { allowed: true, retryAfterMs: 0 }
+  }
+}
+
+/**
+ * Of several refusals, the one a caller waits on: the call runs only once every entry allows it, so the
+ * longest wait. Undefined when nothing refused.
+ */
+export function longestRefusal(verdicts: readonly CooldownVerdict[]): CooldownBatchVerdict | undefined {
+  let refusal: CooldownBatchVerdict | undefined
+  for (const [index, verdict] of verdicts.entries()) {
+    if (!verdict.allowed && (!refusal || verdict.retryAfterMs > refusal.retryAfterMs)) refusal = { ...verdict, blocked: index }
+  }
+  return refusal
 }
 
 /** How often the in-memory store drops keys whose every call has left its window. */
@@ -62,23 +106,33 @@ export class MemoryCooldownStore extends CooldownStore {
   private readonly calls = new Map<string, { times: number[]; windowMs: number }>()
   private sweeper?: ReturnType<typeof setInterval>
 
-  consume(key: string, { uses, windowMs }: CooldownLimit): Promise<CooldownVerdict> {
+  async consume(key: string, limit: CooldownLimit): Promise<CooldownVerdict> {
+    const { allowed, retryAfterMs } = await this.consumeMany([{ key, limit }])
+    return { allowed, retryAfterMs }
+  }
+
+  /** Checks every entry, and records the call against all of them only if all allow it. */
+  consumeMany(entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
     const now = Date.now()
-    const entry = this.calls.get(key) ?? { times: [], windowMs }
-    entry.windowMs = windowMs
-    entry.times = entry.times.filter(time => now - time < windowMs)
-
-    let verdict: CooldownVerdict
-    if (entry.times.length < uses) {
-      entry.times.push(now)
-      verdict = { allowed: true, retryAfterMs: 0 }
-    } else {
-      verdict = { allowed: false, retryAfterMs: entry.times[entry.times.length - uses] + windowMs - now }
-    }
-
-    this.calls.set(key, entry)
+    const counts = entries.map(({ key, limit: { windowMs } }) => {
+      const entry = this.calls.get(key) ?? { times: [], windowMs }
+      entry.windowMs = windowMs
+      entry.times = entry.times.filter(time => now - time < windowMs)
+      this.calls.set(key, entry)
+      return entry
+    })
     this.startSweeping()
-    return Promise.resolve(verdict)
+
+    const verdicts = entries.map(({ limit: { uses, windowMs } }, index): CooldownVerdict => {
+      const { times } = counts[index]
+      return times.length < uses ? { allowed: true, retryAfterMs: 0 } : { allowed: false, retryAfterMs: times[times.length - uses] + windowMs - now }
+    })
+    const refusal = longestRefusal(verdicts)
+    if (refusal) return Promise.resolve(refusal)
+
+    // Nothing awaited since the check, so no other call can take a use in between
+    for (const entry of counts) entry.times.push(now)
+    return Promise.resolve({ allowed: true, retryAfterMs: 0 })
   }
 
   /** The number of keys held, for tests of the sweep. */

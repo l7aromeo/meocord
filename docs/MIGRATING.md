@@ -477,6 +477,17 @@ the choices; check a count that subtracted them.
   name gives its whole path to the class: `admin/ban` makes `AdminBanButtonController`. Files you
   generated before keep theirs; one whose `'baka'` pattern clashes with the sample's stops the bot at
   startup, and renaming either fixes it.
+- **Stacked cooldowns are counted together.** With the stores MeoCord ships, a call is counted against all
+  of a handler's cooldowns only if all of them allow it, so a call one refuses no longer spends those
+  declared before it; the order you write them in stops mattering. A store of your own counts them as
+  before, one after another, unless it overrides `consumeMany`.
+- **A failing cooldown store refuses the call.** A store that throws, rejects or does not answer within a
+  second now refuses calls with `CooldownStoreError`, answered privately and logged once per outage, where
+  its error used to reach the fallback, and the log, on every call. `@MeoCord({ cooldownStoreFailure:
+'allow' })` lets such calls run uncounted instead, and `cooldownStoreTimeoutMs` sets the wait.
+- **`ShardedCooldownStore` no longer counts in the shard when the manager does not answer.** Under the
+  default `'deny'`, those calls are refused until it answers; `cooldownStoreFailure: 'allow'` keeps them
+  running, uncounted, rather than counting per shard.
 - `process.env` values that `meocord.config.ts` loads are set before any application module runs,
   after a rebuild. An option such as `@MeoCord({ activities: [{ name: process.env.STATUS! }] })` read
   `undefined` in 4.0.

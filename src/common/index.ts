@@ -6,10 +6,18 @@ export { createToken } from '@src/common/token.js'
 export type { MetadataDecorator } from '@src/common/metadata.js'
 export { ExecutionContext } from '@src/common/execution-context.js'
 export type { ExecutionContextType } from '@src/common/execution-context.js'
-export { CommandNotFoundError, CooldownError, cooldownMessage, GuardDeniedError, ValidationError } from '@src/common/errors.js'
+export {
+  CommandNotFoundError,
+  CooldownError,
+  cooldownMessage,
+  CooldownStoreError,
+  cooldownStoreMessage,
+  GuardDeniedError,
+  ValidationError,
+} from '@src/common/errors.js'
 export type { CooldownScope } from '@src/common/errors.js'
 export { CooldownStore, MemoryCooldownStore } from '@src/common/cooldown-store.js'
-export type { CooldownLimit, CooldownVerdict } from '@src/common/cooldown-store.js'
+export type { CooldownBatchVerdict, CooldownEntry, CooldownLimit, CooldownVerdict } from '@src/common/cooldown-store.js'
 export { RedisCooldownStore } from '@src/common/redis-cooldown-store.js'
 export { ShardedCooldownStore } from '@src/common/sharded-cooldown-store.js'
 export type { RedisCooldownStoreOptions, RedisEval, RedisEvalSha } from '@src/common/redis-cooldown-store.js'
