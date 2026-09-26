@@ -69,10 +69,14 @@ const external = id => {
   return true
 }
 
-/** Suppress expected warnings for type-only barrel files */
+/** Suppress expected warnings for type-only barrel files, and fail on a public type no entry exports */
 const onwarn = (warning, warn) => {
   if (warning.code === 'EMPTY_BUNDLE' && warning.message.includes('interface/index')) {
     return // Type-only files produce empty bundles by design
+  }
+  // Consumers would get TS2742 naming a hashed chunk, where the type needs an entry to export it
+  if (warning.message.includes('private shared type exports with no public re-export')) {
+    throw new Error(warning.message)
   }
   warn(warning)
 }
