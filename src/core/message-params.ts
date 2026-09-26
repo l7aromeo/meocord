@@ -1,7 +1,8 @@
 import { Collection, type GuildMember, type Message } from 'discord.js'
 import { MessageUsageError, type MessageUsageIssue } from '@src/common/errors.js'
 import { type MessageParamType } from '@src/interface/index.js'
-import { type MessageRoute, type PatternToken } from '@src/core/message-routes.js'
+import { type FlagToken, type MessageRoute, type PatternToken } from '@src/core/message-routes.js'
+import { type GivenFlag, scanFlags, splitWords } from '@src/core/message-words.js'
 
 type ParamToken = Extract<PatternToken, { param: string }>
 
@@ -99,17 +100,23 @@ function usageWord(token: ParamToken): string {
   return token.optional ? `[${name}]` : `<${name}>`
 }
 
+/** How the usage shows a flag: `[--bots]`, `--limit=<limit>`, or `[--from=<from>]` when optional. */
+function flagUsage(flag: FlagToken): string {
+  if (flag.type === undefined) return `[--${flag.flag}]`
+  const shown = `--${flag.flag}=<${flag.flag}>`
+  return flag.optional ? `[${shown}]` : shown
+}
+
 /** A route's usage as the user types it, after the start the message used, spacing included: `!ban <target> [reason…]`. */
-export function usageOf(route: Pick<MessageRoute, 'tokens'>, start: string): string {
-  return start + route.tokens.map(token => ('literal' in token ? token.literal : usageWord(token))).join(' ')
+export function usageOf(route: Pick<MessageRoute, 'tokens' | 'flags'>, start: string): string {
+  return start + [...route.tokens.map(token => ('literal' in token ? token.literal : usageWord(token))), ...route.flags.map(flagUsage)].join(' ')
 }
 
 /** The issue for a word that is not a value of its param's type. */
-function wrongType(token: ParamToken, word: string, types: Record<string, MessageParamType> | undefined): MessageUsageIssue {
-  const type = token.type!
-  const choices = choicesOf(type)
-  const expected = choices ? `one of ${choices.join(', ')}` : `a ${types?.[type]?.label ?? LABELS[type] ?? type}`
-  return { param: token.param, message: `${token.param}: "${word}" is not ${expected}` }
+function wrongType(item: Item, types: Record<string, MessageParamType> | undefined): MessageUsageIssue {
+  const choices = choicesOf(item.type)
+  const expected = choices ? `one of ${choices.join(', ')}` : `a ${types?.[item.type]?.label ?? LABELS[item.type] ?? item.type}`
+  return { param: item.key, message: `${item.label}: "${item.word}" is not ${expected}` }
 }
 
 /**
@@ -128,14 +135,27 @@ export function assertMessageScope(route: MessageRoute, message: Message, start:
   }
 }
 
+/** One word to turn into a value, a param's, a flag's or a list item's, and where the value goes. */
+interface Item {
+  key: string
+  /** How issues name it: the param's name, or the flag as typed, `--from`. */
+  label: string
+  type: string
+  word: string
+  /** Its place in a list. */
+  index?: number
+}
+
 /**
- * The params a matched route's handler receives: each typed param's word turned into its value, mentions and
- * IDs into the server's members, users, roles and channels. Nothing is fetched that a cache holds: a
- * mentioned member arrives with the message, and roles and channels are cached with the Guilds intent. The
- * members not cached are fetched together, in one request.
+ * The params a matched route's handler receives: each typed param's word turned into its value, each typed
+ * list's words into a list of values, its flags into `true`, `false` or their values, and mentions and IDs
+ * into the server's members, users, roles and channels. Nothing is fetched that a cache holds: a mentioned
+ * member arrives with the message, and roles and channels are cached with the Guilds intent. The members
+ * not cached are fetched together, in one request, however many params, lists and flags name them.
  *
- * @throws MessageUsageError naming each word that is not a value of its type, or saying the command works
- *   only in a server, when a param's type needs one and the message was sent elsewhere.
+ * @throws MessageUsageError naming each word that is not a value of its type, each flag the command does
+ *   not have or that lacks its value, or saying the command works only in a server, when a param's type
+ *   needs one and the message was sent elsewhere.
  */
 export async function resolveMessageParams(
   route: MessageRoute,
@@ -144,24 +164,39 @@ export async function resolveMessageParams(
   start: string,
   types: Record<string, MessageParamType> | undefined,
 ): Promise<Record<string, unknown>> {
-  const typed = route.tokens.filter((token): token is ParamToken => 'param' in token && token.type !== undefined)
-  if (typed.length === 0) return raw
+  if (!hasTypedParams(route)) return raw
 
   const usage = usageOf(route, start)
+  const params: Record<string, unknown> = { ...raw }
+  const issues: MessageUsageIssue[] = []
+  const items: Item[] = []
+  for (const token of route.tokens) {
+    if (!('param' in token) || token.type === undefined || raw[token.param] === undefined) continue
+    if (!token.rest) {
+      items.push({ key: token.param, label: token.param, type: token.type, word: raw[token.param] })
+      continue
+    }
+    const words = splitWords(raw[token.param])
+    params[token.param] = new Array(words.length)
+    words.forEach(({ value }, index) => items.push({ key: token.param, label: token.param, type: token.type!, word: value, index }))
+  }
+  const flagIssues = route.flags.length > 0 ? readFlags(route, message, start, params, items) : []
+
   const guild = message.guild
-  if (!guild && typed.some(token => GUILD_TYPES.has(token.type!))) {
+  const needsGuild = route.tokens.some(token => 'param' in token && token.type !== undefined && GUILD_TYPES.has(token.type))
+  if (!guild && (needsGuild || items.some(item => GUILD_TYPES.has(item.type)))) {
     throw new MessageUsageError(usage, [{ message: 'This command works in a server only.' }], { serverOnly: true, quiet: start === '' })
   }
 
-  const params: Record<string, unknown> = { ...raw }
-  const issues: MessageUsageIssue[] = []
-  const members = new Map<string, string[]>()
-  const users = new Map<string, string[]>()
+  const put = (item: Item, value: unknown) => {
+    if (item.index === undefined) params[item.key] = value
+    else (params[item.key] as unknown[])[item.index] = value
+  }
+  const members = new Map<string, Item[]>()
+  const users = new Map<string, Item[]>()
 
-  for (const token of typed) {
-    const word = raw[token.param]
-    if (word === undefined) continue
-    const type = token.type!
+  for (const item of items) {
+    const { type, word } = item
     const choices = choicesOf(type)
     const own = types?.[type]
     let value: unknown
@@ -176,7 +211,7 @@ export async function resolveMessageParams(
         if (cached) value = cached
         else {
           const pending = type === 'member' ? members : users
-          pending.set(id, [...(pending.get(id) ?? []), token.param])
+          pending.set(id, [...(pending.get(id) ?? []), item])
           continue
         }
       }
@@ -189,26 +224,63 @@ export async function resolveMessageParams(
     } else {
       value = (BUILT_IN_TYPES[type as keyof typeof BUILT_IN_TYPES] as (word: string) => unknown)(word)
     }
-    if (value === undefined) issues.push(wrongType(token, word, types))
-    else params[token.param] = value
+    if (value === undefined) issues.push(wrongType(item, types))
+    else put(item, value)
   }
 
   for (const [id, member] of await fetchMembers(message, [...members.keys()])) {
-    for (const param of members.get(id)!) {
-      if (member) params[param] = member
-      else issues.push({ param, message: `${param}: <@${id}> is not a member of this server` })
+    for (const item of members.get(id)!) {
+      if (member) put(item, member)
+      else issues.push({ param: item.key, message: `${item.label}: <@${id}> is not a member of this server` })
     }
   }
   const fetchedUsers = await Promise.all([...users.keys()].map(id => message.client.users.fetch(id).catch(() => undefined)))
   ;[...users.keys()].forEach((id, i) => {
-    for (const param of users.get(id)!) {
-      if (fetchedUsers[i]) params[param] = fetchedUsers[i]
-      else issues.push({ param, message: `${param}: no user has the ID ${id}` })
+    for (const item of users.get(id)!) {
+      if (fetchedUsers[i]) put(item, fetchedUsers[i])
+      else issues.push({ param: item.key, message: `${item.label}: no user has the ID ${id}` })
     }
   })
 
+  issues.push(...flagIssues)
   if (issues.length > 0) throw new MessageUsageError(usage, issues, { quiet: start === '' })
   return params
+}
+
+/**
+ * Reads a message's flags into params: a flag without a type as `true` or `false`, a typed one's value as a
+ * word to resolve. The issues are the flags the command does not have, and a typed flag missing or given no
+ * value. Given twice, a flag takes its last value.
+ */
+function readFlags(route: MessageRoute, message: Message, start: string, params: Record<string, unknown>, items: Item[]): MessageUsageIssue[] {
+  const issues: MessageUsageIssue[] = []
+  const key = (name: string) => (route.caseSensitive ? name : name.toLowerCase())
+  const given = new Map<string, GivenFlag>()
+  const text = (message.content ?? '').trim()
+  for (const flag of scanFlags(text.slice(start.length)).flags) {
+    const declared = route.flags.find(candidate => key(candidate.flag) === key(flag.name))
+    if (declared) given.set(declared.flag, flag)
+    else if (!issues.some(issue => issue.message.startsWith(`--${flag.name} `))) {
+      issues.push({ message: `--${flag.name} is not an option of this command` })
+    }
+  }
+  for (const flag of route.flags) {
+    const label = `--${flag.flag}`
+    const value = given.get(flag.flag)?.value
+    delete params[flag.flag]
+    if (flag.type === undefined) {
+      const on = value === undefined ? given.has(flag.flag) : BOOLEANS[value.toLowerCase()]
+      if (on === undefined) issues.push({ param: flag.flag, message: `${label}: "${value}" is not yes or no` })
+      else params[flag.flag] = on
+    } else if (!given.has(flag.flag)) {
+      if (!flag.optional) issues.push({ param: flag.flag, message: `${label} is missing` })
+    } else if (!value) {
+      issues.push({ param: flag.flag, message: `${label} needs a value, such as ${label}=<${flag.flag}>` })
+    } else {
+      items.push({ key: flag.flag, label, type: flag.type, word: value })
+    }
+  }
+  return issues
 }
 
 /**
@@ -247,6 +319,7 @@ export function missingParams(route: MessageRoute, given: number): MessageUsageI
   return [{ message: 'The command has more words than it takes' }]
 }
 
-/** Whether a route's params need resolving: it declares a type for one. */
-export const hasTypedParams = (route: MessageRoute): boolean => route.tokens.some(token => 'param' in token && token.type !== undefined)
+/** Whether a route's params need resolving: it declares a type for one, or has flags. */
+export const hasTypedParams = (route: MessageRoute): boolean =>
+  route.flags.length > 0 || route.tokens.some(token => 'param' in token && token.type !== undefined)
 

@@ -77,6 +77,68 @@ describe('message patterns', () => {
     expect(capture('x {a:int?} {b:bool?} {c...?}', 'x 3 more')).toEqual({ a: '3', c: 'more' })
   })
 
+  it('reads flags anywhere in the message, apart from the words', () => {
+    const purge = 'purge {count:int} {--bots} {--from:user?}'
+    expect(capture(purge, 'purge --bots 50')).toEqual({ count: '50', bots: '' })
+    expect(capture(purge, 'purge 50 --from=<@1> --BOTS')).toEqual({ count: '50', from: '<@1>', bots: '' })
+    expect(capture(purge, 'purge 50 --unknown')).toEqual({ count: '50' })
+    expect(capture(purge, 'purge --bots')).toBeUndefined()
+    expect(capture('remind {after} {--note:string?}', 'remind 10m --note="buy milk"')).toEqual({ after: '10m', note: 'buy milk' })
+  })
+
+  it('leaves the flags out of a rest, keeps a quoted flag as text, and reads no flags for a pattern without any', () => {
+    expect(capture('note {text...} {--pin}', 'note buy  milk --pin now')).toEqual({ text: 'buy  milk now', pin: '' })
+    expect(capture('note {text...} {--pin}', 'note "--pin" is a flag')).toEqual({ text: '"--pin" is a flag' })
+    expect(capture('say {text...}', 'say --loud hello')).toEqual({ text: '--loud hello' })
+    expect(capture('echo {word}', 'echo --x')).toEqual({ word: '--x' })
+  })
+
+  it('reads flags only in a message naming a command that has them, after its first word', () => {
+    @Controller()
+    class Mixed {
+      @MessageHandler('purge {count} {--bots}')
+      purge() {}
+
+      @MessageHandler('say {text...}')
+      say() {}
+    }
+    @Controller()
+    class Poke {
+      @MessageHandler('{target} {--ping}')
+      poke() {}
+    }
+    const reach = (controllers: (new () => unknown)[], content: string) => {
+      const matched = matchMessageRoute(buildMessageRoutes(controllers), content, RAW)
+      return matched && [matched.route.method, matched.params]
+    }
+
+    expect(reach([Mixed], 'say --loud hi')).toEqual(['say', { text: '--loud hi' }])
+    expect(reach([Mixed], 'purge 5 --bots')).toEqual(['purge', { count: '5', bots: '' }])
+    expect(reach([Mixed], '--bots purge 5')).toBeUndefined()
+    // A pattern that begins with a param may be named by any word, so every message is read for its flags
+    expect(reach([Poke], 'ana --ping')).toEqual(['poke', { target: 'ana', ping: '' }])
+    expect(reach([Poke], '--ping ana')).toEqual(['poke', { target: 'ana', ping: '' }])
+  })
+
+  it('gives the start a message used when it has flags', () => {
+    @Controller()
+    class Purge {
+      @MessageHandler('purge {count} {--bots}')
+      purge() {}
+    }
+    expect(matchMessageRoute(buildMessageRoutes([Purge]), '!  purge --bots 5', { prefixes: ['!'] })?.start).toBe('!  ')
+  })
+
+  it('refuses an untyped flag marked optional, a name a param and a flag share, and a pattern of flags alone', () => {
+    expect(() => parseMessagePattern('purge {--bots?}')).toThrow(/\{--bots\?\}: a flag without a type is optional already/)
+    expect(() => parseMessagePattern('warn {user} {--user:user}')).toThrow(/\{user\} appears twice/)
+    expect(() => parseMessagePattern('{--all}')).toThrow(/a pattern needs a word besides its flags/)
+    expect(parseMessagePattern('purge {--bots} {count:int} {--from:user?}').flags).toEqual([
+      { flag: 'bots', optional: false },
+      { flag: 'from', type: 'user', optional: true },
+    ])
+  })
+
   it('refuses an untyped optional param before another, which would take every word', () => {
     expect(() => parseMessagePattern('ban {user} {days?} {reason...?}')).toThrow(/\{days\?\} comes before another optional param, so it needs a type/)
     expect(() => parseMessagePattern('ban {user} {days:string?} {reason?}')).toThrow(/\{days:string\?\} comes before another optional param/)
@@ -246,6 +308,17 @@ describe('message route ranking', () => {
     expect(() => buildMessageRoutes([Clash])).toThrow(/"b \{target\}", an alias of "ban \{target\}", in Clash\.ban and "b \{page\}" in Clash\.browse match the same messages/)
   })
 
+  it('keeps flags written between the command words when it compiles an alias', () => {
+    @Controller()
+    class Config {
+      @MessageHandler('config {--dry} set {key}', { aliases: ['cs'] })
+      set() {}
+    }
+    const routes = buildMessageRoutes([Config])
+    expect(routes.map(route => route.pattern)).toEqual(['config {--dry} set {key}', 'cs {--dry} {key}'])
+    expect(matchMessageRoute(routes, 'cs lang --dry', RAW)?.params).toEqual({ key: 'lang', dry: '' })
+  })
+
   it('refuses an alias that is not command words, for a pattern without them, and a scope that is not one', () => {
     const build = (pattern: string, options: object) => {
       @Controller()
@@ -262,6 +335,7 @@ describe('message route ranking', () => {
     expect(build('ban {target}', { scope: 'server' })).toThrow(/scope is 'guild', 'dm' or 'any', not "server"/)
     expect(build('ban {target:member}', { scope: 'dm' })).toThrow(/scope is 'dm', but \{target:member\} is found only in a server/)
     expect(build('whois {target:user}', { scope: 'dm' })).not.toThrow()
+    expect(build('whois {--in:channel?}', { scope: 'dm' })).toThrow(/scope is 'dm', but \{--in:channel\} is found only in a server/)
   })
 
   it('leaves listeners out of the table', () => {

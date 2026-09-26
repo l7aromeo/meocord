@@ -241,6 +241,12 @@ describe('HandlerRegistry, at its edges', () => {
       everything() {}
     }
 
+    @Controller()
+    class Flagged {
+      @MessageHandler('purge {count:int} {--bots} {ids:string...?} {--reason:string}')
+      purge() {}
+    }
+
     const [mute, echo, everything] = new HandlerRegistry([ModerationController]).list({ kind: 'message' })
 
     expect(mute).toMatchObject({
@@ -257,6 +263,7 @@ describe('HandlerRegistry, at its edges', () => {
     expect(echo).toMatchObject({ command: undefined, aliases: [], description: undefined, scope: 'any' })
     expect(echo.usage('!')).toBe('!<word>')
     expect(everything.usage('!')).toBeUndefined()
+    expect(new HandlerRegistry([Flagged]).list({ kind: 'message' })[0].usage('!')).toBe('!purge <count> [ids…] [--bots] --reason=<reason>')
     expect(everything.matches('everything')).toBe(false)
   })
 

@@ -11,7 +11,7 @@ import {
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
 import { CommandType } from '@src/enum/index.js'
 import { type MessageCommandOptions, type MessageHandlerOptions, type MessageScope } from '@src/interface/index.js'
-import { commandWordsOf, parseMessagePattern, type PatternToken } from '@src/core/message-routes.js'
+import { commandWordsOf, type MessagePattern, parseMessagePattern } from '@src/core/message-routes.js'
 import { usageOf } from '@src/core/message-params.js'
 
 type HandlerClass = new (...args: any[]) => unknown
@@ -164,13 +164,13 @@ function messageCommand(
   options: MessageHandlerOptions,
   messages: MessageCommandOptions,
 ): Pick<MessageHandlerEntry, 'command' | 'aliases' | 'description' | 'scope' | 'usage' | 'matches'> {
-  let tokens: PatternToken[] | undefined
+  let parsed: MessagePattern | undefined
   try {
-    tokens = pattern === undefined ? undefined : parseMessagePattern(pattern).tokens
+    parsed = pattern === undefined ? undefined : parseMessagePattern(pattern)
   } catch {
     // Startup refuses a pattern that cannot be read, naming the handler
   }
-  const command = tokens && commandWordsOf(tokens).join(' ')
+  const command = parsed && commandWordsOf(parsed.tokens).join(' ')
   const aliases = (options.aliases ?? []).map(alias => alias.trim())
   const exact = options.caseSensitive ?? messages.caseSensitive ?? false
   const key = (words: string) => {
@@ -183,7 +183,7 @@ function messageCommand(
     aliases,
     description: options.description,
     scope: options.scope ?? 'any',
-    usage: (prefix = '') => tokens && usageOf({ tokens }, prefix),
+    usage: (prefix = '') => parsed && usageOf(parsed, prefix),
     matches: words => names.has(key(words)),
   }
 }

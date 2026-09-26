@@ -4,15 +4,27 @@ import { type ControllerClass } from '@src/core/component-routes.js'
 import { routeSpecificity } from '@src/core/route-specificity.js'
 import { BUILT_IN_TYPES, fitsParamType, isGuildType, isKnownParamType } from '@src/core/message-params.js'
 import { type MessageCommandOptions, type MessagePrefix, type MessageScope } from '@src/interface/index.js'
+import { type GivenFlag, isSpace, scanFlags, splitWords } from '@src/core/message-words.js'
 
 /** One word of a message pattern: a literal word, or a param with the type it declares, if any. */
 export type PatternToken = { literal: string } | { param: string; rest: boolean; optional: boolean; type?: string }
 
 type ParamToken = Extract<PatternToken, { param: string }>
 
-/** A `@MessageHandler` pattern read into its words, with its rank. */
+/**
+ * A flag of a message pattern, `{--name}`, given anywhere in a message as `--name`: without a type it is
+ * `true` or `false`; with one, `{--name:type}`, it takes a value, `--name=value`, and is required unless `?`.
+ */
+export interface FlagToken {
+  flag: string
+  type?: string
+  optional: boolean
+}
+
+/** A `@MessageHandler` pattern read into its words and flags, with its rank. */
 export interface MessagePattern {
   tokens: PatternToken[]
+  flags: FlagToken[]
   specificity: number
 }
 
@@ -27,6 +39,8 @@ export interface MessageRoute {
   prefix: false | readonly string[] | undefined
   caseSensitive: boolean
   scope: MessageScope
+  /** Its flags, which a message may give anywhere, apart from its words. */
+  flags: FlagToken[]
   /** The handler's own pattern, when this route is one of its aliases. */
   aliasOf?: string
 }
@@ -40,32 +54,51 @@ export interface MessageStarts {
 }
 
 const PARAM = /^\{(\w+)(?::([\w-]+(?:\|[\w-]+)*))?(\.\.\.)?(\?)?\}$/
+const FLAG = /^\{--(\w+)(?::([\w-]+(?:\|[\w-]+)*))?(\?)?\}$/
 
 /**
- * Reads a pattern into its words. Throws for a param that is not a whole word, a name given twice, a rest
- * param that is not last, a word after an optional param that is not optional too, and an untyped optional
- * before another, which would take every word.
+ * Reads a pattern into its words and flags. Throws for a param that is not a whole word, a name given
+ * twice, a rest param that is not last, a word after an optional param that is not optional too, an untyped
+ * optional before another, which would take every word, and an untyped flag marked optional.
  */
 export function parseMessagePattern(pattern: string): MessagePattern {
-  const words = pattern.trim().split(/\s+/)
-  const tokens: PatternToken[] = []
+  // Flags sit anywhere in a message, so they are read apart from the words, which keep their order
+  const flags: FlagToken[] = []
   const names = new Set<string>()
+  const claim = (name: string) => {
+    if (names.has(name)) throw new Error(`{${name}} appears twice; give each param and flag its own name.`)
+    names.add(name)
+  }
+  const words = pattern
+    .trim()
+    .split(/\s+/)
+    .filter(word => {
+      const flag = FLAG.exec(word)
+      if (!flag) return true
+      const [, name, type, optional] = flag
+      claim(name)
+      if (optional && !type) throw new Error(`${word}: a flag without a type is optional already; write {--${name}}.`)
+      flags.push({ flag: name, optional: Boolean(optional), ...(type && { type }) })
+      return false
+    })
+  const tokens: PatternToken[] = []
+  if (words.length === 0) throw new Error('a pattern needs a word besides its flags, such as the command.')
 
   words.forEach((word, index) => {
     const match = PARAM.exec(word)
     if (!match) {
       if (/[{}]/.test(word)) {
-        throw new Error(`"${word}" is not a param: a param is a whole word, such as {name}, {name:type}, {name...} or {name?}.`)
+        throw new Error(
+          `"${word}" is not a param: a param is a whole word, such as {name}, {name:type}, {name...}, {name?} or a flag, {--name}.`,
+        )
       }
       tokens.push({ literal: word })
       return
     }
     const [, name, type, rest, optional] = match
-    if (names.has(name)) throw new Error(`{${name}} appears twice; give each param its own name.`)
-    names.add(name)
+    claim(name)
     const last = index === words.length - 1
     if (rest && !last) throw new Error(`{${name}...} takes the rest of the message, so it must be last.`)
-    if (rest && type) throw new Error(`{${name}:${type}...}: the rest of a message is text, so a rest param takes no type.`)
     tokens.push({ param: name, rest: Boolean(rest), optional: Boolean(optional), ...(type && { type }) })
   })
 
@@ -90,7 +123,7 @@ export function parseMessagePattern(pattern: string): MessagePattern {
     rest: params.some(token => token.rest),
     optional: params.some(token => token.optional),
   })
-  return { tokens, specificity }
+  return { tokens, flags, specificity }
 }
 
 /** A prefix setting as a list, where `''` stands for none. */
@@ -137,10 +170,14 @@ export function buildMessageRoutes(controllerClasses: readonly ControllerClass[]
       let aliases: string[]
       try {
         parsed = parseMessagePattern(pattern)
-        for (const token of parsed.tokens) {
-          if ('param' in token && token.type && !isKnownParamType(token.type, options.types)) {
+        const typedNames = [
+          ...parsed.tokens.flatMap(token => ('param' in token && token.type ? [{ shown: `{${token.param}:${token.type}}`, type: token.type }] : [])),
+          ...parsed.flags.flatMap(flag => (flag.type ? [{ shown: `{--${flag.flag}:${flag.type}}`, type: flag.type }] : [])),
+        ]
+        for (const { shown, type } of typedNames) {
+          if (!isKnownParamType(type, options.types)) {
             throw new Error(
-              `{${token.param}:${token.type}} names no type. The types are ${Object.keys(BUILT_IN_TYPES).join(', ')}, ` +
+              `${shown} names no type. The types are ${Object.keys(BUILT_IN_TYPES).join(', ')}, ` +
                 `words to choose from such as {mode:on|off}, and those @MeoCord({ messages: { types } }) adds.`,
             )
           }
@@ -155,7 +192,7 @@ export function buildMessageRoutes(controllerClasses: readonly ControllerClass[]
               `from can: make it required, or put it last.`,
           )
         }
-        assertScope(own.scope, parsed.tokens)
+        assertScope(own.scope, parsed)
         aliases = aliasPatterns(pattern, parsed.tokens, own.aliases)
       } catch (error) {
         throw new Error(`@MessageHandler('${pattern}') in ${controllerClass.name}.${method}: ${(error as Error).message}`)
@@ -212,7 +249,12 @@ function aliasPatterns(pattern: string, tokens: readonly PatternToken[], aliases
   if (!Array.isArray(aliases)) throw new Error('aliases takes a list of command words, such as { aliases: [\'b\'] }.')
   const command = commandWordsOf(tokens)
   if (command.length === 0) throw new Error('aliases stand for the command words a pattern begins with, and this one begins with a param.')
-  const after = pattern.trim().split(/\s+/).slice(command.length)
+  // The pattern's words after its command words, its flags kept wherever they are written
+  let skipped = 0
+  const after = pattern
+    .trim()
+    .split(/\s+/)
+    .filter(word => FLAG.test(word) || ++skipped > command.length)
   return aliases.map(alias => {
     if (typeof alias !== 'string' || !alias.trim() || /[{}]/.test(alias)) {
       throw new Error(`${JSON.stringify(alias)} is not an alias: an alias is one or more command words, with no params.`)
@@ -221,14 +263,15 @@ function aliasPatterns(pattern: string, tokens: readonly PatternToken[], aliases
   })
 }
 
-/** Refuses a scope that is not one, and a command for direct messages with a param only a server has. */
-function assertScope(scope: unknown, tokens: readonly PatternToken[]): void {
+/** Refuses a scope that is not one, and a command for direct messages with a param or flag only a server has. */
+function assertScope(scope: unknown, { tokens, flags }: MessagePattern): void {
   if (scope === undefined) return
   if (scope !== 'guild' && scope !== 'dm' && scope !== 'any') throw new Error(`scope is 'guild', 'dm' or 'any', not ${JSON.stringify(scope)}.`)
-  const guildOnly = tokens.find(token => 'param' in token && token.type !== undefined && isGuildType(token.type))
-  if (scope === 'dm' && guildOnly) {
-    throw new Error(`scope is 'dm', but {${(guildOnly as ParamToken).param}:${(guildOnly as ParamToken).type}} is found only in a server.`)
-  }
+  if (scope !== 'dm') return
+  const param = tokens.find((token): token is ParamToken => 'param' in token && token.type !== undefined && isGuildType(token.type))
+  const flag = flags.find(candidate => candidate.type !== undefined && isGuildType(candidate.type))
+  const shown = param ? `{${param.param}:${param.type}}` : flag && `{--${flag.flag}:${flag.type}}`
+  if (shown) throw new Error(`scope is 'dm', but ${shown} is found only in a server.`)
 }
 
 /** Whether a route uses the app's prefixes, so they have to be known before it can match. */
@@ -276,45 +319,6 @@ function afterStart(text: string, prefixes: readonly string[], mention: string |
   return undefined
 }
 
-const QUOTES = new Map([
-  ['"', ['"', '”']],
-  ['“', ['”', '"']],
-])
-
-/** Whether a character is whitespace, as `/\s/` has it, testing the common ASCII cases without a regex. */
-function isSpace(text: string, i: number): boolean {
-  const code = text.charCodeAt(i)
-  if (code === 32 || (code >= 9 && code <= 13)) return true
-  return code > 127 && /\s/.test(text[i])
-}
-
-/** A message's words, where text in quotes is one word, each with where it starts in the text. One pass. */
-function splitWords(text: string): { value: string; start: number }[] {
-  const words: { value: string; start: number }[] = []
-  let i = 0
-  while (i < text.length) {
-    if (isSpace(text, i)) {
-      i++
-      continue
-    }
-    const start = i
-    const closers = QUOTES.get(text[i])
-    if (closers) {
-      let end = i + 1
-      while (end < text.length && !(closers.includes(text[end]) && (end + 1 === text.length || isSpace(text, end + 1)))) end++
-      // A quote never closed is an ordinary character
-      if (end < text.length) {
-        words.push({ value: text.slice(i + 1, end), start })
-        i = end + 1
-        continue
-      }
-    }
-    while (i < text.length && !isSpace(text, i)) i++
-    words.push({ value: text.slice(start, i), start })
-  }
-  return words
-}
-
 /** One step of a compiled pattern: literal words by key, one param edge, and the routes ending here. */
 interface TrieNode {
   words: Map<string, TrieNode>
@@ -333,6 +337,13 @@ interface RouteGroup {
   prefix: false | readonly string[] | undefined
   caseSensitive: boolean
   root: TrieNode
+  /** The routes with flags, matched against a message's words once its flags are taken out. */
+  flagged?: TrieNode
+  /**
+   * The first command words of the routes with flags, so only a message naming one is read for flags; `true`
+   * when a route with flags begins with a param, and any message may name it.
+   */
+  flagCommands: Set<string> | true
   /** Routes by rank, under the first of their command words, the literal words their patterns begin with. */
   commands: Map<string, number[]>
 }
@@ -393,14 +404,20 @@ function compileIndex(routes: readonly MessageRoute[]): MessageIndex {
     const startKey = route.prefix === undefined ? 'app' : route.prefix === false ? 'none' : JSON.stringify(route.prefix)
     const key = `${startKey}|${route.caseSensitive}`
     let group = groups.get(key)
-    if (!group) groups.set(key, (group = { prefix: route.prefix, caseSensitive: route.caseSensitive, root: trieNode(), commands: new Map() }))
+    if (!group) {
+      groups.set(key, (group = { prefix: route.prefix, caseSensitive: route.caseSensitive, root: trieNode(), commands: new Map(), flagCommands: new Set() }))
+    }
     const [first] = route.tokens
+    if (route.flags.length > 0 && group.flagCommands !== true) {
+      if ('literal' in first) group.flagCommands.add(wordKey(first.literal, route.caseSensitive))
+      else group.flagCommands = true
+    }
     if ('literal' in first) {
       const command = wordKey(first.literal, route.caseSensitive)
       group.commands.set(command, [...(group.commands.get(command) ?? []), rank])
     }
 
-    let node = group.root
+    let node = route.flags.length > 0 ? (group.flagged ??= trieNode()) : group.root
     const tail = tailStart(route.tokens)
     for (const [i, token] of route.tokens.entries()) {
       if (i === tail) {
@@ -436,6 +453,12 @@ function compileIndex(routes: readonly MessageRoute[]): MessageIndex {
     // An empty prefix has no first character; it makes the index accept any start instead
     ownFirsts: new Set(ownPrefixes.filter(Boolean).flatMap(prefix => [prefix[0], prefix[0].toLowerCase(), prefix[0].toUpperCase()])),
   }
+}
+
+/** Whether a message whose first word is `first` may reach one of the group's routes with flags. */
+function namesFlaggedCommand(group: RouteGroup, first: { value: string } | undefined): boolean {
+  if (!group.flagged) return false
+  return group.flagCommands === true || (first !== undefined && group.flagCommands.has(wordKey(first.value, group.caseSensitive)))
 }
 
 /** The ranks of every route the words reach from `node`. Each node sits at one word depth, so each is visited once. */
@@ -504,22 +527,39 @@ export function matchMessageRoute(
 
   // Each distinct text after a start is split into words once
   const split = new Map<string, { value: string; start: number }[]>()
-  let best: { rank: number; words: { value: string; start: number }[]; text: string } | undefined
+  const wordsOf = (rest: string) => {
+    let words = split.get(rest)
+    if (!words) split.set(rest, (words = splitWords(rest)))
+    return words
+  }
+  let best: { rank: number; words: { value: string; start: number }[]; text: string; rest: string; flags?: readonly GivenFlag[] } | undefined
   for (const group of index.groups) {
     const rest =
       group.prefix === false
         ? text
         : afterStart(text, group.prefix ?? starts.prefixes, starts.mention, group.caseSensitive)
     if (!rest) continue
-    let words = split.get(rest)
-    if (!words) split.set(rest, (words = splitWords(rest)))
+    const words = wordsOf(rest)
     const found: number[] = []
     reach(group.root, words, 0, rest, group.caseSensitive, found)
-    for (const rank of found) if (!best || rank < best.rank) best = { rank, words, text: rest }
+    for (const rank of found) if (!best || rank < best.rank) best = { rank, words, text: rest, rest }
+    // Only a message naming a command with flags is read for them, so no message pays for another's flags
+    const flagged = group.flagged
+    if (!flagged || !namesFlaggedCommand(group, words[0])) continue
+    const scanned = scanFlags(rest)
+    const positional = wordsOf(scanned.text)
+    found.length = 0
+    reach(flagged, positional, 0, scanned.text, group.caseSensitive, found)
+    for (const rank of found) if (!best || rank < best.rank) best = { rank, words: positional, text: scanned.text, rest, flags: scanned.flags }
   }
   if (!best) return undefined
   const route = routes[best.rank]
-  return { route, params: paramsOf(route, best.words, best.text), start: text.slice(0, text.length - best.text.length) }
+  const params = paramsOf(route, best.words, best.text)
+  for (const { name, value } of best.flags ?? []) {
+    const declared = route.flags.find(flag => wordKey(flag.flag, route.caseSensitive) === wordKey(name, route.caseSensitive))
+    if (declared) params[declared.flag] = value ?? ''
+  }
+  return { route, params, start: text.slice(0, text.length - best.rest.length) }
 }
 
 /**
@@ -544,9 +584,18 @@ export function matchMessageCommand(
     if (group.prefix === false) continue
     const rest = afterStart(text, group.prefix ?? starts.prefixes, starts.mention, group.caseSensitive)
     if (!rest || rest.length === text.length) continue
-    const words = splitWords(rest)
-    for (const rank of group.commands.get(wordKey(words[0]?.value ?? '', group.caseSensitive)) ?? []) {
+    const plain = splitWords(rest)
+    // A route with flags counts the words left once the message's flags are taken out
+    const scanned = namesFlaggedCommand(group, plain[0]) && scanFlags(rest)
+    const positional = scanned && scanned.flags.length > 0 ? splitWords(scanned.text) : plain
+    const commandsOf = (words: { value: string }[]) => group.commands.get(wordKey(words[0]?.value ?? '', group.caseSensitive)) ?? []
+    const candidates =
+      positional === plain || positional[0]?.value === plain[0]?.value
+        ? commandsOf(plain)
+        : [...commandsOf(plain), ...commandsOf(positional)].sort((a, b) => a - b)
+    for (const rank of candidates) {
       if (best && rank >= best.rank) break
+      const words = routes[rank].flags.length > 0 ? positional : plain
       const command = commandWordsOf(routes[rank].tokens)
       if (command.every((word, i) => words[i] && wordKey(words[i].value, group.caseSensitive) === wordKey(word, group.caseSensitive))) {
         best = { rank, start: text.slice(0, text.length - rest.length), given: words.length - command.length }

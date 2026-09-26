@@ -473,13 +473,27 @@ type ParamValue<T extends string> = T extends keyof MessageParamTypes
 
 type SplitChoices<T extends string> = T extends `${infer Head}|${infer Rest}` ? Head | SplitChoices<Rest> : T
 
-type ParamSpec<W extends string> = W extends `{${infer Body}}`
+type ParamSpec<W extends string> = W extends `{--${infer Body}}`
   ? Body extends `${infer Head}?`
-    ? RestSpec<Head, true>
-    : RestSpec<Body, false>
-  : never
+    ? FlagSpec<Head, true>
+    : FlagSpec<Body, false>
+  : W extends `{${infer Body}}`
+    ? Body extends `${infer Head}?`
+      ? RestSpec<Head, true>
+      : RestSpec<Body, false>
+    : never
 
-type RestSpec<B extends string, Optional extends boolean> = B extends `${infer Head}...` ? TypedSpec<Head, Optional> : TypedSpec<B, Optional>
+/** A flag without a type is `true` when given and `false` when not, so it is always there. */
+type FlagSpec<B extends string, Optional extends boolean> = B extends `${infer Name}:${infer Type}`
+  ? { name: Name; value: ParamValue<Type>; optional: Optional; typed: true }
+  : { name: B; value: boolean; optional: false; typed: true }
+
+/** A rest with a type is a list of values; without one, the rest of the message as text. */
+type RestSpec<B extends string, Optional extends boolean> = B extends `${infer Head}...`
+  ? Head extends `${infer Name}:${infer Type}`
+    ? { name: Name; value: ParamValue<Type>[]; optional: Optional; typed: true }
+    : TypedSpec<Head, Optional>
+  : TypedSpec<B, Optional>
 
 type TypedSpec<B extends string, Optional extends boolean> = B extends `${infer Name}:${infer Type}`
   ? { name: Name; value: ParamValue<Type>; optional: Optional; typed: true }
@@ -494,6 +508,8 @@ type PatternSpecs<P extends string> = ParamSpec<PatternWords<P>[number]>
  * ```ts
  * type Ban = ParamsOf<'ban {target:member} {duration:duration?} {reason...?}'>
  * // { target: GuildMember } & { duration?: number; reason?: string }
+ * type Purge = ParamsOf<'purge {count:int} {--bots} {--from:user?}'>
+ * // { count: number; bots: boolean } & { from?: User }
  * ```
  */
 export type ParamsOf<P extends string> = {
