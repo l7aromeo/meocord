@@ -11,6 +11,7 @@ import {
   inferContextType,
 } from '@src/common/execution-context.js'
 import { appliesTo } from '@src/core/stage-scope.js'
+import { Logger } from '@src/common/logger.js'
 import { GuardDeniedError } from '@src/common/errors.js'
 import {
   getAutocompleteHandlers,
@@ -147,6 +148,9 @@ function isShared(container: Container, guard: GuardClass): boolean {
 
 const perCallKeys = new WeakMap<object, Set<string>>()
 
+/** Whether the class defines this property with a getter or setter, which the instance reaches through its prototype. */
+const isClassAccessor = (instance: object, key: string) => !Object.prototype.hasOwnProperty.call(instance, key) && key in instance
+
 /**
  * Makes these properties of a shared guard read the params of the call in progress, so calls that
  * overlap each see their own. Outside a call, or in one that does not give the property, it keeps its
@@ -158,7 +162,7 @@ function readPerCall(instance: object, keys: readonly string[]): void {
   for (const key of keys) {
     if (done.has(key)) continue
     done.add(key)
-    if (!Object.prototype.hasOwnProperty.call(instance, key) && key in instance) continue
+    if (isClassAccessor(instance, key)) continue
     let own = (instance as Record<string, unknown>)[key]
     Object.defineProperty(instance, key, {
       configurable: true,
@@ -174,6 +178,20 @@ function readPerCall(instance: object, keys: readonly string[]): void {
       },
     })
   }
+}
+
+const logger = new Logger('Guard')
+const warnedShared = new WeakSet<GuardClass>()
+
+/** Warns once per guard that its params are set on the one instance every call shares, and why. */
+function warnSharedParams(guardClass: GuardClass, why: string, remedy: string): void {
+  if (warnedShared.has(guardClass)) return
+  warnedShared.add(guardClass)
+  logger.warn(
+    `${guardClass.name} is one instance every call shares, and ${why}, so each call's params are set on that ` +
+      `instance: calls that overlap can read each other's. ${remedy}, or stop binding the guard, in services, ` +
+      `providers or a constructor that injects it, so each call gets its own.`,
+  )
 }
 
 /** Whether each of these properties can be made to read the call's params, which a frozen or sealed instance's cannot. */
@@ -240,6 +258,12 @@ export async function runGuards(guards: readonly GuardEntry[], call: GuardedCall
     if (perCall && canReadPerCall(guardInstance, Object.keys(perCall))) {
       callStore = perCall
       readPerCall(guardInstance, Object.keys(perCall))
+      // A param the class takes through a setter has nowhere to be kept per call: it is set on the instance
+      const setters = Object.keys(perCall).filter(key => isClassAccessor(guardInstance, key))
+      if (setters.length > 0) {
+        warnSharedParams(guardClass, `takes ${setters.join(', ')} through a setter`, 'Read the param as a plain property')
+        for (const key of setters) Reflect.set(guardInstance, key, perCall[key])
+      }
     } else if (params) {
       assignParams(guardClass, guardInstance, params)
     } else if (shared && perCallKeys.has(guardInstance)) {

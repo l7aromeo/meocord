@@ -5,6 +5,7 @@ import { MeoCordFactory } from '@src/core/meocord-factory.js'
 import { CommandType } from '@src/enum/index.js'
 import { type GuardInterface } from '@src/interface/index.js'
 import { createMockInteraction, MeoCordTestingModule } from '@src/testing/index.js'
+import { Logger } from '@src/common/logger.js'
 
 vi.mock('@src/util/meocord-config-loader.util.js', () => ({ loadMeoCordConfig: () => ({ discordToken: 'token' }) }))
 vi.mock('@src/util/platform.util.js', () => ({ assertBuiltForThisPlatform: () => {} }))
@@ -205,5 +206,48 @@ describe('shared guards that call each other', () => {
     await module.invoke(Composed, 'outer', press('outer'))
 
     expect(seen).toEqual(['inner inner-param', 'outer outer-param', 'inner inner-own'])
+  })
+})
+
+describe('a shared guard that takes a param through a setter', () => {
+  @Guard()
+  class LimitGuard implements GuardInterface {
+    #limit = 0
+
+    set limit(value: number) {
+      this.#limit = value
+    }
+
+    get limit() {
+      return this.#limit
+    }
+
+    async canActivate() {
+      seen.push(`limit ${this.limit}`)
+      return true
+    }
+  }
+
+  @Controller()
+  class Limited {
+    @Command('limited', CommandType.BUTTON)
+    @UseGuard({ provide: LimitGuard, params: { limit: 5 } })
+    async limited() {}
+  }
+
+  afterEach(() => vi.restoreAllMocks())
+
+  it('gets the param through its setter, as a guard made for each call does, and is warned about once', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {})
+    const shared = MeoCordTestingModule.create({ controllers: [Limited], providers: [{ provide: LimitGuard, useClass: LimitGuard }] }).compile()
+    const perCall = MeoCordTestingModule.create({ controllers: [Limited] }).compile()
+
+    await shared.invoke(Limited, 'limited', press('limited'))
+    await shared.invoke(Limited, 'limited', press('limited'))
+    await perCall.invoke(Limited, 'limited', press('limited'))
+
+    expect(seen).toEqual(['limit 5', 'limit 5', 'limit 5'])
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('LimitGuard is one instance every call shares, and takes limit through a setter'))
   })
 })
