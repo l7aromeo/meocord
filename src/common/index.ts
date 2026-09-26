@@ -49,6 +49,7 @@ export type {
   ResponseFlags,
   ResponsePayload,
   ResponsePhase,
+  ResponseSendOptions,
   ResponseState,
 } from '@src/common/response/response-state.js'
 export { getInstallContext } from '@src/common/response/install-context.js'
