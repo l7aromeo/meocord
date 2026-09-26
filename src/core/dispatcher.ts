@@ -45,8 +45,8 @@ import {
   type MessageRoute,
   messageStartsFor,
 } from '@src/core/message-routes.js'
-import { assertMessageScope, hasTypedParams, missingParams, resolveMessageParams, usageOf } from '@src/core/message-params.js'
-import { CommandNotFoundError, MessageUsageError } from '@src/common/errors.js'
+import { messageCommandHooks } from '@src/core/message-params.js'
+import { CommandNotFoundError } from '@src/common/errors.js'
 
 type ControllerClass = new (...args: any[]) => any
 
@@ -349,11 +349,11 @@ export class Dispatcher {
     methodName: string,
     args: unknown[],
     call: Call,
-    resolveArgs?: RunOptions['resolveArgs'],
+    hooks: Pick<RunOptions, 'parseArgs' | 'fetchArgs'> = {},
   ): Promise<boolean> {
     const handler = `${instance.constructor.name}.${methodName}`
     const onUnanswered = this.options.warnUnanswered ? (phase: 'unanswered' | 'deferred') => this.warnUnansweredOnce(handler, phase) : undefined
-    const outcome = await runHandler(this.container, instance, methodName, args, { ...this.runOptions(call), onUnanswered, resolveArgs })
+    const outcome = await runHandler(this.container, instance, methodName, args, { ...this.runOptions(call), onUnanswered, ...hooks })
     call.record?.settled(instance.constructor as ControllerClass, methodName, outcome)
     return outcome.ran
   }
@@ -399,12 +399,8 @@ export class Dispatcher {
     }
     if (target) {
       const { route, params, start, given } = target
-      const types = this.messageOptions.types
-      await this.invokeHandler(this.getInstance(route.controllerClass), route.method, [message, params], call, async args => {
-        assertMessageScope(route, message, start)
-        if (given !== undefined) throw new MessageUsageError(usageOf(route, start), missingParams(route, given))
-        return hasTypedParams(route) ? [args[0], await resolveMessageParams(route, params, message, start, types)] : args
-      })
+      const hooks = messageCommandHooks(route, params, message, start, given, this.messageOptions.types)
+      await this.invokeHandler(this.getInstance(route.controllerClass), route.method, [message, params], call, hooks)
     }
 
     for (const { controllerClass, method } of this.messageListeners) {

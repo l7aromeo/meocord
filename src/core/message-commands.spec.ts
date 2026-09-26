@@ -20,7 +20,9 @@ import {
   type ExceptionFilter,
   type GuardInterface,
   type InterceptorInterface,
+  type EntityRef,
   type MessageCommandOptions,
+  type ParamRefsOf,
   type StandardSchemaV1,
 } from '@src/interface/index.js'
 import { createMockGuild, createMockMessage } from '@src/testing/index.js'
@@ -479,15 +481,95 @@ describe('typed message params and usage replies', () => {
 
   afterEach(() => vi.useRealTimers())
 
-  it('resolves typed params before the guards, so every stage sees members and numbers', async () => {
+  it('reads typed params before the guards, which see a member as a ref, and gives the handler the member', async () => {
     const client = await startApp({ controllers: [Economy], messages: { prefix: '!' } })
 
     await sendIn(client, `!pay <@${TARGET}> 25 for lunch`)
 
-    expect(seen).toEqual([
-      ['guard', { to: target, amount: 25, note: 'for lunch' }],
-      ['pay', { to: target, amount: 25, note: 'for lunch' }],
-    ])
+    const [[, inGuard], paid] = seen as [string, { to: EntityRef<GuildMember>; amount: number; note: string }][]
+    expect(inGuard.to.id).toBe(TARGET)
+    expect(inGuard.to.cached).toBe(target)
+    expect({ amount: inGuard.amount, note: inGuard.note }).toEqual({ amount: 25, note: 'for lunch' })
+    expect(paid).toEqual(['pay', { to: target, amount: 25, note: 'for lunch' }])
+  })
+
+  it('fetches nothing from Discord for a caller the guards deny, or one on cooldown, however many IDs they name', async () => {
+    @Guard()
+    class Deny implements GuardInterface {
+      canActivate(): boolean {
+        return false
+      }
+    }
+    @Controller()
+    class Lookups {
+      @MessageHandler('whois {users:user...}')
+      @UseGuard(Deny)
+      async whois() {
+        seen.push(['whois'])
+      }
+
+      @MessageHandler('lock {channels:channel...}')
+      @UseGuard(Deny)
+      async lock() {
+        seen.push(['lock'])
+      }
+
+      @MessageHandler('kick {targets:member...}')
+      @UseGuard(Deny)
+      async kick() {
+        seen.push(['kick'])
+      }
+
+      @MessageHandler('find {users:user...}')
+      @Cooldown({ seconds: 60 })
+      async find() {
+        seen.push(['find'])
+      }
+    }
+    const client = await startApp({ controllers: [Lookups], messages: { prefix: '!', deleteUsageRepliesAfter: 0 } })
+    const ids = Array.from({ length: 50 }, (_, i) => String(300000000000000000n + BigInt(i))).join(' ')
+    const guild = createMockGuild()
+
+    const whois = await sendIn(client, `!whois ${ids}`, guild)
+    await sendIn(client, `!lock ${ids}`, guild)
+    await sendIn(client, `!kick ${ids}`, guild)
+    const first = await sendIn(client, `!find ${ids.split(' ')[0]}`, guild)
+    const again = await sendIn(client, `!find ${ids}`, guild)
+
+    expect(vi.mocked(whois.client.users.fetch)).not.toHaveBeenCalled()
+    expect(guild.channels.fetch).not.toHaveBeenCalled()
+    expect(guild.members.fetch).not.toHaveBeenCalled()
+    // The first find is let through and fetches its one user; the second is refused before fetching any
+    expect(vi.mocked(first.client.users.fetch)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(again.client.users.fetch)).not.toHaveBeenCalled()
+    expect(seen).toEqual([['find']])
+  })
+
+  it("shares one request between a guard's resolve() and the fetch after it", async () => {
+    const user = { id: '400000000000000001' }
+    @Guard()
+    class LooksFirst implements GuardInterface {
+      async canActivate(_message: Message, { who }: ParamRefsOf<'whois {who:user}'>) {
+        return (await who.resolve())?.id === user.id
+      }
+    }
+    @Controller()
+    class Whois {
+      @MessageHandler('whois {who:user}')
+      @UseGuard(LooksFirst)
+      async whois(_message: Message, { who }: { who: unknown }) {
+        seen.push(['whois', who])
+      }
+    }
+    const client = await startApp({ controllers: [Whois], messages: { prefix: '!' } })
+    const message = createMockMessage({ content: `!whois ${user.id}`, guild: createMockGuild() })
+    Object.assign(message.author, { bot: false, id: 'user-1' })
+    vi.mocked(message.client.users.fetch).mockResolvedValue(user as never)
+
+    await Promise.all(client.rawListeners('messageCreate').map(listener => (listener as (m: unknown) => unknown)(message)))
+
+    expect(seen).toEqual([['whois', user]])
+    expect(vi.mocked(message.client.users.fetch)).toHaveBeenCalledTimes(1)
   })
 
   it('gives each trailing optional param a word that fits its type, and leaves one out when none does', async () => {

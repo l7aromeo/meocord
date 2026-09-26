@@ -1,8 +1,10 @@
-import { Collection, type GuildMember, type Message } from 'discord.js'
+import { type Message } from 'discord.js'
 import { MessageUsageError, type MessageUsageIssue } from '@src/common/errors.js'
-import { type MessageParamType } from '@src/interface/index.js'
+import { type EntityRef, type MessageParamType } from '@src/interface/index.js'
+import { type EntityKind, MessageEntityRef, resolveRefs } from '@src/core/message-entities.js'
 import { type FlagToken, type MessageRoute, type PatternToken } from '@src/core/message-routes.js'
 import { type GivenFlag, splitFlagWords, splitWords } from '@src/core/message-words.js'
+import { type RunOptions } from '@src/core/handler-pipeline.js'
 
 type ParamToken = Extract<PatternToken, { param: string }>
 
@@ -146,27 +148,48 @@ interface Item {
   index?: number
 }
 
+/** Where a ref sits in the params, and how an issue about it reads. */
+interface RefSlot {
+  key: string
+  label: string
+  word: string
+  kind: EntityKind | 'own'
+  index?: number
+  ref: EntityRef<unknown>
+}
+
+/** A message's typed params read before the guards: entities as refs, and where each ref sits. */
+export interface ParsedMessageParams {
+  params: Record<string, unknown>
+  refs: RefSlot[]
+  usage: string
+  quiet: boolean
+}
+
+/** Whether a value an app's `parse` returned is a ref to resolve after the guards. */
+const isRef = (value: unknown): value is EntityRef<unknown> =>
+  typeof value === 'object' && value !== null && 'cached' in value && typeof (value as EntityRef<unknown>).resolve === 'function'
+
 /**
- * The params a matched route's handler receives: each typed param's word turned into its value, each typed
- * list's words into a list of values, its flags into `true`, `false` or their values, and mentions and IDs
- * into the server's members, users, roles and channels. Nothing is fetched that a cache holds: a mentioned
- * member arrives with the message, and roles and channels are cached with the Guilds intent. The members
- * not cached are fetched together, in one request, however many params, lists and flags name them.
+ * The params a matched route's guards see, read from the words with no request to Discord: each typed
+ * param's word turned into its value, each typed list's words into a list, its flags into `true`, `false` or
+ * their values, and each member, user, role or channel into an {@link EntityRef}, filled from the cache.
  *
- * @throws MessageUsageError naming each word that is not a value of its type, each flag the command does
- *   not have or that lacks its value, or saying the command works only in a server, when a param's type
- *   needs one and the message was sent elsewhere.
+ * @throws MessageUsageError naming each word that is not a value of its type, each flag the command does not
+ *   have or that lacks its value, or saying the command works only in a server, when a param's type needs one
+ *   and the message was sent elsewhere.
  */
-export async function resolveMessageParams(
+export async function parseMessageParams(
   route: MessageRoute,
   raw: Record<string, string>,
   message: Message,
   start: string,
   types: Record<string, MessageParamType> | undefined,
-): Promise<Record<string, unknown>> {
-  if (!hasTypedParams(route)) return raw
-
+): Promise<ParsedMessageParams> {
   const usage = usageOf(route, start)
+  const quiet = start === ''
+  if (!hasTypedParams(route)) return { params: raw, refs: [], usage, quiet }
+
   const params: Record<string, unknown> = { ...raw }
   const issues: MessageUsageIssue[] = []
   const items: Item[] = []
@@ -185,15 +208,18 @@ export async function resolveMessageParams(
   const guild = message.guild
   const needsGuild = route.tokens.some(token => 'param' in token && token.type !== undefined && GUILD_TYPES.has(token.type))
   if (!guild && (needsGuild || items.some(item => GUILD_TYPES.has(item.type)))) {
-    throw new MessageUsageError(usage, [{ message: 'This command works in a server only.' }], { serverOnly: true, quiet: start === '' })
+    throw new MessageUsageError(usage, [{ message: 'This command works in a server only.' }], { serverOnly: true, quiet })
   }
 
   const put = (item: Item, value: unknown) => {
     if (item.index === undefined) params[item.key] = value
     else (params[item.key] as unknown[])[item.index] = value
   }
-  const members = new Map<string, Item[]>()
-  const users = new Map<string, Item[]>()
+  const refs: RefSlot[] = []
+  const refer = (item: Item, kind: RefSlot['kind'], ref: EntityRef<unknown>) => {
+    refs.push({ key: item.key, label: item.label, word: item.word, kind, index: item.index, ref })
+    put(item, ref)
+  }
 
   for (const item of items) {
     const { type, word } = item
@@ -204,23 +230,24 @@ export async function resolveMessageParams(
       value = route.caseSensitive ? choices.find(choice => choice === word) : choices.find(choice => choice.toLowerCase() === word.toLowerCase())
     } else if (own) {
       value = await own.parse(word, message)
-    } else if (type === 'member' || type === 'user') {
-      const id = idOf(word, USER_MENTION)
+      if (isRef(value)) {
+        refer(item, 'own', value)
+        continue
+      }
+    } else if (type === 'member' || type === 'user' || type === 'channel') {
+      const id = idOf(word, type === 'channel' ? CHANNEL_MENTION : USER_MENTION)
       if (id) {
-        const cached = type === 'member' ? guild!.members.cache.get(id) : message.client.users.cache.get(id)
-        if (cached) value = cached
-        else {
-          const pending = type === 'member' ? members : users
-          pending.set(id, [...(pending.get(id) ?? []), item])
-          continue
-        }
+        refer(item, type, new MessageEntityRef(type, id, message.client, guild))
+        continue
       }
     } else if (type === 'role') {
+      // Roles are cached with the Guilds intent, so a role is known here or not at all
       const id = idOf(word, ROLE_MENTION)
-      value = id ? guild!.roles.cache.get(id) : guild!.roles.cache.find(role => role.name.toLowerCase() === word.toLowerCase())
-    } else if (type === 'channel') {
-      const id = idOf(word, CHANNEL_MENTION)
-      value = id ? (guild!.channels.cache.get(id) ?? (await guild!.channels.fetch(id).catch(() => null)) ?? undefined) : undefined
+      const role = id ? guild!.roles.cache.get(id) : guild!.roles.cache.find(candidate => candidate.name.toLowerCase() === word.toLowerCase())
+      if (role) {
+        refer(item, 'role', new MessageEntityRef('role', role.id, message.client, guild))
+        continue
+      }
     } else {
       value = (BUILT_IN_TYPES[type as keyof typeof BUILT_IN_TYPES] as (word: string) => unknown)(word)
     }
@@ -228,23 +255,88 @@ export async function resolveMessageParams(
     else put(item, value)
   }
 
-  for (const [id, member] of await fetchMembers(message, [...members.keys()])) {
-    for (const item of members.get(id)!) {
-      if (member) put(item, member)
-      else issues.push({ param: item.key, message: `${item.label}: <@${id}> is not a member of this server` })
-    }
-  }
-  const fetchedUsers = await Promise.all([...users.keys()].map(id => message.client.users.fetch(id).catch(() => undefined)))
-  ;[...users.keys()].forEach((id, i) => {
-    for (const item of users.get(id)!) {
-      if (fetchedUsers[i]) put(item, fetchedUsers[i])
-      else issues.push({ param: item.key, message: `${item.label}: no user has the ID ${id}` })
-    }
-  })
-
   issues.push(...flagIssues)
-  if (issues.length > 0) throw new MessageUsageError(usage, issues, { quiet: start === '' })
+  if (issues.length > 0) throw new MessageUsageError(usage, issues, { quiet })
+  return { params, refs, usage, quiet }
+}
+
+/**
+ * The params the handler receives: each ref in the parsed params replaced by what it names. Nothing a
+ * cache holds is fetched, and what is fetched goes out once however many refs, messages and guards ask at
+ * the same time (see {@link resolveRefs}). Before the first request, `checkCooldowns` can refuse the call; it
+ * is not called when everything is cached.
+ *
+ * @throws MessageUsageError naming each member, user or channel the message named that does not exist.
+ */
+export async function fetchMessageParams(parsed: ParsedMessageParams, checkCooldowns?: () => Promise<void>): Promise<Record<string, unknown>> {
+  const { refs, usage, quiet } = parsed
+  if (refs.length === 0) return parsed.params
+  const entities = refs.flatMap(slot => (slot.ref instanceof MessageEntityRef ? [slot.ref] : []))
+  if (checkCooldowns && refs.some(slot => slot.ref.cached === undefined)) await checkCooldowns()
+
+  const found = await resolveRefs(entities)
+  const params: Record<string, unknown> = { ...parsed.params }
+  for (const [key, value] of Object.entries(params)) if (Array.isArray(value)) params[key] = [...value]
+  const issues: MessageUsageIssue[] = []
+  for (const slot of refs) {
+    const value = slot.ref instanceof MessageEntityRef ? found.get(slot.ref) : await slot.ref.resolve()
+    if (value === undefined) {
+      issues.push(missingEntity(slot))
+      continue
+    }
+    if (slot.index === undefined) params[slot.key] = value
+    else (params[slot.key] as unknown[])[slot.index] = value
+  }
+  if (issues.length > 0) throw new MessageUsageError(usage, issues, { quiet })
   return params
+}
+
+/** The issue for a ref that names nothing: a member not in the server, a user or channel that does not exist. */
+function missingEntity({ key, label, word, kind, ref }: RefSlot): MessageUsageIssue {
+  if (kind === 'member') return { param: key, message: `${label}: <@${ref.id}> is not a member of this server` }
+  if (kind === 'user') return { param: key, message: `${label}: no user has the ID ${ref.id}` }
+  return { param: key, message: `${label}: "${word}" is not a ${kind === 'channel' ? 'channel' : 'value of its type'}` }
+}
+
+/**
+ * The params a matched route's handler receives, read and fetched in one step: {@link parseMessageParams},
+ * then {@link fetchMessageParams}.
+ */
+export async function resolveMessageParams(
+  route: MessageRoute,
+  raw: Record<string, string>,
+  message: Message,
+  start: string,
+  types: Record<string, MessageParamType> | undefined,
+): Promise<Record<string, unknown>> {
+  return fetchMessageParams(await parseMessageParams(route, raw, message, start, types))
+}
+
+/**
+ * The two steps a matched message command's params take around its guards, for the pipeline: `parseArgs`
+ * before them reads the words, refuses a message sent where the command does not work or missing params,
+ * and gives entities as refs, with no request to Discord; `fetchArgs`, once the guards let the call through,
+ * fetches what the refs name, checking the cooldowns first when there is anything to fetch.
+ */
+export function messageCommandHooks(
+  route: MessageRoute,
+  params: Record<string, string>,
+  message: Message,
+  start: string,
+  given: number | undefined,
+  types: Record<string, MessageParamType> | undefined,
+): Pick<RunOptions, 'parseArgs' | 'fetchArgs'> {
+  let parsed: ParsedMessageParams | undefined
+  return {
+    parseArgs: async args => {
+      assertMessageScope(route, message, start)
+      if (given !== undefined) throw new MessageUsageError(usageOf(route, start), missingParams(route, given))
+      if (!hasTypedParams(route)) return args
+      parsed = await parseMessageParams(route, params, message, start, types)
+      return [args[0], parsed.params]
+    },
+    fetchArgs: async (args, admitted) => (parsed ? [args[0], await fetchMessageParams(parsed, () => admitted.checkCooldowns())] : args),
+  }
 }
 
 /**
@@ -281,36 +373,6 @@ function readFlags(route: MessageRoute, message: Message, start: string, params:
     }
   }
   return issues
-}
-
-/** The most member IDs Discord's Request Guild Members takes in one request. */
-const MEMBERS_PER_REQUEST = 100
-
-/**
- * The server's members with these IDs, none of them cached: one request for every 100, answered over the
- * gateway, or one fetch for a single one. A member that does not exist comes back as `undefined`.
- */
-async function fetchMembers(message: Message, ids: string[]): Promise<Map<string, GuildMember | undefined>> {
-  const found = new Map<string, GuildMember | undefined>()
-  if (ids.length === 0) return found
-  const guild = message.guild!
-  const single: string[] = ids.length === 1 ? ids : []
-  if (ids.length > 1) {
-    // A gateway request for members takes at most 100 IDs
-    const chunks = Array.from({ length: Math.ceil(ids.length / MEMBERS_PER_REQUEST) }, (_, c) =>
-      ids.slice(c * MEMBERS_PER_REQUEST, (c + 1) * MEMBERS_PER_REQUEST),
-    )
-    const batches = await Promise.all(chunks.map(chunk => guild.members.fetch({ user: chunk }).catch(() => undefined)))
-    chunks.forEach((chunk, c) => {
-      const batch = batches[c]
-      if (batch instanceof Collection) for (const id of chunk) found.set(id, batch.get(id))
-      else single.push(...chunk)
-    })
-  }
-  // One ID, or a batch the gateway refused: each is fetched on its own
-  const fetched = await Promise.all(single.map(id => guild.members.fetch(id).catch(() => undefined)))
-  single.forEach((id, i) => found.set(id, fetched[i] as GuildMember | undefined))
-  return found
 }
 
 /**

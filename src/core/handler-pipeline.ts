@@ -252,10 +252,11 @@ export interface RunOptions {
   /** Answers an error no filter handled. Without it, such an error rejects the call. */
   fallback?: Fallback
   /**
-   * Turns the call's arguments into the ones the stages and the handler receive, before the guards and
-   * inside the filters: a message's typed params resolved, or a usage error thrown for the filters.
+   * Turns the call's arguments into the ones the guards see, before them and inside the filters, with no
+   * request to Discord: a message's typed params read, with members, users, roles and channels as refs, or
+   * a usage error thrown for the filters.
    */
-  resolveArgs?: (args: unknown[]) => Promise<unknown[]>
+  parseArgs?: (args: unknown[]) => Promise<unknown[]>
   /**
    * Turns the arguments the guards let through into the ones the interceptors and the handler receive,
    * inside the filters: what a message's params name, fetched from Discord. It never runs for a call the
@@ -391,8 +392,8 @@ export async function runHandler(
   try {
     // @Defer's first step, inside the filters so a failed acknowledgement reaches them.
     if (response) await startDefer(response, defer!, receivedAt)
-    if (options.resolveArgs) {
-      args = await options.resolveArgs(args)
+    if (options.parseArgs) {
+      args = await options.parseArgs(args)
       currentArgs.current = args
     }
     if (!(await runGuards(guards, { container, controller, methodName, args, type, currentArgs, denial }))) {

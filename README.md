@@ -910,7 +910,25 @@ async ban(message: Message, { target, duration, reason }: { target: GuildMember;
 
 Whether a word fits is read from the word alone: a number, a length of time, one of the words to choose from, or a mention or ID for a member, user, role or channel. So an optional param that another follows needs a built-in type or words to choose from; text, or an app's own type, would stop the bot at startup. The last optional takes any word, and a word of the wrong type there gets the usage reply.
 
-Resolving costs no request where discord.js already knows the answer: a mentioned member arrives with the message, roles and channels are cached with the `Guilds` intent, and a cached member or user is used as it is. Members the cache lacks are fetched together, in one request however many a message names. Nothing is resolved before the message's route is chosen, so chat costs nothing.
+Nothing is fetched from Discord for a caller the handler's guards refuse. Before the guards, the words are read without a request: numbers, choices, flags and the shape of each ID are checked, and a word of the wrong type gets the [usage reply](#usage-errors). The guards then see each member, user, role and channel as an `EntityRef`, typed by `ParamRefsOf`: its `id`, the entity itself as `cached` when discord.js already has it, and `resolve()` to fetch it, for a guard that must look at it:
+
+```typescript
+import { type Message } from 'discord.js'
+import { Guard } from 'meocord/decorator'
+import { type GuardInterface, type ParamRefsOf } from 'meocord/interface'
+
+@Guard()
+export class OutranksTargetGuard implements GuardInterface {
+  async canActivate(message: Message, { target }: ParamRefsOf<'ban {target:member} {reason...?}'>) {
+    // The cheap check first, so a caller without the permission costs no request
+    if (!message.member?.permissions.has('BanMembers')) return false
+    const member = target.cached ?? (await target.resolve())
+    return !member || member.roles.highest.position < message.member.roles.highest.position
+  }
+}
+```
+
+Once the guards let the call through, whatever the cache lacks is fetched, and the handler, `@Validate`, pipes and `@Cooldown({ by })` get the entities themselves. Each ID is fetched once however many messages and guards ask for it at the same time; members go 100 to a gateway request, channels together, and users wait their turn in discord.js's single queue for user lookups. A member that is not in the server is answered only to a caller the guards let through. Before anything is fetched, the handler's cooldowns without `by` are checked, so a caller on cooldown costs no request either, and is refused with the same `CooldownError`; a cooldown with `by` keys on the fetched, validated params, so it is checked when it is counted, after the fetch. Much is never fetched at all: a mentioned member arrives with the message, and roles and a server's channels are cached with the `Guilds` intent. Nothing is read before the message's route is chosen, so chat costs nothing.
 
 An app adds its own types in `@MeoCord({ messages: { types } })`, and declares what each gives in `MessageParamTypes`, so handlers using it are typed:
 
@@ -1350,11 +1368,11 @@ Use params for configuring one guard (`{ provide, params }`, [above](#passing-op
 
 `getHandlerParams<P>()` is the handler's params, its second argument: a command's options, a component's customId params, a modal's fields or a select menu's choices. It is not `getParams()`, which is the running stage's own `{ provide, params }` configuration. The value is read as it stands when a stage asks:
 
-- A guard sees the params raw.
-- An interceptor sees them raw before `next.handle()`, and validated and piped after it, as the handler received them.
+- A guard sees the params raw; for a [typed message param](#typed-params), a member, user, role or channel as an `EntityRef`, since nothing is fetched from Discord before the guards.
+- An interceptor sees them raw before `next.handle()`, with a message's entities fetched, and validated and piped after it, as the handler received them.
 - A filter sees them as they were when the error was thrown.
 
-`getArgs()` follows the same stages, so its second argument is always the value `getHandlerParams()` returns. It is `undefined` for message, reaction and event handlers, which take no params, and for a call no handler was reached for. In a unit test, `createExecutionContext(Controller, 'method', { handlerParams })` sets it.
+`getArgs()` follows the same stages, so its second argument is always the value `getHandlerParams()` returns. It is `undefined` for message listeners, reaction and event handlers, which take no params, and for a call no handler was reached for. In a unit test, `createExecutionContext(Controller, 'method', { handlerParams })` sets it.
 
 In a unit test, build the context with `createExecutionContext` from `meocord/testing`:
 
