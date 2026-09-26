@@ -405,7 +405,7 @@ export default {
 
 | Option             | Default | Description                                                                                                                                                                        |
 | ------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `guilds`           | —       | Register every command to these guilds instead of globally. Unset or empty: global.                                                                                                |
+| `guilds`           | —       | Register every command to these guilds instead of globally. Unset or empty: global. Only blank ids, as `[process.env.GUILD_ID]` with the variable unset: nowhere, with a warning.  |
 | `developmentGuild` | —       | While `NODE_ENV` is `development`, as under `start --dev`, every command goes to this guild and nowhere else. Guild commands show at once.                                         |
 | `register`         | `true`  | Register at startup. Set `false` to register only with `meocord register`, from CI for instance.                                                                                   |
 | `clearOther`       | `false` | Remove this application's commands from the scopes named here but not in use. Without it, or while `developmentGuild` receives every command, leftovers are reported as a warning. |
@@ -423,7 +423,7 @@ export class BanCommandBuilder implements CommandBuilderBase {
 }
 ```
 
-A builder whose list is empty after dropping blank ids is not registered anywhere, rather than published globally by accident. Under a development guild it goes there with the rest.
+A builder whose list is empty after dropping blank ids is not registered anywhere, rather than published globally by accident. Under a development guild it goes there with the rest. The same goes for `guilds` in the configuration: a list of blank ids registers the commands without guilds of their own nowhere, warns, clears no leftovers, and makes `meocord register` exit with code 1.
 
 **Leftovers.** Moving from global to guild commands, or the other way, leaves the old ones behind, and Discord shows both. After registering, MeoCord checks the scopes this configuration names — global, `guilds`, `developmentGuild` and builders' guilds — that it did not send to, and warns about any commands left there; `clearOther: true` removes them instead. While `developmentGuild` receives every command, as under `start --dev`, leftovers are only warned about, even with `clearOther`: development and production often share one application, and the global commands belong to production. Production starts and `meocord register` without `--dev` remove them.
 
