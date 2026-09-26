@@ -426,7 +426,7 @@ describe('a result that is not a plain object', () => {
     expect(seen).toContainEqual(['handler', DEFAULT_THEME.colors.primary, DEFAULT_THEME.colors.info, DEFAULT_THEME.colors.success])
     const warnings = warn.mock.calls.map(([text]) => String(text))
     expect(warnings).toEqual([
-      expect.stringContaining(`themeFor.guild for guild ${GUILD}: theme must be a plain object of groups (got a Row): return a plain object`),
+      expect.stringContaining(`themeFor.guild for guild ${GUILD}: theme must be a plain object of groups (got a Row): give a plain object`),
       expect.stringContaining(`themeFor.user for user ${USER}: theme.colors must be a plain object of roles (got a Colours)`),
     ])
     expect(() => {

@@ -69,10 +69,13 @@ const isPlainObject = (value: unknown): boolean => {
   return prototype === Object.prototype || prototype === null
 }
 
-const PLAIN = 'return a plain object, such as the row\'s toObject() or { ...row }, since anything else would replace the whole'
+const PLAIN = "give a plain object, such as { ...value }, or a row's toObject(), since anything else would replace the whole"
 
-/** What a non-plain object is, by its class. */
-const describeInstance = (value: object): string => `a ${value.constructor?.name || 'object without a plain prototype'}`
+/** What a non-plain object is: by its class, or as one without a plain prototype when it has none named. */
+const describeInstance = (value: object): string => {
+  const name = (value as { constructor?: { name?: unknown } }).constructor?.name
+  return typeof name === 'string' && name ? `a ${name}` : 'an object without a plain prototype'
+}
 
 /** How each of MeoCord's groups checks a token, and what it asks for instead. */
 const GROUPS: Record<'colors' | 'emojis' | 'buttons', { check: (value: unknown) => boolean; what: string; instead: string }> = {

@@ -22,6 +22,32 @@ describe('themeProblems', () => {
     ).toEqual([])
   })
 
+  it('refuses a theme or a group of MeoCord\'s that is not a plain object, which would replace what it merges over', () => {
+    class Row {
+      colors = { primary: '#000031' }
+    }
+    class Colours {
+      primary = '#000032'
+    }
+    const unnamed = Object.create(Object.create(null))
+
+    expect(themeProblems(new Row(), 'x')).toEqual([
+      "x: theme must be a plain object of groups (got a Row): give a plain object, such as { ...value }, or a row's toObject(), since anything else would replace the whole theme",
+    ])
+    expect(themeProblems({ colors: new Colours() }, 'x')).toEqual([
+      "x: theme.colors must be a plain object of roles (got a Colours): give a plain object, such as { ...value }, or a row's toObject(), since anything else would replace the whole group",
+    ])
+    expect(themeProblems(unnamed)).toEqual([
+      "theme must be a plain object of groups (got an object without a plain prototype): give a plain object, such as { ...value }, or a row's toObject(), since anything else would replace the whole theme",
+    ])
+  })
+
+  it('accepts an object with no prototype, as a plain object, at the root and as a group', () => {
+    const root = Object.assign(Object.create(null), { colors: Object.assign(Object.create(null), { primary: '#7680F4' }) })
+
+    expect(themeProblems(root)).toEqual([])
+  })
+
   it('accepts a partial theme, and groups of the app its own', () => {
     expect(themeProblems({ colors: { danger: '#E3606D' } })).toEqual([])
     // An override may leave a group or a role undefined, as a spread of optional values does
