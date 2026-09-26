@@ -36,7 +36,7 @@ import { type DispatchOutcome, type DispatchResult } from '@src/interface/observ
 import { handlerCooldowns, methodCooldowns, peekCooldowns } from '@src/core/cooldown-runner.js'
 import { Logger } from '@src/common/logger.js'
 import { callTheme, configureThemes } from '@src/core/theme-runtime.js'
-import { copyLayer, runWithTheme } from '@src/core/theme-scope.js'
+import { runWithTheme } from '@src/core/theme-scope.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
 import {
   getAutocompleteHandlers,
@@ -59,7 +59,7 @@ export interface GlobalStages {
   guards: readonly GuardEntry[]
   interceptors: readonly InterceptorEntry[]
   filters: readonly FilterEntry[]
-  /** The app's `@MeoCord({ theme })`, copied, beneath every `@UseTheme`. */
+  /** The app's `@MeoCord({ theme })`, as `@MeoCord` checked and copied it, beneath every `@UseTheme`. */
   theme?: ThemeOverride
 }
 
@@ -80,7 +80,7 @@ export function appStages(app: object): GlobalStages {
     guards: [...(options.guards ?? [])],
     interceptors: [...(options.interceptors ?? [])],
     filters: [...(options.filters ?? [])],
-    ...(options.theme !== undefined && { theme: copyLayer(options.theme) }),
+    ...(options.theme !== undefined && { theme: options.theme }),
   }
 }
 

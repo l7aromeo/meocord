@@ -360,6 +360,24 @@ describe('a theme that is not valid', () => {
     }).toThrow(/@UseTheme on Broken\.x: theme\.emojis\.loading/)
   })
 
+  it('keeps the theme @MeoCord checked, whatever happens to the object afterwards', async () => {
+    const theme: { colors: { primary: `#${string}` } } = { colors: { primary: '#0E0E0E' } }
+    @Controller()
+    class Plain {
+      @Command('plain', CommandType.BUTTON)
+      plain() {
+        seen.push(primary())
+      }
+    }
+    @MeoCord({ controllers: [Plain], clientOptions: { intents: [] }, theme })
+    class App {}
+    theme.colors.primary = '#GGG'
+
+    await MeoCordTestingModule.create({ app: App, controllers: [Plain] }).compile().invoke(Plain, 'plain', press('plain'))
+
+    expect(seen).toEqual(['#0E0E0E'])
+  })
+
   it('refuses a second @UseTheme on one class', () => {
     expect(() => {
       @Controller()
