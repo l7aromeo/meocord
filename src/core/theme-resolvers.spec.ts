@@ -343,6 +343,18 @@ describe('a resolver that fails', () => {
   })
 })
 
+describe('a resolver with no theme to give', () => {
+  it('returns null or undefined, as a database does for a missing row, and nothing is warned about', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {})
+    const module = moduleWith({ guild: async () => null, user: () => undefined })
+
+    await module.invoke(Panel, 'panel', press('panel'))
+
+    expect(seen).toContainEqual(['handler', DEFAULT_THEME.colors.primary, DEFAULT_THEME.colors.info, DEFAULT_THEME.colors.success])
+    expect(warn).not.toHaveBeenCalled()
+  })
+})
+
 describe('a result that is not a plain object', () => {
   it('is left out with a warning rather than becoming the theme, and @MeoCord refuses one too', async () => {
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {})

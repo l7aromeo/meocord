@@ -38,7 +38,9 @@ describe('theme types', () => {
     MeoCord({ ...app, themeFor: { user: ({ guild }: { guild: { id: string } }) => (guild.id ? undefined : undefined) } })
     expectTypeOf<Parameters<NonNullable<ThemeResolvers['guild']>>[0]>().toEqualTypeOf<GuildThemeTarget>()
     expectTypeOf<Parameters<NonNullable<ThemeResolvers['user']>>[0]>().toEqualTypeOf<UserThemeTarget>()
-    expectTypeOf<ReturnType<NonNullable<ThemeResolvers['guild']>>>().toEqualTypeOf<ThemeOverride | undefined | Promise<ThemeOverride | undefined>>()
+    expectTypeOf<ReturnType<NonNullable<ThemeResolvers['guild']>>>().toEqualTypeOf<
+      ThemeOverride | null | undefined | Promise<ThemeOverride | null | undefined>
+    >()
   })
 
   it('clears a server\'s or a user\'s theme with ThemeCache', () => {
