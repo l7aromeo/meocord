@@ -680,7 +680,8 @@ const scenarios: Scenario[] = [
     expect: {
       code: 1,
       says: ['Production build completed', 'Starting bot', REFUSED_TOKEN, 'Reset Token'],
-      never: ['An invalid token was provided', 'Error during startup'],
+      // The raw error is logged at debug level only; main.ts does not log it again
+      never: ['[ERROR] Error during startup', '[ERROR] [MeoCordApp] Login failed'],
       creates: ['dist/main.js'],
     },
   },
@@ -690,7 +691,7 @@ const scenarios: Scenario[] = [
     runtime: 'bun',
     files: { '.env': INVALID_TOKEN_ENV, dist: null },
     argv: ['register', '--build'],
-    expect: { code: 1, says: [REFUSED_TOKEN, 'Reset Token'], never: ['DiscordAPIError', '401'] },
+    expect: { code: 1, says: [REFUSED_TOKEN, 'Reset Token'], never: ['Could not read the application'] },
   },
   {
     name: 'register says Discord refused the token and where to get one',
@@ -698,7 +699,7 @@ const scenarios: Scenario[] = [
     files: { '.env': INVALID_TOKEN_ENV },
     before: [['build', '--prod']],
     argv: ['register'],
-    expect: { code: 1, says: [REFUSED_TOKEN, 'Reset Token'], never: ['DiscordAPIError', '401'] },
+    expect: { code: 1, says: [REFUSED_TOKEN, 'Reset Token'], never: ['Could not read the application'] },
   },
 
   // Slow: a bundled build runs where no node_modules is installed, as a deployed dist does
@@ -818,7 +819,7 @@ const scenarios: Scenario[] = [
     files: { '.env': INVALID_TOKEN_ENV, 'meocord.config.ts': configWith("sharding: { mode: 'process', shards: 2 },"), dist: null },
     argv: ['start', '--prod', '--build'],
     timeoutMs: 60_000,
-    expect: { code: 1, says: [REFUSED_TOKEN, 'Reset Token'], never: ['Shard 0', 'DiscordAPIError'] },
+    expect: { code: 1, says: [REFUSED_TOKEN, 'Reset Token'], never: ['Shard 0', 'Could not register the commands'] },
   },
   {
     name: 'process sharding stops every shard at a refused token, instead of restarting them',
@@ -859,7 +860,11 @@ const scenarios: Scenario[] = [
       files: {
         '.env': INVALID_TOKEN_ENV,
         'src/app.ts': stalledApp,
-        'meocord.config.ts': configWith("sharding: { mode: 'process', shards: 2 },\n  shutdownTimeout: 1000,"),
+        // Registration off, so the refused token stops the shards rather than the manager before them
+        'meocord.config.ts': configWith("sharding: { mode: 'process', shards: 2 },\n  shutdownTimeout: 1000,").replace(
+          'commands: {',
+          'commands: {\n    register: false,',
+        ),
         dist: null,
       },
       argv: ['start', '--prod', '--build'],
