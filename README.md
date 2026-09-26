@@ -2447,6 +2447,47 @@ it('schedules the reminders it loaded at startup', () => {
 - **Failures.** Every hook runs even when one throws. Then `init` or `close` rejects with that error, or with an `AggregateError` naming each hook when several threw, where the bot would log them.
 - **What `close()` shuts down.** Every class and provided value the module has constructed, whether or not `init({ ready: true })` ran: the pool a factory made in `init()`, a service a test resolved with `get`, what `invoke` and `emit` built. Nothing is constructed just to be shut down.
 - **Once.** A second `init({ ready: true })` or `close()` runs nothing more.
+- **The theme outside calls.** Once ready, the module's app theme is the one [`useTheme()`](#reading-the-theme) reads outside any call, as a bot's is once online, so an `onReady` hook reads it. The first module ready in the process keeps it until its `close()`, which then leaves MeoCord's defaults; another module's calls still read their own theme.
+
+#### Themes in a test
+
+A testing module runs each call in its theme as the bot does, through `invoke` and `dispatch` alike: the app's theme, each `@UseTheme`, and what `themeFor` looks up. The builder replaces the app's theme or resolvers for one module, and `createMockTheme` and `withTheme` from `meocord/testing` test a service or presenter without a module:
+
+```typescript
+import { vi } from 'vitest'
+import { createMockTheme, MeoCordTestingModule, withTheme } from 'meocord/testing'
+
+it("colours a refund in the server's theme", async () => {
+  const guild = vi.fn(() => ({ colors: { primary: '#E3606D' } }))
+  const module = MeoCordTestingModule.create({ app: App, controllers: [ShopController] })
+    .overrideTheme({ colors: { primary: '#5865F2' } }) // in place of @MeoCord({ theme })
+    .overrideThemeFor({ guild }) // in place of @MeoCord({ themeFor }); undefined removes it
+    .compile()
+
+  await module.dispatch(interaction)
+  await module.dispatch(interaction)
+
+  expect(guild).toHaveBeenCalledTimes(1) // cached, as in the bot
+
+  module.themeCache.invalidateGuild(interaction.guildId!)
+  await module.dispatch(interaction)
+  expect(guild).toHaveBeenCalledTimes(2)
+})
+
+it('formats a receipt in the theme it is given', async () => {
+  const theme = createMockTheme({ emojis: { success: '🎉' } })
+
+  const line = await withTheme(theme, () => receipts.line(order))
+
+  expect(line).toBe(`${theme.emojis.success} Paid`)
+})
+```
+
+- **`overrideTheme(theme)`** replaces the app's `@MeoCord({ theme })`, or gives a module without an app one; each `@UseTheme` still goes over it. It is checked as `@MeoCord({ theme })` is, and gives every token the app added.
+- **`overrideThemeFor(resolvers)`** replaces the app's `themeFor`, or removes it with `undefined`. The app's `themeCache` and `themeForTimeoutMs` still apply.
+- **`module.themeCache`** is the module's `ThemeCache`, the one its classes inject. Each module has its own, so a result never reaches another test.
+- **`createMockTheme(overrides?)`** returns a whole theme, frozen, with `overrides` merged over MeoCord's defaults, to pass where code takes a theme or to compare against. When the app adds tokens, `overrides` gives them, as the app's theme does.
+- **`withTheme(theme, fn)`** runs `fn` with `theme` as the call's theme: `useTheme()` reads it in `fn` and in everything `fn` awaits or starts. It takes a theme `createMockTheme` made, or the roles to change.
 
 ### Running a handler with `invoke`
 

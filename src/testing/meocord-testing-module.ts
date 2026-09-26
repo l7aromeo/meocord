@@ -21,6 +21,7 @@ import {
   appStages,
   bindAppPresenter,
   bindGlobalStages,
+  type GlobalStages,
   prepareHandlerStages,
   type RunOptions,
   runHandler,
@@ -33,7 +34,13 @@ import {
   type GuardInterface,
   type InterceptorInterface,
   type MessageCommandOptions,
+  type RootTheme,
+  type ThemeResolvers,
 } from '@src/interface/index.js'
+import { ThemeCache } from '@src/core/theme-resolvers.js'
+import { claimAmbientAppTheme, releaseAmbientAppTheme } from '@src/core/theme-runtime.js'
+import { copyLayer } from '@src/core/theme-scope.js'
+import { assertValidTheme } from '@src/core/theme-validation.js'
 import { buildMessageRoutes, messageParamsFor } from '@src/core/message-routes.js'
 import { messageCommandHooks } from '@src/core/message-params.js'
 import { appObservers, assertObservers, bindObservers } from '@src/core/observer-runner.js'
@@ -181,6 +188,10 @@ export class TestingModule {
    * one at a time, each class after the classes and providers it injects, the observers' last. Every
    * hook runs even when one fails. Pair it with {@link close}, which runs the `onShutdown` hooks.
    *
+   * Ready, the module's app theme is also the one `useTheme()` reads outside any call, as a bot's is once
+   * it is online, unless another module or app in the process was ready first: that one keeps it, and
+   * this module's theme reaches its own calls only. {@link close} gives it up; nothing takes it over.
+   *
    * @param options - `ready` to also run the `onReady` hooks, with the client and `primary` to pass them.
    * @returns The module, once every factory has made its value and every `onReady` hook asked for has
    *   run. Rejects with the error of a factory or a hook that failed, or an `AggregateError` of the
@@ -217,6 +228,9 @@ export class TestingModule {
    * everything that injects it, whether or not `init({ ready: true })` ran. Nothing is constructed
    * just to be shut down. Every hook runs even when one fails. Calling it again does nothing more.
    *
+   * It first gives up the theme read outside calls, if `init({ ready: true })` made it this module's;
+   * reads outside calls then return MeoCord's defaults until another module or app is ready.
+   *
    * @returns Once every hook has run. Rejects with the error of a hook that failed, or an
    *   `AggregateError` naming each when several did.
    *
@@ -235,6 +249,8 @@ export class TestingModule {
     this.closing ??= (async () => {
       // A close during init waits for the hooks it started, so it shuts down whatever they constructed
       await this.readying?.catch(() => undefined)
+      // As a bot shutting down does; a module that never had it leaves another's alone
+      releaseAmbientAppTheme(this.container)
       const entries: LifecycleEntry[] = this.lifecycle
         .filter(unit => this.constructed.has(unit.token))
         // Already made, so this returns the instance; a provided value may be anything, null included
@@ -247,12 +263,35 @@ export class TestingModule {
   }
 
   private async runReady(client: Client<true>, primary: boolean): Promise<void> {
+    // As the bot claims it before it comes online, so onReady reads the app's theme
+    claimAmbientAppTheme(this.container)
     const failures: { name: string; error: unknown }[] = []
     const failed = (unit: LifecycleUnit, error: unknown) => failures.push({ name: unit.name, error })
     // No warning for a hook whose dependency failed: the test sees the dependency's own error
     // What close() shuts down is what was constructed, so the entries the runner records are not kept
     await runReadyHooks(this.container, this.lifecycle, client, { primary }, [], { resolveFailed: failed, hookFailed: failed })
     throwFailures('onReady', failures)
+  }
+
+  /**
+   * The module's {@link ThemeCache}: the instance its classes inject, holding what `themeFor`, or
+   * `overrideThemeFor`, looked up in this module's calls. Clear a result to have the next call look it up
+   * again. Each module has its own.
+   *
+   * @example
+   * ```ts
+   * const guild = vi.fn(() => ({ colors: { primary: '#26A042' } }))
+   * const module = MeoCordTestingModule.create({ app: App, controllers: [ShopController] }).overrideThemeFor({ guild }).compile()
+   *
+   * await module.dispatch(interaction)
+   * module.themeCache.invalidateGuild(interaction.guildId!)
+   * await module.dispatch(interaction)
+   *
+   * expect(guild).toHaveBeenCalledTimes(2)
+   * ```
+   */
+  get themeCache(): ThemeCache {
+    return this.container.get(ThemeCache)
   }
 
   /** The `@Once` handlers that have already handled their event, as a client forgets its once listeners. */
@@ -527,6 +566,11 @@ export class TestingModuleBuilder {
     Partial<InterceptorInterface>
   >()
 
+  /** The layer `overrideTheme` gives, in place of the app's `@MeoCord({ theme })`. */
+  private themeOverride?: { layer: RootTheme }
+  /** The resolvers `overrideThemeFor` gives, in place of the app's `@MeoCord({ themeFor })`. */
+  private themeForOverride?: { resolvers: ThemeResolvers | undefined }
+
   constructor(private readonly options: TestingModuleOptions) {}
 
   /**
@@ -612,13 +656,67 @@ export class TestingModuleBuilder {
   }
 
   /**
+   * Replaces the app's `@MeoCord({ theme })` for this module, or gives a module without an app one. Each
+   * `@UseTheme`, and what `themeFor` looks up, still goes over it. It replaces the app's theme rather than
+   * merging over it, so it gives every token the app added, as `@MeoCord({ theme })` does.
+   *
+   * @param theme - The app's theme for this module, checked as `@MeoCord({ theme })` checks it, and copied.
+   * @throws Error naming each token that is not valid.
+   * @example
+   * ```ts
+   * const module = MeoCordTestingModule.create({ app: App, controllers: [ShopController] })
+   *   .overrideTheme({ colors: { primary: '#E3606D' } })
+   *   .compile()
+   * ```
+   */
+  overrideTheme(theme: RootTheme): TestingModuleBuilder {
+    assertValidTheme(theme, 'overrideTheme')
+    this.themeOverride = { layer: copyLayer(theme) }
+    return this
+  }
+
+  /**
+   * Replaces the app's `@MeoCord({ themeFor })` for this module, or removes it with `undefined`. The app's
+   * `themeCache` and `themeForTimeoutMs` still apply, and the results are cached in {@link TestingModule.themeCache},
+   * as the bot caches them. A mock resolver shows each lookup.
+   *
+   * @param resolvers - The server's and the user's resolvers, or `undefined` for none.
+   * @throws TypeError when a resolver is not a function, or is neither `guild` nor `user`.
+   * @example
+   * ```ts
+   * const guild = vi.fn(() => ({ colors: { primary: '#26A042' } }))
+   * const module = MeoCordTestingModule.create({ app: App, controllers: [ShopController] }).overrideThemeFor({ guild }).compile()
+   * ```
+   */
+  overrideThemeFor(resolvers: ThemeResolvers | undefined): TestingModuleBuilder {
+    assertResolvers(resolvers)
+    this.themeForOverride = { resolvers: resolvers && { ...resolvers } }
+    return this
+  }
+
+  /** The app's global stages, with the theme overrides over them; `undefined` for a module with neither. */
+  private globalStages(): GlobalStages | undefined {
+    const stages = this.options.app && appStages(this.options.app)
+    if (!this.themeOverride && !this.themeForOverride) return stages
+    const { theme: appTheme, themeFor, ...rest } = stages ?? { guards: [], interceptors: [], filters: [] }
+    const theme = this.themeOverride ? this.themeOverride.layer : appTheme
+    const resolvers = this.themeForOverride ? this.themeForOverride.resolvers : themeFor?.resolvers
+    return {
+      ...rest,
+      ...(theme !== undefined && { theme }),
+      ...(resolvers !== undefined && { themeFor: { ...themeFor, resolvers } }),
+    }
+  }
+
+  /**
    * Binds the controllers, providers and overrides into a module ready to resolve and run handlers.
    *
    * @returns The compiled module.
    */
   compile(): TestingModule {
     const container = new Container()
-    if (this.options.app) bindGlobalStages(container, appStages(this.options.app))
+    const stages = this.globalStages()
+    if (stages) bindGlobalStages(container, stages)
 
     // Bound first, as in the app, so a class that injects it gets this instance
     const appClasses: (new (...args: any[]) => unknown)[] = []
@@ -764,5 +862,19 @@ export class TestingModuleBuilder {
 export class MeoCordTestingModule {
   static create(options: TestingModuleOptions): TestingModuleBuilder {
     return new TestingModuleBuilder(options)
+  }
+}
+
+/** Refuses resolvers the runtime cannot call, as `@MeoCord({ themeFor })` does. */
+function assertResolvers(resolvers: unknown): void {
+  if (resolvers === undefined) return
+  if (resolvers === null || typeof resolvers !== 'object') {
+    throw new TypeError('overrideThemeFor takes { guild?, user? }, each a function returning part of a theme, or undefined for none.')
+  }
+  for (const [key, resolver] of Object.entries(resolvers)) {
+    if (key !== 'guild' && key !== 'user') throw new TypeError(`overrideThemeFor has no resolver '${key}': give guild or user.`)
+    if (resolver !== undefined && typeof resolver !== 'function') {
+      throw new TypeError(`overrideThemeFor: ${key} must be a function returning part of a theme.`)
+    }
   }
 }

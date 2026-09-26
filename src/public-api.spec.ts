@@ -84,6 +84,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'createMockGuild',
     'createMockInteraction',
     'createMockMessage',
+    'createMockTheme',
     'createMockUser',
     'createModalFields',
     'expectCompleteCatalog',
@@ -94,6 +95,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'resetAllMocks',
     'resolveRoute',
     'testCooldownStore',
+    'withTheme',
   ],
 }
 
