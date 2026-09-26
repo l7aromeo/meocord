@@ -3,6 +3,7 @@ import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc.js'
 import timezone from 'dayjs/plugin/timezone.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
+import { isBuiltApplication } from '@src/util/bundle-entry.util.js'
 import chalk from 'chalk'
 import { LOG_LEVEL_ENV, LOG_LEVEL_RANK, logThreshold, takeRejectedLogLevel } from '@src/common/log-level.js'
 
@@ -76,7 +77,8 @@ export class Logger {
   private logWithContext(logLevel: string, messages: any[]): void {
     if (messages.length === 0) return
 
-    const config = loadMeoCordConfig()
+    // The built bot's own config only: elsewhere dist holds a previous build's, and loading it runs its dotenv import
+    const config = isBuiltApplication() ? loadMeoCordConfig() : undefined
     const logType = logLevel.toUpperCase()
     const applyColor = this.colorMap[logType] || (msg => msg)
     const formattedMessages = messages.map(message => this.formatMessage(message, logType))
