@@ -1,4 +1,4 @@
-import { GatewayIntentBits, Partials, ActivityType } from 'discord.js'
+import { GatewayIntentBits, Partials } from 'discord.js'
 import { MeoCord } from 'meocord/decorator'
 import { SampleSlashController } from '@src/controllers/slash/sample.slash.controller'
 import { SampleSelectMenuController } from '@src/controllers/select-menu/sample.select-menu.controller'
@@ -35,12 +35,6 @@ import { AppPresenter } from '@src/presenters/app.presenter'
     ],
     partials: [Partials.Message, Partials.Reaction],
   },
-  activities: [
-    {
-      name: ``,
-      type: ActivityType.Custom,
-    },
-  ],
   // How loading and error views look; see src/presenters/app.presenter.ts
   presenter: AppPresenter,
 })

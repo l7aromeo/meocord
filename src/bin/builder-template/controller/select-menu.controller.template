@@ -1,11 +1,13 @@
 import { StringSelectMenuInteraction } from 'discord.js'
-import { Controller, Command } from 'meocord/decorator'
+import { respond } from 'meocord/common'
+import { Command, Controller } from 'meocord/decorator'
 import { CommandType } from 'meocord/enum'
 
 @Controller()
 export class {{className}}SelectMenuController {
-  @Command('select-menu', CommandType.SELECT_MENU)
-  async handleSelectMenu(interaction: StringSelectMenuInteraction) {
-    await interaction.reply('Select menu used!')
+  // A menu whose customId is {{commandName}}
+  @Command('{{commandName}}', CommandType.SELECT_MENU)
+  async handle{{className}}(interaction: StringSelectMenuInteraction) {
+    await respond(interaction).send({ content: `You picked ${interaction.values.join(', ')}.` })
   }
 }

@@ -1,11 +1,13 @@
 import { ModalSubmitInteraction } from 'discord.js'
-import { Controller, Command } from 'meocord/decorator'
+import { respond } from 'meocord/common'
+import { Command, Controller } from 'meocord/decorator'
 import { CommandType } from 'meocord/enum'
 
 @Controller()
 export class {{className}}ModalSubmitController {
-  @Command('submit-modal', CommandType.MODAL_SUBMIT)
-  async handleModal(interaction: ModalSubmitInteraction) {
-    await interaction.reply('Modal submitted!')
+  // A modal whose customId is {{commandName}}
+  @Command('{{commandName}}', CommandType.MODAL_SUBMIT)
+  async handle{{className}}(interaction: ModalSubmitInteraction) {
+    await respond(interaction).send('Modal submitted!')
   }
 }

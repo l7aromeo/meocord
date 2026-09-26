@@ -1,7 +1,6 @@
 import { Catch } from 'meocord/decorator'
 import { type ExceptionFilter } from 'meocord/interface'
 import { type ExecutionContext } from 'meocord/common'
-import { MessageFlags } from 'discord.js'
 
 /** Thrown by handlers to be answered by {{className}}Filter. */
 export class {{className}}Error extends Error {}
@@ -10,12 +9,7 @@ export class {{className}}Error extends Error {}
 export class {{className}}Filter implements ExceptionFilter<{{className}}Error> {
   // One instance serves every call: keep per-call state in local variables
   async catch(error: {{className}}Error, context: ExecutionContext): Promise<void> {
-    const interaction = context.getInteraction()
-    if (!interaction?.isRepliable()) return
-
-    // TODO: Decide what the user is told
-    const answer = { content: error.message, flags: MessageFlags.Ephemeral } as const
-    if (interaction.replied || interaction.deferred) await interaction.followUp(answer)
-    else await interaction.reply(answer)
+    // TODO: Decide what the user is told; response is undefined for messages, reactions and events
+    await context.response?.error(error, { message: error.message, visibility: 'private' })
   }
 }

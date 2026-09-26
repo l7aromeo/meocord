@@ -1,11 +1,12 @@
 import { ChatInputCommandInteraction } from 'discord.js'
-import { Controller, Command } from 'meocord/decorator'
+import { respond } from 'meocord/common'
+import { Command, Controller } from 'meocord/decorator'
 import { {{builderClassName}} } from '{{builderImportPath}}'
 
 @Controller()
 export class {{className}}SlashController {
   @Command('{{commandName}}', {{builderClassName}})
-  async handleSampleSlash(interaction: ChatInputCommandInteraction) {
-    await interaction.reply('This is sample reply of slash command.')
+  async handle{{className}}(interaction: ChatInputCommandInteraction) {
+    await respond(interaction).send('Hello from /{{commandName}}!')
   }
 }

@@ -6,22 +6,13 @@ import { Logger } from 'meocord/common'
 export class {{className}}MessageController {
   private readonly logger = new Logger({{className}}MessageController.name)
 
-  @MessageHandler('baka')
-  async baka(message: Message): Promise<void> {
+  // A message saying {{commandName}}, after the prefix @MeoCord({ messages }) sets, if any
+  @MessageHandler('{{commandName}}')
+  async handle{{className}}(message: Message): Promise<void> {
     try {
-      await message.reply(`You Baka!`)
+      await message.reply('Hello from {{commandName}}!')
     } catch (error) {
-      this.logger.error('Error replying to command', error)
-    }
-  }
-
-  @MessageHandler()
-  async handleGeneralMessage(message: Message): Promise<void> {
-    try {
-      this.logger.info(`Received message: ${message.content}`)
-      // TODO: Implements your message handler logic here
-    } catch (error) {
-      this.logger.error('Error handling the message', error)
+      this.logger.error('Error replying to the message', error)
     }
   }
 }

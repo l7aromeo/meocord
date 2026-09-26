@@ -86,7 +86,9 @@ function createApp(tarball: string): void {
  * generated guards, interceptors, filters, pipes, services and controllers too.
  */
 function generateComponents(): void {
-  const commands = ['Generated', 'admin/generated'].flatMap(name => [
+  // Two of each kind, one nested, with names of their own: a generated component must never collide
+  // with another of its kind, nor with the samples the template ships
+  const commands = ['Generated', 'admin/second'].flatMap(name => [
     ...Object.values(ControllerType).map(type => ['g', 'co', type, name]),
     ['g', 's', name],
     ['g', 'gu', name],
@@ -120,6 +122,67 @@ function verifyShape(label: string, name: string): void {
   generate(`${label} controllers`, dir, Object.values(ControllerType).map(type => ['g', 'co', type, name]))
   symlinkSync(path.join(appDir, 'node_modules'), path.join(dir, 'node_modules'), 'dir')
   run(`typecheck ${label} controllers`, process.execPath, ['run', 'tsc', '-p', 'tsconfig.json'], dir)
+}
+
+/** Every class a generated or sample file exports under `dir`, with its `@src` import path, by file suffix. */
+function exportedClasses(dir: string, suffix: string): { name: string; from: string }[] {
+  return filesIn(path.join(appDir, 'src', dir))
+    .filter(file => file.endsWith(suffix))
+    .map(file => ({
+      name: readFileSync(file, 'utf8').match(/^export class (\w+)/m)![1],
+      from: `@src/${path.relative(path.join(appDir, 'src'), file).split(path.sep).join('/').replace(/\.ts$/, '')}`,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/**
+ * Lists every controller and observer in the application, as its developer would after generating them,
+ * with a spec that its routes are apart and that it builds; and imports an image and a Markdown file, as
+ * the README shows. The application's own checks then cover all of it.
+ */
+function registerComponents(): void {
+  const controllers = exportedClasses('controllers', '.controller.ts')
+  const observers = exportedClasses('observers', '.observer.ts')
+  const imports = [...controllers, ...observers].map(({ name, from }) => `import { ${name} } from '${from}'`).join('\n')
+  writeFileSync(
+    path.join(appDir, 'src', 'app.ts'),
+    `import { GatewayIntentBits, Partials } from 'discord.js'\nimport { MeoCord } from 'meocord/decorator'\n${imports}\n\n` +
+      `@MeoCord({\n  controllers: [${controllers.map(({ name }) => name).join(', ')}],\n  observers: [${observers.map(({ name }) => name).join(', ')}],\n` +
+      `  clientOptions: {\n    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.MessageContent],\n` +
+      `    partials: [Partials.Message, Partials.Reaction],\n  },\n})\nexport default class App {}\n`,
+  )
+  writeFileSync(
+    path.join(appDir, 'src', 'app.spec.ts'),
+    `import { findRouteConflicts, MeoCordTestingModule } from 'meocord/testing'\nimport App from '@src/app'\n${controllers.map(({ name, from }) => `import { ${name} } from '${from}'`).join('\n')}\n\n` +
+      `describe('App', () => {\n  it('routes every component apart', () => {\n    expect(findRouteConflicts(App)).toEqual([])\n  })\n\n` +
+      `  it('builds with every controller, its message patterns apart', () => {\n    expect(() =>\n      MeoCordTestingModule.create({ app: App, controllers: [${controllers.map(({ name }) => name).join(', ')}] }).compile(),\n    ).not.toThrow()\n  })\n})\n`,
+  )
+  mkdirSync(path.join(appDir, 'src', 'assets'), { recursive: true })
+  writeFileSync(path.join(appDir, 'src', 'assets', 'logo.png'), Buffer.from('89504e470d0a1a0a', 'hex'))
+  writeFileSync(path.join(appDir, 'src', 'assets', 'notes.md'), '# Notes\n')
+  // Type-only, so tsc checks the imports against src/assets.d.ts and vitest never loads the files
+  writeFileSync(
+    path.join(appDir, 'src', 'assets.spec.ts'),
+    `type Logo = typeof import('@src/assets/logo.png').default\ntype Notes = typeof import('@src/assets/notes.md').default\n\n` +
+      `describe('asset imports', () => {\n  it('give an image as its path and Markdown as its text', () => {\n    expectTypeOf<Logo>().toEqualTypeOf<string>()\n    expectTypeOf<Notes>().toEqualTypeOf<string>()\n  })\n})\n`,
+  )
+  // Written by a script rather than by hand, so formatted as a developer's editor would
+  run('format the registered application', process.execPath, ['run', 'prettier', '--write', 'src/app.ts', 'src/app.spec.ts', 'src/assets.spec.ts'], appDir, { quiet: true })
+  console.log(`  ok  register ${controllers.length} controllers and ${observers.length} observers, and import assets`)
+}
+
+/**
+ * Checks the template's asset declarations sit beside Rsbuild's own, for an application that also
+ * references them: the same modules declared twice must still typecheck.
+ */
+function verifyAssetTypesBesideRsbuild(): void {
+  const file = path.join(appDir, 'src', 'rsbuild-env.d.ts')
+  writeFileSync(file, '/// <reference types="@rsbuild/core/types" />\n')
+  try {
+    inApp('tsc beside @rsbuild/core/types', 'tsc', '-p', 'tsconfig.json')
+  } finally {
+    rmSync(file)
+  }
 }
 
 /** The application's own checks. */
@@ -220,8 +283,10 @@ function main(): void {
     console.log(`Verifying a generated application in ${workDir}\n`)
     createApp(pack())
     generateComponents()
+    registerComponents()
     console.log('')
     runAppScripts()
+    verifyAssetTypesBesideRsbuild()
     verifyCycleWarning()
     console.log('')
     // A nested name moves the controller and its builder together, so the import

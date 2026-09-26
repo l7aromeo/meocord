@@ -31,8 +31,8 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       // `include` reports untested files as zero rather than dropping them from the percentage.
       // istanbul parses those files without swc and cannot read decorators, so decorated files with no
-      // spec are excluded; app.ts and main.ts only wire and boot the app.
-      exclude: ['src/**/*.spec.ts', 'src/app.ts', 'src/main.ts'],
+      // spec are excluded; app.ts and main.ts only wire and boot the app, and declarations hold no code.
+      exclude: ['src/**/*.spec.ts', 'src/**/*.d.ts', 'src/app.ts', 'src/main.ts'],
     },
   },
 })

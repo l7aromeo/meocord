@@ -1,7 +1,7 @@
 import { ChatInputCommandInteraction, MessageFlags } from 'discord.js'
 import { Command, Controller, UseFilter } from 'meocord/decorator'
 import { CommandType } from 'meocord/enum'
-import { createMockInteraction, MeoCordTestingModule } from 'meocord/testing'
+import { createMockInteraction, getResponse, MeoCordTestingModule } from 'meocord/testing'
 import { {{className}}Error, {{className}}Filter } from './{{kebabCaseName}}.filter.js'
 
 @Controller()
@@ -12,12 +12,6 @@ class SampleController {
     await Promise.reject(new {{className}}Error('Something needs your attention.'))
   }
 
-  @Command('deferred', CommandType.SLASH)
-  async deferred(interaction: ChatInputCommandInteraction) {
-    await interaction.deferReply()
-    throw new {{className}}Error('Something needs your attention.')
-  }
-
   @Command('other', CommandType.SLASH)
   async other(_interaction: ChatInputCommandInteraction) {
     await Promise.reject(new Error('unrelated'))
@@ -26,23 +20,16 @@ class SampleController {
 
 describe('{{className}}Filter', () => {
   const module = MeoCordTestingModule.create({ controllers: [SampleController] }).compile()
-  const answer = { content: 'Something needs your attention.', flags: MessageFlags.Ephemeral }
 
-  it('answers the error privately', async () => {
+  it('answers the error privately, with its message', async () => {
     const interaction = createMockInteraction(ChatInputCommandInteraction)
 
     const { error } = await module.invoke(SampleController, 'sample', interaction)
 
     expect(error).toBeInstanceOf({{className}}Error)
-    expect(interaction.reply).toHaveBeenCalledWith(answer)
-  })
-
-  it('follows up when the handler deferred its reply', async () => {
-    const interaction = createMockInteraction(ChatInputCommandInteraction)
-
-    await module.invoke(SampleController, 'deferred', interaction)
-
-    expect(interaction.followUp).toHaveBeenCalledWith(answer)
+    const [answer] = getResponse(interaction).calls
+    expect(answer.payload).toMatchObject({ flags: MessageFlags.Ephemeral })
+    expect(JSON.stringify(answer.payload)).toContain('Something needs your attention.')
   })
 
   it('leaves other errors to other filters', async () => {
