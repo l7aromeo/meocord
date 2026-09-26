@@ -12,7 +12,7 @@ import { bindGlobalStages, prepareHandlerStages, runHandler } from '../../src/co
 import { claimAmbientAppTheme, releaseAmbientAppTheme } from '../../src/core/theme-runtime.js'
 import { useTheme } from '../../src/core/theme-scope.js'
 
-export const CASES = ['app', 'scoped', 'read'] as const
+export const CASES = ['app', 'scoped', 'read', 'resolved'] as const
 export type Case = (typeof CASES)[number]
 export interface Measured {
   plainNs: number
@@ -53,23 +53,29 @@ class Reads {
   }
 }
 
-function containerFor(cls: new () => unknown, theme?: object): { container: Container; instance: Record<string, (...args: unknown[]) => unknown> } {
+interface Target {
+  container: Container
+  instance: Record<string, (...args: unknown[]) => unknown>
+  args: unknown[]
+}
+
+function containerFor(cls: new () => unknown, stages: object = {}, args: unknown[] = [{}]): Target {
   const container = new Container()
-  bindGlobalStages(container, { guards: [], interceptors: [], filters: [], ...(theme && { theme }) })
+  bindGlobalStages(container, { guards: [], interceptors: [], filters: [], ...stages })
   prepareHandlerStages(container, [cls])
-  return { container, instance: new cls() as Record<string, (...args: unknown[]) => unknown> }
+  return { container, instance: new cls() as Record<string, (...args: unknown[]) => unknown>, args }
 }
 
 /** Each target's fastest of several rounds, in nanoseconds per call, the targets taking turns within each round. */
-async function time<K extends string>(targets: Record<K, ReturnType<typeof containerFor>>, iterations: number): Promise<Record<K, number>> {
+async function time<K extends string>(targets: Record<K, Target>, iterations: number): Promise<Record<K, number>> {
   const fastest = {} as Record<K, number>
-  const entries = Object.entries(targets) as [K, ReturnType<typeof containerFor>][]
+  const entries = Object.entries(targets) as [K, Target][]
   for (let round = 0; round < 9; round++) {
     for (const [name, target] of entries) {
       // Only while its own calls are timed: while an app owns the theme read outside calls, every other app scopes
       if (name === 'app') claimAmbientAppTheme(target.container)
       const started = process.hrtime.bigint()
-      for (let i = 0; i < iterations; i++) await runHandler(target.container, target.instance, 'run', [{}], { type: 'event' })
+      for (let i = 0; i < iterations; i++) await runHandler(target.container, target.instance, 'run', target.args, { type: 'event' })
       const ns = Number(process.hrtime.bigint() - started) / iterations
       if (name === 'app') releaseAmbientAppTheme(target.container)
       // The first round warms every target up
@@ -79,10 +85,28 @@ async function time<K extends string>(targets: Record<K, ReturnType<typeof conta
   return fastest
 }
 
+@Controller()
+class Resolved {
+  run() {
+    sink += String(useTheme().colors.primary).length
+  }
+}
+
 export async function run(): Promise<Measured> {
   // `app` is timed as the bot's own app, whose theme is read outside a call, so its calls need no scope
   const { plain, ...results } = await time(
-    { plain: containerFor(Plain), app: containerFor(AppThemed, { colors: { primary: '#000003' } }), scoped: containerFor(Scoped), read: containerFor(Reads) },
+    {
+      plain: containerFor(Plain),
+      app: containerFor(AppThemed, { theme: { colors: { primary: '#000003' } } }),
+      scoped: containerFor(Scoped),
+      read: containerFor(Reads),
+      // A server's and a user's themes, both found in their caches, as they are after a call's first
+      resolved: containerFor(
+        Resolved,
+        { themeFor: { resolvers: { guild: () => ({ colors: { primary: '#000004' } }), user: () => ({ colors: { info: '#000005' } }) } } },
+        [{ guildId: '100000000000000001', user: { id: '200000000000000001' } }],
+      ),
+    },
     30_000,
   )
   return { plainNs: plain, results }

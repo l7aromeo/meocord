@@ -11,12 +11,13 @@ import { CASES, type Case, type Measured, run } from './lib/theme-bench.js'
 
 /**
  * What theming may add to a plain call, as a fraction of it, for each runtime. An app theme alone needs no scope,
- * so it adds a check; a `@UseTheme` adds a scope, and reading the theme a lookup. Each is about twice the highest
- * measured when they were set: 0.05, 0.24 and 0.25 of a call under Node; 0.05, 0.07 and 0.08 under Bun.
+ * so it adds a check; a `@UseTheme` adds a scope, and reading the theme a lookup; a server's and a user's themes
+ * found in their caches add two lookups and two merges. Each is about twice the highest measured when they were
+ * set: 0.05, 0.24, 0.25 and 0.45 of a call under Node; 0.05, 0.07, 0.08 and 0.30 under Bun.
  */
 const BUDGETS: Record<'bun' | 'node', Record<Case, number>> = {
-  bun: { app: 0.12, scoped: 0.2, read: 0.25 },
-  node: { app: 0.12, scoped: 0.45, read: 0.5 },
+  bun: { app: 0.12, scoped: 0.2, read: 0.25, resolved: 0.6 },
+  node: { app: 0.12, scoped: 0.45, read: 0.5, resolved: 0.9 },
 }
 
 function underNode(): Measured {

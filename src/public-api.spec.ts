@@ -49,6 +49,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'SetMetadata',
     'ShardedCooldownStore',
     'Theme',
+    'ThemeCache',
     'Translator',
     'UserError',
     'ValidationError',

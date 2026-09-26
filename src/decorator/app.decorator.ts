@@ -20,7 +20,7 @@ import { BUILT_IN_TYPES } from '@src/core/message-params.js'
 import { assertObservers } from '@src/core/observer-runner.js'
 import { type CooldownStoreFailure } from '@src/core/cooldown-runner.js'
 import { type CheckedEntry } from '@src/decorator/stage-entry.js'
-import { type RootTheme } from '@src/interface/theme.interface.js'
+import { type RootTheme, type ThemeResolvers } from '@src/interface/theme.interface.js'
 import { assertValidTheme } from '@src/core/theme-validation.js'
 import { copyLayer } from '@src/core/theme-scope.js'
 
@@ -90,6 +90,14 @@ function assertMessageOptions(messages: MessageCommandOptions | undefined): void
  * @param options.theme - The app's theme: the roles it changes from MeoCord's defaults, and every role the app
  *   adds. It applies to every handler, beneath each `@UseTheme`; code reads it with `useTheme()`. Each token is
  *   checked here, so a bad one stops the bot before it logs in.
+ * @param options.themeFor - Themes by where a call comes from: `guild` for a server's, over the handler's, and
+ *   `user` for a user's, over the server's, in a server or a DM. Each returns part of a theme or `undefined`, at once
+ *   or as a promise, and is looked up while `@Defer` acknowledges, before the guards. A result that is not a valid
+ *   theme is left out, with a warning once per server or user; a resolver that fails or passes its timeout leaves
+ *   its theme out of the call, logged once until it answers again.
+ * @param options.themeCache - How long `themeFor`'s results are kept (`ttlSeconds`, 300 unless set) and how many
+ *   (`maxGuilds`, 10,000, and `maxUsers`, 50,000), the oldest dropped first. Inject `ThemeCache` to clear one sooner.
+ * @param options.themeForTimeoutMs - How long a call waits for a resolver, in milliseconds; 1,000 unless set.
  *
  * @example
  * ```typescript
@@ -126,6 +134,9 @@ export function MeoCord<const G extends readonly unknown[] = [], const I extends
   observers?: (new (...args: any[]) => DispatchObserver)[]
   warnUnanswered?: boolean
   theme?: RootTheme
+  themeFor?: ThemeResolvers
+  themeCache?: { ttlSeconds?: number; maxGuilds?: number; maxUsers?: number }
+  themeForTimeoutMs?: number
 }): (target: any) => void {
   return (target: any): void => {
     assertStageEntries('@MeoCord({ guards })', 'guard', target.name, options.guards ?? [])
@@ -140,11 +151,47 @@ export function MeoCord<const G extends readonly unknown[] = [], const I extends
       throw new TypeError(`@MeoCord({ warnUnanswered }) on ${target.name} takes true or false.`)
     }
     // Copied first, so what is checked is what the app runs with, whatever happens to the object afterwards
+    assertThemeFor(target.name, options)
     const theme = options.theme === undefined ? undefined : copyLayer(options.theme)
     if (theme !== undefined) assertValidTheme(theme, `@MeoCord({ theme }) on ${target.name}`)
     makeInjectable(target)
 
     Reflect.defineMetadata(MetadataKey.AppOptions, theme === undefined ? options : { ...options, theme }, target)
+  }
+}
+
+/** Refuses theme resolvers and cache options the runtime cannot follow, where the app is declared. */
+function assertThemeFor(
+  appName: string,
+  { themeFor, themeCache, themeForTimeoutMs }: { themeFor?: unknown; themeCache?: unknown; themeForTimeoutMs?: unknown },
+): void {
+  if (themeFor !== undefined) {
+    if (themeFor === null || typeof themeFor !== 'object') {
+      throw new TypeError(`@MeoCord({ themeFor }) on ${appName} takes { guild?, user? }, each a function returning part of a theme.`)
+    }
+    for (const [key, resolver] of Object.entries(themeFor)) {
+      if (key !== 'guild' && key !== 'user') throw new TypeError(`@MeoCord({ themeFor }) on ${appName} has no resolver '${key}': give guild or user.`)
+      if (resolver !== undefined && typeof resolver !== 'function') {
+        throw new TypeError(`@MeoCord({ themeFor }) on ${appName}: ${key} must be a function returning part of a theme.`)
+      }
+    }
+  }
+  const whole = (value: unknown) => typeof value === 'number' && Number.isInteger(value) && value > 0
+  if (themeCache !== undefined) {
+    if (themeCache === null || typeof themeCache !== 'object') {
+      throw new TypeError(`@MeoCord({ themeCache }) on ${appName} takes { ttlSeconds?, maxGuilds?, maxUsers? }.`)
+    }
+    for (const [key, value] of Object.entries(themeCache)) {
+      if (!['ttlSeconds', 'maxGuilds', 'maxUsers'].includes(key)) {
+        throw new TypeError(`@MeoCord({ themeCache }) on ${appName} has no option '${key}': give ttlSeconds, maxGuilds or maxUsers.`)
+      }
+      if (value !== undefined && !(key === 'ttlSeconds' ? typeof value === 'number' && value > 0 && Number.isFinite(value) : whole(value))) {
+        throw new TypeError(`@MeoCord({ themeCache }) on ${appName}: ${key} must be ${key === 'ttlSeconds' ? 'a number of seconds above 0' : 'a whole number above 0'} (got ${JSON.stringify(value)}).`)
+      }
+    }
+  }
+  if (themeForTimeoutMs !== undefined && !(typeof themeForTimeoutMs === 'number' && Number.isFinite(themeForTimeoutMs) && themeForTimeoutMs > 0)) {
+    throw new TypeError(`@MeoCord({ themeForTimeoutMs }) on ${appName} must be a number of milliseconds above 0 (got ${JSON.stringify(themeForTimeoutMs)}).`)
   }
 }
 
