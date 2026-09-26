@@ -251,6 +251,8 @@ export interface RunOptions {
   awaitObservers?: boolean
   /** When dispatch received the call, from `performance.now()`, when it started before the pipeline. */
   startedAt?: number
+  /** Told when the handler ran without an error and left its interaction unanswered, or deferred without a follow-up. */
+  onUnanswered?: (phase: 'unanswered' | 'deferred') => void
 }
 
 /**
@@ -397,6 +399,10 @@ export async function runHandler(
     return { ran, error }
   } finally {
     await response?.release()
+    if (options.onUnanswered && ran && outcome === 'ran' && type === 'interaction') {
+      const phase = responsePhaseOf(contextOf())
+      if (phase === 'unanswered' || phase === 'deferred') options.onUnanswered(phase)
+    }
     if (options.awaitObservers) await starting
     // After the answer and the release, so the duration covers the whole call
     await observe(container, contextOf, { outcome, startedAt, handled, failure, deniedBy: denial.by }, options)

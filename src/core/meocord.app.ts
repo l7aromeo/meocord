@@ -150,6 +150,7 @@ export class MeoCordApp implements MeoCordApplication {
     private readonly startup?: () => Promise<void>,
     lifecycleUnits?: LifecycleUnit[],
     private readonly messageOptions: MessageCommandOptions = {},
+    private readonly warnUnanswered = false,
   ) {
     this.lifecycleUnits = lifecycleUnits ?? classUnits(container, lifecycleClasses)
     // Built now, so a pattern that cannot be read or two that match the same messages stop the bot before login
@@ -661,8 +662,26 @@ export class MeoCordApp implements MeoCordApplication {
     args: unknown[],
     startedAt?: number,
   ): Promise<boolean> {
-    const { ran } = await runHandler(this.container, instance, methodName, args, { fallback: this.fallback, startedAt })
+    const handler = `${instance.constructor.name}.${methodName}`
+    const onUnanswered = this.warnUnanswered ? (phase: 'unanswered' | 'deferred') => this.warnUnansweredOnce(handler, phase) : undefined
+    const { ran } = await runHandler(this.container, instance, methodName, args, { fallback: this.fallback, startedAt, onUnanswered })
     return ran
+  }
+
+  /** The handlers already warned about, so each is named once however often it runs. */
+  private readonly warnedUnanswered = new Set<string>()
+
+  /** Warns, once per handler, that it left its interaction unanswered or deferred without a follow-up. */
+  private warnUnansweredOnce(handler: string, phase: 'unanswered' | 'deferred'): void {
+    if (this.warnedUnanswered.has(handler)) return
+    this.warnedUnanswered.add(handler)
+    const what =
+      phase === 'unanswered'
+        ? `${handler} finished without answering its interaction, so the user saw "The application did not respond". ` +
+          'Answer it with respond(interaction).send(), or acknowledge it first with @Defer().'
+        : `${handler} deferred its interaction and never followed up, so the user saw it thinking until Discord gave up. ` +
+          'Follow up with respond(interaction).send().'
+    this.logger.warn(`${what} Shown once per handler; @MeoCord({ warnUnanswered: false }) turns it off.`)
   }
 
   /**

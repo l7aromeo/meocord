@@ -294,6 +294,8 @@ export class MeoCordFactory {
       startup,
       lifecycle,
       options.messages,
+      // In development only, unless the app says otherwise
+      options.warnUnanswered ?? process.env.NODE_ENV === 'development',
     )
   }
 }
