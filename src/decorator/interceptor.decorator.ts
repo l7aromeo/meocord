@@ -4,6 +4,7 @@ import { CLASS_INTERCEPTORS, type InterceptorEntry, METHOD_INTERCEPTORS } from '
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { assertStageEntries, defineStageTypes } from '@src/core/stage-scope.js'
 import { type ExecutionContextType } from '@src/common/execution-context.js'
+import { type CheckedEntry } from '@src/decorator/stage-entry.js'
 
 /**
  * Marks a class as an interceptor, for use with {@link UseInterceptor}. The class implements
@@ -62,11 +63,8 @@ export function Interceptor(options: { types?: readonly ExecutionContextType[] }
  * }
  * ```
  */
-export function UseInterceptor(
-  ...interceptors: (
-    | (new (...args: any[]) => InterceptorInterface)
-    | { provide: new (...args: any[]) => InterceptorInterface; params?: Record<string, any> }
-  )[]
+export function UseInterceptor<const T extends readonly unknown[]>(
+  ...interceptors: { [K in keyof T]: CheckedEntry<T[K], new (...args: any[]) => InterceptorInterface> }
 ): ClassDecorator & MethodDecorator {
   return function (target: object, propertyKey?: string | symbol) {
     const where = propertyKey === undefined ? (target as { name: string }).name : `${target.constructor.name}.${String(propertyKey)}`

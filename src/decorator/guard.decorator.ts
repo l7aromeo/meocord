@@ -13,10 +13,10 @@ import {
   INHERITED_FROM,
   METHOD_GUARDS,
   type GuardEntry,
-  type GuardWithParams,
   runDirectCall,
 } from '@src/core/guard-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
+import { type CheckedEntry } from '@src/decorator/stage-entry.js'
 import { assertStageEntries, defineStageTypes } from '@src/core/stage-scope.js'
 import { type ExecutionContextType } from '@src/common/execution-context.js'
 
@@ -131,8 +131,10 @@ export function Guard(options: { types?: readonly ExecutionContextType[] } = {})
  * Runs guards before a method, or before every method of a class; the method runs only when every
  * guard's `canActivate` returns true.
  *
- * @param guards - Guard classes, or `{ provide, params? }` to set `params` as properties on the guard
- *   instance before it runs. Any other entry is refused when the decorator applies.
+ * @param entries - Guard classes, or `{ provide, params? }` to set `params` as properties on the guard
+ *   instance, and as `this.params`, before it runs. A guard that declares `declare readonly params?: P`
+ *   has `params` checked against `P`; one that declares none takes any. Any other entry is refused when
+ *   the decorator applies.
  *
  * @example
  * ```typescript
@@ -143,7 +145,10 @@ export function Guard(options: { types?: readonly ExecutionContextType[] } = {})
  * }
  * ```
  */
-export function UseGuard(...guards: ((new (...args: any[]) => GuardInterface) | GuardWithParams)[]): any {
+export function UseGuard<const T extends readonly unknown[]>(
+  ...entries: { [K in keyof T]: CheckedEntry<T[K], new (...args: any[]) => GuardInterface> }
+): any {
+  const guards = entries as unknown as GuardEntry[]
   return function (target: any, propertyKey?: string | symbol, descriptor?: PropertyDescriptor) {
     const where = propertyKey === undefined ? String(target?.name) : `${target.constructor.name}.${String(propertyKey)}`
     assertStageEntries('@UseGuard', 'guard', where, guards)

@@ -3,6 +3,7 @@ import { type ExceptionFilter } from '@src/interface/index.js'
 import { CATCH_TYPES, CLASS_FILTERS, type FilterEntry, METHOD_FILTERS } from '@src/core/filter-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { assertStageEntries } from '@src/core/stage-scope.js'
+import { type CheckedEntry } from '@src/decorator/stage-entry.js'
 
 /**
  * Marks a class as an exception filter that handles the given error types, matched with
@@ -54,11 +55,8 @@ export function Catch(...errorTypes: (abstract new (...args: any[]) => unknown)[
  * }
  * ```
  */
-export function UseFilter(
-  ...filters: (
-    | (new (...args: any[]) => ExceptionFilter<any>)
-    | { provide: new (...args: any[]) => ExceptionFilter<any>; params?: Record<string, any> }
-  )[]
+export function UseFilter<const T extends readonly unknown[]>(
+  ...filters: { [K in keyof T]: CheckedEntry<T[K], new (...args: any[]) => ExceptionFilter<any>> }
 ): ClassDecorator & MethodDecorator {
   return function (target: object, propertyKey?: string | symbol) {
     const where = propertyKey === undefined ? (target as { name: string }).name : `${target.constructor.name}.${String(propertyKey)}`
