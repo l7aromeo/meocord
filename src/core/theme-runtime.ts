@@ -3,8 +3,10 @@ import { type Container } from 'inversify'
 import { type ThemeOverride } from '@src/interface/index.js'
 import { sourcePrototype, stageClasses } from '@src/core/guard-runner.js'
 import {
+  ambientThemeVersion,
   claimAmbientTheme,
   defaultTheme,
+  hasAmbientTheme,
   mergeTheme,
   ownsAmbientTheme,
   type ResolvedTheme,
@@ -27,6 +29,8 @@ interface AppThemes {
   varies: boolean
   /** The version of the layers beneath the app's that `app` and `handlers` were built on. */
   version: number
+  /** The version of the app read outside a call that `scoped` was decided with. */
+  ambientVersion: number
   app: ResolvedTheme
   /** The theme a call of a handler without a `@UseTheme` runs with, or `undefined` when it needs no scope. */
   scoped: ResolvedTheme | undefined
@@ -50,7 +54,7 @@ function chainOf(cls: object): object[] {
  */
 export function configureThemes(container: Container, layer: ThemeOverride | undefined, classes: readonly object[]): void {
   const varies = classes.some(cls => chainOf(cls).some(link => THEMED_CLASSES.has(link)))
-  apps.set(container, { layer, varies, version: -1, app: defaultTheme(), scoped: undefined, handlers: new WeakMap() })
+  apps.set(container, { layer, varies, version: -1, ambientVersion: -1, app: defaultTheme(), scoped: undefined, handlers: new WeakMap() })
 }
 
 /** The app's themes, built again when the layers beneath the app's have changed. */
@@ -61,16 +65,22 @@ function current(container: Container): AppThemes | undefined {
     themes.app = mergeTheme(defaultTheme(), themes.layer)
     themes.handlers = new WeakMap()
     rescope(container, themes)
+  } else if (themes && themes.ambientVersion !== ambientThemeVersion()) {
+    rescope(container, themes)
   }
   return themes
 }
 
 /**
- * Decides once whether the app's calls need a scope: they do when the handlers can differ in theme, or when the
- * app's theme is neither MeoCord's defaults nor the one read outside a call.
+ * Decides whether the app's calls need a scope, again whenever the layers beneath it or the app read outside a call
+ * change. They do when the handlers can differ in theme. Otherwise a call reads the theme outside a call, so it
+ * needs one unless that is its own theme: when the app owns it, or when no app does and the app's theme is MeoCord's
+ * defaults.
  */
 function rescope(container: Container, themes: AppThemes): void {
-  themes.scoped = themes.varies || (themes.app !== defaultTheme() && !ownsAmbientTheme(container)) ? themes.app : undefined
+  themes.ambientVersion = ambientThemeVersion()
+  const readsOwnTheme = ownsAmbientTheme(container) || (!hasAmbientTheme() && themes.app === defaultTheme())
+  themes.scoped = themes.varies || !readsOwnTheme ? themes.app : undefined
 }
 
 /** The app's theme: MeoCord's defaults and the app's `@MeoCord({ theme })`, or the defaults for a container with none. */
@@ -109,6 +119,4 @@ export function callTheme(container: Container, prototype?: object, methodName?:
 /** Makes the app's theme the one read outside a call, unless another app in the process already has. */
 export function claimAmbientAppTheme(container: Container): void {
   claimAmbientTheme(container, () => appTheme(container))
-  const themes = apps.get(container)
-  if (themes) rescope(container, themes)
 }
