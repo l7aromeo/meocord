@@ -322,20 +322,30 @@ type ChoiceKeys<T> = T extends CommandType.SELECT_MENU
 
 type RequiredKeys<P> = { [K in keyof P]-?: object extends Pick<P, K> ? never : K }[keyof P]
 
+/** The component types whose handler params are a route's params, and a select menu's choices. */
+type RouteCheckedType =
+  | CommandType.BUTTON
+  | CommandType.SELECT_MENU
+  | CommandType.USER_SELECT_MENU
+  | CommandType.ROLE_SELECT_MENU
+  | CommandType.CHANNEL_SELECT_MENU
+  | CommandType.MENTIONABLE_SELECT_MENU
+
 /**
  * Allows the handler when each key its params require is one a call to it gets: a param of its route, or a
- * select menu's choice. Value types are left to `@Validate`. Plain strings, modals, whose fields are keyed by
- * customId, and params with an index signature, as a handler without them infers, are unchecked.
+ * select menu's choice. Value types are left to `@Validate`. Plain strings, commands, whose params are their
+ * options, modals, whose fields are keyed by customId, and params with an index signature, as a handler
+ * without them infers, are unchecked.
  */
 type RouteAccepts<N, T, P> =
   N extends Route<infer Pattern>
     ? string extends Pattern | keyof P
       ? unknown
-      : T extends CommandType.MODAL_SUBMIT
-        ? unknown
-        : [Exclude<RequiredKeys<P>, RouteParams<Pattern> | ChoiceKeys<T>>] extends [never]
+      : T extends RouteCheckedType
+        ? [Exclude<RequiredKeys<P>, RouteParams<Pattern> | ChoiceKeys<T>>] extends [never]
           ? unknown
           : { "The handler's params name keys its route does not capture": Exclude<RequiredKeys<P>, RouteParams<Pattern> | ChoiceKeys<T>> }
+        : unknown
     : unknown
 
 /**
