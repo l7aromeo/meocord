@@ -123,10 +123,11 @@ depd('stack-probe')('a deprecation, located through a stack hook of its own')
 console.log(\`error makers: axios \${typeof axios.get}, \${firstLine(new FetchError('probe', 'system'))}, \${firstLine(new ReplyError('ERR probe'))}\`)
 ${templateMain}`
 
-/** Two names for each generator, one nested, with class names of their own. */
+/** Names for each generator: a nested one ends like a flat one, and its class name carries its folder. */
 const generatedNames = [
   { name: 'Generated', dir: '', className: 'Generated', file: 'generated' },
-  { name: 'admin/second', dir: 'admin/', className: 'Second', file: 'second' },
+  { name: 'second', dir: '', className: 'Second', file: 'second' },
+  { name: 'admin/second', dir: 'admin/', className: 'AdminSecond', file: 'second' },
 ]
 const pascal = (kebab: string) => kebab.replace(/(^|-)([a-z])/g, (_, _dash, letter: string) => letter.toUpperCase())
 
