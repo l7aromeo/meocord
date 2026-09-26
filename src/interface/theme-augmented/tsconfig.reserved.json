@@ -1,0 +1,5 @@
+{
+  // A program of its own too: its augmentation takes reserved names, which would refuse every root theme beside it.
+  "extends": "./tsconfig.json",
+  "files": ["reserved.augmented.ts"]
+}
