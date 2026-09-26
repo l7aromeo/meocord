@@ -22,6 +22,7 @@ import { type CooldownStoreFailure } from '@src/core/cooldown-runner.js'
 import { type CheckedEntry } from '@src/decorator/stage-entry.js'
 import { type RootTheme } from '@src/interface/theme.interface.js'
 import { assertValidTheme } from '@src/core/theme-validation.js'
+import { copyLayer } from '@src/core/theme-scope.js'
 
 /** Refuses a `messages` option of the wrong type where the app is declared, rather than at the first message. */
 function assertMessageOptions(messages: MessageCommandOptions | undefined): void {
@@ -138,10 +139,12 @@ export function MeoCord<const G extends readonly unknown[] = [], const I extends
     if (options.warnUnanswered !== undefined && typeof options.warnUnanswered !== 'boolean') {
       throw new TypeError(`@MeoCord({ warnUnanswered }) on ${target.name} takes true or false.`)
     }
-    if (options.theme !== undefined) assertValidTheme(options.theme, `@MeoCord({ theme }) on ${target.name}`)
+    // Copied first, so what is checked is what the app runs with, whatever happens to the object afterwards
+    const theme = options.theme === undefined ? undefined : copyLayer(options.theme)
+    if (theme !== undefined) assertValidTheme(theme, `@MeoCord({ theme }) on ${target.name}`)
     makeInjectable(target)
 
-    Reflect.defineMetadata(MetadataKey.AppOptions, options, target)
+    Reflect.defineMetadata(MetadataKey.AppOptions, theme === undefined ? options : { ...options, theme }, target)
   }
 }
 
