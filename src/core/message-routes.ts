@@ -199,12 +199,19 @@ const QUOTES = new Map([
   ['“', ['”', '"']],
 ])
 
-/** A message's words, where text in quotes is one word, each with where it starts in the text. */
+/** Whether a character is whitespace, as `/\s/` has it, testing the common ASCII cases without a regex. */
+function isSpace(text: string, i: number): boolean {
+  const code = text.charCodeAt(i)
+  if (code === 32 || (code >= 9 && code <= 13)) return true
+  return code > 127 && /\s/.test(text[i])
+}
+
+/** A message's words, where text in quotes is one word, each with where it starts in the text. One pass. */
 function splitWords(text: string): { value: string; start: number }[] {
   const words: { value: string; start: number }[] = []
   let i = 0
   while (i < text.length) {
-    if (/\s/.test(text[i])) {
+    if (isSpace(text, i)) {
       i++
       continue
     }
@@ -212,7 +219,7 @@ function splitWords(text: string): { value: string; start: number }[] {
     const closers = QUOTES.get(text[i])
     if (closers) {
       let end = i + 1
-      while (end < text.length && !(closers.includes(text[end]) && (end + 1 === text.length || /\s/.test(text[end + 1])))) end++
+      while (end < text.length && !(closers.includes(text[end]) && (end + 1 === text.length || isSpace(text, end + 1)))) end++
       // A quote never closed is an ordinary character
       if (end < text.length) {
         words.push({ value: text.slice(i + 1, end), start })
@@ -220,55 +227,165 @@ function splitWords(text: string): { value: string; start: number }[] {
         continue
       }
     }
-    while (i < text.length && !/\s/.test(text[i])) i++
+    while (i < text.length && !isSpace(text, i)) i++
     words.push({ value: text.slice(start, i), start })
   }
   return words
 }
 
-/** The params a route's words capture from the text after its start, or `undefined` when they do not match. */
-function matchWords(route: MessageRoute, text: string): Record<string, string> | undefined {
-  const words = splitWords(text)
-  const params: Record<string, string> = {}
-  for (let i = 0; i < route.tokens.length; i++) {
-    const token = route.tokens[i]
-    const word = words[i]
-    if ('literal' in token) {
-      if (!word || (route.caseSensitive ? word.value !== token.literal : word.value.toLowerCase() !== token.literal.toLowerCase())) {
-        return undefined
-      }
-      continue
-    }
-    if (!word) return token.optional ? params : undefined
-    if (token.rest) {
-      params[token.param] = text.slice(word.start).trimEnd()
-      return params
-    }
-    params[token.param] = word.value
-  }
-  return words.length === route.tokens.length ? params : undefined
+/** One step of a compiled pattern: literal words by key, one param edge, and the routes ending here. */
+interface TrieNode {
+  words: Map<string, TrieNode>
+  param?: TrieNode
+  /** Routes, by rank, whose words end here. */
+  ends: number[]
+  /** Routes, by rank, whose rest param starts here and takes one word or more. */
+  rests: number[]
 }
+
+/** Routes that share how a message starts for them, and their words compiled into one trie. */
+interface RouteGroup {
+  /** The route's own prefixes, `false` for none, or `undefined` for the app's. */
+  prefix: false | readonly string[] | undefined
+  caseSensitive: boolean
+  root: TrieNode
+}
+
+/** Routes compiled once for dispatch: grouped by how a message starts for them, each group a trie of words. */
+interface MessageIndex {
+  groups: RouteGroup[]
+  /** Whether some route can match a message with no prefix, so no message can be turned away by its first character. */
+  acceptsAnyStart: boolean
+  /** Whether some route uses the app's prefixes, which each message brings. */
+  usesAppStarts: boolean
+  /** The characters the routes' own prefixes begin with, in either case. */
+  ownFirsts: Set<string>
+}
+
+const trieNode = (): TrieNode => ({ words: new Map(), ends: [], rests: [] })
+const wordKey = (word: string, caseSensitive: boolean) => (caseSensitive ? word : word.toLowerCase())
+
+/** Compiles ranked routes into tries, one per group; a route keeps its rank, its position in `routes`. */
+function compileIndex(routes: readonly MessageRoute[]): MessageIndex {
+  const groups = new Map<string, RouteGroup>()
+  routes.forEach((route, rank) => {
+    const startKey = route.prefix === undefined ? 'app' : route.prefix === false ? 'none' : JSON.stringify(route.prefix)
+    const key = `${startKey}|${route.caseSensitive}`
+    let group = groups.get(key)
+    if (!group) groups.set(key, (group = { prefix: route.prefix, caseSensitive: route.caseSensitive, root: trieNode() }))
+
+    let node = group.root
+    for (const token of route.tokens) {
+      if ('literal' in token) {
+        const key = wordKey(token.literal, route.caseSensitive)
+        let next = node.words.get(key)
+        if (!next) node.words.set(key, (next = trieNode()))
+        node = next
+        continue
+      }
+      // An optional param may be left out: the route also ends before it
+      if (token.optional) node.ends.push(rank)
+      if (token.rest) {
+        node.rests.push(rank)
+        return
+      }
+      node = node.param ??= trieNode()
+    }
+    node.ends.push(rank)
+  })
+  const all = [...groups.values()]
+  const ownPrefixes = all.flatMap(group => (Array.isArray(group.prefix) ? group.prefix : []))
+  return {
+    groups: all,
+    acceptsAnyStart:
+      all.some(group => group.prefix === false) ||
+      // Lowercasing a character outside ASCII can change its length, so such a prefix turns nothing away
+      ownPrefixes.some(prefix => prefix === '' || prefix.charCodeAt(0) > 127),
+    usesAppStarts: all.some(group => group.prefix === undefined),
+    ownFirsts: new Set(ownPrefixes.flatMap(prefix => [prefix[0], prefix[0].toLowerCase(), prefix[0].toUpperCase()])),
+  }
+}
+
+/** The ranks of every route the words reach from `node`. Each node sits at one word depth, so each is visited once. */
+function reach(node: TrieNode, words: { value: string }[], i: number, caseSensitive: boolean, found: number[]): void {
+  if (i === words.length) {
+    for (const rank of node.ends) found.push(rank)
+    return
+  }
+  for (const rank of node.rests) found.push(rank)
+  const next = node.words.get(wordKey(words[i].value, caseSensitive))
+  if (next) reach(next, words, i + 1, caseSensitive, found)
+  if (node.param) reach(node.param, words, i + 1, caseSensitive, found)
+}
+
+/** The params a route's words capture, given words its pattern is known to match. */
+function paramsOf(route: MessageRoute, words: { value: string; start: number }[], text: string): Record<string, string> {
+  const params: Record<string, string> = {}
+  for (let i = 0; i < route.tokens.length && i < words.length; i++) {
+    const token = route.tokens[i]
+    if ('literal' in token) continue
+    if (token.rest) {
+      params[token.param] = text.slice(words[i].start).trimEnd()
+      break
+    }
+    params[token.param] = words[i].value
+  }
+  return params
+}
+
+/** Whether a message beginning with `first` can reach some route: a check of first characters, with no allocation. */
+function mayStart(index: MessageIndex, starts: MessageStarts, first: string): boolean {
+  if (index.acceptsAnyStart || index.ownFirsts.has(first)) return true
+  if (starts.mention && first === '<') return true
+  if (!index.usesAppStarts) return false
+  for (const prefix of starts.prefixes) {
+    if (prefix === '' || prefix.charCodeAt(0) > 127) return true
+    const head = prefix[0]
+    if (head === first || head.toLowerCase() === first.toLowerCase()) return true
+  }
+  return false
+}
+
+const indexes = new WeakMap<readonly MessageRoute[], MessageIndex>()
 
 /**
  * The route dispatch runs for a message's content: the first, in rank order, that the content matches
- * after the route's start, with the captured params.
+ * after the route's start, with the captured params. The routes are compiled into tries once, so a message
+ * costs one pass over its words whatever the number of routes, and one whose first character no start
+ * begins with costs a lookup.
  */
 export function matchMessageRoute(
   routes: readonly MessageRoute[],
   content: string,
   starts: MessageStarts,
 ): { route: MessageRoute; params: Record<string, string> } | undefined {
+  let index = indexes.get(routes)
+  if (!index) indexes.set(routes, (index = compileIndex(routes)))
+
+  // Most messages are chatter: one that no start begins with is turned away before anything is copied or split
+  let first = 0
+  while (first < content.length && isSpace(content, first)) first++
+  if (first === content.length || !mayStart(index, starts, content[first])) return undefined
   const text = content.trim()
-  for (const route of routes) {
+
+  // Each distinct text after a start is split into words once
+  const split = new Map<string, { value: string; start: number }[]>()
+  let best: { rank: number; words: { value: string; start: number }[]; text: string } | undefined
+  for (const group of index.groups) {
     const rest =
-      route.prefix === false
+      group.prefix === false
         ? text
-        : afterStart(text, route.prefix ?? starts.prefixes, starts.mention, route.caseSensitive)
+        : afterStart(text, group.prefix ?? starts.prefixes, starts.mention, group.caseSensitive)
     if (!rest) continue
-    const params = matchWords(route, rest)
-    if (params) return { route, params }
+    let words = split.get(rest)
+    if (!words) split.set(rest, (words = splitWords(rest)))
+    const found: number[] = []
+    reach(group.root, words, 0, group.caseSensitive, found)
+    for (const rank of found) if (!best || rank < best.rank) best = { rank, words, text: rest }
   }
-  return undefined
+  if (!best) return undefined
+  const route = routes[best.rank]
+  return { route, params: paramsOf(route, best.words, best.text) }
 }
 
 /**

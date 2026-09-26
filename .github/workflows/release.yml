@@ -103,6 +103,9 @@ jobs:
       - name: Run tests
         run: bun run test
 
+      - name: Check message matching stays within its budget
+        run: bun run bench:messages
+
   # Branch protection requires a check named exactly "Test". A matrix names each leg
   # after its parameters, so this gate carries that name and reports the matrix result.
   test-result:
