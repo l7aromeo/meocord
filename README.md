@@ -1325,7 +1325,7 @@ await respond(interaction).send({
 
 ### Replies to messages
 
-MeoCord answers a message in plain text: a command's [usage](#usage-errors), a guard's or validation's reason, and a `UserError`'s message. A theme leaves that text as it is, so a test that checks it keeps passing when the colours change. `@MeoCord({ messages: { replyEmoji: true } })` begins each of them with the call's `emojis.warning`, the app's or a handler's `@UseTheme`:
+MeoCord answers a message in plain text: a command's [usage](#usage-errors), a guard's or validation's reason, and a `UserError`'s message, whether a command threw it or an `@On` listener of a message event. A theme leaves that text as it is, so a test that checks it keeps passing when the colours change. `@MeoCord({ messages: { replyEmoji: true } })` begins every one of these text replies to a message, `@On` listeners' included, with the call's `emojis.warning`, the app's or a handler's `@UseTheme`:
 
 ```text
 ⚠️ Usage: !roll <sides>
