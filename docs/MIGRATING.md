@@ -510,6 +510,18 @@ spellings of a pattern, such as `card/{id}` and `card/{cardId}`, is one route an
 - **`ShardedCooldownStore` no longer counts in the shard when the manager does not answer.** Under the
   default `'deny'`, those calls are refused until it answers; `cooldownStoreFailure: 'allow'` keeps them
   running, uncounted, rather than counting per shard.
+- **Coverage of untested files.** `vitest run --coverage` stopped with a syntax error on a file no spec
+  imports that holds TypeScript, such as a type annotation, because SWC skipped it. New apps pass SWC an
+  `include` that allows the query coverage adds; in an existing app's `vitest.config.ts`, add it to
+  `swc.vite({ ... })`:
+
+  ```typescript
+  swc.vite({
+    include: /\.m?[jt]sx?(?:\?.*)?$/,
+    // ...the options already there
+  }),
+  ```
+
 - `process.env` values that `meocord.config.ts` loads are set before any application module runs,
   after a rebuild. An option such as `@MeoCord({ activities: [{ name: process.env.STATUS! }] })` read
   `undefined` in 4.0.

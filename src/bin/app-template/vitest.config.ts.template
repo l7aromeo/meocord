@@ -7,6 +7,9 @@ export default defineConfig({
   // dependency injection behind @Controller and @Service reads at runtime.
   plugins: [
     swc.vite({
+      // Coverage reads a file no test imports as file.ts?cache=…&vitest-uncovered-coverage=true; the default
+      // pattern ends at the extension, so it would pass such a file to istanbul as raw TypeScript
+      include: /\.m?[jt]sx?(?:\?.*)?$/,
       jsc: {
         parser: { syntax: 'typescript', decorators: true },
         transform: { legacyDecorator: true, decoratorMetadata: true },
@@ -29,9 +32,9 @@ export default defineConfig({
       // not implement, and this template is expected to run under either runtime.
       provider: 'istanbul',
       include: ['src/**/*.ts'],
-      // `include` reports untested files as zero rather than dropping them from the percentage.
-      // istanbul parses those files without swc and cannot read decorators, so decorated files with no
-      // spec are excluded; app.ts and main.ts only wire and boot the app, and declarations hold no code.
+      // `include` reports untested files as zero rather than dropping them from the percentage; they go
+      // through SWC like tested ones, decorators and all. app.ts and main.ts only wire and boot the app, and
+      // declarations hold no code.
       exclude: ['src/**/*.spec.ts', 'src/**/*.d.ts', 'src/app.ts', 'src/main.ts'],
     },
   },
