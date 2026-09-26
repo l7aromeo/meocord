@@ -549,9 +549,11 @@ export interface ShardingConfig {
 export interface CommandRegistrationConfig {
   /**
    * Guilds to register every command to instead of globally. Unset or empty registers globally.
+   * Blank ids are dropped; a list with none left, as `[process.env.GUILD_ID]` leaves it with the
+   * variable unset, registers those commands nowhere, with a warning, rather than globally.
    * A builder's own `guilds` option takes precedence for its command.
    */
-  guilds?: string[]
+  guilds?: (string | undefined)[]
   /**
    * A guild that receives every command, and nothing else does, while `NODE_ENV` is `development` —
    * as under `meocord start --dev`. Ignored in production.

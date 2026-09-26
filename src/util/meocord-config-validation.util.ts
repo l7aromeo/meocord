@@ -51,7 +51,12 @@ function objectOf(shape: Record<string, Check>, problems: ConfigProblems): Check
 
 /** How each `commands` option is checked, typed so an option added to the interface needs a check here. */
 const commandsShape: Record<keyof CommandRegistrationConfig, Check> = {
-  guilds: optional(stringList('guild ids')),
+  // An unset environment variable leaves an id undefined; registration drops it and warns
+  guilds: optional((value, key) =>
+    Array.isArray(value) && value.every(item => item === undefined || typeof item === 'string')
+      ? undefined
+      : `${key} must be an array of guild ids (got ${describe(value)})`,
+  ),
   developmentGuild: optional(string),
   register: optional(boolean),
   clearOther: optional(boolean),

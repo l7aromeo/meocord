@@ -320,6 +320,25 @@ describe('planTargets', () => {
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('"ban" lists no guild ids'))
   })
 
+  // `guilds: [process.env.GUILD_ID]` with the variable unset names guilds, just no ids
+  it('registers the default scope nowhere, not globally, when every configured guild id is empty, and warns', () => {
+    const logger = createLogger()
+
+    expect(plan([{ name: 'ping' }, { name: 'ban', guilds: ['staff'] }], { guilds: [undefined, ' '] }, false, logger)).toEqual([['staff', ['ban']]])
+    expect(logger.warn).toHaveBeenCalledTimes(1)
+    expect(logger.warn).toHaveBeenCalledWith(
+      'commands.guilds lists no guild id, as an unset environment variable leaves it, so "ping" is not registered, ' +
+        'rather than registered globally. Set the guild ids, or remove commands.guilds to register globally.',
+    )
+  })
+
+  it('still sends everything to the development guild when the configured guild ids are empty', () => {
+    const logger = createLogger()
+
+    expect(plan([{ name: 'ping' }], { guilds: [undefined], developmentGuild: 'dev' }, true, logger)).toEqual([['dev', ['ping']]])
+    expect(logger.warn).not.toHaveBeenCalled()
+  })
+
   it('sends everything to the development guild in development', () => {
     expect(plan([{ name: 'ping' }, { name: 'ban', guilds: ['staff'] }], { guilds: ['one'], developmentGuild: 'dev' }, true)).toEqual([
       ['dev', ['ping', 'ban']],
@@ -596,6 +615,35 @@ describe('registerCommands', () => {
 
     expect(rest.put).toHaveBeenCalledTimes(1)
     expect(existsSync(path.join(cwd, 'node_modules', '.cache'))).toBe(false)
+  })
+
+  describe('when every configured guild id is empty', () => {
+    it('sends only the commands with guilds of their own, and reports failure', async () => {
+      const { rest, run } = register({
+        controllerClasses: [controllerWith([{ name: 'ping' }, { name: 'ban', guilds: ['staff'] }])],
+        config: { guilds: [undefined] },
+      })
+
+      await expect(run).resolves.toBe(false)
+      expect(sentTo(rest)).toEqual({ '/applications/app/guilds/staff/commands': ['ban'] })
+    })
+
+    // The configuration is broken, so what it would clear cannot be trusted
+    it('clears nothing, even with clearOther', async () => {
+      const rest = createRest({ '/applications/app/commands': [{ name: 'ping' }] })
+      const { logger, run } = register({
+        rest,
+        controllerClasses: [controllerWith([{ name: 'ping' }, { name: 'ban', guilds: ['staff'] }])],
+        config: { guilds: [undefined], clearOther: true },
+      })
+      await run
+
+      expect(rest.put).not.toHaveBeenCalledWith('/applications/app/commands', expect.anything())
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('still registered globally (ping), which this configuration does not register to, so Discord keeps showing them there. ' +
+          'clearOther is on, but they are not removed while commands.guilds lists no guild id.'),
+      )
+    })
   })
 
   describe('leftovers in scopes the configuration names but does not send to', () => {

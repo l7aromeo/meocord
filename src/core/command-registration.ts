@@ -142,15 +142,30 @@ const ids = (list: (string | undefined)[] | undefined): string[] => [
 
 const scopeKey = (scope: RegistrationScope): string => (scope === 'global' ? 'global' : `guild-${scope.guild}`)
 
+/** Where every command goes regardless of `guilds`: `--guild`, or `developmentGuild` in development. */
+const everythingTarget = ({ config, development, onlyGuild }: TargetOptions): string | undefined =>
+  onlyGuild?.trim() || (development ? config?.developmentGuild?.trim() : undefined)
+
+/**
+ * Whether `commands.guilds` names guilds but no ids, as `[process.env.GUILD_ID]` does with the variable
+ * unset. The default scope is then nowhere: registering globally instead would publish the commands
+ * everywhere.
+ */
+function defaultGuildsEmpty(options: TargetOptions): boolean {
+  const guilds = options.config?.guilds ?? []
+  return !everythingTarget(options) && guilds.length > 0 && ids(guilds).length === 0
+}
+
 /**
  * Where each command is sent: one bulk update per scope. A scope's update replaces everything the
  * application has there, so the default scope is always included, even when it ends up empty.
  */
-export function planTargets(commands: CollectedCommand[], { config, development, onlyGuild }: TargetOptions, logger: RegistrationLogger): RegistrationTarget[] {
-  const everythingTo = onlyGuild?.trim() || (development ? config?.developmentGuild?.trim() : undefined)
+export function planTargets(commands: CollectedCommand[], options: TargetOptions, logger: RegistrationLogger): RegistrationTarget[] {
+  const everythingTo = everythingTarget(options)
   if (everythingTo) return [{ scope: { guild: everythingTo }, commands }]
 
-  const defaultGuilds = ids(config?.guilds)
+  const defaultGuilds = ids(options.config?.guilds)
+  const nowhere = defaultGuildsEmpty(options)
   const targets = new Map<string, RegistrationTarget>()
   const add = (scope: RegistrationScope, command?: CollectedCommand) => {
     const key = scopeKey(scope)
@@ -158,20 +173,34 @@ export function planTargets(commands: CollectedCommand[], { config, development,
     if (command) targets.get(key)!.commands.push(command)
   }
 
-  if (defaultGuilds.length === 0) add('global')
+  if (defaultGuilds.length === 0 && !nowhere) add('global')
   for (const guild of defaultGuilds) add({ guild })
 
+  const unregistered: string[] = []
   for (const command of commands) {
     if (command.guilds) {
       const own = ids(command.guilds)
       // Falling back to the default scope could publish a staff-only command everywhere.
       if (own.length === 0) logger.warn(`Command "${command.name}" lists no guild ids in its builder, so it is not registered.`)
       for (const guild of own) add({ guild }, command)
+    } else if (nowhere) {
+      unregistered.push(`"${command.name}"`)
     } else if (defaultGuilds.length === 0) {
       add('global', command)
     } else {
       for (const guild of defaultGuilds) add({ guild }, command)
     }
+  }
+
+  if (nowhere) {
+    const outcome =
+      unregistered.length === 0
+        ? 'nothing is registered globally'
+        : `${unregistered.join(', ')} ${unregistered.length === 1 ? 'is' : 'are'} not registered, rather than registered globally`
+    logger.warn(
+      `commands.guilds lists no guild id, as an unset environment variable leaves it, so ${outcome}. ` +
+        `Set the guild ids, or remove commands.guilds to register globally.`,
+    )
   }
 
   return [...targets.values()]
@@ -265,7 +294,9 @@ export async function registerCommands(options: RegisterCommandsOptions): Promis
   if (!commands) return false
 
   const targets = planTargets(commands, { config, development, onlyGuild }, logger)
-  let succeeded = true
+  // Commands the configuration meant for guilds went nowhere, and what it would clear cannot be trusted
+  const guildsEmpty = defaultGuildsEmpty({ config, development, onlyGuild })
+  let succeeded = !guildsEmpty
   let sent = false
 
   for (const target of targets) {
@@ -290,20 +321,25 @@ export async function registerCommands(options: RegisterCommandsOptions): Promis
 
   // Development and production often share one application, so a development guild run never clears.
   const toDevelopmentGuild = development && !!config?.developmentGuild?.trim()
-  if (sent && !onlyGuild) await reportOtherScopes(options, commands, targets, !toDevelopmentGuild)
+  const keptBecause = toDevelopmentGuild
+    ? 'while commands go to the development guild, since a production bot sharing this application may own them'
+    : guildsEmpty
+      ? 'while commands.guilds lists no guild id'
+      : undefined
+  if (sent && !onlyGuild) await reportOtherScopes(options, commands, targets, keptBecause)
 
   return succeeded
 }
 
 /**
  * Warns about, or with `clearOther` removes, this application's commands left in scopes not sent to.
- * Without `mayClear`, as for a development guild run, it only warns.
+ * Given `keptBecause`, as for a development guild run, it only warns, saying why.
  */
 async function reportOtherScopes(
   { rest, applicationId, config, logger }: RegisterCommandsOptions,
   commands: CollectedCommand[],
   targets: RegistrationTarget[],
-  mayClear: boolean,
+  keptBecause: string | undefined,
 ): Promise<void> {
   for (const scope of otherScopes(commands, targets, config)) {
     let existing: { name?: string }[]
@@ -317,13 +353,11 @@ async function reportOtherScopes(
     if (!Array.isArray(existing) || existing.length === 0) continue
 
     const names = existing.map(({ name }) => name).join(', ')
-    if (!config?.clearOther || !mayClear) {
+    if (!config?.clearOther || keptBecause) {
       logger.warn(
         `${existing.length} command(s) are still registered ${describeScope(scope)} (${names}), which this ` +
           `configuration does not register to, so Discord keeps showing them there. ` +
-          (config?.clearOther
-            ? 'clearOther is on, but they are not removed while commands go to the development guild, since a production bot sharing this application may own them.'
-            : 'Set commands.clearOther to remove them.'),
+          (config?.clearOther ? `clearOther is on, but they are not removed ${keptBecause}.` : 'Set commands.clearOther to remove them.'),
       )
       continue
     }
