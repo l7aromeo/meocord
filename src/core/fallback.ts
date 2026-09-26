@@ -1,4 +1,4 @@
-import { type AutocompleteInteraction } from 'discord.js'
+import { type AutocompleteInteraction, BaseInteraction, type Interaction } from 'discord.js'
 import { type ExecutionContext } from '@src/common/execution-context.js'
 import { CommandNotFoundError, CooldownError, CooldownStoreError, GuardDeniedError, MessageUsageError, UserError, ValidationError } from '@src/common/errors.js'
 import { type Logger } from '@src/common/logger.js'
@@ -139,3 +139,25 @@ export function createFallback(logger: Logger, usageReplySeconds: () => number |
     }
   }
 }
+
+/**
+ * Whether the fallback answers `error`, raised for `call`, as the user's own outcome rather than a fault:
+ * one it handles below error level. It mirrors `createFallback`'s branches, which fallback.spec pins pair
+ * by pair. An interaction that expired is only warned about, but counts as a fault: it is a timing failure.
+ */
+export function isUserOutcome(error: unknown, call: unknown): boolean {
+  if (!(call instanceof BaseInteraction)) {
+    return error instanceof MessageUsageError || error instanceof CooldownError || error instanceof CooldownStoreError || error instanceof UserError
+  }
+  const interaction = call as Interaction
+  if (interaction.isAutocomplete() || !interaction.isRepliable()) return false
+  return (
+    error instanceof CommandNotFoundError ||
+    error instanceof GuardDeniedError ||
+    error instanceof CooldownError ||
+    error instanceof CooldownStoreError ||
+    error instanceof UserError ||
+    error instanceof ValidationError
+  )
+}
+

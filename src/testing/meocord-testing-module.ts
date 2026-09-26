@@ -14,7 +14,7 @@ import {
 } from 'discord.js'
 import { MetadataKey, ReactionHandlerAction } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
-import { CommandNotFoundError, MessageUsageError } from '@src/common/errors.js'
+import { MessageUsageError } from '@src/common/errors.js'
 import { missingTranslatorError, Translator } from '@src/common/translator.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import {
@@ -44,7 +44,7 @@ import { isAppClassToken, type LifecycleUnit } from '@src/core/lifecycle-order.j
 import { type LifecycleEntry, runReadyHooks, runShutdownHooks } from '@src/core/lifecycle-hooks.js'
 import { createMockClient } from './mock-interaction.js'
 import { Dispatcher, type DispatchRecorder } from '@src/core/dispatcher.js'
-import { createFallback } from '@src/core/fallback.js'
+import { createFallback, isUserOutcome } from '@src/core/fallback.js'
 import { Logger } from '@src/common/logger.js'
 import {
   assertProvided,
@@ -136,8 +136,8 @@ export interface DispatchedCall extends InvocationResult {
   /** Whether any handler ran. */
   ran: boolean
   /**
-   * The first error a handler's call ended with, or the `MessageUsageError` or `CommandNotFoundError`
-   * the built-in fallback answered.
+   * The first error a handler's call ended with, or an error the built-in fallback answered as the
+   * user's own outcome, such as a `CommandNotFoundError`.
    */
   error?: unknown
   /** Every handler dispatch reached, in the order it ran them; empty when none takes the input. */
@@ -399,9 +399,10 @@ export class TestingModule {
    * @param input - An interaction or a message; or a reaction, with the user who reacted and whether they
    *   added it, `ReactionHandlerAction.ADD` unless given.
    * @returns Every handler reached, in the order it ran, whether any ran, and the first error a call ended
-   *   with. A `MessageUsageError` or `CommandNotFoundError` the fallback answered resolves, as an ordinary
-   *   outcome of a message or an interaction. Any other error no filter handles rejects the call once the
-   *   fallback has answered and every handler has run: with that error, or an `AggregateError` when
+   *   with. An error the fallback answers as the user's own outcome resolves: a usage reply, an unknown
+   *   command, or a guard's, a cooldown's, a validation's or a `UserError`'s refusal, as the fallback
+   *   answers each for an interaction or a message. Any other error no filter handles rejects the call once
+   *   the fallback has answered and every handler has run: with that error, or an `AggregateError` when
    *   several were left unhandled.
    *
    * @example
@@ -444,8 +445,8 @@ export class TestingModule {
       throw new TypeError('dispatch takes an interaction, a message, or a reaction with { user }.')
     }
 
-    // What a user gets for a misused command or an unknown one is an outcome to assert on, not a failure
-    const failures = unhandled.filter(error => !(error instanceof MessageUsageError || error instanceof CommandNotFoundError))
+    // What the fallback answers as the user's own outcome, such as a usage reply or a refusal, is an outcome to assert on
+    const failures = unhandled.filter(error => !isUserOutcome(error, options ? undefined : input))
     if (failures.length === 1) throw failures[0]
     if (failures.length > 1) throw new AggregateError(failures, `${failures.length} errors were left to the fallback.`)
     const error = handlers.find(handler => handler.error !== undefined)?.error ?? unhandled[0]
