@@ -18,7 +18,7 @@ const languageOptions = {
   ecmaVersion: 2023,
   sourceType: 'module',
   parserOptions: {
-    project: ['./tsconfig.json', './tsconfig.test.json', './tsconfig.eslint.json'],
+    project: ['./tsconfig.json', './tsconfig.test.json', './tsconfig.eslint.json', './src/interface/theme-augmented/tsconfig.json', './src/interface/theme-augmented/tsconfig.reserved.json'],
   },
 }
 

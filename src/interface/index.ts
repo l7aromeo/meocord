@@ -864,3 +864,15 @@ export type {
   Token,
   ValueProvider,
 } from '@src/interface/provider.interface.js'
+export type {
+  DeepPartial,
+  DeepReadonly,
+  MeoCordTheme,
+  ReservedThemeRole,
+  RootTheme,
+  ThemeButtons,
+  ThemeButtonStyle,
+  ThemeColors,
+  ThemeEmojis,
+  ThemeOverride,
+} from './theme.interface.js'

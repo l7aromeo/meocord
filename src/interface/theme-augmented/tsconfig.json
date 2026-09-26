@@ -1,0 +1,8 @@
+{
+  // Its own program, since an augmentation reaches every file compiled with it; excluded from the others for the
+  // same reason. `files` with an empty `include`, which the parent's would add to, so a renamed probe fails with TS6053 instead of going unread.
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": { "noEmit": true, "types": ["node", "vitest/globals"] },
+  "files": ["theme.augmented.ts"],
+  "include": []
+}

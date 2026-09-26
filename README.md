@@ -49,6 +49,9 @@ If you know NestJS, the shape will feel familiar.
 - [Interaction responses](#interaction-responses)
   - [Where the interaction happened](#where-the-interaction-happened)
   - [Presenters](#presenters)
+- [Theming](#theming)
+  - [Tokens](#tokens)
+  - [Adding tokens of your own](#adding-tokens-of-your-own)
 - [How a handler runs](#how-a-handler-runs)
 - [Guards](#guards)
   - [Passing options to a guard](#passing-options-to-a-guard)
@@ -1200,6 +1203,46 @@ class App {}
 ```
 
 Without one, errors show "Oops!" as their title in `Theme.errorColor`, and the loading view is "⏳ Working on it…" in `Theme.primaryColor`.
+
+---
+
+## Theming
+
+A theme holds the design tokens a bot's answers use, named by role rather than by value: the colour of an embed or a container's accent, the emoji beside a status, the style of a button. MeoCord gives each role a default, so a theme sets only what it changes, and a role keeps its meaning while its value changes: code asks for `danger`, not for red.
+
+### Tokens
+
+| Group     | Roles                                                        | A token is                                                                                         |
+| --------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `colors`  | `primary`, `neutral`, `success`, `warning`, `danger`, `info` | a `ColorResolvable`: a hex string, a number, an `[r, g, b]` tuple or a discord.js colour name      |
+| `emojis`  | `loading`, `success`, `warning`, `danger`, `info`            | a unicode emoji, or a custom one written `<:name:id>` or `<a:name:id>`                             |
+| `buttons` | `primary`, `neutral`, `success`, `danger`                    | `ButtonStyle.Primary`, `Secondary`, `Success` or `Danger`; link and premium buttons have no colour |
+
+`warning` is for what needs the user's attention, or was refused because of what they did; `danger` is a fault in the bot. The types are `ThemeColors`, `ThemeEmojis`, `ThemeButtons` and `MeoCordTheme` in `meocord/interface`. A theme as code reads it is `DeepReadonly<MeoCordTheme>`, with every role present and none assignable, since one theme is shared by every call. A theme as a scope sets it is `ThemeOverride`, any part of it and nothing unknown, and the root theme is `RootTheme`.
+
+### Adding tokens of your own
+
+Augment the interfaces from a file with an import: a role in one of MeoCord's groups goes in that group's interface, and a group of your own in `MeoCordTheme`.
+
+```typescript
+// src/types/theme.d.ts
+import 'meocord/interface'
+
+declare module 'meocord/interface' {
+  interface ThemeColors {
+    vip: ColorResolvable
+  }
+  interface MeoCordTheme {
+    charts: { axis: ColorResolvable; series: ColorResolvable[] }
+  }
+}
+```
+
+- **The import is what makes it an augmentation.** A `declare module 'meocord/interface'` in a file without one replaces the module instead of extending it, and every other import from `meocord/interface` stops compiling.
+- **A group is extended through its own interface.** Declaring `colors` again in `MeoCordTheme` fails with TS2717, since a property declared twice must keep one type.
+- **Your tokens have no default,** so `RootTheme` requires every one of them, while MeoCord's roles stay optional, so the resolved theme always has them.
+- **Some names are reserved.** MeoCord adds roles only from `ReservedThemeRole`: `accent`, `muted`, `subtle`, `secondary`, `tertiary`, `attention`, `severe`, `error`, `done`, `brand`, `link` and `premium`, in any group. An app that takes one gets a type error at its root theme naming each, `{ 'MeoCord reserves these theme roles; rename yours': 'colors.accent' }`, rather than a clash when MeoCord adds it. Any other name is yours, and MeoCord never takes it.
+- **A theme kept in a variable** is not checked for unknown keys, as TypeScript checks only object literals; write it with `satisfies ThemeOverride` to have it checked.
 
 ---
 
