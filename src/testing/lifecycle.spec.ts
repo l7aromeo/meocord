@@ -132,12 +132,43 @@ describe('TestingModule lifecycle', () => {
     expect(module.get(POOL).ended).toBe(true)
   })
 
-  // As in the bot, where a login that failed runs no onShutdown: nothing was readied to undo
-  it('runs no onShutdown hook when the module was never readied', async () => {
-    const module = compile()
+  // init() makes the factory's pool, so close() must end it; nothing else was constructed to shut down
+  it('shuts down what plain init() constructed, and constructs nothing to shut it down', async () => {
+    const constructed = vi.fn()
+    @Service()
+    class Unused implements OnShutdown {
+      constructor() {
+        constructed()
+      }
+
+      onShutdown() {
+        calls.push('shutdown Unused')
+      }
+    }
+    const module = MeoCordTestingModule.create({
+      controllers: [ReminderController],
+      providers: [{ provide: POOL, useFactory: async () => createPool() }, { provide: Unused, useClass: Unused }],
+    }).compile()
     await module.init()
 
     await module.close()
+
+    expect(calls).toEqual(['shutdown POOL'])
+    expect(module.get(POOL).ended).toBe(true)
+    expect(constructed).not.toHaveBeenCalled()
+  })
+
+  it('shuts down, in reverse dependency order, what a test resolved with get()', async () => {
+    const module = compile()
+    module.get(Scheduler)
+
+    await module.close()
+
+    expect(calls).toEqual(['shutdown Scheduler', 'shutdown Database'])
+  })
+
+  it('shuts down nothing when nothing was constructed', async () => {
+    await compile().close()
 
     expect(calls).toEqual([])
   })
