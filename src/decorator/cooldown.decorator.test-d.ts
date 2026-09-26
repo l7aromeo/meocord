@@ -108,7 +108,8 @@ describe('@MeoCord({ cooldownStoreFailure })', () => {
   it('takes the exported CooldownStoreFailure', () => {
     const failure: CooldownStoreFailure = 'allow'
     expectTypeOf<CooldownStoreFailure>().toEqualTypeOf<'deny' | 'allow'>()
-    expectTypeOf(MeoCord).parameter(0).toHaveProperty('cooldownStoreFailure').toEqualTypeOf<CooldownStoreFailure | undefined>()
+    // Read through Parameters: expect-type's parameter() gives never for MeoCord's generic signature
+    expectTypeOf<Parameters<typeof MeoCord>[0]['cooldownStoreFailure']>().toEqualTypeOf<CooldownStoreFailure | undefined>()
     // @ts-expect-error only 'deny' or 'allow'
     const retry: CooldownStoreFailure = 'retry'
     void [failure, retry]

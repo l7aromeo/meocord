@@ -2,6 +2,7 @@ import 'reflect-metadata'
 import { type PipeInterface } from '@src/interface/index.js'
 import { type InferSchemaOutput, type PIPED_BRAND, type StandardSchemaV1 } from '@src/interface/standard-schema.interface.js'
 import { METHOD_PIPES, METHOD_VALIDATION, type PipeEntry, type ValidationMetadata } from '@src/core/input-runner.js'
+import { type CheckedEntry } from '@src/decorator/stage-entry.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { assertStageEntries } from '@src/core/stage-scope.js'
 
@@ -119,7 +120,10 @@ type AcceptsPiped<P, K extends string, Out> = [P] extends [NoInput]
  * async profile(interaction: ButtonInteraction, { uid }: { uid: Account }) {}
  * ```
  */
-export function UsePipe<K extends string, const Pipes extends readonly [PipeEntryOf, ...PipeEntryOf[]]>(key: K, ...pipes: Pipes) {
+export function UsePipe<K extends string, const Pipes extends readonly [PipeEntryOf, ...PipeEntryOf[]]>(
+  key: K,
+  ...pipes: Pipes & { [I in keyof Pipes]: CheckedEntry<Pipes[I], new (...args: any[]) => PipeInterface> }
+) {
   return function <M extends Handler>(
     target: object,
     propertyKey: string,

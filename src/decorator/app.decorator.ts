@@ -5,8 +5,8 @@ import { MetadataKey } from '@src/enum/index.js'
 import {
   type DispatchObserver,
   type ExceptionFilter,
-  type MessageCommandOptions,
   type GuardInterface,
+  type MessageCommandOptions,
   type InterceptorInterface,
   type ResponsePresenter,
 } from '@src/interface/index.js'
@@ -18,6 +18,7 @@ import { type Provider } from '@src/interface/provider.interface.js'
 import { providerMap } from '@src/core/providers.js'
 import { assertObservers } from '@src/core/observer-runner.js'
 import { type CooldownStoreFailure } from '@src/core/cooldown-runner.js'
+import { type CheckedEntry } from '@src/decorator/stage-entry.js'
 
 /** Refuses a `messages` option of the wrong type where the app is declared, rather than at the first message. */
 function assertMessageOptions(messages: MessageCommandOptions | undefined): void {
@@ -89,24 +90,15 @@ function assertMessageOptions(messages: MessageCommandOptions | undefined): void
  * class App {}
  * ```
  */
-export function MeoCord(options: {
+export function MeoCord<const G extends readonly unknown[] = [], const I extends readonly unknown[] = [], const F extends readonly unknown[] = []>(options: {
   controllers: ServiceIdentifier[]
   clientOptions: ClientOptions
   activities?: ActivityOptions[]
   services?: ServiceIdentifier[]
   providers?: Provider[]
-  guards?: (
-    | (new (...args: any[]) => GuardInterface)
-    | { provide: new (...args: any[]) => GuardInterface; params?: Record<string, any> }
-  )[]
-  interceptors?: (
-    | (new (...args: any[]) => InterceptorInterface)
-    | { provide: new (...args: any[]) => InterceptorInterface; params?: Record<string, any> }
-  )[]
-  filters?: (
-    | (new (...args: any[]) => ExceptionFilter<any>)
-    | { provide: new (...args: any[]) => ExceptionFilter<any>; params?: Record<string, any> }
-  )[]
+  guards?: { [K in keyof G]: CheckedEntry<G[K], new (...args: any[]) => GuardInterface> }
+  interceptors?: { [K in keyof I]: CheckedEntry<I[K], new (...args: any[]) => InterceptorInterface> }
+  filters?: { [K in keyof F]: CheckedEntry<F[K], new (...args: any[]) => ExceptionFilter<any>> }
   i18n?: Translator<any>
   cooldownStore?: new (...args: any[]) => CooldownStore
   cooldownStoreFailure?: CooldownStoreFailure

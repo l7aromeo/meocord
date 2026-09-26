@@ -154,7 +154,8 @@ export async function runGuards(guards: readonly GuardEntry[], call: GuardedCall
   for (const guard of applicable) {
     const [guardClass, params] = isGuardWithParams(guard) ? [guard.provide, guard.params] : [guard, undefined]
     const guardInstance = resolveGuard(container, guardClass, context.withParams(params))
-    if (params) Object.assign(guardInstance, params)
+    // Each property, and the whole under `params`, which a guard declares to have them typed
+    if (params) Object.assign(guardInstance, params, { params })
 
     if (typeof guardInstance.canActivate !== 'function') {
       throw new Error(

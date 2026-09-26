@@ -1106,7 +1106,7 @@ Global guards run when a handler is dispatched, or run with [`invoke`](#running-
 
 ### Passing options to a guard
 
-Use params when a value configures one use of a guard, such as a limit or the channels a command is allowed in. `@UseGuard({ provide, params })` sets them as properties on the guard instance before `canActivate` runs, and a decorator of your own can wrap it. For facts about the handler itself that any guard can read, use [metadata](#reading-handler-metadata) instead. `params` is optional, so `{ provide: ChannelGuard }` works as the class alone. The same entry forms apply to interceptors, filters and pipes, and an entry that is neither a class nor `{ provide: Class, params? }` is refused when its decorator applies.
+Use params when a value configures one use of a guard, such as a limit or the channels a command is allowed in. `@UseGuard({ provide, params })` sets them on the guard instance before `canActivate` runs, whole as `this.params` and each as a property of its own, and a decorator of your own can wrap it. A guard that declares its params with `declare readonly params?: { … }` has every `{ provide, params }` for it checked against that type, so a misspelt or mistyped param fails to compile, in `@UseGuard` and in `@MeoCord({ guards })` alike; a guard that declares none takes any. For facts about the handler itself that any guard can read, use [metadata](#reading-handler-metadata) instead. `params` is optional, so `{ provide: ChannelGuard }` works as the class alone. The same entry forms apply to interceptors, filters and pipes, and an entry that is neither a class nor `{ provide: Class, params? }` is refused when its decorator applies.
 
 ```typescript
 import { Guard, UseGuard } from 'meocord/decorator'
@@ -1115,11 +1115,12 @@ import { type ChatInputCommandInteraction } from 'discord.js'
 
 @Guard()
 export class ChannelGuard implements GuardInterface {
-  // Set per use with @UseGuard({ provide: ChannelGuard, params: { channelIds } })
-  channelIds: string[] = []
+  // Set per use with @UseGuard({ provide: ChannelGuard, params: { channelIds } }), and checked against this
+  declare readonly params?: { channelIds: string[] }
 
   canActivate(interaction: ChatInputCommandInteraction): boolean {
-    return this.channelIds.length === 0 || this.channelIds.includes(interaction.channelId)
+    const channelIds = this.params?.channelIds ?? []
+    return channelIds.length === 0 || channelIds.includes(interaction.channelId)
   }
 }
 
@@ -1232,7 +1233,7 @@ export class ProfileController { ... }
 
 Apply them like guards: on a method, on a controller, or to every handler with `@MeoCord({ interceptors })`. Global interceptors are outermost, then the controller's, then the method's; within one decorator, the first listed is outermost. A class-level `@UseInterceptor` also covers the handlers a controller inherits, and those of a class that extends it, the subclass's outermost.
 
-One instance of an interceptor serves every call, so it can hold a cache or counters; keep per-call state in local variables. For per-use options, pass `{ provide, params }` and read them with `context.getParams()` — they are never assigned onto the shared instance. The call's own input is `context.getHandlerParams()`, validated and piped once `next.handle()` has run. For the same reason an interceptor cannot inject `ExecutionContext`; the bot refuses to start if one does.
+One instance of an interceptor serves every call, so it can hold a cache or counters; keep per-call state in local variables. For per-use options, pass `{ provide, params }` and read them with `context.getParams()` — they are never assigned onto the shared instance. Declare them with `declare readonly params?: { … }` to have every `{ provide, params }` checked, and read them typed with `context.getParams<StageParams<typeof MyInterceptor>>()`, `StageParams` coming from `meocord/interface`; filters and pipes declare theirs the same way. The call's own input is `context.getHandlerParams()`, validated and piped once `next.handle()` has run. For the same reason an interceptor cannot inject `ExecutionContext`; the bot refuses to start if one does.
 
 Interceptors run when a handler is dispatched, or run with [`invoke`](#running-a-handler-with-invoke) in a test. A controller method called directly runs its guards but no interceptors. Autocomplete handlers run none.
 
