@@ -1,7 +1,7 @@
 import { ButtonInteraction, ChatInputCommandInteraction, type GuildMember, type Message } from 'discord.js'
-import { Command, Controller, Guard, MeoCord, MessageHandler, Service, UseGuard } from '@src/decorator/index.js'
+import { Catch, Command, Controller, Guard, MeoCord, MessageHandler, Service, UseFilter, UseGuard } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
-import { type GuardInterface } from '@src/interface/index.js'
+import { type ExceptionFilter, type GuardInterface } from '@src/interface/index.js'
 import { createMetadata, ExecutionContext, MessageUsageError } from '@src/common/index.js'
 import {
   createChatInputOptions,
@@ -339,6 +339,55 @@ describe('TestingModule.invoke with typed message params', () => {
     await module.invoke(PayController, 'pay', message)
 
     expect(received).toEqual([{ to, amount: 25 }])
+  })
+
+  it('rejects with the usage, as dispatch answers it, when a prefixed message names the command but a param is missing', async () => {
+    @MeoCord({ controllers: [PayController], clientOptions: { intents: [] }, messages: { prefix: '!' } })
+    class App {}
+    const module = MeoCordTestingModule.create({ controllers: [PayController], app: App }).compile()
+    const message = createMockMessage({ content: `!pay <@${TARGET}>`, guild: createMockGuild() })
+
+    const error = await module.invoke(PayController, 'pay', message).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    )
+
+    expect(error).toBeInstanceOf(MessageUsageError)
+    expect((error as MessageUsageError).message).toBe('Usage: !pay <to> <amount>\namount is missing')
+    expect(received).toEqual([])
+    // Without a prefix, dispatch takes no message for a command, and runs nothing
+    await expect(module.invoke(PayController, 'pay', createMockMessage({ content: 'pay', guild: createMockGuild() }))).rejects.toThrow(
+      "message 'pay' does not match PayController.pay's pattern",
+    )
+  })
+
+  it("lets the handler's filters answer a missing param, as they do in dispatch", async () => {
+    const caught: string[] = []
+    @Catch(MessageUsageError)
+    class UsageFilter implements ExceptionFilter<MessageUsageError> {
+      catch(error: MessageUsageError) {
+        caught.push(error.usage)
+      }
+    }
+    @Controller()
+    class Filtered {
+      @MessageHandler('pay {to:member} {amount:int}')
+      @UseFilter(UsageFilter)
+      async pay(_message: Message, params: { to: GuildMember; amount: number }) {
+        received.push(params)
+      }
+    }
+    @MeoCord({ controllers: [Filtered], clientOptions: { intents: [] }, messages: { prefix: '!' } })
+    class App {}
+    const module = MeoCordTestingModule.create({ controllers: [Filtered], app: App }).compile()
+
+    const result = await module.invoke(Filtered, 'pay', createMockMessage({ content: '!pay', guild: createMockGuild() }))
+
+    expect(result).toEqual({ ran: false, error: expect.any(MessageUsageError) })
+    expect(caught).toEqual(['!pay <to> <amount>'])
+    await expect(module.invoke(Filtered, 'pay', createMockMessage({ content: '!balance' }))).rejects.toThrow(
+      "message '!balance' does not match Filtered.pay's pattern",
+    )
   })
 
   it('rejects with the usage when a word is not a value of its type', async () => {

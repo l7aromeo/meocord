@@ -4,6 +4,7 @@ import { COOLDOWN_POLICY, DEFAULT_COOLDOWN_STORE_TIMEOUT_MS } from '@src/core/co
 import { BaseInteraction, type Client, type ClientEvents, type Interaction, Message } from 'discord.js'
 import { MetadataKey } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
+import { MessageUsageError } from '@src/common/errors.js'
 import { missingTranslatorError, Translator } from '@src/common/translator.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import {
@@ -24,7 +25,7 @@ import {
   type MessageCommandOptions,
 } from '@src/interface/index.js'
 import { buildMessageRoutes, messageParamsFor } from '@src/core/message-routes.js'
-import { hasTypedParams, resolveMessageParams } from '@src/core/message-params.js'
+import { hasTypedParams, missingParams, resolveMessageParams, usageOf } from '@src/core/message-params.js'
 import { appObservers, assertObservers, bindObservers } from '@src/core/observer-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
@@ -257,7 +258,9 @@ export class TestingModule {
    *   built without one is not checked. With a message alone, a patterned `@MessageHandler` gets the
    *   params its pattern captures from the content, after the prefix of the module's `app`, with typed
    *   params resolved as dispatch resolves them, from the message's guild caches first; a message
-   *   without content gets `{}`. A word that is not a value of its type rejects with a `MessageUsageError`.
+   *   without content gets `{}`. A word that is not a value of its type, and a prefixed message that names
+   *   the command but leaves out a param, go through the handler's filters as a `MessageUsageError`, as
+   *   dispatch answers them.
    * @returns Whether the handler ran, and the error a filter handled, if any. Rejects with an error no
    *   filter handles, or with the error a filter throws: the built-in fallback, which answers such
    *   errors in the bot, does not run here. Rejects before running anything with an interaction or a
@@ -298,10 +301,13 @@ export class TestingModule {
       const input = await messageParamsFor(controller, methodName, first, this.messageOptions)
       if (input && 'mismatch' in input) throw new Error(input.mismatch)
       if (input) callArgs = [first, input.params]
-      if (input && 'route' in input && input.route && hasTypedParams(input.route)) {
-        const { route, params, start = '' } = input
+      if (input && 'route' in input && input.route) {
+        const { route, params, start = '', given } = input
         const types = this.messageOptions.types
-        resolveArgs = async args => [args[0], await resolveMessageParams(route, params, first, start, types)]
+        resolveArgs = async args => {
+          if (given !== undefined) throw new MessageUsageError(usageOf(route, start), missingParams(route, given))
+          return hasTypedParams(route) ? [args[0], await resolveMessageParams(route, params, first, start, types)] : args
+        }
       }
     }
     const presenter = appPresenterOf(this.container)
