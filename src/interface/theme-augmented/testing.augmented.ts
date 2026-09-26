@@ -1,3 +1,4 @@
+// Reads the augmentation theme.augmented.ts declares (vip, charts), so it belongs to that file's program
 import { createMockTheme, MeoCordTestingModule, withTheme } from '@src/testing/index.js'
 
 /** The testing helpers under theme.augmented.ts's tokens: the app's own must be given, as at the root. */
