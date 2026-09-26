@@ -160,7 +160,7 @@ function registerComponents(): void {
   mkdirSync(path.join(appDir, 'src', 'assets'), { recursive: true })
   writeFileSync(path.join(appDir, 'src', 'assets', 'logo.png'), Buffer.from('89504e470d0a1a0a', 'hex'))
   writeFileSync(path.join(appDir, 'src', 'assets', 'notes.md'), '# Notes\n')
-  // Type-only, so tsc checks the imports against src/assets.d.ts and vitest never loads the files
+  // Type-only, so tsc checks the imports against src/types/assets.d.ts and vitest never loads the files
   writeFileSync(
     path.join(appDir, 'src', 'assets.spec.ts'),
     `type Logo = typeof import('@src/assets/logo.png').default\ntype Notes = typeof import('@src/assets/notes.md').default\n\n` +
@@ -250,6 +250,60 @@ function verifyTestsKeepEnvOut(): void {
 }
 
 /**
+ * Augments the app's theme as a user would, in the src/types/theme.d.ts the template ships, and reads the role
+ * through useTheme(), type-checked against the packed build: a bundling change that moved the theme's interfaces
+ * where an augmentation cannot reach them would pass the framework's own tests, which import from src.
+ */
+function verifyThemeAugmentation(): void {
+  const declarations = path.join(appDir, 'src', 'types', 'theme.d.ts')
+  const probe = path.join(appDir, 'src', 'theme-probe.ts')
+  const shipped = readFileSync(declarations, 'utf8')
+  writeFileSync(
+    declarations,
+    `import 'meocord/interface'\nimport { type ColorResolvable } from 'discord.js'\n\n` +
+      `declare module 'meocord/interface' {\n  interface ThemeColors {\n    vip: ColorResolvable\n  }\n}\n`,
+  )
+  writeFileSync(
+    probe,
+    `import { useTheme } from 'meocord/common'\nimport { type RootTheme } from 'meocord/interface'\n\n` +
+      `export const vip = useTheme().colors.vip\nexport const root: RootTheme = { colors: { vip: '#FFD700' } }\n` +
+      `// @ts-expect-error vip has no default, so the root theme must set it\nexport const missing: RootTheme = {}\n`,
+  )
+  try {
+    inApp('an augmented theme role, read through useTheme()', 'tsc', '-p', 'tsconfig.json')
+  } finally {
+    rmSync(probe)
+    writeFileSync(declarations, shipped)
+  }
+}
+
+/** Reads the deprecated Theme, which the app's lint reports as a warning naming what replaces it, and nothing else. */
+function verifyDeprecatedWarning(): void {
+  const file = path.join(appDir, 'src', 'deprecated-probe.ts')
+  writeFileSync(file, `import { Theme } from 'meocord/common'\n\nexport const primary = Theme.primaryColor\n`)
+  try {
+    const result = spawnSync(process.execPath, ['run', 'eslint', '--format', 'json', 'src/deprecated-probe.ts'], {
+      cwd: appDir,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      env: stepEnv,
+    })
+    const messages = (JSON.parse(result.stdout) as { messages: { ruleId: string | null; severity: number; message: string }[] }[])
+      .flatMap(report => report.messages)
+    const deprecated = messages.filter(message => message.ruleId === '@typescript-eslint/no-deprecated' && message.severity === 1)
+    if (deprecated.length === 0 || deprecated.length !== messages.length || !deprecated.some(({ message }) => message.includes('useTheme'))) {
+      throw new Error(
+        `eslint should warn that Theme is deprecated, naming useTheme(), and nothing else:\n` +
+          messages.map(message => `  ${message.ruleId}: ${message.message}`).join('\n'),
+      )
+    }
+  } finally {
+    rmSync(file)
+  }
+  console.log('  ok  eslint warns on the deprecated Theme, naming useTheme()')
+}
+
+/**
  * Plants two services that import each other through `@src` and checks the application's lint warns on
  * both, with no error: the resolver has to follow the alias for the cycle to be seen at all.
  */
@@ -332,6 +386,8 @@ function main(): void {
     runAppScripts()
     verifyTestsKeepEnvOut()
     verifyAssetTypesBesideRsbuild()
+    verifyThemeAugmentation()
+    verifyDeprecatedWarning()
     verifyCycleWarning()
     console.log('')
     // A nested name moves the controller and its builder together, so the import

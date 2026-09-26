@@ -319,6 +319,7 @@ what a bot does at runtime; each says what to check. Everything else in 4.1 is n
 - [ ] Check `@MessageHandler` keywords, which match in any case, and of which only one runs
 - [ ] Add `{ bots: true }` to any `@ReactionHandler` that should run for reactions from bots
 - [ ] Give each component handler its own customId pattern, since two with the same one stop the bot
+- [ ] Check colours read from `Theme`, which is deprecated and now gives the theme's, contrast-tuned defaults
 - [ ] Rebuild
 
 ### Class guards now cover inherited handlers
@@ -527,14 +528,42 @@ inherits every route; register only the one that should handle them. One handler
 spellings of a pattern, such as `card/{id}` and `card/{cardId}`, is one route and keeps working.
 `findRouteConflicts` and `resolveRoute` throw the same error, so a test catches it too.
 
+### `Theme` is deprecated, and its colours changed
+
+`Theme` from `meocord/common` still works, and goes in MeoCord 5. Each colour now reads the matching role of
+the theme where it is read, so code written against `Theme.primaryColor` follows `@MeoCord({ theme })` and
+`@UseTheme`. With no theme set, it gives MeoCord's new defaults, tuned for at least 3:1 contrast against
+every Discord surface, rather than 4.0's values:
+
+| `Theme`              | Role             | 4.0       | 4.1       |
+| -------------------- | ---------------- | --------- | --------- |
+| `Theme.primaryColor` | `colors.primary` | `#5865F2` | `#7680F4` |
+| `Theme.successColor` | `colors.success` | `#28A745` | `#26A042` |
+| `Theme.infoColor`    | `colors.info`    | `#17A2B8` | `#1699AE` |
+| `Theme.errorColor`   | `colors.danger`  | `#DC3545` | `#E3606D` |
+| `Theme.warningColor` | `colors.warning` | `#FFC107` | `#B08400` |
+
+To keep 4.0's colours, set them in `@MeoCord({ theme: { colors: { primary: '#5865F2', … } } })`. Assigning
+`Theme.primaryColor` still recolours MeoCord's views, beneath any theme the app sets, and logs a warning
+naming the role to set instead. Read the theme with `useTheme()` in new code; see
+[Adopting 4.1 patterns](#adopting-41-patterns).
+
 ### Smaller changes
 
 - **Typed asset imports.** A new app has
-  [`src/assets.d.ts`](https://github.com/meocord/meocord/blob/main/src/bin/app-template/src/assets.d.ts.template),
+  [`src/types/assets.d.ts`](https://github.com/meocord/meocord/blob/main/src/bin/app-template/src/types/assets.d.ts.template),
   which types an image, font or media import as its path and a Markdown or HTML import as its text, so
-  `import logo from './logo.png'` passes the app's own `tsc` and lint. Copy it into your `src/` to have the
-  same, and add `'src/**/*.d.ts'` to `coverage.exclude` in `vitest.config.ts`, where istanbul would try to
-  read it as code.
+  `import logo from './logo.png'` passes the app's own `tsc` and lint. Copy it into your `src/types/` to have
+  the same, and add `'src/**/*.d.ts'` to `coverage.exclude` in `vitest.config.ts`, where istanbul would try to
+  read it as code. Keep it a file with no `import` or `export`: its `declare module '*.png'` declarations
+  only work in one.
+- **Presenters from an earlier 4.1 beta** get the call's theme as `context.theme`, and an error's `tone`,
+  `'warning'` or `'danger'`. A spec that builds a `ResponseContext` or a `PresentedError` by hand adds them:
+  `theme: createMockTheme()` from `meocord/testing`, and `tone: 'danger'`.
+- **New apps warn on deprecated APIs.** Their `eslint.config.ts` sets `@typescript-eslint/no-deprecated` to
+  `'warn'`, which names what replaces an API MeoCord or a library has deprecated, and turns it off for
+  `**/*.spec.ts`: a spec that references a mocked method, as `expect(interaction.reply)` does, would be warned
+  about the deprecated overload `reply` also has. Add the same two to your own config to have them.
 - `meocord generate` writes components in 4.1's style, answering with `respond()`, and derives each
   button's, modal's, select menu's and message handler's customId or pattern from its name. A nested
   name gives its whole path to the class: `admin/ban` makes `AdminBanButtonController`. Files you
@@ -649,6 +678,21 @@ else await interaction.reply(payload)
 
 // 4.1
 await respond(interaction).send(payload)
+```
+
+**Colours: `useTheme()` and `@MeoCord({ theme })`.** Colours read from `Theme`, or written into embeds
+by hand, can read the call's theme by role, which an app sets once and a controller or handler changes
+with `@UseTheme`. A new app declares tokens of its own in `src/types/theme.d.ts`; copy the
+[template's](https://github.com/meocord/meocord/blob/main/src/bin/app-template/src/types/theme.d.ts.template)
+into yours, keeping its `import 'meocord/interface'` line, which makes it extend the module rather than
+replace it. See [Theming](https://github.com/meocord/meocord/blob/main/README.md#theming).
+
+```typescript
+// 4.0
+embed.setColor(Theme.errorColor)
+
+// 4.1
+embed.setColor(useTheme().colors.danger)
 ```
 
 **Deferring and locking: `@Defer`.** A handler that called `deferReply()` or `deferUpdate()` first, then
