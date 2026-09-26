@@ -8,9 +8,10 @@ import {
   InteractionType,
   ModalSubmitInteraction,
 } from 'discord.js'
-import { Command, Controller, MeoCord, On } from '@src/decorator/index.js'
-import { respond } from '@src/common/index.js'
+import { Command, Controller, MeoCord, Observer, On } from '@src/decorator/index.js'
+import { type ExecutionContext, respond } from '@src/common/index.js'
 import { CommandType } from '@src/enum/index.js'
+import { type DispatchResult } from '@src/interface/index.js'
 import { MeoCordFactory } from '@src/core/meocord-factory.js'
 import { createDiscordError, createMockInteraction, getResponse, MeoCordTestingModule } from '@src/testing/index.js'
 
@@ -166,5 +167,44 @@ describe("an unrouted component an app's own @On('interactionCreate') answers", 
 
     expect(methods(click)).toEqual(['update'])
     expect(contents(click).join()).not.toContain('Command not found')
+  })
+})
+
+describe('what the observers hear of an unrouted component', () => {
+  const settled: string[] = []
+
+  @Observer()
+  class Outcomes {
+    onSettled(_context: ExecutionContext, { outcome }: DispatchResult) {
+      settled.push(outcome)
+    }
+  }
+
+  const observed = () => MeoCordTestingModule.create({ controllers: [Routed], observers: [Outcomes] }).compile()
+
+  beforeEach(() => {
+    settled.length = 0
+  })
+
+  it('is nothing for a click a collector answered, since MeoCord neither answered nor failed it', async () => {
+    const click = createMockInteraction(ButtonInteraction, { customId: 'picked', client })
+    new InteractionCollector(client, {}).on('collect', interaction => respond(interaction as ButtonInteraction).send({ content: 'collected' }))
+
+    const done = deliver(observed(), click)
+    await vi.advanceTimersByTimeAsync(3_000)
+    await done
+
+    expect(settled).toEqual([])
+  })
+
+  it("is 'not-found' for a click nothing answered, after the grace", async () => {
+    const click = createMockInteraction(ButtonInteraction, { customId: 'dead', client })
+    client.on('interactionCreate', () => {})
+
+    const done = deliver(observed(), click)
+    await vi.advanceTimersByTimeAsync(3_000)
+    await done
+
+    expect(settled).toEqual(['not-found'])
   })
 })
