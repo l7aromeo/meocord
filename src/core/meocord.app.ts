@@ -7,8 +7,10 @@ import {
   Message,
   MessageReaction,
   type PartialMessageReaction,
+  type PartialUser,
   REST,
   Routes,
+  type User,
 } from 'discord.js'
 import { type Container, type ServiceIdentifier } from 'inversify'
 import { Logger } from '@src/common/index.js'
@@ -17,6 +19,7 @@ import {
   getCommandMap,
   getMessageHandlers,
   getReactionHandlers,
+  type ReactionHandlerMetadata,
   PARAM_SEPARATOR,
 } from '@src/decorator/controller.decorator.js'
 import { sample } from 'lodash-es'
@@ -689,10 +692,40 @@ export class MeoCordApp implements MeoCordApplication {
     }
   }
 
+  /**
+   * Runs the reaction's handlers, controller by controller, those for its emoji before those for every
+   * emoji. A reaction from a bot, the bot's own included, runs only handlers that set `bots: true`.
+   */
   private async handleReaction(
     reaction: MessageReaction | PartialMessageReaction,
     { user, action }: ReactionHandlerOptions,
   ) {
+    const forEmoji = (handler: ReactionHandlerMetadata) => !handler.emoji || handler.emoji === reaction.emoji.name
+    const matching = this.controllerClasses
+      .map(controllerClass => ({
+        controllerClass,
+        // Handlers for this emoji first, then those for every emoji
+        handlers: getReactionHandlers(this.getInstance(controllerClass))
+          .filter(forEmoji)
+          .sort((a, b) => Number(!a.emoji) - Number(!b.emoji)),
+      }))
+      .filter(({ handlers }) => handlers.length > 0)
+    if (matching.length === 0) return
+
+    // Only asked when a matching handler leaves bots out, since a partial user costs a fetch
+    const fromBot = matching.some(({ handlers }) => handlers.some(handler => !handler.settings.bots))
+      ? await this.isBot(user)
+      : undefined
+    // A user that could not be fetched is not known to be a person, so it reaches only those that take bots
+    const botsOnly = fromBot !== false && fromBot !== undefined
+    const runs = matching
+      .map(({ controllerClass, handlers }) => ({
+        controllerClass,
+        handlers: botsOnly ? handlers.filter(handler => handler.settings.bots) : handlers,
+      }))
+      .filter(({ handlers }) => handlers.length > 0)
+    if (runs.length === 0) return
+
     // A reaction arrives for messages the bot may no longer be able to read -- deleted,
     // or in a channel it lost access to -- and `fetch` rejects for all of them. That is
     // an ordinary outcome rather than a fault, so the reaction is skipped quietly.
@@ -703,30 +736,26 @@ export class MeoCordApp implements MeoCordApplication {
       return
     }
 
-    const relevantControllers = this.controllerClasses.filter(controllerClass => {
-      const instance = this.getInstance(controllerClass)
-      const reactionHandlers = getReactionHandlers(instance)
-      return reactionHandlers.some(handler => !handler.emoji || handler.emoji === reaction.emoji.name)
-    })
-
-    for (const controllerClass of relevantControllers) {
+    for (const { controllerClass, handlers } of runs) {
       const controllerInstance = this.getInstance(controllerClass)
-
-      let reactionHandlers = getReactionHandlers(controllerInstance)
-
-      reactionHandlers = reactionHandlers.sort((a, b) => {
-        if (a.emoji && !b.emoji) return -1
-        if (!a.emoji && b.emoji) return 1
-        return 0
-      })
-
-      for (const handler of reactionHandlers) {
-        const { emoji, method } = handler
-
-        if (!emoji || emoji === reaction.emoji.name) {
-          await this.invokeHandler(controllerInstance, method, [reaction, { user, action }])
-        }
+      for (const { method } of handlers) {
+        await this.invokeHandler(controllerInstance, method, [reaction, { user, action }])
       }
+    }
+  }
+
+  /**
+   * Whether a user is a bot: the bot itself, or a user discord.js knows to be one. A partial user is
+   * fetched first; `null` when that fails.
+   */
+  private async isBot(user: User | PartialUser): Promise<boolean | null> {
+    if (user.id === this.bot.user?.id) return true
+    if (typeof user.bot === 'boolean') return user.bot
+    try {
+      return (await user.fetch()).bot
+    } catch (error) {
+      this.logger.debug(`Skipping a reaction whose user could not be fetched: ${String(error)}`)
+      return null
     }
   }
 

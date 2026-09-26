@@ -8,22 +8,17 @@ import { type ReactionHandlerOptions } from 'meocord/interface'
 export class SampleReactionController {
   private readonly logger = new Logger(SampleReactionController.name)
 
+  // Reactions from bots, this one's included, reach a handler only with { bots: true }
   @ReactionHandler('😋')
   async handleReaction(reaction: MessageReaction, { user, action }: ReactionHandlerOptions) {
-    this.logger.log(`Reaction 😋 ${action === ReactionHandlerAction.ADD ? 'added' : 'removed'}.`)
-
-    if (!reaction.message) return
-
-    if (action === ReactionHandlerAction.ADD) {
-      await reaction.message.reply(`${user.username} reacted with 😋!`)
-    }
+    if (action !== ReactionHandlerAction.ADD) return
+    await reaction.message.reply(`${user.username ?? 'Someone'} reacted with 😋!`)
   }
 
+  // Runs for every reaction, after the handlers for its emoji
   @ReactionHandler()
-  async handleAnyReaction(reaction: MessageReaction, { user, action }: ReactionHandlerOptions) {
-    this.logger.log('Reaction detected!')
-    if (reaction.message && action === ReactionHandlerAction.ADD) {
-      await reaction.message.reply(`${user.username} reacted with ${reaction.emoji.name}!`)
-    }
+  async handleAnyReaction(reaction: MessageReaction, { action }: ReactionHandlerOptions) {
+    const verb = action === ReactionHandlerAction.ADD ? 'added' : 'removed'
+    this.logger.log(`Reaction ${reaction.emoji.name} ${verb}.`)
   }
 }

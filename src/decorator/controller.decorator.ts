@@ -7,7 +7,7 @@ import {
   type PartialMessageReaction,
 } from 'discord.js'
 import { CommandType, MetadataKey } from '@src/enum/index.js'
-import { type MessageHandlerOptions, type ReactionHandlerOptions } from '@src/interface/index.js'
+import { type MessageHandlerOptions, type ReactionHandlerOptions, type ReactionHandlerSettings } from '@src/interface/index.js'
 import {
   type AutocompleteMetadata,
   type BuildableCommandType,
@@ -119,37 +119,63 @@ export function MessageHandler(pattern?: string, options: MessageHandlerOptions 
   }
 }
 
+/** A `@ReactionHandler` as the decorator stores it. */
+export interface ReactionHandlerMetadata {
+  /** The emoji's name, or `undefined` for a handler that takes every emoji. */
+  emoji: string | undefined
+  method: string
+  settings: ReactionHandlerSettings
+}
+
+type ReactionHandlerDecorator<T extends MessageReaction | PartialMessageReaction, R extends void | Promise<void>> = (
+  target: object,
+  propertyKey: string,
+  descriptor:
+    | TypedPropertyDescriptor<(reaction: T, options: ReactionHandlerOptions) => R>
+    | TypedPropertyDescriptor<(reaction: T) => R>
+    | TypedPropertyDescriptor<() => R>,
+) => void
+
 /**
- * Decorator to register reaction handlers in the controller.
+ * Registers a handler for reactions added to or removed from a message: those with the given emoji,
+ * or every reaction without one. Reactions from bots, the bot's own included, are skipped unless the
+ * handler sets `bots: true`.
  *
- * @param emoji - Optional emoji name to filter reactions this handler should respond to.
+ * @param emoji - The emoji's name: the character for a standard emoji, the name for a custom one.
+ * @param settings - `bots: true` to also run for reactions from bots.
  *
  * @example
  * ```typescript
  * @ReactionHandler('👍')
  * async handleThumbsUpReaction(reaction: MessageReaction, { user }: ReactionHandlerOptions) {
- *   console.log(`User ${user.username} reacted with 👍`);
+ *   console.log(`User ${user.username} reacted with 👍`)
  * }
  *
  * @ReactionHandler()
  * async handleAnyReaction(reaction: MessageReaction, { user }: ReactionHandlerOptions) {
- *   console.log(`User ${user.username} reacted with ${reaction.emoji.name}`);
+ *   console.log(`User ${user.username} reacted with ${reaction.emoji.name}`)
  * }
+ *
+ * // Every emoji, from users and bots alike
+ * @ReactionHandler({ bots: true })
+ * async relay(reaction: MessageReaction, { user }: ReactionHandlerOptions) {}
  * ```
  */
 export function ReactionHandler<T extends MessageReaction | PartialMessageReaction, R extends void | Promise<void>>(
   emoji?: string,
-) {
-  return function (
-    target: object,
-    propertyKey: string,
-    _descriptor:
-      | TypedPropertyDescriptor<(reaction: T, options: ReactionHandlerOptions) => R>
-      | TypedPropertyDescriptor<(reaction: T) => R>
-      | TypedPropertyDescriptor<() => R>,
-  ) {
-    const handlers = ownHandlerList(REACTION_HANDLER_METADATA_KEY, target)
-    handlers.push({ emoji, method: propertyKey.toString() })
+  settings?: ReactionHandlerSettings,
+): ReactionHandlerDecorator<T, R>
+export function ReactionHandler<T extends MessageReaction | PartialMessageReaction, R extends void | Promise<void>>(
+  settings: ReactionHandlerSettings,
+): ReactionHandlerDecorator<T, R>
+export function ReactionHandler(
+  emojiOrSettings?: string | ReactionHandlerSettings,
+  settings: ReactionHandlerSettings = {},
+): ReactionHandlerDecorator<MessageReaction | PartialMessageReaction, void | Promise<void>> {
+  const [emoji, own] = typeof emojiOrSettings === 'object' ? [undefined, emojiOrSettings] : [emojiOrSettings, settings]
+  return function (target: object, propertyKey: string) {
+    const handlers = ownHandlerList<ReactionHandlerMetadata>(REACTION_HANDLER_METADATA_KEY, target)
+    handlers.push({ emoji, method: propertyKey.toString(), settings: own })
     Reflect.defineMetadata(REACTION_HANDLER_METADATA_KEY, handlers, target)
   }
 }
@@ -158,9 +184,9 @@ export function ReactionHandler<T extends MessageReaction | PartialMessageReacti
  * Retrieves reaction handlers metadata from a given controller.
  *
  * @param controller - The controller class instance.
- * @returns An array of reaction handler metadata objects.
+ * @returns The reaction handlers, with their emoji and settings.
  */
-export function getReactionHandlers(controller: any): { emoji: string | undefined; method: string }[] {
+export function getReactionHandlers(controller: any): ReactionHandlerMetadata[] {
   return Reflect.getMetadata(REACTION_HANDLER_METADATA_KEY, controller) || []
 }
 

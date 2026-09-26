@@ -211,6 +211,113 @@ describe('MeoCordApp', () => {
     })
   })
 
+  describe('handleReaction()', () => {
+    const BOT_ID = 'bot-1'
+    const users = {
+      own: { id: BOT_ID, bot: true },
+      otherBot: { id: 'bot-2', bot: true },
+      person: { id: 'user-1', bot: false },
+    }
+    const reactionTo = (name: string) => ({ emoji: { name }, message: { fetch: vi.fn<() => Promise<void>>().mockResolvedValue() } })
+
+    async function startWith(controller: new () => unknown) {
+      const app = new MeoCordApp([controller] as any, createMockContainer() as any, mockClient as any, 't')
+      Object.assign(mockClient.user, { id: BOT_ID })
+      await app.start()
+      return mockClient.listenersFor('messageReactionAdd')[0]
+    }
+
+    it("ignores the bot's own reactions and other bots', and runs for a user's", async () => {
+      const calls: string[] = []
+
+      @Controller()
+      class PollController {
+        @ReactionHandler('👍')
+        async vote(_reaction: MessageReaction, { user }: { user: { id: string } }) {
+          calls.push(`vote ${user.id}`)
+        }
+
+        @ReactionHandler()
+        async any(_reaction: MessageReaction, { user }: { user: { id: string } }) {
+          calls.push(`any ${user.id}`)
+        }
+      }
+
+      const listener = await startWith(PollController)
+      const own = reactionTo('👍')
+      await listener(own, users.own)
+      await listener(reactionTo('👍'), users.otherBot)
+      await listener(reactionTo('👍'), users.person)
+
+      expect(calls).toEqual(['vote user-1', 'any user-1'])
+      // A reaction no handler takes does not fetch its message
+      expect(own.message.fetch).not.toHaveBeenCalled()
+    })
+
+    it('runs a handler that opts in with { bots: true } for bot reactions, its own included', async () => {
+      const calls: string[] = []
+
+      @Controller()
+      class RelayController {
+        @ReactionHandler('📌', { bots: true })
+        async pin(_reaction: MessageReaction, { user }: { user: { id: string } }) {
+          calls.push(`pin ${user.id}`)
+        }
+
+        @ReactionHandler({ bots: true })
+        async any(_reaction: MessageReaction, { user }: { user: { id: string } }) {
+          calls.push(`any ${user.id}`)
+        }
+
+        @ReactionHandler('📌')
+        async people(_reaction: MessageReaction, { user }: { user: { id: string } }) {
+          calls.push(`people ${user.id}`)
+        }
+      }
+
+      const listener = await startWith(RelayController)
+      await listener(reactionTo('📌'), users.own)
+      await listener(reactionTo('📌'), users.otherBot)
+      await listener(reactionTo('📌'), users.person)
+
+      expect(calls).toEqual([
+        `pin ${BOT_ID}`,
+        `any ${BOT_ID}`,
+        'pin bot-2',
+        'any bot-2',
+        'pin user-1',
+        'people user-1',
+        'any user-1',
+      ])
+    })
+
+    it('fetches a partial user to tell whether it is a bot, and skips it when that fails', async () => {
+      const calls: string[] = []
+
+      @Controller()
+      class PollController {
+        @ReactionHandler('👍')
+        async vote(_reaction: MessageReaction, { user }: { user: { id: string } }) {
+          calls.push(`vote ${user.id}`)
+        }
+      }
+
+      const listener = await startWith(PollController)
+      const partial = (id: string, fetched: Promise<{ bot: boolean }>) => ({ id, bot: null, partial: true, fetch: vi.fn(() => fetched) })
+      const partialBot = partial('bot-2', Promise.resolve({ bot: true }))
+      const partialPerson = partial('user-2', Promise.resolve({ bot: false }))
+      const unknown = partial('user-3', Promise.reject(new Error('Unknown User')))
+      await listener(reactionTo('👍'), partialBot)
+      await listener(reactionTo('👍'), partialPerson)
+      await listener(reactionTo('👍'), unknown)
+
+      expect(partialBot.fetch).toHaveBeenCalled()
+      expect(calls).toEqual(['vote user-2'])
+      const error = vi.mocked(Logger).mock.results[0]?.value.error
+      expect(error).not.toHaveBeenCalled()
+    })
+  })
+
   // A control that is emitted but never routed -- a customId whose value broke its
   // pattern, or a handler nobody wrote -- has to be visible: the user sees
   // "Command not found!", and the log names the id that failed to match.

@@ -316,6 +316,7 @@ what a bot does at runtime; each says what to check. Everything else in 4.1 is n
 - [ ] Fix or replace the generated `src/guards/rate-limit.guard.ts`, if your app still has it
 - [ ] Rename any `SetMetadata` key that MeoCord reserves, such as `'guards'`
 - [ ] Check `@MessageHandler` keywords, which match in any case, and of which only one runs
+- [ ] Add `{ bots: true }` to any `@ReactionHandler` that should run for reactions from bots
 - [ ] Rebuild
 
 ### Class guards now cover inherited handlers
@@ -444,6 +445,24 @@ the bare message `{ prefix: false }`:
 ```typescript
 @MessageHandler('good morning', { prefix: false })
 ```
+
+### Reactions from bots reach no handler
+
+`@ReactionHandler` now skips reactions from bots, the bot's own included, as `@MessageHandler` has
+always skipped messages from bots. In 4.0 every handler ran for them: a bot that reacted to its own
+message ran its reaction handlers for that reaction, and one that answered reactions could answer
+itself, or another bot, in a loop.
+
+A handler that should still run for bot reactions, such as one relaying a bot's pins, sets
+`bots: true`:
+
+```typescript
+@ReactionHandler('📌', { bots: true })
+@ReactionHandler({ bots: true }) // every emoji
+```
+
+A handler that counted reactions, such as poll votes, no longer counts the ones the bot added to seed
+the choices; check a count that subtracted them.
 
 ### Smaller changes
 
