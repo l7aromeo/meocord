@@ -113,6 +113,24 @@ describe('findRouteConflicts', () => {
 
     expect(findRouteConflicts(OverlappingApp)).toEqual([{ type: CommandType.BUTTON, patterns: ['a/{x}/c', 'a/b/{y}'] }])
   })
+
+  it('throws, as the bot does at startup, for two handlers with the same pattern', () => {
+    @Controller()
+    class Twice {
+      @Command('ban/{id}', CommandType.BUTTON)
+      async ban(_i: unknown, _params: Record<string, string>) {}
+
+      @Command('ban/{userId}', CommandType.BUTTON)
+      async alsoBan(_i: unknown, _params: Record<string, string>) {}
+    }
+
+    @MeoCord({ controllers: [Twice], clientOptions: { intents: [] } })
+    class TwiceApp {}
+
+    const same = /"ban\/\{id\}" in Twice\.ban and "ban\/\{userId\}" in Twice\.alsoBan match the same button customIds/
+    expect(() => findRouteConflicts(TwiceApp)).toThrow(same)
+    expect(() => resolveRoute(TwiceApp, { type: CommandType.BUTTON, customId: 'ban/1' })).toThrow(same)
+  })
 })
 
 describe('resolveRoute for messages', () => {
