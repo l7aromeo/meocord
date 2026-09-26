@@ -1,10 +1,20 @@
 import 'reflect-metadata'
 import { Container, type ServiceIdentifier } from 'inversify'
 import { COOLDOWN_POLICY, DEFAULT_COOLDOWN_STORE_TIMEOUT_MS } from '@src/core/cooldown-runner.js'
-import { BaseInteraction, type Client, type ClientEvents, type Interaction, Message } from 'discord.js'
-import { MetadataKey } from '@src/enum/index.js'
+import {
+  BaseInteraction,
+  type Client,
+  type ClientEvents,
+  type Interaction,
+  Message,
+  type MessageReaction,
+  type PartialMessageReaction,
+  type PartialUser,
+  type User,
+} from 'discord.js'
+import { MetadataKey, ReactionHandlerAction } from '@src/enum/index.js'
 import { ExecutionContext } from '@src/common/execution-context.js'
-import { MessageUsageError } from '@src/common/errors.js'
+import { CommandNotFoundError, MessageUsageError } from '@src/common/errors.js'
 import { missingTranslatorError, Translator } from '@src/common/translator.js'
 import { injectedTokens, singletonContextError } from '@src/core/guard-runner.js'
 import {
@@ -33,6 +43,9 @@ import { ShardContext } from '@src/core/shard-context.js'
 import { isAppClassToken, type LifecycleUnit } from '@src/core/lifecycle-order.js'
 import { type LifecycleEntry, runReadyHooks, runShutdownHooks } from '@src/core/lifecycle-hooks.js'
 import { createMockClient } from './mock-interaction.js'
+import { Dispatcher, type DispatchRecorder } from '@src/core/dispatcher.js'
+import { createFallback } from '@src/core/fallback.js'
+import { Logger } from '@src/common/logger.js'
 import {
   assertProvided,
   assertTypedParameters,
@@ -106,6 +119,31 @@ export interface TestingModuleInitOptions {
   ready?: boolean | { client?: Client<true>; primary?: boolean }
 }
 
+/** One handler `TestingModule.dispatch` ran, and how its call ended. */
+export interface DispatchedHandler {
+  /** The handler's controller. */
+  controller: new (...args: any[]) => unknown
+  /** The handler method's name. */
+  method: string
+  /** Whether the handler itself ran; `false` when a guard denied it or its input was refused. */
+  ran: boolean
+  /** The error its call ended with, handled by a filter or answered by the fallback. */
+  error?: unknown
+}
+
+/** What `TestingModule.dispatch` did with an interaction, a message or a reaction. */
+export interface DispatchedCall extends InvocationResult {
+  /** Whether any handler ran. */
+  ran: boolean
+  /**
+   * The first error a handler's call ended with, or the `MessageUsageError` or `CommandNotFoundError`
+   * the built-in fallback answered.
+   */
+  error?: unknown
+  /** Every handler dispatch reached, in the order it ran them; empty when none takes the input. */
+  handlers: DispatchedHandler[]
+}
+
 /** How an event sent with `TestingModule.emit` was handled. */
 export interface EmitResult {
   /** How many `@On` and `@Once` handlers ran; a handler a guard denied is not counted. */
@@ -126,6 +164,8 @@ export class TestingModule {
     private readonly lifecycle: readonly LifecycleUnit[] = [],
     /** The lifecycle units the container has constructed, which `close()` shuts down. */
     private readonly constructed: ReadonlySet<unknown> = new Set(),
+    /** The `app`'s `warnUnanswered`, which dispatch follows as the bot does. */
+    private readonly appWarnUnanswered?: boolean,
   ) {}
 
   private resolving?: Promise<void>
@@ -248,6 +288,10 @@ export class TestingModule {
    * Calling the controller method directly runs its guards but no interceptors, validation or
    * filters; `invoke` is the way to test everything dispatch runs around a handler.
    *
+   * `invoke` tests one handler you name, and an error no filter handles rejects the call. To test what
+   * the bot does with an input, which handler it reaches and what the user is sent, use
+   * {@link dispatch}.
+   *
    * @param controller - A controller passed to `MeoCordTestingModule.create`.
    * @param methodName - The handler method's name.
    * @param args - The arguments dispatch would pass: the interaction, message or reaction, then the
@@ -316,6 +360,96 @@ export class TestingModule {
     if (presenter && client) setPresenter(client, presenter)
     const { ran, error } = await runHandler(this.container, instance, methodName, callArgs, { awaitObservers: true, resolveArgs })
     return error === undefined ? { ran } : { ran, error }
+  }
+
+  private dispatcher?: Dispatcher
+
+  /** The dispatcher the bot would build from this module's controllers and `app`. */
+  private dispatcherOf(): Dispatcher {
+    if (this.dispatcher) return this.dispatcher
+    const logger = new Logger('TestingModule')
+    const warnUnanswered = this.appWarnUnanswered ?? process.env.NODE_ENV === 'development'
+    this.dispatcher = new Dispatcher({
+      container: this.container,
+      controllerClasses: this.controllers,
+      messageOptions: this.messageOptions,
+      logger,
+      fallback: createFallback(logger, () => this.messageOptions.deleteUsageRepliesAfter),
+      // A mock's client is the one bot every mock client is, so a mention of it starts a command
+      botUserId: event => {
+        const id = event.client?.user?.id
+        return typeof id === 'string' ? id : undefined
+      },
+      warnUnanswered,
+      awaitObservers: true,
+    })
+    return this.dispatcher
+  }
+
+  /**
+   * Sends an interaction, a message or a reaction through the bot's own dispatch: routed over the module's
+   * controllers and its `app`'s message options exactly as the bot routes it, then run through the full
+   * pipeline of each handler it reaches. What the user is sent is sent to the mock, as the bot sends it:
+   * the handler's answer, a usage reply, or the built-in fallback's answer to an error no filter handles.
+   * Inputs the bot skips, such as a message from a bot, reach nothing. The module waits for its observers.
+   *
+   * `dispatch` tests what the bot does with an input: which handler it reaches, with what params, and what
+   * the user sees. To test one handler you name, whatever would route to it, use {@link invoke}.
+   *
+   * @param input - An interaction or a message; or a reaction, with the user who reacted and whether they
+   *   added it, `ReactionHandlerAction.ADD` unless given.
+   * @returns Every handler reached, in the order it ran, whether any ran, and the first error a call ended
+   *   with. A `MessageUsageError` or `CommandNotFoundError` the fallback answered resolves, as an ordinary
+   *   outcome of a message or an interaction. Any other error no filter handles rejects the call once the
+   *   fallback has answered and every handler has run: with that error, or an `AggregateError` when
+   *   several were left unhandled.
+   *
+   * @example
+   * ```ts
+   * const module = MeoCordTestingModule.create({ app: App, controllers: [CardController] }).compile()
+   * const interaction = createMockInteraction(ButtonInteraction, { customId: 'card/summary/7' })
+   *
+   * const { handlers } = await module.dispatch(interaction)
+   *
+   * expect(handlers).toEqual([{ controller: CardController, method: 'summary', ran: true }])
+   * ```
+   */
+  dispatch(input: Interaction | Message): Promise<DispatchedCall>
+  dispatch(
+    reaction: MessageReaction | PartialMessageReaction,
+    options: { user: User | PartialUser; action?: ReactionHandlerAction },
+  ): Promise<DispatchedCall>
+  async dispatch(
+    input: Interaction | Message | MessageReaction | PartialMessageReaction,
+    options?: { user: User | PartialUser; action?: ReactionHandlerAction },
+  ): Promise<DispatchedCall> {
+    await this.init()
+    const dispatcher = this.dispatcherOf()
+    const handlers: DispatchedHandler[] = []
+    const unhandled: unknown[] = []
+    const record: DispatchRecorder = {
+      settled: (controller, method, { ran, error }) => handlers.push({ controller, method, ran, ...(error !== undefined && { error }) }),
+      unhandled: error => unhandled.push(error),
+    }
+
+    if (options) {
+      await dispatcher.reaction(input as MessageReaction, { user: options.user, action: options.action ?? ReactionHandlerAction.ADD }, record)
+    } else if (input instanceof BaseInteraction) {
+      const presenter = appPresenterOf(this.container)
+      if (presenter) setPresenter(input.client, presenter)
+      await dispatcher.interaction(input as Interaction, record)
+    } else if (input instanceof Message) {
+      await dispatcher.message(input, record)
+    } else {
+      throw new TypeError('dispatch takes an interaction, a message, or a reaction with { user }.')
+    }
+
+    // What a user gets for a misused command or an unknown one is an outcome to assert on, not a failure
+    const failures = unhandled.filter(error => !(error instanceof MessageUsageError || error instanceof CommandNotFoundError))
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, `${failures.length} errors were left to the fallback.`)
+    const error = handlers.find(handler => handler.error !== undefined)?.error ?? unhandled[0]
+    return { ran: handlers.some(handler => handler.ran), handlers, ...(error !== undefined && { error }) }
   }
 
   /**
@@ -598,7 +732,19 @@ export class TestingModuleBuilder {
       })
     }
 
-    return new TestingModule(container, [...(this.options.controllers ?? [])], appClasses, providers, order, messages, lifecycle, constructed)
+    const warnUnanswered = this.options.app && (Reflect.getMetadata(MetadataKey.AppOptions, this.options.app) as { warnUnanswered?: boolean })?.warnUnanswered
+
+    return new TestingModule(
+      container,
+      [...(this.options.controllers ?? [])],
+      appClasses,
+      providers,
+      order,
+      messages,
+      lifecycle,
+      constructed,
+      warnUnanswered,
+    )
   }
 }
 

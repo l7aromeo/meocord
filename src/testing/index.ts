@@ -4,6 +4,8 @@ export type {
   TestingModuleInitOptions,
   HandlerName,
   InvocationResult,
+  DispatchedCall,
+  DispatchedHandler,
   EmitResult,
 } from './meocord-testing-module.js'
 

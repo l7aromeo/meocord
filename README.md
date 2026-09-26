@@ -2276,7 +2276,7 @@ const module = MeoCordTestingModule.create({ app: App, controllers: [ProfileCont
 await module.invoke(ProfileController, 'showProfile', interaction, { ownerId: '111', uid: '8000' }) // global guards run first
 ```
 
-`invoke` resolves to `{ ran }`, which is `false` when a guard denied the call or an interceptor skipped the handler, with `error` set when a filter handled one. An error no filter handles rejects the call, since the built-in fallback does not run in tests. The method name and arguments are type-checked against the handler. Calling the controller method directly runs its guards but no interceptors, validation or filters; `invoke` is the way to test everything dispatch runs around a handler.
+`invoke` resolves to `{ ran }`, which is `false` when a guard denied the call or an interceptor skipped the handler, with `error` set when a filter handled one. To test which handler an input reaches, rather than a handler you name, use [`dispatch`](#sending-input-through-the-bot-with-dispatch). An error no filter handles rejects the call, since the built-in fallback does not run in tests. The method name and arguments are type-checked against the handler. Calling the controller method directly runs its guards but no interceptors, validation or filters; `invoke` is the way to test everything dispatch runs around a handler.
 
 Pass the interaction alone and `invoke` builds the params as dispatch does: a command's or an autocomplete's options, or the handler's customId params with a modal's fields or a select menu's choices, from the mock's `values`, `users`, `members`, `roles` and `channels`. `createModalFields({ body: 'It crashed' })` gives a mock `ModalSubmitInteraction` its submitted fields, which discord.js does not let a test construct.
 
@@ -2295,6 +2295,41 @@ expect(ban.get(Roles)).toEqual(['admin'])
 // With the app, the global guards come first
 expect(inspectHandler(ModerationController, 'ban', { app: App }).guards[0]).toBe(BlocklistGuard)
 ```
+
+### Sending input through the bot with `dispatch`
+
+`invoke` tests one handler you name. `module.dispatch(input)` tests what the bot does with an input: it routes an interaction, a message or a reaction over the module's controllers, with its `app`'s message options, exactly as the bot routes it, and runs each handler it reaches through the full pipeline. Use it to check which handler a customId, a command or a message reaches, with which params, and what the user is sent:
+
+```typescript
+import { ButtonInteraction, type Message } from 'discord.js'
+import { createMockInteraction, createMockMessage, MeoCordTestingModule } from 'meocord/testing'
+import App from '@src/app'
+
+const module = MeoCordTestingModule.create({ app: App, controllers: [ProfileController, DiceController] }).compile()
+
+// The most specific pattern wins, as in the bot
+const { handlers } = await module.dispatch(
+  createMockInteraction(ButtonInteraction, { customId: 'profile/summary/111/8000' }),
+)
+expect(handlers).toEqual([{ controller: ProfileController, method: 'showSummary', ran: true }])
+
+// A misused command gets the usage reply the user would see
+const message = createMockMessage({ content: '!roll lots' })
+const { error } = await module.dispatch(message)
+expect(error).toBeInstanceOf(MessageUsageError)
+expect(message.reply).toHaveBeenCalledWith(
+  expect.objectContaining({ content: expect.stringContaining('Usage: !roll') }),
+)
+
+// A reaction, with the user who reacted; added unless an action is given
+await module.dispatch(reaction, { user, action: ReactionHandlerAction.REMOVE })
+```
+
+- **What it resolves to.** `ran` says whether any handler ran, and `handlers` lists each one reached, in the order it ran, with its own `ran` and `error`. A message can reach a patterned handler and every `@MessageHandler()` listener, and a reaction several handlers.
+- **What the user sees.** The handler's answer, a usage reply, and the built-in fallback's answer to an error no filter handles are all sent to the mock, as the bot sends them.
+- **Errors.** A `MessageUsageError` or `CommandNotFoundError` the fallback answered resolves, in `error`, as an ordinary outcome of a message or an interaction. Any other error no filter handles rejects the call once the fallback has answered, so a bug in a handler does not pass silently; `invoke` rejects without running the fallback.
+- **What it skips.** Whatever the bot skips reaches nothing, such as a message from a bot or a reaction from one to a handler without `bots: true`: `{ ran: false, handlers: [] }`.
+- The module waits for its [observers](#observers) before the call resolves.
 
 <details>
 <summary><b><code>createMockInteraction</code></b></summary>
