@@ -32,6 +32,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'UseGuard',
     'UseInterceptor',
     'UsePipe',
+    'UseTheme',
     'Validate',
   ],
   'meocord/common': [
@@ -63,6 +64,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'isExplainedError',
     'respond',
     'route',
+    'useTheme',
   ],
   'meocord/enum': ['CommandType', 'MetadataKey', 'ReactionHandlerAction'],
   'meocord/testing': [

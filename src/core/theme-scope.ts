@@ -1,0 +1,134 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { type DeepReadonly, type MeoCordTheme, type ThemeOverride } from '@src/interface/index.js'
+import { DEFAULT_THEME } from '@src/core/theme-defaults.js'
+
+/** A resolved theme: every role present, frozen, since one theme is shared by every call it applies to. */
+export type ResolvedTheme = DeepReadonly<MeoCordTheme>
+
+/** The theme of the call in progress. */
+interface ThemeScope {
+  theme: ResolvedTheme
+}
+
+const scope = new AsyncLocalStorage<ThemeScope>()
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  if (value === null || typeof value !== 'object') return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+/** Freezes a value and every plain object in it; arrays are frozen too, as one token. */
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const inner of Object.values(value)) deepFreeze(inner)
+    Object.freeze(value)
+  }
+  return value
+}
+
+/**
+ * A copy of a layer an app gave, so freezing a theme built on it never freezes the app's own objects: plain objects
+ * and arrays are copied at every depth, anything else is kept as it is.
+ */
+export function copyLayer<T>(layer: T): T {
+  if (Array.isArray(layer)) return layer.map(copyLayer) as T
+  if (!isPlainObject(layer)) return layer
+  return Object.fromEntries(Object.entries(layer).map(([key, value]) => [key, copyLayer(value)])) as T
+}
+
+/**
+ * One layer over another: plain objects merge key by key, anything else replaces, and `undefined` never does. A
+ * part the layer leaves alone is shared with `base`, which is already frozen.
+ */
+function mergeInto(base: unknown, layer: unknown): unknown {
+  if (layer === undefined) return base
+  if (!isPlainObject(base) || !isPlainObject(layer)) return layer
+  const merged: Record<string, unknown> = { ...base }
+  for (const key of Object.keys(layer)) merged[key] = mergeInto(base[key], layer[key])
+  return merged
+}
+
+const merges = new WeakMap<object, WeakMap<object, ResolvedTheme>>()
+
+/**
+ * `layer` over `theme`, frozen, and made once per pair: the same two give the same object. `layer` must be one
+ * {@link copyLayer} made, since the result shares and freezes its parts.
+ */
+export function mergeTheme(theme: ResolvedTheme, layer: ThemeOverride | undefined): ResolvedTheme {
+  if (layer === undefined) return theme
+  let byLayer = merges.get(theme)
+  if (!byLayer) merges.set(theme, (byLayer = new WeakMap()))
+  let merged = byLayer.get(layer)
+  if (!merged) byLayer.set(layer, (merged = deepFreeze(mergeInto(theme, layer) as ResolvedTheme)))
+  return merged
+}
+
+// Written by the deprecated `Theme` statics: beneath every theme an app sets
+let legacyLayer: ThemeOverride | undefined
+let legacyVersion = 0
+let defaults = DEFAULT_THEME as ResolvedTheme
+
+/** MeoCord's defaults, with what the deprecated `Theme` statics set over them. */
+export function defaultTheme(): ResolvedTheme {
+  return defaults
+}
+
+/** The number of times the legacy layer has changed, so a theme built on an older one is built again. */
+export function themeLayersVersion(): number {
+  return legacyVersion
+}
+
+/** Sets the layer the deprecated `Theme` statics write, merged over MeoCord's defaults. */
+export function setLegacyThemeLayer(layer: ThemeOverride | undefined): void {
+  legacyLayer = layer === undefined ? undefined : copyLayer(layer)
+  defaults = mergeTheme(DEFAULT_THEME as ResolvedTheme, legacyLayer)
+  legacyVersion++
+}
+
+// The theme outside any call: the app the process runs, once it has started
+let ambient: { owner: object; theme: () => ResolvedTheme } | undefined
+
+/**
+ * Makes an app's theme the one read outside a call, when no other app has: a bot runs one app, and code it runs
+ * outside a handler, such as a scheduled job, then reads that app's theme. A second app in the same process keeps
+ * its theme to its own calls.
+ */
+export function claimAmbientTheme(owner: object, theme: () => ResolvedTheme): boolean {
+  if (ambient && ambient.owner !== owner) return false
+  ambient = { owner, theme }
+  return true
+}
+
+/** Whether `owner` is the app whose theme is read outside a call. */
+export function ownsAmbientTheme(owner: object): boolean {
+  return ambient?.owner === owner
+}
+
+/** Runs `fn` with `theme` as the theme of the call, for everything it runs, awaits or starts. */
+export function runWithTheme<T>(theme: ResolvedTheme, fn: () => T): T {
+  return scope.run({ theme }, fn)
+}
+
+/**
+ * The theme of the running call: MeoCord's defaults, then the app's theme, then each `@UseTheme` from the
+ * controller's base class down to the handler. Outside a call, the theme of the app the process runs, or
+ * MeoCord's defaults before an app has started; it never throws.
+ *
+ * It reads the call through `AsyncLocalStorage`, so a service or presenter the handler calls reads the same
+ * theme, and so does work the call starts that outlives it, such as a timer's follow-up. The theme is frozen:
+ * it is shared by every call it applies to.
+ *
+ * @returns The resolved theme, with every role present.
+ *
+ * @example
+ * ```ts
+ * import { useTheme } from 'meocord/common'
+ *
+ * const { colors, emojis } = useTheme()
+ * await respond(interaction).send({ embeds: [{ description: `${emojis.success} Saved`, color: resolveColor(colors.success) }] })
+ * ```
+ */
+export function useTheme(): ResolvedTheme {
+  return scope.getStore()?.theme ?? ambient?.theme() ?? defaults
+}

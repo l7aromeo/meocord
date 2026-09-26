@@ -9,6 +9,8 @@ import {
 } from 'discord.js'
 import { type MetadataDecorator } from '@src/common/metadata.js'
 import { respond, type ResponseState } from '@src/common/response/response-state.js'
+import { type DeepReadonly, type MeoCordTheme } from '@src/interface/theme.interface.js'
+import { useTheme } from '@src/core/theme-scope.js'
 
 /** What an {@link ExecutionContext} is running a handler for. */
 export type ExecutionContextType = 'interaction' | 'autocomplete' | 'message' | 'reaction' | 'event'
@@ -136,6 +138,14 @@ export abstract class ExecutionContext {
    * ```
    */
   abstract getHandlerParams<P = Record<string, unknown>>(): Readonly<P> | undefined
+
+  /**
+   * The theme of the call: the same one `useTheme()` returns inside it, with the app's theme and each `@UseTheme`
+   * that applies to the handler merged over MeoCord's defaults. Frozen, since it is shared by every call it applies to.
+   */
+  getTheme(): DeepReadonly<MeoCordTheme> {
+    return useTheme()
+  }
 }
 
 /** A call's arguments as they stand, replaced in place once validation and pipes have prepared them. */
