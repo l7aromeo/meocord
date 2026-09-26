@@ -13,6 +13,28 @@ export const DEFAULT_THEME_MAX_USERS = 50_000
 export const DEFAULT_THEME_FOR_TIMEOUT_MS = 1_000
 /** How long a server or user whose lookup failed is not asked again. */
 export const THEME_FAILURE_BACKOFF_MS = 10_000
+/** How long a burst of failures or of answers lasts, from its first: its second is summed up, the rest only counted. */
+const BURST_MS = 2 * THEME_FAILURE_BACKOFF_MS
+
+/**
+ * Failures, or answers after failing, across a resolver's servers or users, in bursts of `BURST_MS` from each burst's
+ * first: that one is logged on its own, the second as one summary for the resolver, and the rest are not logged. Only
+ * time ends a burst, so a later outage is always logged, however many servers or users keep failing.
+ */
+class Burst {
+  private start = Number.NEGATIVE_INFINITY
+  private count = 0
+
+  /** How an event at `now` is logged. */
+  next(now: number): 'alone' | 'summary' | 'counted' {
+    if (now - this.start >= BURST_MS) {
+      this.start = now
+      this.count = 0
+    }
+    this.count++
+    return this.count === 1 ? 'alone' : this.count === 2 ? 'summary' : 'counted'
+  }
+}
 
 /** How `@MeoCord` configures its resolvers' caches. */
 export interface ThemeResolverOptions {
@@ -35,13 +57,11 @@ class ResolverCache {
   private readonly pending = new Map<string, { token: object; result: Promise<ThemeOverride | undefined> }>()
   /** The ids already warned about for an invalid result, until one gives a valid result again. */
   private readonly warned = new Set<string>()
-  /** The ids whose lookups are failing, each with its own backoff through the cache. */
+  /** The ids whose lookups are failing, so an id that keeps failing is counted once, when it starts. */
   private readonly failing = new Map<string, { failures: number; since: number }>()
-  /**
-   * The outage the failing ids are part of: from the first id's failure until every failing id answers again. One id
-   * is logged on its own; a second makes it an outage of the resolver, summed up once rather than logged per id.
-   */
-  private outage: { since: number; failures: number; summarised: boolean } | undefined
+  /** The ids that start failing, and those that answer again. */
+  private readonly failures = new Burst()
+  private readonly answers = new Burst()
 
   constructor(
     private readonly kind: Kind,
@@ -73,14 +93,12 @@ class ResolverCache {
       this.pending.clear()
       this.warned.clear()
       this.failing.clear()
-      this.outage = undefined
       return
     }
     this.entries.delete(id)
     this.pending.delete(id)
     this.warned.delete(id)
     this.failing.delete(id)
-    if (this.failing.size === 0) this.outage = undefined
   }
 
   private async fetch(id: string, token: object): Promise<ThemeOverride | undefined> {
@@ -139,55 +157,51 @@ class ResolverCache {
   }
 
   /**
-   * Logs a failed lookup: the first id to fail on its own, naming it and the reason, and a second id failing before the
-   * first answers as one summary for the resolver, since many servers or users failing together is the resolver
-   * failing. Later failures, of those ids or others, are counted, not logged.
+   * Logs an id that starts failing, once until it answers: on its own, or as the second in a burst, in one summary for
+   * the resolver, since many servers or users failing together is the resolver failing.
    */
   private failed(id: string, error: unknown): void {
-    const reason = error instanceof ThemeLookupTimeout ? `did not answer within ${this.timeoutMs} ms` : `failed: ${String((error as Error)?.message ?? error)}`
     const failing = this.failing.get(id)
-    if (this.outage) this.outage.failures++
     if (failing) {
       failing.failures++
       return
     }
     if (this.failing.size >= this.max) this.failing.clear()
-    this.failing.set(id, { failures: 1, since: Date.now() })
-    if (!this.outage) {
-      this.outage = { since: Date.now(), failures: 1, summarised: false }
-      logger.error(
-        `themeFor.${this.kind} for ${this.kind} ${id} ${reason}. Its calls use the theme without it, and it is asked again ` +
-          `after ${THEME_FAILURE_BACKOFF_MS / 1000}s.`,
-      )
-      return
+    const now = Date.now()
+    this.failing.set(id, { failures: 1, since: now })
+    const reason = error instanceof ThemeLookupTimeout ? `did not answer within ${this.timeoutMs} ms` : `failed: ${String((error as Error)?.message ?? error)}`
+    const backoff = `${THEME_FAILURE_BACKOFF_MS / 1000}s`
+    switch (this.failures.next(now)) {
+      case 'alone':
+        logger.error(`themeFor.${this.kind} for ${this.kind} ${id} ${reason}. Its calls use the theme without it, and it is asked again after ${backoff}.`)
+        break
+      case 'summary':
+        logger.error(
+          `themeFor.${this.kind} is failing for more than one ${this.kind}; the latest, ${this.kind} ${id}, ${reason}. Their ` +
+            `calls use the theme without it, each is asked again after ${backoff}, and others that fail in the next ` +
+            `${BURST_MS / 1000}s are not logged.`,
+        )
     }
-    if (this.outage.summarised) return
-    this.outage.summarised = true
-    logger.error(
-      `themeFor.${this.kind} is failing for more than one ${this.kind}; the latest, ${this.kind} ${id}, ${reason}. Their ` +
-        `calls use the theme without it, each is asked again after ${THEME_FAILURE_BACKOFF_MS / 1000}s, and further ` +
-        `failures are counted, not logged, until every one answers again.`,
-    )
   }
 
-  /**
-   * Logs that a failing id answers again: on its own when it was the only one failing, else once, when the last of
-   * them answers.
-   */
+  /** Logs that an id whose lookups were failing answers again: on its own, or as the second in a burst, in one summary. */
   private recovered(id: string): void {
     const failing = this.failing.get(id)
     if (!failing) return
     this.failing.delete(id)
-    const outage = this.outage
-    if (!outage) return
-    if (!outage.summarised) {
-      const seconds = Math.round((Date.now() - failing.since) / 1000)
-      logger.log(`themeFor.${this.kind} for ${this.kind} ${id} answers again, after ${failing.failures} failed lookup(s) over ${seconds}s.`)
-    } else if (this.failing.size === 0) {
-      const seconds = Math.round((Date.now() - outage.since) / 1000)
-      logger.log(`themeFor.${this.kind} answers again for every ${this.kind} that failed, after ${outage.failures} failed lookup(s) over ${seconds}s.`)
+    const now = Date.now()
+    switch (this.answers.next(now)) {
+      case 'alone': {
+        const seconds = Math.round((now - failing.since) / 1000)
+        logger.log(`themeFor.${this.kind} for ${this.kind} ${id} answers again, after ${failing.failures} failed lookup(s) over ${seconds}s.`)
+        break
+      }
+      case 'summary':
+        logger.log(
+          `themeFor.${this.kind} answers again for more than one ${this.kind}; the latest, ${this.kind} ${id}. Others that ` +
+            `answer in the next ${BURST_MS / 1000}s are not logged.`,
+        )
     }
-    if (this.failing.size === 0) this.outage = undefined
   }
 }
 
