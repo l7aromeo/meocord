@@ -1325,7 +1325,7 @@ await respond(interaction).send({
 
 ### Themes per server and per user
 
-`@MeoCord({ themeFor })` looks a theme up by where a call comes from: `guild` for a server's, which goes over the handler's, and `user` for a user's, which goes over the server's, in a server or a DM. Each returns part of a theme, or `undefined` for none, at once or as a promise:
+`@MeoCord({ themeFor })` looks a theme up by where a call comes from: `guild` for a server's, which goes over the handler's, and `user` for a user's, which goes over the server's, in a server or a DM. Each returns part of a theme, or `undefined` or `null` for none, such as a missing row, at once or as a promise:
 
 ```typescript
 @MeoCord({

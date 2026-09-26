@@ -39,7 +39,7 @@ class ResolverCache {
 
   constructor(
     private readonly kind: Kind,
-    private readonly resolve: (id: string) => ThemeOverride | undefined | Promise<ThemeOverride | undefined>,
+    private readonly resolve: (id: string) => ThemeOverride | null | undefined | Promise<ThemeOverride | null | undefined>,
     private readonly max: number,
     private readonly ttlMs: number,
     private readonly timeoutMs: number,
@@ -107,9 +107,12 @@ class ResolverCache {
     return Promise.race([attempt, timeout]).finally(() => clearTimeout(timer))
   }
 
-  /** A result as a layer: copied, then checked; one with problems is left out, with a warning once per id. */
+  /**
+   * A result as a layer: copied, then checked; one with problems is left out, with a warning once per id. `null`,
+   * as a database gives for a missing row, is no theme, as `undefined` is.
+   */
   private accept(id: string, result: unknown): ThemeOverride | undefined {
-    if (result === undefined) return undefined
+    if (result === undefined || result === null) return undefined
     const layer = copyLayer(result) as ThemeOverride
     const problems = themeProblems(layer, `themeFor.${this.kind} for ${this.kind} ${id}`)
     if (problems.length === 0) {
