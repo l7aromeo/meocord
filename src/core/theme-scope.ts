@@ -55,6 +55,10 @@ function mergeInto(base: unknown, layer: unknown): unknown {
   return merged
 }
 
+/** Whether a layer holds no value: only plain objects, empty or holding nothing but `undefined` and more of them. */
+const setsNothing = (layer: unknown): boolean =>
+  layer === undefined || (isPlainObject(layer) && Object.values(layer).every(setsNothing))
+
 const merges = new WeakMap<object, WeakMap<object, ResolvedTheme>>()
 
 /**
@@ -62,7 +66,8 @@ const merges = new WeakMap<object, WeakMap<object, ResolvedTheme>>()
  * {@link copyLayer} made, since the result shares and freezes its parts.
  */
 export function mergeTheme(theme: ResolvedTheme, layer: ThemeOverride | undefined): ResolvedTheme {
-  if (layer === undefined) return theme
+  // A layer that sets nothing, such as {} or { colors: {} }, leaves the theme as it is, the same object
+  if (layer === undefined || setsNothing(layer)) return theme
   let byLayer = merges.get(theme)
   if (!byLayer) merges.set(theme, (byLayer = new WeakMap()))
   let merged = byLayer.get(layer)

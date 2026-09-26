@@ -313,6 +313,18 @@ describe('apps in one process', () => {
     expect(run).not.toHaveBeenCalled()
   })
 
+  it('enters no scope for an app theme that sets nothing', async () => {
+    const run = vi.spyOn(AsyncLocalStorage.prototype, 'run')
+    for (const theme of [{}, { colors: {} }, { colors: { primary: undefined } }]) {
+      @MeoCord({ controllers: [Plain], clientOptions: { intents: [] }, theme })
+      class Empty {}
+      await MeoCordTestingModule.create({ app: Empty, controllers: [Plain] }).compile().invoke(Plain, 'plain', press('plain'))
+    }
+
+    expect(run).not.toHaveBeenCalled()
+    expect(seen).toEqual([DEFAULT_THEME.colors.primary, DEFAULT_THEME.colors.primary, DEFAULT_THEME.colors.primary])
+  })
+
   it('reads the started bot\'s app theme outside any call, and enters no scope for it', async () => {
     const clients: Client[] = []
     vi.spyOn(Client.prototype, 'login').mockImplementation(function (this: Client) {
