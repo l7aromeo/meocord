@@ -1,9 +1,9 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import { type ButtonInteraction, type ChatInputCommandInteraction } from 'discord.js'
 import { applyDecorators } from '@src/common/index.js'
-import { Command, Cooldown, UseGuard } from '@src/decorator/index.js'
+import { Command, Cooldown, MeoCord, UseGuard } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
-import { type CooldownOptions, type GuardInterface } from '@src/interface/index.js'
+import { type CooldownOptions, type CooldownStoreFailure, type GuardInterface } from '@src/interface/index.js'
 
 /**
  * Runs under `vitest --typecheck`. The negative cases use `@ts-expect-error`,
@@ -101,5 +101,16 @@ describe('@Cooldown({ by })', () => {
     @Cooldown({ seconds: 5, by: (_context, params) => (typeof params.uid === 'string' ? params.uid : undefined) })
     class Controller {}
     void Controller
+  })
+})
+
+describe('@MeoCord({ cooldownStoreFailure })', () => {
+  it('takes the exported CooldownStoreFailure', () => {
+    const failure: CooldownStoreFailure = 'allow'
+    expectTypeOf<CooldownStoreFailure>().toEqualTypeOf<'deny' | 'allow'>()
+    expectTypeOf(MeoCord).parameter(0).toHaveProperty('cooldownStoreFailure').toEqualTypeOf<CooldownStoreFailure | undefined>()
+    // @ts-expect-error only 'deny' or 'allow'
+    const retry: CooldownStoreFailure = 'retry'
+    void [failure, retry]
   })
 })
