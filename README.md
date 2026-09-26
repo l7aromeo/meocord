@@ -1304,7 +1304,20 @@ await respond(interaction).send({
 })
 ```
 
-- **Anything the handler calls reads the same theme,** such as a service or a presenter, since the call's theme follows it through `AsyncLocalStorage`, as does work the call starts that outlives it, such as a timer's follow-up. An interceptor, guard or filter reads it as `context.getTheme()`.
+- **Anything the handler calls reads the same theme,** such as a service or a presenter, since the call's theme follows it through `AsyncLocalStorage`, as does a timer or a promise the call starts that outlives it. An interceptor, guard or filter reads it as `context.getTheme()`.
+- **A component a route handles is themed with no extra code:** `@Command('ticket/close/{id}', CommandType.BUTTON)` runs in its own handler's theme, `@UseTheme` included, so routing a button to a handler is the way to theme it.
+- **A listener the handler registers runs in its emitter's context,** such as a collector's `collect` callback or a `client.on(...)` handler, as any `AsyncLocalStorage` value does. To read the handler's theme there, wrap the callback in `bindTheme` from `meocord/common`:
+
+  ```typescript
+  collector.on(
+    'collect',
+    bindTheme(async (click: ButtonInteraction) => {
+      const { emojis } = useTheme() // the handler's theme
+      await respond(click).send(`${emojis.success} Picked`)
+    }),
+  )
+  ```
+
 - **A controller method called directly** from another handler keeps the caller's theme: the theme belongs to the call answering the user.
 - **Outside any call,** such as in a scheduled job, it is the theme of the app the bot runs, or MeoCord's defaults before an app has started. It never throws.
 - **A theme is frozen,** since one theme is shared by every call it applies to. A colour is kept as written, so `useTheme().colors.primary` reads back what was set.

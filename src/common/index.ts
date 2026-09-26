@@ -54,4 +54,4 @@ export type {
 export { getInstallContext } from '@src/common/response/install-context.js'
 export { isExplainedError } from '@src/common/explained-error.js'
 export type { InstallContext } from '@src/common/response/install-context.js'
-export { useTheme } from '@src/core/theme-scope.js'
+export { bindTheme, useTheme } from '@src/core/theme-scope.js'
