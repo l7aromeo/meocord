@@ -317,6 +317,7 @@ what a bot does at runtime; each says what to check. Everything else in 4.1 is n
 - [ ] Rename any `SetMetadata` key that MeoCord reserves, such as `'guards'`
 - [ ] Check `@MessageHandler` keywords, which match in any case, and of which only one runs
 - [ ] Add `{ bots: true }` to any `@ReactionHandler` that should run for reactions from bots
+- [ ] Give each component handler its own customId pattern, since two with the same one stop the bot
 - [ ] Rebuild
 
 ### Class guards now cover inherited handlers
@@ -463,6 +464,27 @@ A handler that should still run for bot reactions, such as one relaying a bot's 
 
 A handler that counted reactions, such as poll votes, no longer counts the ones the bot added to seed
 the choices; check a count that subtracted them.
+
+### Two component handlers with the same customId pattern stop the bot
+
+Two buttons, select menus or modals of one type whose `@Command` patterns match exactly the same
+customIds, such as `profile/{uid}` in one controller and `profile/{id}` in another, now stop the bot at
+startup with an error naming both handlers. In 4.0 the bot started with a warning about the pair, and
+every click went to one of them, chosen by the order the controllers were listed; the other never ran.
+
+This happens most often with controllers from `meocord generate` in 4.0 and the earlier 4.1 betas,
+which gave every generated button `button-click` and `button-with/{id}`, every select menu of a type the
+same id, such as `select-menu`, and every modal `submit-modal`. Give each handler a pattern of its own, and update the
+customIds the bot sends on its buttons, menus and modals to match:
+
+```typescript
+@Command('feedback-open', CommandType.BUTTON) // was 'button-click'
+```
+
+Registering a base controller and a subclass of it together gives the same error, since the subclass
+inherits every route; register only the one that should handle them. One handler declared with two
+spellings of a pattern, such as `card/{id}` and `card/{cardId}`, is one route and keeps working.
+`findRouteConflicts` and `resolveRoute` throw the same error, so a test catches it too.
 
 ### Smaller changes
 

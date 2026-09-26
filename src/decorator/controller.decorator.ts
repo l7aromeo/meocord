@@ -452,6 +452,11 @@ export function Controller() {
   }
 }
 
+/** A pattern with its param names blanked, so two patterns that match the same customIds read the same. */
+export function patternShape(pattern: string): string {
+  return pattern.replace(PLACEHOLDER_PATTERN, '{}')
+}
+
 /**
  * Finds pairs of customId patterns that can both match one id, such as `a/{x}/c` and `a/b/{y}`.
  * @returns Each ambiguous pair once, in the order the patterns were given.

@@ -676,6 +676,8 @@ Ties between equally literal patterns go to the one with fewer parameters. The r
 
 Where two patterns trade a literal for a parameter in opposite positions — `a/{x}/c` and `a/b/{y}` both take `a/b/c` — neither is more literal, and MeoCord logs a warning at startup naming the pair.
 
+Two handlers whose patterns match exactly the same customIds of one component type — the same pattern, or one differing only in its param names, such as `profile/{uid}` and `profile/{id}` — stop the bot at startup, naming both, since only one of them could ever run. One handler declared under both spellings is one route. The same pattern on a button and a modal is fine: dispatch never confuses component types.
+
 </details>
 
 <details>
@@ -2188,7 +2190,8 @@ it('routes !roll to the dice handler', () => {
   expect(resolveRoute(App, { content: '!roll 20 for luck' })?.params).toEqual({ sides: '20', note: 'for luck' })
 })
 
-// Patterns that can match the same customId, as a failing test rather than a startup warning.
+// Patterns that can match the same customId, as a failing test rather than a startup warning. Two
+// handlers with the same pattern make it throw, as the bot refuses to start with them.
 it('has no overlapping component patterns', () => {
   expect(findRouteConflicts(App)).toEqual([])
 })

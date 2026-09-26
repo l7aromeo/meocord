@@ -465,6 +465,25 @@ describe('MeoCordApp', () => {
       expect(warn.mock.calls.filter(([message]: [string]) => message.includes('can match the same customId'))).toHaveLength(1)
     })
 
+    it('refuses to start, before logging in, when two handlers have the same pattern', async () => {
+      @Controller()
+      class Profile {
+        @Command('profile/{uid}', CommandType.BUTTON)
+        async show(..._args: any[]) {}
+      }
+      @Controller()
+      class Card {
+        @Command('profile/{id}', CommandType.BUTTON)
+        async open(..._args: any[]) {}
+      }
+
+      const app = new MeoCordApp([Profile, Card] as any, createMockContainer() as any, mockClient as any, 't')
+      await expect(app.start()).rejects.toThrow(
+        '"profile/{uid}" in Profile.show and "profile/{id}" in Card.open match the same button customIds',
+      )
+      expect(mockClient.login).not.toHaveBeenCalled()
+    })
+
     it('stays quiet when the patterns cannot collide', async () => {
       @Controller()
       class DistinctController {
