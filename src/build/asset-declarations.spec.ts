@@ -4,12 +4,12 @@ import { createRsbuild, type Rspack } from '@rsbuild/core'
 import { createRsbuildConfig } from '@src/build/rsbuild-config.js'
 
 /**
- * A new application's src/assets.d.ts types what importing a file gives. It must name every extension the
+ * A new application's src/types/assets.d.ts types what importing a file gives. It must name every extension the
  * build emits as an asset, and the ones its config reads as text, or an import that builds fails the app's
  * own typecheck.
  */
 const template = (file: string) => readFileSync(path.join(import.meta.dirname, '..', 'bin', 'app-template', file), 'utf8')
-const declared = [...template('src/assets.d.ts.template').matchAll(/^declare module '\*\.([a-z\d]+)'/gm)].map(([, ext]) => ext)
+const declared = [...template('src/types/assets.d.ts.template').matchAll(/^declare module '\*\.([a-z\d]+)'/gm)].map(([, ext]) => ext)
 
 /** The extensions a rule's test names, from the `\.(?:a|b)$` or `\.a$` form Rsbuild writes them in. */
 function extensionsOf(test: unknown): string[] {

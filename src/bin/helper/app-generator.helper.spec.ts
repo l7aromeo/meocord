@@ -84,6 +84,19 @@ describe('AppGeneratorHelper', () => {
   })
 
   // The token is read from the environment because this file is committed.
+  it('puts the app\'s type declarations in src/types: the theme as a module, the assets as a script', () => {
+    const theme = read('src/types/theme.d.ts')
+    const assets = read('src/types/assets.d.ts')
+
+    // An import makes the theme's `declare module` an augmentation; without one it would replace meocord/interface
+    expect(theme.split('\n').find(line => line.trim() !== '' && !line.startsWith('//'))).toBe("import 'meocord/interface'")
+    expect(theme).toContain("declare module 'meocord/interface'")
+    // A wildcard module declaration only works in a file with no import or export
+    expect(assets).not.toMatch(/^(import|export) /m)
+    expect(assets).toMatch(/^declare module '\*\.png'/m)
+    expect(fs.existsSync(path.join(target, 'src', 'assets.d.ts'))).toBe(false)
+  })
+
   it('does not write a token into the committed config', () => {
     expect(read('meocord.config.ts')).toContain('process.env.DISCORD_TOKEN')
     expect(read('.gitignore')).toContain('.env')

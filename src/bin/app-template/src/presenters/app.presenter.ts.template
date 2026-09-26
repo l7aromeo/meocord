@@ -1,16 +1,16 @@
-import { Theme } from 'meocord/common'
 import { Service } from 'meocord/decorator'
 import { type PresentedError, type ResponseContext, type ResponsePresenter, type ResponseView } from 'meocord/interface'
 
 /** How MeoCord's loading and error views look in this bot, registered with `@MeoCord({ presenter })` */
 @Service()
 export class AppPresenter implements ResponsePresenter {
-  loading(_context: ResponseContext): ResponseView {
-    return { text: 'Working on it…', emoji: '⏳', color: Theme.primaryColor }
+  loading({ theme }: ResponseContext): ResponseView {
+    return { text: 'Working on it…', emoji: theme.emojis.loading, color: theme.colors.primary }
   }
 
-  // Filters and the fallback choose the words; this only styles them
-  error(_context: ResponseContext, { message }: PresentedError): ResponseView {
-    return { title: 'Oops!', text: message, color: Theme.errorColor }
+  // Filters and the fallback choose the words; this only styles them, in the colour of their tone: `warning` when the
+  // user can fix it, `danger` for a fault in the bot
+  error({ theme }: ResponseContext, { message, tone }: PresentedError): ResponseView {
+    return { title: 'Oops!', text: message, color: theme.colors[tone] }
   }
 }
