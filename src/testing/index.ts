@@ -1,6 +1,7 @@
 export { MeoCordTestingModule, TestingModule, TestingModuleBuilder } from './meocord-testing-module.js'
 export type {
   TestingModuleOptions,
+  TestingModuleInitOptions,
   HandlerName,
   InvocationResult,
   EmitResult,
