@@ -1,60 +1,26 @@
 import {
   type ActivityOptions,
-  type AutocompleteInteraction,
-  type CacheType,
   Client,
-  type Interaction,
-  Message,
-  MessageReaction,
-  type PartialMessageReaction,
-  type PartialUser,
   REST,
   Routes,
-  type User,
 } from 'discord.js'
 import { type Container } from 'inversify'
 import { Logger } from '@src/common/index.js'
 import {
-  getAutocompleteHandlers,
-  getCommandMap,
   getMessageHandlers,
   getReactionHandlers,
-  matchesEmoji,
-  type ReactionHandlerMetadata,
-  PARAM_SEPARATOR,
 } from '@src/decorator/controller.decorator.js'
 import { sample } from 'lodash-es'
-import {
-  describeInteraction,
-  focusedOptionName,
-  hasCustomId,
-  matchesCommandType,
-  resolveCommandPaths,
-  resolveOptionParams,
-} from '@src/util/interaction.util.js'
+
+
 import { ReactionHandlerAction } from '@src/enum/controller.enum.js'
-import { type MessageCommandOptions, type ReactionHandlerOptions } from '@src/interface/index.js'
-import { type AutocompleteMetadata, type CommandMetadata } from '@src/interface/command-decorator.interface.js'
-import {
-  buildComponentRoutes,
-  type ComponentRoute,
-  findComponentRouteConflicts,
-  matchComponentRoute,
-} from '@src/core/component-routes.js'
-import { globalStagesOf, handleUnroutedError, observeUnclaimed, type RunOptions, runHandler } from '@src/core/handler-pipeline.js'
-import { closeAutocomplete, createFallback, type Fallback } from '@src/core/fallback.js'
-import { handlerInput } from '@src/core/handler-input.js'
-import {
-  buildMessageRoutes,
-  matchMessageCommand,
-  matchMessageRoute,
-  type MessageRoute,
-  messageStarts,
-  usesAppPrefix,
-} from '@src/core/message-routes.js'
-import { assertMessageScope, hasTypedParams, missingParams, resolveMessageParams, usageOf } from '@src/core/message-params.js'
-import { MessageUsageError } from '@src/common/errors.js'
-import { CommandNotFoundError } from '@src/common/errors.js'
+import { type MessageCommandOptions } from '@src/interface/index.js'
+
+
+import { globalStagesOf, runHandler } from '@src/core/handler-pipeline.js'
+import { createFallback, type Fallback } from '@src/core/fallback.js'
+
+
 import { stageClass, stageTypes } from '@src/core/stage-scope.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
 import {
@@ -73,13 +39,9 @@ import { markExplained } from '@src/common/explained-error.js'
 import { isShardProcess } from '@src/util/sharding-mode.util.js'
 import { isShardMessage, type ShardMessage } from '@src/core/shard-messages.js'
 import { registerCommands } from '@src/core/command-registration.js'
+import { Dispatcher } from '@src/core/dispatcher.js'
 import { loadMeoCordConfig } from '@src/util/meocord-config-loader.util.js'
 import { FORCE_REGISTER_ENV, isRegisterOnly, REGISTER_GUILD_ENV } from '@src/util/registration-mode.util.js'
-
-interface AutocompleteRoute {
-  controllerClass: new (...args: any[]) => any
-  meta: AutocompleteMetadata
-}
 
 /** How long shutdown waits for the `onShutdown` hooks when `shutdownTimeout` is not configured. */
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000
@@ -142,7 +104,6 @@ export class MeoCordApp implements MeoCordApplication {
   private readonly fallback: Fallback = createFallback(this.logger, () => this.messageOptions?.deleteUsageRepliesAfter)
   private readonly bot: Client
   private activityInterval: ReturnType<typeof setInterval> | null = null
-  private controllerInstancesCache = new Map<any, any>()
 
   constructor(
     private readonly controllerClasses: (new (...args: any[]) => any)[],
@@ -155,17 +116,20 @@ export class MeoCordApp implements MeoCordApplication {
     private readonly startup?: () => Promise<void>,
     lifecycleUnits?: LifecycleUnit[],
     private readonly messageOptions: MessageCommandOptions = {},
-    private readonly warnUnanswered = false,
+    warnUnanswered = false,
   ) {
     this.lifecycleUnits = lifecycleUnits ?? classUnits(container, lifecycleClasses)
-    // Built now, so a pattern that cannot be read or two that match the same messages stop the bot before login
-    this.messageRoutes = buildMessageRoutes(controllerClasses, messageOptions)
-    this.messageListeners = controllerClasses.flatMap(controllerClass =>
-      getMessageHandlers(controllerClass.prototype)
-        .filter(handler => handler.pattern === undefined)
-        .map(({ method }) => ({ controllerClass, method })),
-    )
     this.bot = this.discordClient
+    // Built now, so a pattern that cannot be read or two that match the same messages stop the bot before login
+    this.dispatcher = new Dispatcher({
+      container,
+      controllerClasses,
+      messageOptions,
+      logger: this.logger,
+      fallback: this.fallback,
+      botUserId: () => this.bot.user?.id,
+      warnUnanswered,
+    })
     this.shutdownTimeout =
       typeof shutdownTimeout === 'number' && shutdownTimeout >= 0 ? shutdownTimeout : DEFAULT_SHUTDOWN_TIMEOUT_MS
   }
@@ -173,11 +137,8 @@ export class MeoCordApp implements MeoCordApplication {
   /** Everything whose lifecycle hooks run, classes and provided values, in dependency order. */
   private readonly lifecycleUnits: LifecycleUnit[]
 
-  /** Every patterned `@MessageHandler`, most specific first. */
-  private readonly messageRoutes: MessageRoute[]
-
-  /** Every `@MessageHandler()` without a pattern, in controller order. */
-  private readonly messageListeners: { controllerClass: new (...args: any[]) => any; method: string }[]
+  /** Routes interactions, messages and reactions to their handlers. */
+  private readonly dispatcher: Dispatcher
 
   /** Whether shutdown has begun, so the ready hooks start no more. */
   private closing = false
@@ -215,13 +176,6 @@ export class MeoCordApp implements MeoCordApplication {
     } catch (error) {
       this.logger.error('Could not update the bot activity:', error)
     }
-  }
-
-  private getInstance(controllerClass: new (...args: any[]) => any): any {
-    if (!this.controllerInstancesCache.has(controllerClass)) {
-      this.controllerInstancesCache.set(controllerClass, this.container.get(controllerClass))
-    }
-    return this.controllerInstancesCache.get(controllerClass)
   }
 
   /** Whether a failed login set the process exit code, so a later successful one knows to clear it. */
@@ -278,20 +232,20 @@ export class MeoCordApp implements MeoCordApplication {
     )
 
     this.bot.on('interactionCreate', interaction =>
-      this.runListener('interactionCreate', () => this.handleInteraction(interaction)),
+      this.runListener('interactionCreate', () => this.dispatcher.interaction(interaction)),
     )
 
-    this.bot.on('messageCreate', message => this.runListener('messageCreate', () => this.handleMessage(message)))
+    this.bot.on('messageCreate', message => this.runListener('messageCreate', () => this.dispatcher.message(message)))
 
     this.bot.on('messageReactionAdd', (reaction, user) =>
       this.runListener('messageReactionAdd', () =>
-        this.handleReaction(reaction, { user, action: ReactionHandlerAction.ADD }),
+        this.dispatcher.reaction(reaction, { user, action: ReactionHandlerAction.ADD }),
       ),
     )
 
     this.bot.on('messageReactionRemove', (reaction, user) =>
       this.runListener('messageReactionRemove', () =>
-        this.handleReaction(reaction, { user, action: ReactionHandlerAction.REMOVE }),
+        this.dispatcher.reaction(reaction, { user, action: ReactionHandlerAction.REMOVE }),
       ),
     )
 
@@ -299,7 +253,7 @@ export class MeoCordApp implements MeoCordApplication {
     this.warnAboutMissingRequirements()
     this.noteGlobalStagesOnEvents()
     // Built now rather than on the first click, so overlapping patterns are reported at startup
-    this.getComponentRoutes()
+    this.dispatcher.getComponentRoutes()
 
     try {
       await this.bot.login(this.discordToken)
@@ -392,205 +346,6 @@ export class MeoCordApp implements MeoCordApplication {
   }
 
   /**
-   * Every pattern-matched route, most specific first, built once at start. The ordering lets
-   * `gi-profile/summary/{ownerId}/{uid}` win over `gi-profile/{uuid}/{uid}` regardless of registration order.
-   */
-  private componentRoutes?: ComponentRoute[]
-
-  private getComponentRoutes(): ComponentRoute[] {
-    if (this.componentRoutes) return this.componentRoutes
-
-    const routes = buildComponentRoutes(this.controllerClasses)
-    this.reportAmbiguousRoutes(routes)
-    this.componentRoutes = routes
-    return routes
-  }
-
-  /**
-   * Warns rather than throws: an app whose patterns overlap boots and works, and refusing to start
-   * would turn a latent mis-route into an outage.
-   */
-  private reportAmbiguousRoutes(routes: ComponentRoute[]): void {
-    const conflicts = findComponentRouteConflicts(routes)
-    if (conflicts.length === 0) return
-
-    this.logger.warn(
-      `${conflicts.length} pattern pair(s) can match the same customId, so which one runs is decided by ` +
-        `ranking rather than by the ids themselves:\n` +
-        conflicts.map(({ patterns: [left, right] }) => `  "${left}"  vs  "${right}"`).join('\n') +
-        `\nA parameter stops at "${PARAM_SEPARATOR}", so separating these segments with it makes them distinct.`,
-    )
-  }
-
-  /**
-   * Every `@Autocomplete` handler, option-specific ones first. Cached, since autocomplete runs on
-   * every keystroke.
-   */
-  private autocompleteRoutes?: AutocompleteRoute[]
-
-  private getAutocompleteRoutes(): AutocompleteRoute[] {
-    if (this.autocompleteRoutes) return this.autocompleteRoutes
-
-    const routes: AutocompleteRoute[] = []
-    for (const controllerClass of this.controllerClasses) {
-      for (const meta of getAutocompleteHandlers(this.getInstance(controllerClass))) {
-        routes.push({ controllerClass, meta })
-      }
-    }
-
-    routes.sort((a, b) => Number(Boolean(b.meta.optionName)) - Number(Boolean(a.meta.optionName)))
-    this.autocompleteRoutes = routes
-    return routes
-  }
-
-  /**
-   * Dispatches an interaction. A failure outside any handler, such as no route matching or resolving
-   * the controller, goes to the global filters, then the fallback.
-   */
-  private async handleInteraction(interaction: Interaction<CacheType>): Promise<void> {
-    // From the moment it arrives, so an observer's duration includes routing
-    const startedAt = performance.now()
-    try {
-      await this.dispatchInteraction(interaction, startedAt)
-    } catch (error) {
-      await handleUnroutedError(this.container, [interaction], error, { fallback: this.fallback, startedAt })
-    }
-  }
-
-  private async dispatchInteraction(interaction: Interaction<CacheType>, startedAt: number) {
-    // Autocomplete first, and on its own path: it is answered with `respond()` rather
-    // than a reply, it has no customId to route on, and the "Command not found!" reply
-    // the other paths end in cannot be sent to it at all.
-    if (interaction.isAutocomplete()) {
-      await this.handleAutocomplete(interaction, startedAt)
-      return
-    }
-
-    // Component interactions route on a pattern, so they go through the ranked table.
-    // Commands match their registered name exactly and cannot overlap.
-    if (hasCustomId(interaction)) {
-      const customId = interaction.customId
-      // The component type as well as the pattern: a button and a select menu may share a customId shape.
-      const matched = matchComponentRoute(this.getComponentRoutes(), type => matchesCommandType(type, interaction), customId)
-      if (matched) {
-        const { route, params } = matched
-        ;(interaction as Interaction & { dynamicParams: Record<string, string> }).dynamicParams = params
-        await this.executeCommand(this.getInstance(route.controllerClass), route.meta, interaction, startedAt)
-        return
-      }
-    }
-
-    // Paths are walked outside the controller loop so the full subcommand path always
-    // beats the bare command name, whatever order the controllers were registered in.
-    for (const path of this.resolveNameRoutes(interaction)) {
-      for (const controllerClass of this.controllerClasses) {
-        const controllerInstance = this.getInstance(controllerClass)
-        const commandMap = getCommandMap(controllerInstance)
-        const commandMetadata = commandMap?.[path]?.find(meta => matchesCommandType(meta.type, interaction))
-        if (!commandMetadata) continue
-
-        await this.executeCommand(controllerInstance, commandMetadata, interaction, startedAt)
-        return
-      }
-    }
-
-    // Log what actually failed to match. The user's "Command not found!" says nothing
-    // about which id was unroutable, so a control that is emitted but never routed --
-    // a customId whose value broke its pattern, or a handler nobody wrote -- stays
-    // invisible until somebody reports the dead button.
-    throw new CommandNotFoundError(
-      `No handler matched ${describeInteraction(interaction)}. Check that a @Command pattern is ` +
-        `declared for it and that its controller is registered.`,
-    )
-  }
-
-  /**
-   * The names a command interaction can be handled under, most specific first.
-   *
-   * Empty for anything that is not a registered command, which is how a component
-   * whose customId matched no pattern falls through to the unmatched warning instead
-   * of being looked up under a name it does not have.
-   */
-  private resolveNameRoutes(interaction: Interaction<CacheType>): string[] {
-    if (interaction.isChatInputCommand()) return resolveCommandPaths(interaction)
-    if (interaction.isContextMenuCommand() || interaction.isPrimaryEntryPointCommand()) {
-      return [interaction.commandName]
-    }
-    return []
-  }
-
-  /**
-   * Answers an autocomplete interaction from the `@Autocomplete` handler that claims it. An unclaimed
-   * option gets an empty list and a warning, rather than a menu stuck loading until Discord times out.
-   */
-  private async handleAutocomplete(interaction: AutocompleteInteraction<CacheType>, startedAt: number): Promise<void> {
-    const focusedName = focusedOptionName(interaction)
-
-    for (const path of resolveCommandPaths(interaction)) {
-      for (const { controllerClass, meta } of this.getAutocompleteRoutes()) {
-        if (meta.commandPath !== path) continue
-        if (meta.optionName !== undefined && meta.optionName !== focusedName) continue
-
-        const controllerInstance = this.getInstance(controllerClass)
-        this.logger.log('[AUTOCOMPLETE]', `[${path}]`, `[${meta.methodName}]`)
-        const params = resolveOptionParams(interaction)
-        const ran = await this.invokeHandler(controllerInstance, meta.methodName, [interaction, params], startedAt)
-        if (!ran) await closeAutocomplete(interaction, this.logger)
-        return
-      }
-    }
-
-    this.logger.warn(
-      `No handler matched ${describeInteraction(interaction)}. Declare an @Autocomplete handler for it, ` +
-        `or drop setAutocomplete(true) from the option.`,
-    )
-    await closeAutocomplete(interaction, this.logger)
-    await observeUnclaimed(this.container, [interaction], { startedAt })
-  }
-
-  /** Handler and name pairs already warned about, so a colliding modal warns once rather than per submit. */
-  private readonly warnedCollisions = new Set<string>()
-
-  /** Tells a developer that a modal field is hidden by a customId param of the same name. */
-  private warnCollisions(methodName: string, names: string[]): void {
-    if (process.env.NODE_ENV !== 'development') return
-
-    for (const name of names) {
-      const key = `${methodName}:${name}`
-      if (this.warnedCollisions.has(key)) continue
-      this.warnedCollisions.add(key)
-      this.logger.warn(
-        `"${name}" is both a customId param and a modal field or select menu choice of ${methodName}; the handler receives the customId ` +
-          `param. Rename one to receive both.`,
-      )
-    }
-  }
-
-  /**
-   * Runs a resolved command, shared by both dispatch paths so a pattern-matched
-   * component and a named slash command behave identically once the route is chosen.
-   */
-  private async executeCommand(
-    controllerInstance: Record<string, (...args: unknown[]) => Promise<void>>,
-    commandMetadata: CommandMetadata<string>,
-    interaction: Interaction<CacheType>,
-    startedAt: number,
-  ): Promise<void> {
-    const { methodName, type } = commandMetadata
-
-    // No interaction-type check here: both callers pick the route with
-    // `matchesCommandType` before getting this far, and `@Command` re-checks the
-    // interaction on the way into the handler.
-    this.logger.log('[INTERACTION]', `[${type}]`, `[${methodName}]`)
-
-    const routeParams = (interaction as Interaction & { dynamicParams?: Record<string, string> }).dynamicParams
-    const { params, collisions } = handlerInput(interaction, routeParams)
-    this.warnCollisions(methodName, collisions)
-
-    await this.invokeHandler(controllerInstance, methodName, [interaction, params], startedAt)
-  }
-
-  /**
    * Adds a client listener for every `@On` and `@Once` handler on the app's controllers and services.
    * The instance is resolved when the first event arrives, and each call is isolated: an error is
    * logged against the event and the handler, and the next listener still runs.
@@ -664,150 +419,6 @@ export class MeoCordApp implements MeoCordApplication {
     }
 
     for (const warning of missingRequirementWarnings(options, handlers)) this.logger.warn(warning)
-  }
-
-  /**
-   * Runs a handler through its pipeline, with the fallback answering any error no filter handles, and
-   * says whether the handler ran. Its guard wrappers let this call through, so each guard runs once.
-   */
-  private async invokeHandler(
-    instance: Record<string, (...args: unknown[]) => unknown>,
-    methodName: string,
-    args: unknown[],
-    startedAt?: number,
-    resolveArgs?: RunOptions['resolveArgs'],
-  ): Promise<boolean> {
-    const handler = `${instance.constructor.name}.${methodName}`
-    const onUnanswered = this.warnUnanswered ? (phase: 'unanswered' | 'deferred') => this.warnUnansweredOnce(handler, phase) : undefined
-    const { ran } = await runHandler(this.container, instance, methodName, args, {
-      fallback: this.fallback,
-      startedAt,
-      onUnanswered,
-      resolveArgs,
-    })
-    return ran
-  }
-
-  /** The handlers already warned about, so each is named once however often it runs. */
-  private readonly warnedUnanswered = new Set<string>()
-
-  /** Warns, once per handler, that it left its interaction unanswered or deferred without a follow-up. */
-  private warnUnansweredOnce(handler: string, phase: 'unanswered' | 'deferred'): void {
-    if (this.warnedUnanswered.has(handler)) return
-    this.warnedUnanswered.add(handler)
-    const what =
-      phase === 'unanswered'
-        ? `${handler} finished without answering its interaction, so the user saw "The application did not respond". ` +
-          'Answer it with respond(interaction).send(), or acknowledge it first with @Defer().'
-        : `${handler} deferred its interaction and never followed up, so the user saw it thinking until Discord gave up. ` +
-          'Follow up with respond(interaction).send().'
-    this.logger.warn(`${what} Shown once per handler; @MeoCord({ warnUnanswered: false }) turns it off.`)
-  }
-
-  /**
-   * Runs the most specific patterned handler the message matches, then every listener. Its typed params
-   * are resolved before its guards, and a message that names a command but does not fit its pattern gets
-   * the command's usage, through that handler's filters. A failure to read the prefixes goes to the global
-   * filters, then the fallback; the listeners still run.
-   */
-  private async handleMessage(message: Message) {
-    if (message.author.bot || !message.content?.trim()) return
-
-    let target: { route: MessageRoute; params: Record<string, string>; start: string; given?: number } | undefined
-    try {
-      if (this.messageRoutes.length > 0) {
-        const starts = usesAppPrefix(this.messageRoutes)
-          ? await messageStarts(this.messageOptions, message, this.bot.user?.id)
-          : { prefixes: [] }
-        target = matchMessageRoute(this.messageRoutes, message.content, starts)
-        if (!target) {
-          const named = matchMessageCommand(this.messageRoutes, message.content, starts)
-          if (named) target = { ...named, params: {} }
-        }
-      }
-    } catch (error) {
-      await handleUnroutedError(this.container, [message], error, { fallback: this.fallback })
-    }
-    if (target) {
-      const { route, params, start, given } = target
-      const types = this.messageOptions.types
-      await this.invokeHandler(this.getInstance(route.controllerClass), route.method, [message, params], undefined, async args => {
-        assertMessageScope(route, message, start)
-        if (given !== undefined) throw new MessageUsageError(usageOf(route, start), missingParams(route, given))
-        return hasTypedParams(route) ? [args[0], await resolveMessageParams(route, params, message, start, types)] : args
-      })
-    }
-
-    for (const { controllerClass, method } of this.messageListeners) {
-      await this.invokeHandler(this.getInstance(controllerClass), method, [message])
-    }
-  }
-
-  /**
-   * Runs the reaction's handlers, controller by controller, those for its emoji before those for every
-   * emoji. A reaction from a bot, the bot's own included, runs only handlers that set `bots: true`.
-   */
-  private async handleReaction(
-    reaction: MessageReaction | PartialMessageReaction,
-    { user, action }: ReactionHandlerOptions,
-  ) {
-    const forEmoji = (handler: ReactionHandlerMetadata) => !handler.emoji || matchesEmoji(handler.emoji, reaction.emoji)
-    const matching = this.controllerClasses
-      .map(controllerClass => ({
-        controllerClass,
-        // Handlers for this emoji first, then those for every emoji
-        handlers: getReactionHandlers(this.getInstance(controllerClass))
-          .filter(forEmoji)
-          .sort((a, b) => Number(!a.emoji) - Number(!b.emoji)),
-      }))
-      .filter(({ handlers }) => handlers.length > 0)
-    if (matching.length === 0) return
-
-    // Only asked when a matching handler leaves bots out, since a partial user costs a fetch
-    const fromBot = matching.some(({ handlers }) => handlers.some(handler => !handler.settings.bots))
-      ? await this.isBot(user)
-      : undefined
-    // A user that could not be fetched is not known to be a person, so it reaches only those that take bots
-    const botsOnly = fromBot !== false && fromBot !== undefined
-    const runs = matching
-      .map(({ controllerClass, handlers }) => ({
-        controllerClass,
-        handlers: botsOnly ? handlers.filter(handler => handler.settings.bots) : handlers,
-      }))
-      .filter(({ handlers }) => handlers.length > 0)
-    if (runs.length === 0) return
-
-    // A reaction arrives for messages the bot may no longer be able to read -- deleted,
-    // or in a channel it lost access to -- and `fetch` rejects for all of them. That is
-    // an ordinary outcome rather than a fault, so the reaction is skipped quietly.
-    try {
-      await reaction.message.fetch()
-    } catch (error) {
-      this.logger.debug(`Skipping a reaction whose message could not be fetched: ${String(error)}`)
-      return
-    }
-
-    for (const { controllerClass, handlers } of runs) {
-      const controllerInstance = this.getInstance(controllerClass)
-      for (const { method } of handlers) {
-        await this.invokeHandler(controllerInstance, method, [reaction, { user, action }])
-      }
-    }
-  }
-
-  /**
-   * Whether a user is a bot: the bot itself, or a user discord.js knows to be one. A partial user is
-   * fetched first; `null` when that fails.
-   */
-  private async isBot(user: User | PartialUser): Promise<boolean | null> {
-    if (user.id === this.bot.user?.id) return true
-    if (typeof user.bot === 'boolean') return user.bot
-    try {
-      return (await user.fetch()).bot
-    } catch (error) {
-      this.logger.debug(`Skipping a reaction whose user could not be fetched: ${String(error)}`)
-      return null
-    }
   }
 
   /**
