@@ -1766,6 +1766,26 @@ export default class App {}
 | `{ provide, useClass }`            | One instance of the class, with its own constructor dependencies injected.             |
 | `{ provide, useFactory, inject? }` | What the function returns, called once with the values of `inject`. It may be `async`. |
 
+To have a factory's parameters typed from `inject`, and its return checked against the token, wrap it in `factoryProvider` from `meocord/common`. TypeScript cannot type a plain object's factory from `inject` inside a list; this does, and returns the provider unchanged:
+
+```typescript
+import { createToken, factoryProvider } from 'meocord/common'
+
+const DATABASE_URL = createToken<string>('DatabaseUrl')
+
+providers: [
+  { provide: DATABASE_URL, useValue: process.env.DATABASE_URL! },
+  // url is a string, and the factory must return a pg.Pool, as DATABASE says
+  factoryProvider({
+    provide: DATABASE,
+    inject: [DATABASE_URL],
+    useFactory: async url => new pg.Pool({ connectionString: url }),
+  }),
+]
+```
+
+Each parameter is what the token in its place provides: a class's instance, a `createToken` token's type, or `unknown` for a string or plain symbol. A parameter `inject` does not supply, or a return of the wrong type, fails to compile.
+
 - **Tokens** are a class, a string, a symbol, or a token from `createToken<T>(description)`: a symbol whose description names it in errors, and whose type `TestingModule.get` returns. A parameter typed as a class needs no `@Inject`; `{ provide: Storage, useClass: RedisStorage }` makes every `Storage` parameter a `RedisStorage`.
 - **When**: every factory runs once, in dependency order, when `app.start()` begins, before the listed services are made and before login, awaiting those that return a promise. Anything that injects the value gets the resolved one.
 - **Lifecycle**: a provided value that implements `onReady` or `onShutdown` gets them called like a service's, in dependency order, so it closes after the services that use it. `pg.Pool` has no such hook; end it from the `onShutdown` of the service that owns it, or provide a class that wraps it.
