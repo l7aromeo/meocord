@@ -645,6 +645,7 @@ describe('@Defer', () => {
     await emit(click('card/refresh'))
 
     expect(String(failure)).toContain('A modal must be the first response')
+    expect(String(failure)).toContain('@Defer acknowledged it')
   })
 
   describe('at the edges', () => {
@@ -686,8 +687,10 @@ describe('@Defer', () => {
       const emit = await startApp()
       const message = messageWith()
       handlerBody = async () => void log.push('limited')
-      await emit(click('limited/go', message))
-      const second = click('limited/go', message)
+      const first = click('limited/go', message)
+      await emit(first)
+      // The same user, whose second click the cooldown counts
+      const second = Object.assign(click('limited/go', message), { user: first.user })
 
       await emit(second)
 

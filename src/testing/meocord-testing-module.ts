@@ -69,9 +69,18 @@ export type HandlerName<C extends new (...args: any[]) => unknown> = {
 }[keyof InstanceType<C>] &
   string
 
-/** The handler's arguments, or the interaction alone, whose params `invoke` then builds as dispatch does. */
+/**
+ * The handler's arguments, or the interaction alone, whose params `invoke` then builds as dispatch does.
+ * A handler that declares no parameters still takes what dispatch passes, such as the interaction.
+ */
 type HandlerArgs<C extends new (...args: any[]) => unknown, M extends HandlerName<C>> =
-  InstanceType<C>[M] extends (...args: infer A) => unknown ? (A extends [infer First, unknown, ...unknown[]] ? A | [First] : A) : never
+  InstanceType<C>[M] extends (...args: infer A) => unknown
+    ? A extends []
+      ? [] | [first: unknown, params?: unknown]
+      : A extends [infer First, unknown, ...unknown[]]
+        ? A | [First]
+        : A
+    : never
 
 /** How a call made with `TestingModule.invoke` ended. */
 export interface InvocationResult {

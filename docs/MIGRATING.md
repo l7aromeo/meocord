@@ -517,6 +517,13 @@ spellings of a pattern, such as `card/{id}` and `card/{cardId}`, is one route an
   customId params. A param wins over a field of the same name.
 - `createMockInteraction(ModalSubmitInteraction).isFromMessage()` returns `true` only when the mock has a
   `message`, as a real modal does, rather than `undefined`.
+- Mocks from `meocord/testing` carry ids like Discord's. An interaction's `id`, `channelId` and `user.id`,
+  a message's `id`, `author.id`, `channelId` and `guildId`, and `createMockUser().id` are distinct
+  snowflake strings, where each was a mock object that read as `[object Object]`, so every default user
+  was the same one. An interaction mock made without a `guildId` has `guildId`, `guild` and `member`
+  `null`, as a direct message does, where they were truthy. A test that relied on two mocks sharing a
+  user, such as one checking a per-user cooldown, gives them one: `{ user: first.user }`. One that read
+  `guild` or `member` from a mock without a `guildId` gives it one.
 - `MeoCordFactory.create()` returns the `MeoCordApplication` type from `meocord/interface`, with the same
   `start()` and `registerCommands()`.
 - `meocord start` and `meocord register` pass SIGINT and SIGTERM on to the bot, so a signal from Docker,

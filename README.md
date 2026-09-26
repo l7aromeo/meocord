@@ -1367,7 +1367,15 @@ async checkIn(interaction: ButtonInteraction, { uid }: { ownerId: string; uid: s
 - Declare the params `by` reads, or pass them as the type argument, `@Cooldown<{ uid: string }>({ … })`, and a key the handler does not receive, or receives as another type, fails to compile. Undeclared, they are `Record<string, unknown>`.
 - With `per: 'global'`, the limit is per resource across every user.
 - Returning `undefined` counts the call as though there were no `by`. An error `by` throws goes to the [exception filters](#exception-filters), and no cooldown on the handler counts the call.
-- The value is added to the key the store counts under, `Controller.method#index:per:<scope>:by:<value>`, encoded so a value holding `:` cannot count under another's key. `inspectHandler(...).cooldowns` reports `by: true` for a cooldown that has one.
+- The value is added to the key the store counts under, encoded so a value holding `:` cannot count under another's key. `inspectHandler(...).cooldowns` reports `by: true` for a cooldown that has one.
+
+A store counts each cooldown under `<Controller>.<method>#<index>:<per>:<scope>`, with `:by:<value>` added when `by` returns one. `<index>` is the cooldown's place in the handler's list, and `<scope>` is `user:<id>`, `guild:<id>`, `channel:<id>` or `global`; outside a server, `'guild'` and `'channel'` count under `user:<id>`. For the check-in button above, declared in a `CheckInController` and pressed by user `111111111111111111` for account `8000`:
+
+```
+CheckInController.checkIn#0:user:user:111111111111111111:by:8000
+```
+
+`RedisCooldownStore` puts its prefix, `meocord:cooldown:` by default, before each key. Since the index is part of the key, adding a cooldown above existing ones, or reordering them, counts them afresh.
 
 ### Where calls are counted
 
@@ -1988,11 +1996,13 @@ Creates a smart mock instance of any discord.js class. The full prototype chain 
 
 **Type guards run real logic** — `isButton()`, `isRepliable()`, `isChatInputCommand()`, etc. are backed by the actual discord.js prototype methods. The right fields (`type`, `componentType`, `commandType`) are set based on the class you pass in, so no manual `.mockReturnValue(true)` setup is needed. All type guard methods are still mock functions and can be overridden per test.
 
-**Guild checks read the mock's data** — `inGuild()`, `inCachedGuild()` and `inRawGuild()` answer from the `guildId` and `guild` the mock is given, as discord.js does: a `guildId` means a guild, a `guildId` with a `guild` (such as `createMockGuild()`) a cached one, and a mock created without a `guildId` is a DM, where all three return `false`. A `member` set to `null` or `undefined` makes all three `false` too. Its `locale` is `'en-US'`, and its `guildLocale` is `'en-US'` with a `guildId` and `null` without, as Discord sends them; pass either to change it.
+**Ids like Discord's** — an interaction has an `id`, a `channelId` and a `user` (a person, not a bot) with an `id`, each a snowflake-shaped string no other mock in the test run has, so two mocks are two users, and a per-user cooldown counts them apart. `createMockUser()`, `createMockGuild()`, `createMockChannel()` and `createMockMessage()` get ids the same way; a message's `guildId` and `channelId` are its `guild`'s and `channel`'s. Ids given to the mock are kept.
+
+**Guild checks read the mock's data** — `inGuild()`, `inCachedGuild()` and `inRawGuild()` answer from the `guildId` and `guild` the mock is given, as discord.js does: a `guildId` means a guild, a `guildId` with a `guild` (such as `createMockGuild()`) a cached one, and a mock created without a `guildId` is a DM, where all three return `false` and `guildId`, `guild` and `member` are `null`. A `member` set to `null` or `undefined` makes all three `false` too. Its `locale` is `'en-US'`, and its `guildLocale` is `'en-US'` with a `guildId` and `null` without, as Discord sends them; pass either to change it.
 
 **Reply state machine** — for repliable interactions, `replied` and `deferred` start as `false`. Calling `reply()` or `deferReply()` twice throws, just like a real interaction. `followUp()`, `editReply()`, and `deleteReply()` throw if called before any reply. The ephemeral flag is tracked on `interaction.ephemeral`, read from `flags` only — the deprecated `ephemeral: true` reply option is not honoured. All reply methods are still mock functions so call assertions work normally.
 
-Autocomplete interactions are not repliable but get the equivalent for their own single-shot response: `responded` starts as `false`, `respond()` sets it, and a second call throws.
+Autocomplete interactions are not repliable but get the equivalent for their own single-shot response: `responded` starts as `false`, `respond()` sets it, and a second call throws, as does a list of more than 25 choices, which Discord refuses.
 
 Guards discord.js has deprecated are deliberately left unwired — `isSelectMenu()` returns `undefined` rather than reproducing behaviour the library is removing. Use `isStringSelectMenu()`.
 

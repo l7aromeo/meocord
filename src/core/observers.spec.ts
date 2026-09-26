@@ -234,8 +234,10 @@ describe('observers, outcome by outcome', () => {
   })
 
   it("tells them 'cooldown' for a call a cooldown refused", async () => {
-    await module.invoke(ShopController, 'daily', slash())
-    await expect(module.invoke(ShopController, 'daily', slash())).rejects.toThrow()
+    const first = slash()
+    await module.invoke(ShopController, 'daily', first)
+    // The same user again, whom the cooldown counts
+    await expect(module.invoke(ShopController, 'daily', Object.assign(slash(), { user: first.user }))).rejects.toThrow()
 
     expect(results()).toEqual([
       ['daily', 'ran'],

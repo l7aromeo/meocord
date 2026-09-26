@@ -46,6 +46,10 @@ class ProfileController {
   show(_interaction: ButtonInteraction, _params: { id: string }): Promise<void> {
     return Promise.resolve()
   }
+
+  refresh(): Promise<void> {
+    return Promise.resolve()
+  }
 }
 
 describe('invoke', () => {
@@ -56,6 +60,11 @@ describe('invoke', () => {
     expectTypeOf(module.invoke(ProfileController, 'show', interaction, { id: '1' })).toEqualTypeOf<
       Promise<InvocationResult>
     >()
+  })
+
+  it('takes the interaction for a handler that declares no parameters, as dispatch passes it', () => {
+    expectTypeOf(module.invoke(ProfileController, 'refresh', interaction)).toEqualTypeOf<Promise<InvocationResult>>()
+    expectTypeOf(module.invoke(ProfileController, 'refresh')).toEqualTypeOf<Promise<InvocationResult>>()
   })
 
   it('rejects an unknown method and arguments the handler does not take', () => {
