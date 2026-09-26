@@ -53,6 +53,7 @@ const PUBLIC_API: Record<string, string[]> = {
     'UserError',
     'ValidationError',
     'applyDecorators',
+    'bindTheme',
     'cooldownMessage',
     'cooldownStoreMessage',
     'createMetadata',

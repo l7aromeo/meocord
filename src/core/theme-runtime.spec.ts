@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { EventEmitter } from 'node:events'
 import { ButtonInteraction, Client } from 'discord.js'
 import {
   Catch,
@@ -13,7 +14,7 @@ import {
   UseInterceptor,
   UseTheme,
 } from '@src/decorator/index.js'
-import { type ExecutionContext, useTheme } from '@src/common/index.js'
+import { bindTheme, type ExecutionContext, useTheme } from '@src/common/index.js'
 import { CommandType } from '@src/enum/index.js'
 import { type CallHandler, type ExceptionFilter, type InterceptorInterface } from '@src/interface/index.js'
 import { MeoCordFactory } from '@src/core/meocord-factory.js'
@@ -278,6 +279,32 @@ describe('what a call\'s theme reaches', () => {
     // The nested dispatch ran in Other's own theme; Main's direct call to it, alongside, in Main's
     expect(seen).toContainEqual(['other', '#0000C2'])
     expect(seen).toContainEqual(['other', '#0000D1'])
+  })
+})
+
+describe('a listener the handler registers', () => {
+  it('runs in the emitter\'s context, and in the handler\'s theme once bound with bindTheme', async () => {
+    const emitter = new EventEmitter()
+
+    @Controller()
+    @UseTheme({ colors: { primary: '#0C0B0A' } })
+    class Collecting {
+      @Command('collect', CommandType.BUTTON)
+      collect() {
+        emitter.on('tick', () => seen.push(['unbound', primary()]))
+        emitter.on('tick', bindTheme(function (this: EventEmitter, value: number) {
+          seen.push(['bound', primary(), value, this === emitter])
+        }))
+      }
+    }
+
+    await MeoCordTestingModule.create({ controllers: [Collecting] }).compile().invoke(Collecting, 'collect', press('collect'))
+    emitter.emit('tick', 7)
+
+    expect(seen).toEqual([
+      ['unbound', DEFAULT_THEME.colors.primary],
+      ['bound', '#0C0B0A', 7, true],
+    ])
   })
 })
 

@@ -162,3 +162,28 @@ export function runWithTheme<T>(theme: ResolvedTheme, fn: () => T): T {
 export function useTheme(): ResolvedTheme {
   return scope.getStore()?.theme ?? ambient?.theme() ?? defaults
 }
+
+/**
+ * Makes a function run in the theme of the call that binds it, wherever it is called from later. A listener a handler
+ * registers, such as a collector's `collect` callback or a `client.on(...)` handler, runs when its emitter emits, in
+ * the emitter's context rather than the handler's, so without it a `useTheme()` inside reads the theme outside any
+ * call. Timers and promises the handler starts keep its theme without it.
+ *
+ * @param fn - The function to run in the call's theme; `this` and its arguments are passed through.
+ * @returns A function that runs `fn` in the theme `useTheme()` returns where `bindTheme` is called.
+ *
+ * @example
+ * ```ts
+ * const collector = message.createMessageComponentCollector({ time: 60_000 })
+ * collector.on('collect', bindTheme(async (click: ButtonInteraction) => {
+ *   const { emojis } = useTheme() // the handler's theme, @UseTheme included
+ *   await click.reply(`${emojis.success} Picked`)
+ * }))
+ * ```
+ */
+export function bindTheme<F extends (...args: any[]) => unknown>(fn: F): F {
+  const theme = useTheme()
+  return function (this: unknown, ...args: unknown[]) {
+    return runWithTheme(theme, () => fn.apply(this, args))
+  } as F
+}
