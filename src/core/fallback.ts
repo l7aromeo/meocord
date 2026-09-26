@@ -2,7 +2,7 @@ import { type AutocompleteInteraction, Message } from 'discord.js'
 import { type ExecutionContext } from '@src/common/execution-context.js'
 import { CommandNotFoundError, CooldownError, CooldownStoreError, GuardDeniedError, MessageUsageError, UserError, ValidationError } from '@src/common/errors.js'
 import { type Logger } from '@src/common/logger.js'
-import { respond } from '@src/common/response/response-state.js'
+import { respond, responseOf } from '@src/common/response/response-state.js'
 import { describeInteraction } from '@src/util/interaction.util.js'
 import { isUserOutcome } from '@src/common/user-outcome.js'
 import { getMessageHandlers } from '@src/decorator/controller.decorator.js'
@@ -148,7 +148,8 @@ export function createFallback(logger: Logger, messageOptions: () => MessageRepl
 
     if (error instanceof CommandNotFoundError) {
       logger.warn(error.message)
-      await respond(interaction).error(error, { message: 'Command not found!' })
+      // Moot if a collector or another listener answered it meanwhile
+      await responseOf(interaction).error(error, { message: 'Command not found!' }, { ifUnanswered: true })
     } else if (error instanceof GuardDeniedError) {
       logger.debug(`Denied ${describeInteraction(interaction)}: ${error.message}`)
       await respond(interaction).error(error, { message: error.message, visibility: 'private' })

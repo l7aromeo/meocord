@@ -16,7 +16,7 @@ import {
   resolveColor,
 } from 'discord.js'
 import { Logger } from '@src/common/logger.js'
-import { CommandNotFoundError, UserError } from '@src/common/errors.js'
+import { UserError } from '@src/common/errors.js'
 import { getInstallContext, type InstallContext } from '@src/common/response/install-context.js'
 import {
   flagNames,
@@ -759,23 +759,27 @@ export class InteractionResponse implements ResponseState {
       : { embeds: [renderEmbed(view)] }
   }
 
-  async error(error: unknown, options: ResponseErrorOptions = {}): Promise<void> {
+  /**
+   * `ifUnanswered`, for MeoCord's own answers alone: the answer is moot once anything else has answered, as for
+   * "Command not found!" to a click a collector took, so Discord refusing it as already answered ends it.
+   */
+  async error(error: unknown, options: ResponseErrorOptions = {}, { ifUnanswered = false }: { ifUnanswered?: boolean } = {}): Promise<void> {
     // A UserError is the user's own mistake: its message, for them alone, unless told otherwise
     const own = error instanceof UserError
     const { message = own ? error.message : DEFAULT_ERROR, visibility = own ? 'private' : 'reply' } = options
     const theme = await themeForInteraction(this.interaction)
     try {
       await this.acknowledging?.catch(() => undefined)
-      await this.presentError(error, message, visibility, theme)
+      await this.presentError(error, message, visibility, theme, ifUnanswered)
     } catch (deliveryError) {
       if (errorCode(deliveryError) !== ALREADY_ACKNOWLEDGED) {
         logger.debug(`Could not deliver the error reply: ${String(deliveryError)}`)
         return
       }
-      // Answered by something discord.js did not see: follow up once instead, unless to say no handler matched,
-      // which the answer, a collector's, already disproves
+      // Answered by something discord.js did not see: follow up once instead, unless the answer was only for
+      // an interaction nothing else answered
       this.phase = 'replied'
-      if (error instanceof CommandNotFoundError) return
+      if (ifUnanswered) return
       try {
         await this.followUp(this.privateError(error, message, theme))
       } catch (retryError) {
@@ -798,12 +802,14 @@ export class InteractionResponse implements ResponseState {
     return { ...body, flags: Number(body.flags ?? 0) | MessageFlags.Ephemeral } as ResponsePayload
   }
 
-  private async presentError(error: unknown, message: string, visibility: 'reply' | 'private', theme: ResolvedTheme): Promise<void> {
+  private async presentError(error: unknown, message: string, visibility: 'reply' | 'private', theme: ResolvedTheme, ifUnanswered = false): Promise<void> {
     this.sync()
     if (this.phase === 'unanswered') {
       await this.reply(toBody(this.privateError(error, message, theme)))
       return
     }
+    // Answered meanwhile, as by a collector while the theme was looked up: an answer only for an unanswered one is moot
+    if (ifUnanswered) return
 
     if (answersWithOwnMessage(this.interaction)) {
       if (this.phase === 'deferred' && visibility === 'reply') {
