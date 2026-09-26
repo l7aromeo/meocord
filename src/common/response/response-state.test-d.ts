@@ -31,6 +31,14 @@ describe('respond()', () => {
     void respond(interaction).send({ content: 'x', ephemeral: 'yes' })
   })
 
+  it('takes { fill } as a second argument to send, edit and followUp', () => {
+    void respond(interaction).send({ embeds: [] }, { fill: false })
+    void respond(interaction).edit('x', { fill: true })
+    void respond(interaction).followUp('x', {})
+    // @ts-expect-error fill is a boolean
+    void respond(interaction).send('x', { fill: 'no' })
+  })
+
   it('refuses making an existing message ephemeral with edit()', () => {
     void respond(interaction).edit({ content: 'x', flags: MessageFlags.SuppressEmbeds })
     // @ts-expect-error an edit cannot change who sees the message

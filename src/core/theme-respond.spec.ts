@@ -134,6 +134,34 @@ describe('respond() in the theme of the call', () => {
   })
 })
 
+describe('respond() with { fill: false }', () => {
+  const container = () => ({ type: ComponentType.Container, components: [new TextDisplayBuilder().setContent('hi').toJSON()] })
+
+  @Controller()
+  @UseTheme({ colors: { primary: '#0000D1' } })
+  class AsWritten {
+    @Command('unfilled', CommandType.BUTTON)
+    async unfilled(interaction: ButtonInteraction) {
+      await respond(interaction).send({ embeds: [{ description: 'as written' }] }, { fill: false })
+      await respond(interaction).edit({ embeds: [{ description: 'edited as written' }] }, { fill: false })
+      await respond(interaction).followUp({ components: [container()], flags: 1 << 15 }, { fill: false })
+      // Per message: the next one is filled again
+      await respond(interaction).followUp({ embeds: [{ description: 'filled' }] })
+    }
+  }
+
+  it('sends an embed and a container unfilled through send, edit and followUp, and fills the next message', async () => {
+    const interaction = press('unfilled')
+
+    await MeoCordTestingModule.create({ controllers: [AsWritten] }).compile().invoke(AsWritten, 'unfilled', interaction)
+
+    expect(sent(interaction.update).embeds).toEqual([{ description: 'as written' }])
+    expect(sent(interaction.editReply).embeds).toEqual([{ description: 'edited as written' }])
+    expect(sent(interaction.followUp).components).toEqual([container()])
+    expect(sent(interaction.followUp, 1).embeds).toEqual([{ description: 'filled', color: colour('#0000D1') }])
+  })
+})
+
 describe('an error respond() answers', () => {
   @Controller()
   @UseTheme({ colors: { warning: '#0000B1', danger: '#0000B2' } })

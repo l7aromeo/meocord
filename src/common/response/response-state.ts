@@ -93,6 +93,15 @@ export interface ResponseLockOptions {
   disable?: 'all' | 'clicked' | 'none'
 }
 
+/** Options for one message sent with `send()`, `edit()` or `followUp()`. */
+export interface ResponseSendOptions {
+  /**
+   * Whether an embed with no colour and a Components V2 container with no accent take the theme's
+   * primary colour. Defaults to `true`; `false` sends this message's embeds and containers as written.
+   */
+  fill?: boolean
+}
+
 /** One Discord call made through a response state, as the testing helpers report it. */
 export interface ResponseCall {
   method:
@@ -258,17 +267,19 @@ export interface ResponseState {
    * before the lock, and omitting `embeds` drops the loading view; `components: []` clears them.
    *
    * @param payload - Text, or reply options.
+   * @param options - `fill: false` leaves this message's embeds and containers uncoloured.
    * @returns The message sent or edited, when Discord returns it.
    */
-  send(payload: ResponsePayload): Promise<Message | undefined>
+  send(payload: ResponsePayload, options?: ResponseSendOptions): Promise<Message | undefined>
 
   /**
    * Edits the answer, routed as `send()` is: an edit once the interaction is answered.
    *
    * @param payload - Text, or edit options.
+   * @param options - `fill: false` leaves this edit's embeds and containers uncoloured.
    * @returns The edited message, when Discord returns it.
    */
-  edit(payload: ResponseEditPayload): Promise<Message | undefined>
+  edit(payload: ResponseEditPayload, options?: ResponseSendOptions): Promise<Message | undefined>
 
   /**
    * Sends another message after the answer. Before any answer it is the first reply. While a command's
@@ -277,9 +288,10 @@ export interface ResponseState {
    * deferral first and is sent privately.
    *
    * @param payload - Text, or reply options; `Ephemeral` makes the follow-up private.
+   * @param options - `fill: false` leaves this follow-up's embeds and containers uncoloured.
    * @returns The message sent, when Discord returns it.
    */
-  followUp(payload: ResponsePayload): Promise<Message | undefined>
+  followUp(payload: ResponsePayload, options?: ResponseSendOptions): Promise<Message | undefined>
 
   /** Deletes the answer: the reply, or for a component deferred without a reply of its own, its message. */
   delete(): Promise<void>
@@ -587,24 +599,24 @@ export class InteractionResponse implements ResponseState {
     }
   }
 
-  async send(payload: ResponsePayload): Promise<Message | undefined> {
+  async send(payload: ResponsePayload, options?: ResponseSendOptions): Promise<Message | undefined> {
     this.cancelScheduled()
     await this.acknowledging
     this.sync()
-    const body = this.withRestore(withThemeColours(toBody(payload), await themeForInteraction(this.interaction)))
+    const body = this.withRestore(await this.themed(payload, options))
     if (this.phase !== 'unanswered') return this.editMessage(body)
     return answersWithOwnMessage(this.interaction) ? this.reply(body) : this.update(body)
   }
 
-  edit(payload: ResponseEditPayload): Promise<Message | undefined> {
-    return this.send(payload as ResponsePayload)
+  edit(payload: ResponseEditPayload, options?: ResponseSendOptions): Promise<Message | undefined> {
+    return this.send(payload as ResponsePayload, options)
   }
 
-  async followUp(payload: ResponsePayload): Promise<Message | undefined> {
+  async followUp(payload: ResponsePayload, options?: ResponseSendOptions): Promise<Message | undefined> {
     this.cancelScheduled()
     await this.acknowledging
     this.sync()
-    const body = withThemeColours(toBody(payload), await themeForInteraction(this.interaction))
+    const body = await this.themed(payload, options)
     if (this.phase === 'unanswered') return this.reply(body)
     if (this.phase === 'deferred' && answersWithOwnMessage(this.interaction)) {
       // Discord makes a follow-up to a deferred, unsent reply that reply, ignoring its flags: a private one
@@ -646,6 +658,12 @@ export class InteractionResponse implements ResponseState {
     this.record('showModal', modal)
     await this.interaction.showModal(modal)
     this.phase = 'replied'
+  }
+
+  /** The payload as a body, filled with the theme's primary colour unless `fill: false` asks for it as written. */
+  private async themed(payload: ResponsePayload, options: ResponseSendOptions | undefined): Promise<Body> {
+    const body = toBody(payload)
+    return options?.fill === false ? body : withThemeColours(body, await themeForInteraction(this.interaction))
   }
 
   /** Omitted components and embeds put back the message as it was before the lock. */
