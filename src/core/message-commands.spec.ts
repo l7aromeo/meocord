@@ -404,6 +404,19 @@ describe('typed message params and usage replies', () => {
     }
   }
 
+  @Controller()
+  class Places {
+    @MessageHandler('settings {key}', { aliases: ['cfg'], scope: 'guild' })
+    async settings(_message: Message, params: { key: string }) {
+      seen.push(['settings', params])
+    }
+
+    @MessageHandler('inbox', { scope: 'dm' })
+    async inbox() {
+      seen.push(['inbox'])
+    }
+  }
+
   /** Sends a message in a guild whose member cache holds the target, and waits for dispatch. */
   async function sendIn(client: Client, content: string, guild: ReturnType<typeof createMockGuild> | null = createMockGuild({ members: [target] })) {
     const message = createMockMessage({ content, guild })
@@ -455,6 +468,38 @@ describe('typed message params and usage replies', () => {
     expect(wrong.reply).toHaveBeenCalledWith(
       expect.objectContaining({ content: 'Usage: !slowmode [mode] [seconds]\nseconds: "soon" is not a whole number' }),
     )
+  })
+
+  it('runs a command by its alias, and answers a misused alias with the usage as typed', async () => {
+    const client = await startApp({ controllers: [Places], messages: { prefix: '!', deleteUsageRepliesAfter: 0 } })
+
+    await sendIn(client, '!cfg lang')
+    const bare = await sendIn(client, '!CFG')
+
+    expect(seen).toEqual([['settings', { key: 'lang' }]])
+    expect(bare.reply).toHaveBeenCalledWith(expect.objectContaining({ content: 'Usage: !cfg <key>\nkey is missing' }))
+  })
+
+  it('answers a command sent where its scope says it does not work, before any other usage issue', async () => {
+    const client = await startApp({ controllers: [Places], messages: { prefix: '!', deleteUsageRepliesAfter: 0 } })
+
+    const guildOnly = await sendIn(client, '!settings', null)
+    const dmOnly = await sendIn(client, '!inbox')
+    await sendIn(client, '!settings lang')
+    await sendIn(client, '!inbox', null)
+
+    expect(guildOnly.reply).toHaveBeenCalledWith(expect.objectContaining({ content: 'This command works in a server only.' }))
+    expect(dmOnly.reply).toHaveBeenCalledWith(expect.objectContaining({ content: 'This command works in direct messages only.' }))
+    expect(seen).toEqual([['settings', { key: 'lang' }], ['inbox']])
+  })
+
+  it('stays quiet about scope when the message used no prefix', async () => {
+    const client = await startApp({ controllers: [Places], messages: { deleteUsageRepliesAfter: 0 } })
+
+    const message = await sendIn(client, 'inbox')
+
+    expect(message.reply).not.toHaveBeenCalled()
+    expect(seen).toEqual([])
   })
 
   it('answers a word of the wrong type with the usage, and deletes the answer after 10 seconds', async () => {

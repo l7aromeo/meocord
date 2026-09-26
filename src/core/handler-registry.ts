@@ -10,6 +10,9 @@ import {
 } from '@src/decorator/controller.decorator.js'
 import { getEventHandlers } from '@src/decorator/event.decorator.js'
 import { CommandType } from '@src/enum/index.js'
+import { type MessageCommandOptions, type MessageHandlerOptions, type MessageScope } from '@src/interface/index.js'
+import { commandWordsOf, parseMessagePattern, type PatternToken } from '@src/core/message-routes.js'
+import { usageOf } from '@src/core/message-params.js'
 
 type HandlerClass = new (...args: any[]) => unknown
 
@@ -74,6 +77,24 @@ export interface MessageHandlerEntry extends HandlerEntryBase {
   kind: 'message'
   /** The pattern, or `undefined` for a handler that takes every message. */
   name: string | undefined
+  /** The command words the pattern begins with, such as `config set`; `undefined` when it begins with a param. */
+  command: string | undefined
+  /** The other command words the handler takes, from its `aliases` option. */
+  aliases: readonly string[]
+  /** What the command does, from its `description` option. */
+  description: string | undefined
+  /** Where the command works, from its `scope` option. */
+  scope: MessageScope
+  /**
+   * The command as a user types it, after `prefix`: `usage('!')` gives `!ban <target> [duration] [reason…]`.
+   * `undefined` for a handler that takes every message.
+   */
+  usage(prefix?: string): string | undefined
+  /**
+   * Whether words name this command or one of its aliases, as a help command's argument does: `ban` or `b`.
+   * Compared in any case unless the handler, or the app, is case-sensitive.
+   */
+  matches(words: string): boolean
 }
 
 /** A `@ReactionHandler`. */
@@ -137,13 +158,43 @@ function describe(json: RESTPostAPIApplicationCommandsJSONBody | undefined, path
   return node?.description
 }
 
+/** What a message handler's entry says about its command, read from its pattern and options. */
+function messageCommand(
+  pattern: string | undefined,
+  options: MessageHandlerOptions,
+  messages: MessageCommandOptions,
+): Pick<MessageHandlerEntry, 'command' | 'aliases' | 'description' | 'scope' | 'usage' | 'matches'> {
+  let tokens: PatternToken[] | undefined
+  try {
+    tokens = pattern === undefined ? undefined : parseMessagePattern(pattern).tokens
+  } catch {
+    // Startup refuses a pattern that cannot be read, naming the handler
+  }
+  const command = tokens && commandWordsOf(tokens).join(' ')
+  const aliases = (options.aliases ?? []).map(alias => alias.trim())
+  const exact = options.caseSensitive ?? messages.caseSensitive ?? false
+  const key = (words: string) => {
+    const joined = words.trim().split(/\s+/).join(' ')
+    return exact ? joined : joined.toLowerCase()
+  }
+  const names = new Set([command, ...aliases].filter(Boolean).map(name => key(name!)))
+  return {
+    command: command || undefined,
+    aliases,
+    description: options.description,
+    scope: options.scope ?? 'any',
+    usage: (prefix = '') => tokens && usageOf({ tokens }, prefix),
+    matches: words => names.has(key(words)),
+  }
+}
+
 /**
  * Every handler the app registered, with the metadata declared on it: for a `/help` command, an admin
  * page or generated docs.
  *
  * Inject it into a service or controller. It lists commands (one entry per subcommand path),
  * components, modals, autocomplete, message, reaction and event handlers, on every controller and
- * service the app binds.
+ * service the app binds. A message command is listed once, with its aliases, description and usage.
  *
  * @example
  * ```typescript
@@ -156,6 +207,14 @@ function describe(json: RESTPostAPIApplicationCommandsJSONBody | undefined, path
  *       .list({ kind: 'command' })
  *       .map(h => ({ path: h.name, description: h.description, category: h.get(Category) ?? 'Other' }))
  *   }
+ *
+ *   // `!help` lists the message commands; `!help ban` shows one
+ *   messageHelp(command?: string) {
+ *     const commands = this.handlers.list({ kind: 'message' }).filter(h => h.command)
+ *     const one = command ? commands.find(h => h.matches(command)) : undefined
+ *     if (one) return [one.usage('!'), one.description].filter(Boolean).join('\n')
+ *     return commands.map(h => `${h.usage('!')}: ${h.description ?? ''}`).join('\n')
+ *   }
  * }
  * ```
  */
@@ -165,8 +224,12 @@ export class HandlerRegistry {
   /**
    * @param classes - The controllers and services to read handlers from. The factory fills the list
    *   once the app is bound; entries are read on the first {@link list}.
+   * @param messages - The app's `messages` options, whose `caseSensitive` message entries' `matches` follows.
    */
-  constructor(private readonly classes: readonly HandlerClass[]) {}
+  constructor(
+    private readonly classes: readonly HandlerClass[],
+    private readonly messages: MessageCommandOptions = {},
+  ) {}
 
   /**
    * Lists the registered handlers.
@@ -224,8 +287,8 @@ export class HandlerRegistry {
         const name = optionName === undefined ? commandPath : `${commandPath} ${optionName}`
         entries.push({ ...base(methodName), kind: 'autocomplete', name })
       }
-      for (const { pattern, method } of getMessageHandlers(prototype)) {
-        entries.push({ ...base(method), kind: 'message', name: pattern })
+      for (const { pattern, method, options } of getMessageHandlers(prototype)) {
+        entries.push({ ...base(method), kind: 'message', name: pattern, ...messageCommand(pattern, options, this.messages) })
       }
       for (const { emoji, method } of getReactionHandlers(prototype)) {
         entries.push({ ...base(method), kind: 'reaction', name: emoji })

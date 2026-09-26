@@ -52,7 +52,7 @@ import {
   messageStarts,
   usesAppPrefix,
 } from '@src/core/message-routes.js'
-import { hasTypedParams, missingParams, resolveMessageParams, usageOf } from '@src/core/message-params.js'
+import { assertMessageScope, hasTypedParams, missingParams, resolveMessageParams, usageOf } from '@src/core/message-params.js'
 import { MessageUsageError } from '@src/common/errors.js'
 import { CommandNotFoundError } from '@src/common/errors.js'
 import { stageClass, stageTypes } from '@src/core/stage-scope.js'
@@ -732,6 +732,7 @@ export class MeoCordApp implements MeoCordApplication {
       const { route, params, start, given } = target
       const types = this.messageOptions.types
       await this.invokeHandler(this.getInstance(route.controllerClass), route.method, [message, params], undefined, async args => {
+        assertMessageScope(route, message, start)
         if (given !== undefined) throw new MessageUsageError(usageOf(route, start), missingParams(route, given))
         return hasTypedParams(route) ? [args[0], await resolveMessageParams(route, params, message, start, types)] : args
       })

@@ -205,6 +205,65 @@ describe('message route ranking', () => {
     expect(() => buildMessageRoutes([Cased], { prefix: '!' })).not.toThrow()
   })
 
+  it('matches an alias in place of the command words, with the same params, ranked as its own words are', () => {
+    @Controller()
+    class Config {
+      @MessageHandler('config set {key} {value...}', { aliases: ['cs', 'cfg set'] })
+      set() {}
+
+      @MessageHandler('cs reload')
+      reload() {}
+    }
+    const routes = buildMessageRoutes([Config])
+    const reach = (content: string) => {
+      const matched = matchMessageRoute(routes, content, RAW)
+      return matched && [matched.route.method, matched.params]
+    }
+
+    expect(reach('config set lang en')).toEqual(['set', { key: 'lang', value: 'en' }])
+    expect(reach('CS lang en')).toEqual(['set', { key: 'lang', value: 'en' }])
+    expect(reach('cfg set prefix ?')).toEqual(['set', { key: 'prefix', value: '?' }])
+    expect(reach('cs reload')).toEqual(['reload', {}])
+    expect(routes.find(route => route.pattern === 'cs {key} {value...}')?.aliasOf).toBe('config set {key} {value...}')
+  })
+
+  it("keeps a handler's own pattern over an alias spelled the same, and refuses an alias another command has", () => {
+    @Controller()
+    class Same {
+      @MessageHandler('ping', { aliases: ['PING'] })
+      ping() {}
+    }
+    expect(buildMessageRoutes([Same]).map(route => [route.pattern, route.aliasOf])).toEqual([['ping', undefined]])
+
+    @Controller()
+    class Clash {
+      @MessageHandler('ban {target}', { aliases: ['b'] })
+      ban() {}
+
+      @MessageHandler('b {page}')
+      browse() {}
+    }
+    expect(() => buildMessageRoutes([Clash])).toThrow(/"b \{target\}", an alias of "ban \{target\}", in Clash\.ban and "b \{page\}" in Clash\.browse match the same messages/)
+  })
+
+  it('refuses an alias that is not command words, for a pattern without them, and a scope that is not one', () => {
+    const build = (pattern: string, options: object) => {
+      @Controller()
+      class Only {
+        @MessageHandler(pattern, options)
+        handle() {}
+      }
+      return () => buildMessageRoutes([Only])
+    }
+    expect(build('ban {target}', { aliases: ['b {x}'] })).toThrow(/Only\.handle: "b \{x\}" is not an alias/)
+    expect(build('ban {target}', { aliases: [' '] })).toThrow(/" " is not an alias/)
+    expect(build('ban {target}', { aliases: 'b' })).toThrow(/aliases takes a list of command words/)
+    expect(build('{word}', { aliases: ['w'] })).toThrow(/this one begins with a param/)
+    expect(build('ban {target}', { scope: 'server' })).toThrow(/scope is 'guild', 'dm' or 'any', not "server"/)
+    expect(build('ban {target:member}', { scope: 'dm' })).toThrow(/scope is 'dm', but \{target:member\} is found only in a server/)
+    expect(build('whois {target:user}', { scope: 'dm' })).not.toThrow()
+  })
+
   it('leaves listeners out of the table', () => {
     @Controller()
     class Listener {

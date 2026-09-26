@@ -145,8 +145,8 @@ export interface MessageUsageIssue {
 
 /**
  * Thrown when a message names a command, by its prefix and command words, but its params do not fit the
- * command's pattern: a word that is not a value of its param's type, a param missing, or a command that
- * works only in a server sent elsewhere. The handler does not run. The user is answered with a reply
+ * command's pattern: a word that is not a value of its param's type, a param missing, or a command sent
+ * where it does not work, such as a server-only one in a DM. The handler does not run. The user is answered with a reply
  * showing {@link MessageUsageError.usage} and the issues, deleted after
  * `@MeoCord({ messages: { deleteUsageRepliesAfter } })` seconds; an exception filter can answer otherwise.
  *
@@ -163,6 +163,8 @@ export interface MessageUsageIssue {
 export class MessageUsageError extends Error {
   /** Whether the command works only in a server and the message was sent elsewhere. */
   readonly serverOnly: boolean
+  /** Whether the command works only in direct messages and the message was sent in a server. */
+  readonly dmOnly: boolean
   /** Whether the message used no prefix or mention, so it may be ordinary chat, which is not answered. */
   readonly quiet: boolean
 
@@ -173,11 +175,16 @@ export class MessageUsageError extends Error {
   constructor(
     readonly usage: string,
     readonly issues: MessageUsageIssue[],
-    { serverOnly = false, quiet = false }: { serverOnly?: boolean; quiet?: boolean } = {},
+    { serverOnly = false, dmOnly = false, quiet = false }: { serverOnly?: boolean; dmOnly?: boolean; quiet?: boolean } = {},
   ) {
-    super(serverOnly ? issues.map(issue => issue.message).join('\n') : [`Usage: ${usage}`, ...issues.map(issue => issue.message)].join('\n'))
+    super(
+      serverOnly || dmOnly
+        ? issues.map(issue => issue.message).join('\n')
+        : [`Usage: ${usage}`, ...issues.map(issue => issue.message)].join('\n'),
+    )
     this.name = 'MessageUsageError'
     this.serverOnly = serverOnly
+    this.dmOnly = dmOnly
     this.quiet = quiet
   }
 }

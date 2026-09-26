@@ -38,6 +38,8 @@
 - [Message commands](#message-commands)
   - [Typed params](#typed-params)
   - [Usage errors](#usage-errors)
+  - [Aliases, descriptions and scope](#aliases-descriptions-and-scope)
+  - [A help command](#a-help-command)
   - [Prefixes](#prefixes)
   - [Which handler runs](#which-handler-runs)
 - [Reactions](#reactions)
@@ -938,6 +940,55 @@ A message that names a command, after a prefix or mention, but does not fit its 
 The reply is deleted after 10 seconds; `@MeoCord({ messages: { deleteUsageRepliesAfter } })` sets another number of seconds, and `0` keeps it. A reply the bot cannot send or delete, for a missing permission or a message already gone, is logged and left. A command with a `member`, `role` or `channel` param, sent in a DM, is answered that it works in a server only.
 
 The error is a `MessageUsageError` from `meocord/common`, carrying `usage` and `issues`, and goes through the handler's [exception filters](#exception-filters) first, so a filter can answer it in the app's own words or language. A message with no prefix or mention is never taken for a command: in an app without a prefix, `pay @ana lots` is chat that happens to begin with a command's word, and gets no reply.
+
+### Aliases, descriptions and scope
+
+A handler's options say more about its command:
+
+```typescript
+@MessageHandler('mute {target:member} {duration:duration?} {reason...?}', {
+  aliases: ['m', 'shush'],
+  description: 'Times a member out, for 10 minutes unless told otherwise.',
+  scope: 'guild',
+})
+async mute(message: Message, { target, duration, reason }: { target: GuildMember; duration?: number; reason?: string }) {
+  await target.timeout(duration ?? 600_000, reason)
+}
+```
+
+- `aliases` are other words for the command, each in place of the words the pattern begins with: `!m @ana 1h` runs `mute`. An alias can be several words, such as `'cfg set'` for `config set {key} {value...}`, is ranked by its own words, and answers a misuse with the usage as the user typed it. An alias another command already matches stops the bot at startup, as two patterns would.
+- `description` is what the command does, for a help listing.
+- `scope` is where the command works: `'guild'`, `'dm'` or `'any'`, the default. A message sent elsewhere is answered that the command works in a server only, or in direct messages only, before any other usage issue. A command with a `member`, `role` or `channel` param works in servers only whatever its scope says, and `scope: 'dm'` with one stops the bot at startup.
+
+### A help command
+
+MeoCord does not reply to `!help` itself, since help is where bots differ most: embeds, pages, categories. [`HandlerRegistry`](#handler-discovery) gives what one needs. Each message command is listed once, with its `command` words, `aliases`, `description`, `scope`, `usage(prefix)` and `matches(words)`:
+
+```typescript
+import { HandlerRegistry } from 'meocord/core'
+
+@Controller()
+export class HelpMessageController {
+  constructor(private readonly handlers: HandlerRegistry) {}
+
+  // !help lists the commands; !help mute, or !help m, shows one
+  @MessageHandler('help {command...?}', { description: 'Lists the commands, or shows one.' })
+  async help(message: Message, { command }: { command?: string }) {
+    const commands = this.handlers.list({ kind: 'message' }).filter(entry => entry.command)
+    const one = command ? commands.find(entry => entry.matches(command)) : undefined
+    if (command && !one) {
+      await message.reply(`No command is called ${command}.`)
+      return
+    }
+    const lines = one
+      ? [one.usage('!'), one.description, one.aliases.length ? `Also: ${one.aliases.join(', ')}` : undefined]
+      : commands.map(entry => `\`${entry.usage('!')}\` ${entry.description ?? ''}`)
+    await message.reply(lines.filter(Boolean).join('\n'))
+  }
+}
+```
+
+`usage('!')` gives `!mute <target> [duration] [reason…]`, the text a usage error shows. `matches` compares in any case unless the handler or the app is case-sensitive.
 
 ### Prefixes
 
@@ -1902,15 +1953,15 @@ export class HelpService {
 
 `list({ kind, controller })` filters by what a handler handles and by the class declaring it, and narrows the entries' type to that kind. Each entry has `controller`, `method`, `kind` and `name`, plus `get` and `getAll`, which read metadata as `ExecutionContext` does:
 
-| `kind`         | `name`                                         | Also                                                          |
-| -------------- | ---------------------------------------------- | ------------------------------------------------------------- |
-| `command`      | The command, or a subcommand's full path       | `commandType`, `command` (the registered JSON), `description` |
-| `component`    | The customId pattern, such as `profile/{uid}`  | `commandType`                                                 |
-| `modal`        | The customId pattern                           | `commandType`                                                 |
-| `autocomplete` | The command path, then the option it completes |                                                               |
-| `message`      | The pattern, or `undefined` for every message  |                                                               |
-| `reaction`     | The emoji, or `undefined` for every reaction   |                                                               |
-| `event`        | The client event                               | `once`                                                        |
+| `kind`         | `name`                                         | Also                                                                                                                   |
+| -------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `command`      | The command, or a subcommand's full path       | `commandType`, `command` (the registered JSON), `description`                                                          |
+| `component`    | The customId pattern, such as `profile/{uid}`  | `commandType`                                                                                                          |
+| `modal`        | The customId pattern                           | `commandType`                                                                                                          |
+| `autocomplete` | The command path, then the option it completes |                                                                                                                        |
+| `message`      | The pattern, or `undefined` for every message  | `command`, `aliases`, `description`, `scope`, `usage(prefix)`, `matches(words)`; see [A help command](#a-help-command) |
+| `reaction`     | The emoji, or `undefined` for every reaction   |                                                                                                                        |
+| `event`        | The client event                               | `once`                                                                                                                 |
 
 ---
 

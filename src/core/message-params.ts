@@ -63,6 +63,9 @@ const LABELS: Record<string, string> = {
 /** The types that exist only in a server. */
 const GUILD_TYPES = new Set(['member', 'role', 'channel'])
 
+/** Whether a param type is found only in a server. */
+export const isGuildType = (type: string): boolean => GUILD_TYPES.has(type)
+
 const choicesOf = (type: string) => (type.includes('|') ? type.split('|') : undefined)
 
 /** Whether a pattern's `{name:type}` names a type: built in, words to choose from, or one the app adds. */
@@ -97,7 +100,7 @@ function usageWord(token: ParamToken): string {
 }
 
 /** A route's usage as the user types it, after the start the message used, spacing included: `!ban <target> [reason…]`. */
-export function usageOf(route: MessageRoute, start: string): string {
+export function usageOf(route: Pick<MessageRoute, 'tokens'>, start: string): string {
   return start + route.tokens.map(token => ('literal' in token ? token.literal : usageWord(token))).join(' ')
 }
 
@@ -107,6 +110,22 @@ function wrongType(token: ParamToken, word: string, types: Record<string, Messag
   const choices = choicesOf(type)
   const expected = choices ? `one of ${choices.join(', ')}` : `a ${types?.[type]?.label ?? LABELS[type] ?? type}`
   return { param: token.param, message: `${token.param}: "${word}" is not ${expected}` }
+}
+
+/**
+ * Refuses a message sent where its command does not work: a `'guild'` command in a DM, or a `'dm'` one in a
+ * server. A message with no prefix or mention is refused quietly, as it may be chat.
+ *
+ * @throws MessageUsageError saying where the command works.
+ */
+export function assertMessageScope(route: MessageRoute, message: Message, start: string): void {
+  const inGuild = message.guildId !== null && message.guildId !== undefined
+  if (route.scope === 'guild' && !inGuild) {
+    throw new MessageUsageError(usageOf(route, start), [{ message: 'This command works in a server only.' }], { serverOnly: true, quiet: start === '' })
+  }
+  if (route.scope === 'dm' && inGuild) {
+    throw new MessageUsageError(usageOf(route, start), [{ message: 'This command works in direct messages only.' }], { dmOnly: true, quiet: start === '' })
+  }
 }
 
 /**
