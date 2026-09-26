@@ -2251,7 +2251,7 @@ it('schedules the reminders it loaded at startup', () => {
 
 ### Running a handler with `invoke`
 
-`module.invoke(Controller, 'method', ...args)` runs a handler through the [pipeline](#how-a-handler-runs) dispatch runs: `@Defer`, its guards, class guards first and each once, then its interceptors around validation, pipes, cooldowns and the handler, all inside its exception filters. Guards resolve from the module, so `overrideGuard` stubs and injected `ExecutionContext` work as they do in the bot. Pass the arguments dispatch would: the interaction, message or reaction, then the handler's params. An interaction must be one dispatch could route to the handler: a customId its pattern matches, or the command or subcommand path it handles. One that could not, such as `'something/else'` for `'profile/{id}'`, rejects with a message naming both, so a typo in a test does not pass silently. A mock built without a customId or command name is not checked. A message passed alone to a [patterned `@MessageHandler`](#message-commands) is checked the same way, and the handler gets the params its pattern captures, after the prefix of the module's `app`: `invoke(DiceController, 'roll', createMockMessage({ content: '!roll 20' }))`. [Typed params](#typed-params) are resolved as dispatch resolves them, from the message's guild: `createMockMessage({ content: '!pay <@1> 25', guild: createMockGuild({ members: [member] }) })` puts `member` in the cache it is read from, `guild: null` makes a DM, and a word that is not a value of its type, or a prefixed message that names the command but leaves out a param, goes through the handler's filters as the `MessageUsageError` the user would be shown.
+`module.invoke(Controller, 'method', ...args)` runs a handler through the [pipeline](#how-a-handler-runs) dispatch runs: `@Defer`, its guards, class guards first and each once, then its interceptors around validation, pipes, cooldowns and the handler, all inside its exception filters. Guards resolve from the module, so `overrideGuard` stubs and injected `ExecutionContext` work as they do in the bot. Pass the arguments dispatch would: the interaction, message or reaction, then the handler's params. An interaction must be one dispatch could route to the handler: a customId its pattern matches, or the command or subcommand path it handles. One that could not, such as `'something/else'` for `'profile/{id}'`, rejects with a message naming both, so a typo in a test does not pass silently. A mock built without a customId or command name is not checked. A message passed alone to a [patterned `@MessageHandler`](#message-commands) is checked the same way, and the handler gets the params its pattern captures, after the prefix of the module's `app`: `invoke(DiceController, 'roll', createMockMessage({ content: '!roll 20' }))`. [Typed params](#typed-params) are resolved as dispatch resolves them, from the message's caches: a member, user, role or channel the content mentions is cached with the message, `createMockMessage({ content: '!pay 111111111111111111 25', guild: createMockGuild({ members: [member] }) })` puts `member` in the cache an id is read from, `guild: null` makes a DM, and a word that is not a value of its type, or a prefixed message that names the command but leaves out a param, goes through the handler's filters as the `MessageUsageError` the user would be shown.
 
 ```typescript
 import { ButtonInteraction } from 'discord.js'
@@ -2509,6 +2509,15 @@ const interaction = createMockInteraction(ButtonInteraction, { customId: 'card/r
 ```
 
 API JSON and builders are kept as their JSON behind `toJSON()`, which is what `respond()` and `@Defer` read; discord.js instances are kept as they are.
+
+What the content mentions is cached as the gateway delivers it with the message: `<@id>` puts a user in `message.client.users.cache`, and in a guild a member in `guild.members.cache`; `<@&id>` a role in `guild.roles.cache`; `<#id>` a channel in `guild.channels.cache`. Each is in `message.mentions` too. A bare id is not cached, as a bot has to fetch it. `users` puts more users in the client's cache, `guild` gives the guild, with its own members, roles and channels, and `client` the client the message arrived on:
+
+```typescript
+const message = createMockMessage({ content: '!ban <@111111111111111111> spam' })
+message.guild!.members.cache.get('111111111111111111') // → a mock member, as dispatch reads it
+```
+
+Every mock client, and so every mock message, belongs to one bot whose id is `createMockClient().user.id`, so a message that starts with a mention of the bot reaches a handler through `invoke` as it would in the bot: ``createMockMessage({ content: `<@${createMockClient().user!.id}> ping` })``.
 
 </details>
 

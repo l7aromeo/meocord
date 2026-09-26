@@ -358,8 +358,12 @@ let lastSnowflake = 1_400_000_000_000_000_000n
 /** A snowflake-shaped id no other mock in this run has. */
 const nextSnowflake = (): string => String(++lastSnowflake)
 
-/** A mock user that is a person, with an id of its own. */
-const mockUser = (): object => stubDeep(Object.assign(Object.create(User.prototype), { id: nextSnowflake(), bot: false }))
+/** A mock user that is a person, with an id of its own unless given one. */
+const mockUser = (id = nextSnowflake()): object => stubDeep(Object.assign(Object.create(User.prototype), { id, bot: false }))
+
+let mockBotId: string | undefined
+/** The id of the bot every mock client is logged in as: one per run, so a test can mention it. */
+const botId = (): string => (mockBotId ??= nextSnowflake())
 
 // ---------------------------------------------------------------------------
 // createMockInteraction
@@ -686,6 +690,8 @@ export const createMockUser = (): DeepMocked<User> => createMockInteraction(User
  * Creates a mock {@link Client}, with `users`, `channels`, `guilds` and `application.commands` ready to
  * stub. Their methods resolve as discord.js's do: `users.send()` to a mock message, `users.fetch(id)`
  * to a mock user, `channels.fetch(id)` to a mock text channel, and a list fetch to an empty collection.
+ * `users.cache` and `channels.cache` are real, empty collections. Every mock client is logged in as the
+ * same bot, so `createMockClient().user.id` is the id a message mentions to address it.
  */
 export function createMockClient(): DeepMocked<Client> {
   const instance = Object.create(Client.prototype) as Record<string, unknown>
@@ -695,10 +701,11 @@ export function createMockClient(): DeepMocked<Client> {
   const appInstance = Object.create(null) as Record<string, unknown>
   appInstance.commands = stubDeep(Object.create(ApplicationCommandManager.prototype))
 
-  instance.users = stubDeep(Object.create(UserManager.prototype))
-  instance.channels = stubDeep(Object.create(ChannelManager.prototype))
+  // Real caches, empty until something is put in them, as a client that has just logged in
+  instance.users = managerWith(UserManager.prototype, undefined)
+  instance.channels = managerWith(ChannelManager.prototype, undefined)
   instance.guilds = stubDeep(Object.create(GuildManager.prototype))
-  instance.user = stubDeep(Object.create(ClientUser.prototype))
+  instance.user = stubDeep(Object.assign(Object.create(ClientUser.prototype), { id: botId(), bot: true }))
   instance.application = stubDeep(appInstance)
 
   return stubDeep(instance) as DeepMocked<Client>
@@ -808,6 +815,73 @@ export interface MockMessageOverrides {
   flags?: MessageFlagsResolvable
   /** The guild it was sent in, such as one from `createMockGuild` with members in its cache; `null` for a DM. */
   guild?: Guild | null
+  /** The client it arrived on, such as one from `createMockClient`; a new mock client otherwise. */
+  client?: Client
+  /** Users in the client's `users.cache`, by their id, beside those the content mentions. */
+  users?: readonly User[]
+}
+
+/** The ids each kind of mention in `content` names, in order and once each. */
+function mentionedIds(content: string | undefined): { users: string[]; roles: string[]; channels: string[] } {
+  const ids = (pattern: RegExp) => [...new Set([...(content ?? '').matchAll(new RegExp(pattern.source, 'g'))].map(match => match.groups!.id))]
+  return { users: ids(MessageMentions.UsersPattern), roles: ids(MessageMentions.RolesPattern), channels: ids(MessageMentions.ChannelsPattern) }
+}
+
+/** A cache's collection, or undefined for a stub a test put in place of the manager. */
+const cacheOf = (manager: unknown): Collection<string, unknown> | undefined => {
+  const cache = (manager as { cache?: unknown } | undefined)?.cache
+  return cache instanceof Collection ? (cache as Collection<string, unknown>) : undefined
+}
+
+/** The cached item under `id`, put there by `make` when the cache lacks it. */
+function cached<T>(cache: Collection<string, unknown> | undefined, id: string, make: () => T): T {
+  const existing = cache?.get(id)
+  if (existing !== undefined) return existing as T
+  const item = make()
+  cache?.set(id, item)
+  return item
+}
+
+/**
+ * The message's mentions, with the users, members, roles and channels its content mentions put in the
+ * client's and the guild's caches, as the gateway delivers a message's mentions with it.
+ */
+function mentionsOf(content: string | undefined, client: unknown, guild: unknown): object {
+  const { users, roles, channels } = mentionedIds(content)
+  const guildCaches = guild
+    ? { members: cacheOf((guild as Guild).members), roles: cacheOf((guild as Guild).roles), channels: cacheOf((guild as Guild).channels) }
+    : undefined
+  const userCache = cacheOf((client as Client).users)
+
+  const mentioned = {
+    users: new Collection(users.map(id => [id, cached(userCache, id, () => mockUser(id))])),
+    members: guildCaches
+      ? new Collection(
+          users.map(id => [
+            id,
+            cached(guildCaches.members, id, () => {
+              const user = cached(userCache, id, () => mockUser(id))
+              return stubDeep(Object.defineProperties(Object.create(GuildMember.prototype), { id: { value: id }, user: { value: user }, guild: { value: guild } }))
+            }),
+          ]),
+        )
+      : null,
+    roles: new Collection(
+      guildCaches ? roles.map(id => [id, cached(guildCaches.roles, id, () => stubDeep(Object.assign(Object.create(Role.prototype), { id, guild })))]) : [],
+    ),
+    channels: new Collection(
+      channels.map(id => [
+        id,
+        cached(guildCaches ? guildCaches.channels : cacheOf((client as Client).channels), id, () =>
+          stubDeep(Object.assign(Object.create(TextChannel.prototype), { id, guild })),
+        ),
+      ]),
+    ),
+  }
+  // Own values, so the prototype's getters, which read the raw mention data, are not reached
+  const instance = Object.create(MessageMentions.prototype) as object
+  for (const [key, value] of Object.entries({ ...mentioned, everyone: false })) Object.defineProperty(instance, key, { value, writable: true })
+  return stubDeep(instance)
 }
 
 /**
@@ -835,7 +909,12 @@ function asHeld<T>(value: T | JSONEncodable<T>): JSONEncodable<T> {
  * `respond()` and `@Defer` read, such as when `@Defer` locks the controls of the message a button
  * sits on; discord.js instances are kept as they are.
  *
- * @param overrides - The message's id, content, components, embeds and flags.
+ * What the content mentions is cached as the gateway delivers it: `<@id>` a user in the client's
+ * `users.cache` and, in a guild, a member in `guild.members.cache`; `<@&id>` a role; `<#id>` a
+ * channel. Each is in `mentions` too. A bare id is not cached, as a bot has to fetch it.
+ *
+ * @param overrides - The message's id, content, components, embeds and flags; its guild, or `null`
+ *   for a DM; the client it arrived on, a new mock client otherwise; and more users for that client's cache.
  * @returns The mock message.
  *
  * @example
@@ -882,8 +961,14 @@ export function createMockMessage(overrides: MockMessageOverrides = {}): DeepMoc
     writable: true,
   })
 
-  // MessageMentions — constructor-assigned, has methods like .has(), .members
-  instance.mentions = stubDeep(Object.create(MessageMentions.prototype))
+  // Assigned once by discord.js's Base constructor, so an own value, as it is on a real message
+  const client = overrides.client ?? createMockClient()
+  Object.defineProperty(instance, 'client', { value: client, writable: true })
+  const userCache = cacheOf(client.users)
+  for (const user of overrides.users ?? []) userCache?.set(user.id, user)
+
+  // MessageMentions — constructor-assigned; what the content mentions, cached as the gateway delivers it
+  instance.mentions = mentionsOf(overrides.content, client, guild)
 
   // Data a message always has, real rather than stubbed, so code reading it sees an empty message
   instance.flags = new MessageFlagsBitField(overrides.flags)
