@@ -378,7 +378,7 @@ Set `logLevel` in `meocord.config.ts` to choose another, or `MEOCORD_LOG_LEVEL` 
 MEOCORD_LOG_LEVEL=debug node dist/main.js
 ```
 
-A `MEOCORD_LOG_LEVEL` that names no level is reported once, and the config or the default applies. The level is read once, when the first line is logged, so a busy bot never looks it up again.
+`MEOCORD_LOG_LEVEL` is read in any case, so `DEBUG` is `debug`. One that names no level is reported once, even under a level that hides warnings, and the config or the default applies. The level is read once, when the first line is logged, so a busy bot never looks it up again.
 
 ### Environment variables
 
