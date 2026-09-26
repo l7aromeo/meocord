@@ -124,8 +124,11 @@ function resolveGuard(container: Container, guard: GuardClass, context: HandlerE
   return child.get(guard, { autobind: true })
 }
 
-/** The params of the guard call in progress, which a guard shared as one instance reads through {@link readPerCall}. */
-const callParams = new AsyncLocalStorage<Record<string, unknown>>()
+/**
+ * The params of the guard calls in progress, by guard instance, which a guard shared as one instance reads
+ * through {@link readPerCall}. Keyed by instance, so a shared guard another one calls reads its own.
+ */
+const callParams = new AsyncLocalStorage<ReadonlyMap<object, Record<string, unknown>>>()
 
 const sharedGuards = new WeakMap<Container, Map<GuardClass, boolean>>()
 
@@ -161,12 +164,12 @@ function readPerCall(instance: object, keys: readonly string[]): void {
       configurable: true,
       enumerable: true,
       get: () => {
-        const store = callParams.getStore()
-        return store && key in store ? store[key] : own
+        const call = callParams.getStore()?.get(instance)
+        return call && key in call ? call[key] : own
       },
       set: (value: unknown) => {
-        const store = callParams.getStore()
-        if (store && key in store) store[key] = value
+        const call = callParams.getStore()?.get(instance)
+        if (call && key in call) call[key] = value
         else own = value
       },
     })
@@ -252,7 +255,14 @@ export async function runGuards(guards: readonly GuardEntry[], call: GuardedCall
     let allowed: boolean
     try {
       const args = call.args as Parameters<GuardInterface['canActivate']>
-      allowed = await (callStore ? callParams.run(callStore, () => guardInstance.canActivate(...args)) : guardInstance.canActivate(...args))
+      if (callStore) {
+        // The calls already in progress keep theirs, as when one guard calls another
+        const store = new Map(callParams.getStore())
+        store.set(guardInstance, callStore)
+        allowed = await callParams.run(store, () => guardInstance.canActivate(...args))
+      } else {
+        allowed = await guardInstance.canActivate(...args)
+      }
     } catch (error) {
       if (error instanceof GuardDeniedError && call.denial) call.denial.by = guardClass
       throw error

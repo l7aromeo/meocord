@@ -156,3 +156,54 @@ describe('a guard whose instance is frozen or sealed', () => {
     expect(seen).toEqual(['sealed admin', 'sealed admin'])
   })
 })
+
+describe('shared guards that call each other', () => {
+  @Guard()
+  class InnerGuard implements GuardInterface {
+    level = 'inner-own'
+
+    async canActivate() {
+      seen.push(`inner ${this.level}`)
+      return true
+    }
+  }
+
+  @Guard()
+  class OuterGuard implements GuardInterface {
+    level?: string
+
+    constructor(readonly inner: InnerGuard) {}
+
+    async canActivate() {
+      seen.push(`outer ${this.level}`)
+      return this.inner.canActivate()
+    }
+  }
+  Reflect.defineMetadata('design:paramtypes', [InnerGuard], OuterGuard)
+
+  @Controller()
+  class Composed {
+    @Command('inner', CommandType.BUTTON)
+    @UseGuard({ provide: InnerGuard, params: { level: 'inner-param' } })
+    async inner() {}
+
+    @Command('outer', CommandType.BUTTON)
+    @UseGuard({ provide: OuterGuard, params: { level: 'outer-param' } })
+    async outer() {}
+  }
+
+  it('each read only the params their own entry gives, not those of the guard that calls them', async () => {
+    const module = MeoCordTestingModule.create({
+      controllers: [Composed],
+      providers: [
+        { provide: InnerGuard, useClass: InnerGuard },
+        { provide: OuterGuard, useClass: OuterGuard },
+      ],
+    }).compile()
+
+    await module.invoke(Composed, 'inner', press('inner'))
+    await module.invoke(Composed, 'outer', press('outer'))
+
+    expect(seen).toEqual(['inner inner-param', 'outer outer-param', 'inner inner-own'])
+  })
+})
