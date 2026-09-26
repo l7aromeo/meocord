@@ -12,6 +12,15 @@ export interface RegisteredCommand {
   version: string
 }
 
+/** A message as Discord stores it, as far as the checks read it. */
+export interface StoredMessage {
+  id: string
+  content: string
+  author: { id: string }
+  embeds: { title?: string; color?: number }[]
+  message_reference?: { message_id?: string }
+}
+
 export class DiscordApi {
   constructor(private readonly token: string) {}
 
@@ -52,6 +61,20 @@ export class DiscordApi {
 
   globalCommands(applicationId: string): Promise<RegisteredCommand[]> {
     return this.request('GET', `/applications/${applicationId}/commands`)
+  }
+
+  /** The user the token belongs to. */
+  currentUser(): Promise<{ id: string }> {
+    return this.request('GET', '/users/@me')
+  }
+
+  message(channelId: string, messageId: string): Promise<StoredMessage> {
+    return this.request('GET', `/channels/${channelId}/messages/${messageId}`)
+  }
+
+  /** The channel's messages sent after `messageId`, newest first. */
+  messagesAfter(channelId: string, messageId: string): Promise<StoredMessage[]> {
+    return this.request('GET', `/channels/${channelId}/messages?after=${messageId}&limit=50`)
   }
 
   sendMessage(channelId: string, content: string): Promise<{ id: string }> {
