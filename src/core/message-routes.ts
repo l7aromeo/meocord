@@ -289,6 +289,21 @@ export function usesAppPrefix(routes: readonly MessageRoute[]): boolean {
 }
 
 /**
+ * The starts a message has for these routes: as {@link messageStarts} gives them, except that the app's
+ * prefixes are read only when a route uses them, so an app whose handlers all have their own prefixes never
+ * calls its prefix function. A mention of the bot, and where the message was sent, count either way.
+ */
+export async function messageStartsFor(
+  routes: readonly MessageRoute[],
+  options: MessageCommandOptions,
+  message: Message,
+  botId: string | undefined,
+): Promise<MessageStarts> {
+  if (usesAppPrefix(routes)) return messageStarts(options, message, botId)
+  return { prefixes: [], mention: options.mention ? botId : undefined, inGuild: message.guildId !== null && message.guildId !== undefined }
+}
+
+/**
  * The starts the app accepts for this message: its prefixes, read from the function when it is one,
  * and a mention of the bot when `mention` is on.
  */

@@ -185,6 +185,34 @@ describe('message commands', () => {
     expect(logged.error).toEqual([])
   })
 
+  it("takes a mention of the bot as a start when every handler has its own prefix, and prefers a handler whose scope fits", async () => {
+    @Controller()
+    class OwnPrefixed {
+      @MessageHandler('ping', { prefix: '?' })
+      ping() {
+        calls.push(['ping'])
+      }
+
+      @MessageHandler('config {key}', { prefix: '?', scope: 'dm' })
+      personal(_message: Message, { key }: { key: string }) {
+        calls.push(['personal', key])
+      }
+
+      @MessageHandler('config {words...}', { prefix: '?' })
+      server(_message: Message, { words }: { words: string }) {
+        calls.push(['server', words])
+      }
+    }
+    const prefix = vi.fn(() => '!')
+    const client = await startApp({ controllers: [OwnPrefixed], messages: { prefix, mention: true } })
+
+    await send(client, `<@${BOT_ID}> ping`)
+    await send(client, '?config volume')
+    expect(calls).toEqual([['ping'], ['server', 'volume']])
+    // No handler uses the app's prefixes, so they are never read
+    expect(prefix).not.toHaveBeenCalled()
+  })
+
   it('matches keywords as the whole message, without a prefix, when none is configured', async () => {
     const client = await startApp({ controllers: [DiceController] })
 
