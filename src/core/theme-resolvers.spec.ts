@@ -421,5 +421,8 @@ describe('@MeoCord\'s theme options', () => {
     expect(declare({ themeCache: { maxGuilds: 0 } })).toThrow('@MeoCord({ themeCache }) on Checked: maxGuilds must be a whole number above 0')
     expect(declare({ themeCache: { ttl: 5 } })).toThrow("@MeoCord({ themeCache }) on Checked has no option 'ttl'")
     expect(declare({ themeForTimeoutMs: -1 })).toThrow('@MeoCord({ themeForTimeoutMs }) on Checked must be a number of milliseconds above 0')
+    // Past setTimeout's limit, Node would wait 1 ms and time every lookup out at once
+    expect(declare({ themeForTimeoutMs: 3_000_000_000 })).toThrow('and at most 2147483647 (got 3000000000)')
+    expect(declare({ themeForTimeoutMs: 2_147_483_647 })).not.toThrow()
   })
 })

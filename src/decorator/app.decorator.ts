@@ -160,6 +160,9 @@ export function MeoCord<const G extends readonly unknown[] = [], const I extends
   }
 }
 
+/** The longest delay setTimeout takes: 2^31 - 1 ms, about 24.8 days. */
+const MAX_TIMEOUT_MS = 2_147_483_647
+
 /** Refuses theme resolvers and cache options the runtime cannot follow, where the app is declared. */
 function assertThemeFor(
   appName: string,
@@ -190,8 +193,14 @@ function assertThemeFor(
       }
     }
   }
-  if (themeForTimeoutMs !== undefined && !(typeof themeForTimeoutMs === 'number' && Number.isFinite(themeForTimeoutMs) && themeForTimeoutMs > 0)) {
-    throw new TypeError(`@MeoCord({ themeForTimeoutMs }) on ${appName} must be a number of milliseconds above 0 (got ${JSON.stringify(themeForTimeoutMs)}).`)
+  // Above setTimeout's limit, Node waits 1 ms instead, so every lookup would time out at once
+  if (
+    themeForTimeoutMs !== undefined &&
+    !(typeof themeForTimeoutMs === 'number' && Number.isFinite(themeForTimeoutMs) && themeForTimeoutMs > 0 && themeForTimeoutMs <= MAX_TIMEOUT_MS)
+  ) {
+    throw new TypeError(
+      `@MeoCord({ themeForTimeoutMs }) on ${appName} must be a number of milliseconds above 0 and at most ${MAX_TIMEOUT_MS} (got ${JSON.stringify(themeForTimeoutMs)}).`,
+    )
   }
 }
 
