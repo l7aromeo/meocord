@@ -181,12 +181,14 @@ function readPerCall(instance: object, keys: readonly string[]): void {
 }
 
 const logger = new Logger('Guard')
-const warnedShared = new WeakSet<GuardClass>()
+const warnedShared = new WeakMap<Container, Set<GuardClass>>()
 
-/** Warns once per guard that its params are set on the one instance every call shares, and why. */
-function warnSharedParams(guardClass: GuardClass, why: string, remedy: string): void {
-  if (warnedShared.has(guardClass)) return
-  warnedShared.add(guardClass)
+/** Warns once per guard in each app that its params are set on the one instance every call shares, and why. */
+function warnSharedParams(container: Container, guardClass: GuardClass, why: string, remedy: string): void {
+  let warned = warnedShared.get(container)
+  if (!warned) warnedShared.set(container, (warned = new Set()))
+  if (warned.has(guardClass)) return
+  warned.add(guardClass)
   logger.warn(
     `${guardClass.name} is one instance every call shares, and ${why}, so each call's params are set on that ` +
       `instance: calls that overlap can read each other's. ${remedy}, or stop binding the guard, in services, ` +
@@ -261,11 +263,13 @@ export async function runGuards(guards: readonly GuardEntry[], call: GuardedCall
       // A param the class takes through a setter has nowhere to be kept per call: it is set on the instance
       const setters = Object.keys(perCall).filter(key => isClassAccessor(guardInstance, key))
       if (setters.length > 0) {
-        warnSharedParams(guardClass, `takes ${setters.join(', ')} through a setter`, 'Read the param as a plain property')
+        warnSharedParams(container, guardClass, `takes ${setters.join(', ')} through a setter`, 'Read the param as a plain property')
         for (const key of setters) Reflect.set(guardInstance, key, perCall[key])
       }
     } else if (params) {
       assignParams(guardClass, guardInstance, params)
+      // A sealed instance's properties cannot become accessors, so nothing can keep its calls apart
+      if (shared) warnSharedParams(container, guardClass, 'its instance is sealed', 'Leave the instance unsealed')
     } else if (shared && perCallKeys.has(guardInstance)) {
       callStore = {}
     }
