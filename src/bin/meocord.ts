@@ -130,7 +130,8 @@ export class MeoCordCLI {
       .option('-c, --license', 'Display license')
       .action(options => {
         if (!options.warranty && !options.license) {
-          program.commands.find(cmd => cmd.name() === 'show')?.outputHelp()
+          const show = `${program.name()} show`
+          console.error(`Say what to show: \`${show} --license\` for the license, or \`${show} --warranty\` for the warranty disclaimer.`)
           process.exit(1)
         }
         if (options.warranty) {

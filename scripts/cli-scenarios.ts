@@ -395,7 +395,12 @@ const scenarios: Scenario[] = [
   { name: 'lists its commands', tier: 'fast', argv: ['--help'], expect: { code: 0, says: ['create', 'build', 'start', 'register', 'generate'] } },
   { name: 'refuses an unknown command, with help', tier: 'fast', argv: ['frobnicate'], expect: { code: 1, says: ["unknown command 'frobnicate'"] } },
   { name: 'shows the license', tier: 'fast', argv: ['show', '--license'], expect: { code: 0, says: ['MIT License'] } },
-  { name: 'shows help for show without a flag', tier: 'fast', argv: ['show'], expect: { code: 1, says: ['--warranty', '--license'] } },
+  {
+    name: 'says how to use show without a flag',
+    tier: 'fast',
+    argv: ['show'],
+    expect: { code: 1, says: ['meocord show --license', 'meocord show --warranty'], never: ['Options:', 'Display information'] },
+  },
 
   // Help: every command and argument described, and no empty sections
   ...[
