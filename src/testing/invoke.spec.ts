@@ -398,4 +398,21 @@ describe('TestingModule.invoke with typed message params', () => {
     await expect(module.invoke(PayController, 'pay', message)).rejects.toThrow('amount: "lots" is not a whole number')
     expect(received).toEqual([])
   })
+
+  it("rejects a message sent where the handler's scope says it does not work, and runs one sent where it does", async () => {
+    @Controller()
+    class InboxController {
+      @MessageHandler('inbox', { scope: 'dm', aliases: ['i'] })
+      async inbox(_message: Message) {
+        received.push('inbox')
+      }
+    }
+    const module = MeoCordTestingModule.create({ controllers: [InboxController] }).compile()
+
+    await expect(module.invoke(InboxController, 'inbox', createMockMessage({ content: 'inbox', guild: createMockGuild() }))).rejects.toThrow(
+      'This command works in direct messages only.',
+    )
+    await module.invoke(InboxController, 'inbox', createMockMessage({ content: 'i', guild: null }))
+    expect(received).toEqual(['inbox'])
+  })
 })

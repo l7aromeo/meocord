@@ -25,7 +25,7 @@ import {
   type MessageCommandOptions,
 } from '@src/interface/index.js'
 import { buildMessageRoutes, messageParamsFor } from '@src/core/message-routes.js'
-import { hasTypedParams, missingParams, resolveMessageParams, usageOf } from '@src/core/message-params.js'
+import { assertMessageScope, hasTypedParams, missingParams, resolveMessageParams, usageOf } from '@src/core/message-params.js'
 import { appObservers, assertObservers, bindObservers } from '@src/core/observer-runner.js'
 import { makeInjectable } from '@src/util/injectable.util.js'
 import { HandlerRegistry } from '@src/core/handler-registry.js'
@@ -305,6 +305,7 @@ export class TestingModule {
         const { route, params, start = '', given } = input
         const types = this.messageOptions.types
         resolveArgs = async args => {
+          assertMessageScope(route, first, start)
           if (given !== undefined) throw new MessageUsageError(usageOf(route, start), missingParams(route, given))
           return hasTypedParams(route) ? [args[0], await resolveMessageParams(route, params, first, start, types)] : args
         }
@@ -376,6 +377,11 @@ function throwFailures(hook: 'onReady' | 'onShutdown', failures: readonly { name
       `${failures.length} ${hook} hooks threw: ${failures.map(({ name }) => name).join(', ')}.`,
     )
   }
+}
+
+/** The app's `messages` options, when the testing module is given an app. */
+function messagesOf(app: object | undefined): MessageCommandOptions | undefined {
+  return app && (Reflect.getMetadata(MetadataKey.AppOptions, app) as { messages?: MessageCommandOptions } | undefined)?.messages
 }
 
 /**
@@ -486,7 +492,7 @@ export class TestingModuleBuilder {
 
     // Bound first, as in the app, so a class that injects it gets this instance
     const appClasses: (new (...args: any[]) => unknown)[] = []
-    container.bind(HandlerRegistry).toConstantValue(new HandlerRegistry(appClasses))
+    container.bind(HandlerRegistry).toConstantValue(new HandlerRegistry(appClasses, messagesOf(this.options.app)))
     // A testing module runs as one process, so a cross-shard call runs once, here
     container.bind(ShardContext).toConstantValue(
       new ShardContext(undefined, async (service, method, args) => {
@@ -570,7 +576,7 @@ export class TestingModuleBuilder {
     assertProvided(container, providers, appClasses, "the testing module's providers")
     for (const cls of appClasses) Reflect.defineMetadata(MetadataKey.Container, container, cls)
     prepareHandlerStages(container, appClasses)
-    const messages = this.options.app && (Reflect.getMetadata(MetadataKey.AppOptions, this.options.app) as { messages?: MessageCommandOptions })?.messages
+    const messages = messagesOf(this.options.app)
     // As the app would at startup, refuses a message pattern that cannot be read or two that match the same messages
     buildMessageRoutes(this.options.controllers ?? [], messages)
     if (this.options.app) bindAppPresenter(container, this.options.app)

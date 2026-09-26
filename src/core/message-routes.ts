@@ -2,8 +2,8 @@ import { type Message } from 'discord.js'
 import { getMessageHandlers } from '@src/decorator/controller.decorator.js'
 import { type ControllerClass } from '@src/core/component-routes.js'
 import { routeSpecificity } from '@src/core/route-specificity.js'
-import { BUILT_IN_TYPES, fitsParamType, isKnownParamType } from '@src/core/message-params.js'
-import { type MessageCommandOptions, type MessagePrefix } from '@src/interface/index.js'
+import { BUILT_IN_TYPES, fitsParamType, isGuildType, isKnownParamType } from '@src/core/message-params.js'
+import { type MessageCommandOptions, type MessagePrefix, type MessageScope } from '@src/interface/index.js'
 
 /** One word of a message pattern: a literal word, or a param with the type it declares, if any. */
 export type PatternToken = { literal: string } | { param: string; rest: boolean; optional: boolean; type?: string }
@@ -26,6 +26,9 @@ export interface MessageRoute {
   /** The handler's own prefixes, `false` for none, or `undefined` for the app's. */
   prefix: false | readonly string[] | undefined
   caseSensitive: boolean
+  scope: MessageScope
+  /** The handler's own pattern, when this route is one of its aliases. */
+  aliasOf?: string
 }
 
 /** What a message may start with to reach a route that uses the app's prefixes. */
@@ -131,6 +134,7 @@ export function buildMessageRoutes(controllerClasses: readonly ControllerClass[]
     for (const { pattern, method, options: own } of getMessageHandlers(controllerClass.prototype)) {
       if (pattern === undefined) continue
       let parsed: MessagePattern
+      let aliases: string[]
       try {
         parsed = parseMessagePattern(pattern)
         for (const token of parsed.tokens) {
@@ -142,26 +146,29 @@ export function buildMessageRoutes(controllerClasses: readonly ControllerClass[]
           }
         }
         // Which optional takes a word is decided by the word alone, which an app's parse(word, message) cannot tell
-        const own = parsed.tokens
+        const appTyped = parsed.tokens
           .slice(0, -1)
           .find((token): token is ParamToken => 'param' in token && token.optional && !isBuiltInType(token.type ?? 'string'))
-        if (own) {
+        if (appTyped) {
           throw new Error(
-            `{${own.param}:${own.type}?} comes before another optional param, which only a built-in type or words to choose ` +
+            `{${appTyped.param}:${appTyped.type}?} comes before another optional param, which only a built-in type or words to choose ` +
               `from can: make it required, or put it last.`,
           )
         }
+        assertScope(own.scope, parsed.tokens)
+        aliases = aliasPatterns(pattern, parsed.tokens, own.aliases)
       } catch (error) {
         throw new Error(`@MessageHandler('${pattern}') in ${controllerClass.name}.${method}: ${(error as Error).message}`)
       }
-      routes.push({
+      const shared = {
         controllerClass,
         method,
-        pattern,
-        ...parsed,
         prefix: own.prefix === undefined || own.prefix === false ? own.prefix : prefixList(own.prefix),
         caseSensitive: own.caseSensitive ?? options.caseSensitive ?? false,
-      })
+        scope: own.scope ?? 'any',
+      }
+      routes.push({ ...shared, pattern, ...parsed })
+      for (const alias of aliases) routes.push({ ...shared, pattern: alias, ...parseMessagePattern(alias), aliasOf: pattern })
     }
   }
 
@@ -171,18 +178,57 @@ export function buildMessageRoutes(controllerClasses: readonly ControllerClass[]
     for (let j = i + 1; j < routes.length; j++) {
       const [a, b] = [routes[i], routes[j]]
       if (!sameMessages(a, b)) continue
-      // One handler under two spellings, such as 'hello' and 'Hello', is one route
+      // One handler under two spellings, such as 'hello' and 'Hello', is one route, its pattern's over an alias's
       if (a.controllerClass === b.controllerClass && a.method === b.method) {
+        if (a.aliasOf && !b.aliasOf) routes[i] = b
         routes.splice(j--, 1)
         continue
       }
       throw new Error(
-        `"${a.pattern}" in ${a.controllerClass.name}.${a.method} and "${b.pattern}" in ${b.controllerClass.name}.${b.method} ` +
+        `${describeRoute(a)} in ${a.controllerClass.name}.${a.method} and ${describeRoute(b)} in ${b.controllerClass.name}.${b.method} ` +
           `match the same messages, so only one of them could ever run. Change one pattern, or give one its own prefix.`,
       )
     }
   }
   return routes
+}
+
+/** A route's pattern as an error names it, saying whose alias it is. */
+const describeRoute = (route: MessageRoute) => (route.aliasOf ? `"${route.pattern}", an alias of "${route.aliasOf}",` : `"${route.pattern}"`)
+
+/** A pattern's command words: the literal words it begins with. */
+export function commandWordsOf(tokens: readonly PatternToken[]): string[] {
+  const words: string[] = []
+  for (const token of tokens) {
+    if (!('literal' in token)) break
+    words.push(token.literal)
+  }
+  return words
+}
+
+/** The pattern each alias stands for: the alias's words, then the pattern's after its command words. */
+function aliasPatterns(pattern: string, tokens: readonly PatternToken[], aliases: readonly string[] | undefined): string[] {
+  if (aliases === undefined) return []
+  if (!Array.isArray(aliases)) throw new Error('aliases takes a list of command words, such as { aliases: [\'b\'] }.')
+  const command = commandWordsOf(tokens)
+  if (command.length === 0) throw new Error('aliases stand for the command words a pattern begins with, and this one begins with a param.')
+  const after = pattern.trim().split(/\s+/).slice(command.length)
+  return aliases.map(alias => {
+    if (typeof alias !== 'string' || !alias.trim() || /[{}]/.test(alias)) {
+      throw new Error(`${JSON.stringify(alias)} is not an alias: an alias is one or more command words, with no params.`)
+    }
+    return [alias.trim(), ...after].join(' ')
+  })
+}
+
+/** Refuses a scope that is not one, and a command for direct messages with a param only a server has. */
+function assertScope(scope: unknown, tokens: readonly PatternToken[]): void {
+  if (scope === undefined) return
+  if (scope !== 'guild' && scope !== 'dm' && scope !== 'any') throw new Error(`scope is 'guild', 'dm' or 'any', not ${JSON.stringify(scope)}.`)
+  const guildOnly = tokens.find(token => 'param' in token && token.type !== undefined && isGuildType(token.type))
+  if (scope === 'dm' && guildOnly) {
+    throw new Error(`scope is 'dm', but {${(guildOnly as ParamToken).param}:${(guildOnly as ParamToken).type}} is found only in a server.`)
+  }
 }
 
 /** Whether a route uses the app's prefixes, so they have to be known before it can match. */
@@ -476,16 +522,6 @@ export function matchMessageRoute(
   return { route, params: paramsOf(route, best.words, best.text), start: text.slice(0, text.length - best.text.length) }
 }
 
-/** A route's command words: the literal words its pattern begins with. */
-function commandWords(route: MessageRoute): string[] {
-  const words: string[] = []
-  for (const token of route.tokens) {
-    if (!('literal' in token)) break
-    words.push(token.literal)
-  }
-  return words
-}
-
 /**
  * The command a message names when no pattern matches it: the best-ranked route whose command words the
  * message begins with, after a prefix or mention it used. A message with no prefix or mention names none, so
@@ -511,7 +547,7 @@ export function matchMessageCommand(
     const words = splitWords(rest)
     for (const rank of group.commands.get(wordKey(words[0]?.value ?? '', group.caseSensitive)) ?? []) {
       if (best && rank >= best.rank) break
-      const command = commandWords(routes[rank])
+      const command = commandWordsOf(routes[rank].tokens)
       if (command.every((word, i) => words[i] && wordKey(words[i].value, group.caseSensitive) === wordKey(word, group.caseSensitive))) {
         best = { rank, start: text.slice(0, text.length - rest.length), given: words.length - command.length }
         break
@@ -535,15 +571,17 @@ export async function messageParamsFor(
   message: Message,
   options: MessageCommandOptions,
 ): Promise<{ params: Record<string, string>; route?: MessageRoute; start?: string; given?: number } | { mismatch: string } | undefined> {
-  const route = buildMessageRoutes([controllerClass], options).find(candidate => candidate.method === methodName)
-  if (!route) return undefined
+  // The handler's pattern and its aliases, ranked as dispatch ranks them
+  const routes = buildMessageRoutes([controllerClass], options).filter(candidate => candidate.method === methodName)
+  if (routes.length === 0) return undefined
   if (typeof message.content !== 'string') return { params: {} }
 
   const botId = message.client?.user?.id
   const starts = await messageStarts(options, message, typeof botId === 'string' ? botId : undefined)
-  const matched = matchMessageRoute([route], message.content, starts)
-  if (matched) return { params: matched.params, route, start: matched.start }
-  const named = matchMessageCommand([route], message.content, starts)
-  if (named) return { params: {}, route, start: named.start, given: named.given }
-  return { mismatch: `message '${message.content}' does not match ${controllerClass.name}.${methodName}'s pattern '${route.pattern}'.` }
+  const matched = matchMessageRoute(routes, message.content, starts)
+  if (matched) return { params: matched.params, route: matched.route, start: matched.start }
+  const named = matchMessageCommand(routes, message.content, starts)
+  if (named) return { params: {}, route: named.route, start: named.start, given: named.given }
+  const pattern = routes.find(route => !route.aliasOf)?.pattern ?? routes[0].pattern
+  return { mismatch: `message '${message.content}' does not match ${controllerClass.name}.${methodName}'s pattern '${pattern}'.` }
 }

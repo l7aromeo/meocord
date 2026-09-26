@@ -224,6 +224,58 @@ describe('HandlerRegistry, at its edges', () => {
     expect(ping.getAll(Unset)).toEqual([])
   })
 
+  it('describes a message command once, with its aliases, description, scope and usage', () => {
+    @Controller()
+    class ModerationController {
+      @MessageHandler('mute {target:member} {duration:duration?} {reason...?}', {
+        aliases: ['m', 'shush now'],
+        description: 'Times a member out.',
+        scope: 'guild',
+      })
+      mute() {}
+
+      @MessageHandler('{word}')
+      echo() {}
+
+      @MessageHandler()
+      everything() {}
+    }
+
+    const [mute, echo, everything] = new HandlerRegistry([ModerationController]).list({ kind: 'message' })
+
+    expect(mute).toMatchObject({
+      name: 'mute {target:member} {duration:duration?} {reason...?}',
+      command: 'mute',
+      aliases: ['m', 'shush now'],
+      description: 'Times a member out.',
+      scope: 'guild',
+    })
+    expect(mute.usage('!')).toBe('!mute <target> [duration] [reason…]')
+    expect(mute.usage()).toBe('mute <target> [duration] [reason…]')
+    expect(['mute', 'MUTE', 'm', 'shush  now'].map(words => mute.matches(words))).toEqual([true, true, true, true])
+    expect(['shush', 'ban', ''].map(words => mute.matches(words))).toEqual([false, false, false])
+    expect(echo).toMatchObject({ command: undefined, aliases: [], description: undefined, scope: 'any' })
+    expect(echo.usage('!')).toBe('!<word>')
+    expect(everything.usage('!')).toBeUndefined()
+    expect(everything.matches('everything')).toBe(false)
+  })
+
+  it("matches a command's words in case when the handler or the app is case-sensitive", () => {
+    @Controller()
+    class Cased {
+      @MessageHandler('Ping', { aliases: ['P'] })
+      ping() {}
+
+      @MessageHandler('pong', { caseSensitive: false })
+      pong() {}
+    }
+
+    const [ping, pong] = new HandlerRegistry([Cased], { caseSensitive: true }).list({ kind: 'message' })
+
+    expect(['Ping', 'ping', 'P', 'p'].map(words => ping.matches(words))).toEqual([true, false, true, false])
+    expect(pong.matches('PONG')).toBe(true)
+  })
+
   it('returns a new list each call, so a caller changing one cannot change the registry', () => {
     const registry = new HandlerRegistry([SettingsController])
     const first = registry.list()

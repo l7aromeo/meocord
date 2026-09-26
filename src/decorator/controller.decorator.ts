@@ -106,8 +106,9 @@ export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boole
  * then a fixed number of words before a rest, then fewer params.
  *
  * @param pattern - The words to match, such as `'roll {sides} {note...?}'`.
- * @param options - The handler's own `prefix`, in place of the app's, or `false` for none; and
- *   `caseSensitive`, over the app's.
+ * @param options - The handler's own `prefix`, in place of the app's, or `false` for none;
+ *   `caseSensitive`, over the app's; `aliases`, other command words; a `description` for help; and
+ *   the `scope` it works in, `'guild'`, `'dm'` or `'any'`.
  *
  * @example
  * ```typescript
@@ -116,8 +117,11 @@ export function MessageHandler<T extends OmitPartialGroupDMChannel<Message<boole
  *   await message.reply(`Rolling d${sides}${note ? ` (${note})` : ''}`)
  * }
  *
- * // !mute @ana spam    !mute @ana 1h spam
- * @MessageHandler('mute {target:member} {duration:duration?} {reason...?}')
+ * // !mute @ana spam    !m @ana 1h spam
+ * @MessageHandler('mute {target:member} {duration:duration?} {reason...?}', {
+ *   aliases: ['m'],
+ *   description: 'Times a member out, for 10 minutes unless told otherwise.',
+ * })
  * async mute(message: Message, { target, duration, reason }: { target: GuildMember; duration?: number; reason?: string }) {
  *   await target.timeout(duration ?? 600_000, reason)
  * }

@@ -524,6 +524,9 @@ export type CheckedParams<P extends string, Declared> = string extends keyof Dec
         : { readonly 'not a param of the pattern': K }
     }
 
+/** Where a message command works: in servers only, in direct messages only, or in both. */
+export type MessageScope = 'guild' | 'dm' | 'any'
+
 /** What a patterned `@MessageHandler` sets for itself, over the app's `messages` options. */
 export interface MessageHandlerOptions {
   /**
@@ -533,6 +536,19 @@ export interface MessageHandlerOptions {
   prefix?: false | MessagePrefix
   /** Overrides the app's `caseSensitive` for this handler. */
   caseSensitive?: boolean
+  /**
+   * Other words for the command, each in place of the words the pattern begins with: with `['b']`,
+   * `ban {target:member}` also takes `!b @ana`. `HandlerRegistry` lists the handler once, with its aliases.
+   */
+  aliases?: readonly string[]
+  /** What the command does, for a help listing read from `HandlerRegistry`. */
+  description?: string
+  /**
+   * Where the command works; `'any'` by default. A message sent elsewhere gets a usage reply saying
+   * where it works, and the handler does not run. A command with a `member`, `role` or `channel` param
+   * works in servers only, whatever this says.
+   */
+  scope?: MessageScope
 }
 
 /**

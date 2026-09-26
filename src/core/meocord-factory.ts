@@ -157,7 +157,7 @@ export class MeoCordFactory {
 
     // Bound before the app's classes, so a class that injects it gets this instance; filled once they are bound
     const appClasses: (new (...args: any[]) => unknown)[] = []
-    container.bind(HandlerRegistry).toConstantValue(new HandlerRegistry(appClasses))
+    container.bind(HandlerRegistry).toConstantValue(new HandlerRegistry(appClasses, options.messages))
     container
       .bind(ShardContext)
       .toConstantValue(

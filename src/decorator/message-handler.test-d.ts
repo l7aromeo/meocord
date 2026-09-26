@@ -1,7 +1,8 @@
 import { describe, expectTypeOf, it } from 'vitest'
 import { type GuildMember, type Message, type User } from 'discord.js'
 import { MeoCord, MessageHandler } from '@src/decorator/index.js'
-import { type ParamsOf } from '@src/interface/index.js'
+import { type MessageScope, type ParamsOf } from '@src/interface/index.js'
+import { type MessageHandlerEntry } from '@src/core/index.js'
 
 /** Runs under `vitest --typecheck`: what `@MessageHandler` and `@MeoCord({ messages })` accept. */
 
@@ -83,6 +84,30 @@ describe('@MessageHandler params', () => {
       }
     }
     void Options
+  })
+
+  it('takes aliases, a description and a scope', () => {
+    class Described {
+      @MessageHandler('mute {target:member}', { aliases: ['m'], description: 'Times a member out.', scope: 'guild' })
+      async mute(_m: Message, _p: { target: GuildMember }) {
+        return undefined
+      }
+
+      // @ts-expect-error scope is 'guild', 'dm' or 'any'
+      @MessageHandler('inbox', { scope: 'server' })
+      async inbox() {
+        return undefined
+      }
+
+      // @ts-expect-error aliases are a list of words
+      @MessageHandler('inbox', { aliases: 'i' })
+      async alias() {
+        return undefined
+      }
+    }
+    void Described
+    expectTypeOf<MessageHandlerEntry['usage']>().toEqualTypeOf<(prefix?: string) => string | undefined>()
+    expectTypeOf<MessageHandlerEntry['scope']>().toEqualTypeOf<MessageScope>()
   })
 })
 
