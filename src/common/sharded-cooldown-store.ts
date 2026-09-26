@@ -78,8 +78,24 @@ export class ShardedCooldownStore extends CooldownStore {
    * @throws When the manager cannot be reached, its store fails, or it does not answer at all.
    */
   consumeMany(entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
+    return this.ask(entries, false)
+  }
+
+  /**
+   * Checks every entry as {@link consumeMany} would, recording nothing, in one message to the manager.
+   *
+   * @param entries - The keys and limits to check.
+   * @returns Whether every entry allows a call now, and if not, how long until it would and which refused.
+   * @throws When the manager cannot be reached, its store fails, or it does not answer at all.
+   */
+  peekMany(entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
+    return this.ask(entries, true)
+  }
+
+  /** Counts, or with `peek` only checks, the entries in the manager's store, or here without one. */
+  private ask(entries: readonly CooldownEntry[], peek: boolean): Promise<CooldownBatchVerdict> {
     const { channel } = this
-    if (!channel) return this.local.consumeMany(entries)
+    if (!channel) return peek ? this.local.peekMany(entries) : this.local.consumeMany(entries)
     this.listen(channel)
 
     const id = `${this.prefix}:${this.next++}`
@@ -99,7 +115,7 @@ export class ShardedCooldownStore extends CooldownStore {
         reject: error => (settle(), reject(error)),
       })
       try {
-        channel.send({ meocord: 'cooldown', id, entries: [...entries] })
+        channel.send({ meocord: 'cooldown', id, entries: [...entries], ...(peek ? { peek: true as const } : {}) })
       } catch (error) {
         // The channel has closed, as when the manager is gone.
         this.pending.get(id)?.reject(error instanceof Error ? error : new Error(String(error)))
@@ -133,7 +149,7 @@ export function shardedCooldownStoreOn(channel: CooldownChannel | undefined): Sh
  */
 export function answerCooldown(store: CooldownStore, message: unknown, reply: (message: ShardMessage) => unknown): boolean {
   if (!isShardMessage(message) || message.meocord !== 'cooldown') return false
-  void store.consumeMany(message.entries).then(
+  void (message.peek ? store.peekMany(message.entries) : store.consumeMany(message.entries)).then(
     verdict => reply({ meocord: 'cooldown-verdict', id: message.id, verdict }),
     error => reply({ meocord: 'cooldown-verdict', id: message.id, error: error instanceof Error ? error.message : String(error) }),
   )

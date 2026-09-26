@@ -129,13 +129,16 @@ function reportRecovery(store: CooldownStore): void {
 }
 
 /**
- * Asks the store once, for every entry, and fails with {@link CooldownStoreError} when it throws, rejects or
- * does not answer within `timeoutMs`. An answer that comes later is dropped: nothing counts the call a second time.
+ * Asks the store once, for every entry, to count the call or with `peek` only to check it, and fails with
+ * {@link CooldownStoreError} when it throws, rejects or does not answer within `timeoutMs`. An answer that
+ * comes later is dropped: nothing counts the call a second time.
  */
-async function consumeWithin(store: CooldownStore, entries: CooldownEntry[], timeoutMs: number): Promise<CooldownBatchVerdict> {
+async function askWithin(store: CooldownStore, entries: CooldownEntry[], timeoutMs: number, peek: boolean): Promise<CooldownBatchVerdict> {
   // A store given as a value, rather than a class extending CooldownStore, may have only consume()
-  const consumeMany = typeof store.consumeMany === 'function' ? store.consumeMany : CooldownStore.prototype.consumeMany
-  const attempt = Promise.resolve().then(() => consumeMany.call(store, entries))
+  const ask = peek
+    ? typeof store.peekMany === 'function' ? store.peekMany : CooldownStore.prototype.peekMany
+    : typeof store.consumeMany === 'function' ? store.consumeMany : CooldownStore.prototype.consumeMany
+  const attempt = Promise.resolve().then(() => ask.call(store, entries))
   // A rejection after the timeout has nobody left to hear it
   attempt.catch(() => undefined)
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -158,11 +161,108 @@ export function cooldownStoreOf(container: Container): CooldownStore {
   return container.get(CooldownStore)
 }
 
+/** What a call's peek found out, for its consume: each cooldown's bypass, and whether the store failed. */
+interface Peeked {
+  bypassed: (boolean | undefined)[]
+  storeFailed: boolean
+}
+
+/** Keyed by the call's context, which the peek and the consume of one call share. */
+const peeked = new WeakMap<HandlerExecutionContext, Peeked>()
+
+interface Counted { key: string; seconds: number; uses: number; per: CooldownScope }
+
+/**
+ * The cooldowns a call counts against, keyed. With `peek`, those with `by` are left out, since their key
+ * comes from params not resolved yet. A bypass is asked once per call: the peek's answer serves the consume.
+ */
+async function keyed(
+  controller: { name: string },
+  methodName: string,
+  cooldowns: readonly StoredCooldown[],
+  contextOf: () => HandlerExecutionContext,
+  params: unknown,
+  peek: boolean,
+): Promise<Counted[]> {
+  const context = contextOf()
+  const first = context.getArgs()[0]
+  const bypassed = peek ? [] : (peeked.get(context)?.bypassed ?? [])
+  if (peek) peeked.set(context, { bypassed, storeFailed: false })
+
+  const counted: Counted[] = []
+  for (const [index, { seconds, uses, per, bypass, by }] of cooldowns.entries()) {
+    if (peek && by) continue
+    if (bypass) {
+      bypassed[index] ??= Boolean(await bypass(context))
+      if (bypassed[index]) continue
+    }
+
+    const value = by ? await by(context, params) : undefined
+    // Encoded, so a value holding a colon cannot count under another value's key
+    const suffix = value === undefined ? '' : `:by:${encodeURIComponent(String(value))}`
+    counted.push({ key: `${controller.name}.${methodName}#${index}:${per}:${scopeId(per, first)}${suffix}`, seconds, uses, per })
+  }
+  return counted
+}
+
+/** Asks the store about the call under the app's policy, and throws what the answer means for it. */
+async function ask(container: Container, counted: Counted[], peek: boolean, call: Peeked | undefined): Promise<void> {
+  const store = cooldownStoreOf(container)
+  const policy = cooldownPolicyOf(container)
+  let verdict: CooldownBatchVerdict
+  try {
+    verdict = await askWithin(
+      store,
+      counted.map(({ key, seconds, uses }) => ({ key, limit: { uses, windowMs: seconds * 1000 } })),
+      policy.timeoutMs,
+      peek,
+    )
+  } catch (error) {
+    const failure = error as CooldownStoreError
+    reportFailure(store, failure, policy)
+    if (call) call.storeFailed = true
+    if (policy.failure === 'allow') return
+    throw failure
+  }
+  reportRecovery(store)
+  if (!verdict.allowed) throw new CooldownError(verdict.retryAfterMs, counted[verdict.blocked ?? 0]?.per ?? counted[0].per)
+}
+
+/** Whether the call is one cooldowns count: an interaction's or a message's. */
+function isCounted(contextOf: () => HandlerExecutionContext): boolean {
+  // Only a controller's own cooldowns reach other handlers, and those are not counted there.
+  const type = contextOf().getType()
+  return type === 'interaction' || type === 'message'
+}
+
+/**
+ * Checks the call against the handler's cooldowns without counting it, in one store call, `peekMany`: before
+ * the work a call needs ahead of its handler, such as fetching what it names from Discord, so a call a
+ * cooldown refuses costs none of it. Cooldowns with `by` are left to {@link consumeCooldowns}. It refuses
+ * as consumeCooldowns does, with the same errors, and a failing store is handled by the same policy.
+ *
+ * @throws CooldownError with the time until every cooldown checked allows another call.
+ * @throws CooldownStoreError when the store fails and the policy is `'deny'`.
+ */
+export async function peekCooldowns(
+  container: Container,
+  controller: { name: string },
+  methodName: string,
+  cooldowns: readonly StoredCooldown[],
+  contextOf: () => HandlerExecutionContext,
+): Promise<void> {
+  if (cooldowns.length === 0 || !isCounted(contextOf)) return
+  const counted = await keyed(controller, methodName, cooldowns, contextOf, undefined, true)
+  if (counted.length === 0) return
+  await ask(container, counted, true, peeked.get(contextOf()))
+}
+
 /**
  * Counts the call against all of the handler's cooldowns in one store call, `consumeMany`. With a store
  * that overrides it, as the built-in ones do, a call one cooldown refuses counts against none. Every key is
  * worked out first, so a `bypass` or `by` that throws leaves every count untouched. A store that fails is
- * handled by the app's policy: the call is refused with CooldownStoreError, or runs uncounted.
+ * handled by the app's policy: the call is refused with CooldownStoreError, or runs uncounted. A call whose
+ * {@link peekCooldowns} already found the store failing runs uncounted without asking it again.
  *
  * @param params - The handler's second argument, as the handler receives it, for `by`.
  * @throws CooldownError with the time until every cooldown allows another call.
@@ -176,40 +276,10 @@ export async function consumeCooldowns(
   contextOf: () => HandlerExecutionContext,
   params: unknown,
 ): Promise<void> {
-  if (cooldowns.length === 0) return
-  // Only a controller's own cooldowns reach other handlers, and those are not counted there.
-  const type = contextOf().getType()
-  if (type !== 'interaction' && type !== 'message') return
-
-  const store = cooldownStoreOf(container)
-  const first = contextOf().getArgs()[0]
-
-  const counted: { key: string; seconds: number; uses: number; per: CooldownScope }[] = []
-  for (const [index, { seconds, uses, per, bypass, by }] of cooldowns.entries()) {
-    if (bypass && (await bypass(contextOf()))) continue
-
-    const value = by ? await by(contextOf(), params) : undefined
-    // Encoded, so a value holding a colon cannot count under another value's key
-    const suffix = value === undefined ? '' : `:by:${encodeURIComponent(String(value))}`
-    counted.push({ key: `${controller.name}.${methodName}#${index}:${per}:${scopeId(per, first)}${suffix}`, seconds, uses, per })
-  }
-
+  if (cooldowns.length === 0 || !isCounted(contextOf)) return
+  // Only under 'allow', since 'deny' ended the call at the peek: it runs uncounted, as a second failure would leave it
+  if (peeked.get(contextOf())?.storeFailed) return
+  const counted = await keyed(controller, methodName, cooldowns, contextOf, params, false)
   if (counted.length === 0) return
-
-  const policy = cooldownPolicyOf(container)
-  let verdict: CooldownBatchVerdict
-  try {
-    verdict = await consumeWithin(
-      store,
-      counted.map(({ key, seconds, uses }) => ({ key, limit: { uses, windowMs: seconds * 1000 } })),
-      policy.timeoutMs,
-    )
-  } catch (error) {
-    const failure = error as CooldownStoreError
-    reportFailure(store, failure, policy)
-    if (policy.failure === 'allow') return
-    throw failure
-  }
-  reportRecovery(store)
-  if (!verdict.allowed) throw new CooldownError(verdict.retryAfterMs, counted[verdict.blocked ?? 0]?.per ?? counted[0].per)
+  await ask(container, counted, false, undefined)
 }

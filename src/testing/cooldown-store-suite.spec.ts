@@ -71,6 +71,20 @@ class OneCountStore extends MemoryCooldownStore {
   }
 }
 
+/** A store whose peek records the call, as a peek written with consume's script would. */
+class RecordingPeekStore extends MemoryCooldownStore {
+  peekMany(entries: Parameters<MemoryCooldownStore['peekMany']>[0]) {
+    return this.consumeMany(entries)
+  }
+}
+
+/** A store whose peek answers without looking, allowing every call. */
+class BlindPeekStore extends MemoryCooldownStore {
+  peekMany() {
+    return Promise.resolve({ allowed: true, retryAfterMs: 0 })
+  }
+}
+
 describe('testCooldownStore', () => {
   it('fails a store that checks and records in two steps, where concurrent calls at the limit both pass', async () => {
     expect(await failures(() => new TwoStepStore())).toEqual([
@@ -89,6 +103,16 @@ describe('testCooldownStore', () => {
   it('fails a store that counts every key together', async () => {
     // The batch cases, which count several keys, fail it too
     expect(await failures(() => new OneCountStore())).toContainEqual(expect.stringContaining('each key on its own'))
+  })
+
+  it('fails a store whose peek records the call', async () => {
+    expect(await failures(() => new RecordingPeekStore())).toContainEqual(expect.stringContaining('peeks without recording'))
+  })
+
+  it('fails a store whose peek allows a call its limit refuses', async () => {
+    const failed = await failures(() => new BlindPeekStore())
+    expect(failed).toContainEqual(expect.stringContaining('peeks a refusal with the wait consume gives'))
+    expect(failed).toContainEqual(expect.stringContaining('peeks a batch as consumeMany would'))
   })
 
   it('names its cases after the store, under one describe', () => {

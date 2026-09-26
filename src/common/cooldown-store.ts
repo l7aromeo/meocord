@@ -78,6 +78,23 @@ export abstract class CooldownStore {
     }
     return { allowed: true, retryAfterMs: 0 }
   }
+
+  /**
+   * Checks every entry as {@link consumeMany} would, and records nothing: whether a call would be allowed
+   * now. It serves a check ahead of work a refused call should not cost, such as fetching what it names from
+   * Discord; `consumeMany` still decides once the handler's input is ready. Cooldowns with `by` are never
+   * peeked, since their key comes from that input, and a key worked out before it could refuse a call
+   * `consumeMany` would allow.
+   *
+   * This default allows every call, so a store without it costs no round trip and refuses only at
+   * `consumeMany`. Override it to answer from the store: the built-in stores do.
+   *
+   * @param entries - The keys and limits to check, in the order the cooldowns are declared.
+   * @returns Whether every entry allows a call now, and if not, how long until it would and which refused.
+   */
+  peekMany(_entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
+    return Promise.resolve({ allowed: true, retryAfterMs: 0 })
+  }
 }
 
 /**
@@ -134,29 +151,35 @@ export class MemoryCooldownStore extends CooldownStore {
   /** Checks every entry, and records the call against all of them only if all allow it. */
   consumeMany(entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
     const now = Date.now()
-    const counts = entries.map(({ key, limit: { windowMs } }) => {
-      let entry = this.calls.get(key)
-      if (!entry) this.calls.set(key, (entry = { times: [], head: 0, windowMs }))
-      entry.windowMs = windowMs
-      trim(entry, now)
-      return entry
-    })
-    this.startSweeping()
-
-    const verdicts = entries.map(({ limit: { uses, windowMs } }, index): CooldownVerdict => {
-      const { times, head } = counts[index]
-      // A refused call is never recorded, so at most `uses` calls are ever in the window
-      return times.length - head < uses
-        ? { allowed: true, retryAfterMs: 0 }
-        : { allowed: false, retryAfterMs: times[times.length - uses] + windowMs - now }
-    })
-    const refusal = longestRefusal(verdicts)
+    const counts = this.check(entries, now)
+    const refusal = longestRefusal(counts.map(({ verdict }) => verdict))
     if (refusal) return Promise.resolve(refusal)
 
     // Nothing awaited since the check, so no other call can take a use in between. A clock that steps back
     // records the latest time again, keeping the times in order for trim()
-    for (const entry of counts) entry.times.push(Math.max(now, entry.times[entry.times.length - 1] ?? now))
+    for (const { entry } of counts) entry.times.push(Math.max(now, entry.times[entry.times.length - 1] ?? now))
     return Promise.resolve({ allowed: true, retryAfterMs: 0 })
+  }
+
+  /** Checks every entry as consumeMany does, recording nothing. */
+  peekMany(entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
+    return Promise.resolve(longestRefusal(this.check(entries, Date.now()).map(({ verdict }) => verdict)) ?? { allowed: true, retryAfterMs: 0 })
+  }
+
+  /** Each entry's call times, trimmed to its window, and whether it allows one more call now. */
+  private check(entries: readonly CooldownEntry[], now: number): { entry: CallTimes; verdict: CooldownVerdict }[] {
+    this.startSweeping()
+    return entries.map(({ key, limit: { uses, windowMs } }) => {
+      let entry = this.calls.get(key)
+      if (!entry) this.calls.set(key, (entry = { times: [], head: 0, windowMs }))
+      entry.windowMs = windowMs
+      trim(entry, now)
+      const { times, head } = entry
+      // A refused call is never recorded, so at most `uses` calls are ever in the window
+      const verdict: CooldownVerdict =
+        times.length - head < uses ? { allowed: true, retryAfterMs: 0 } : { allowed: false, retryAfterMs: times[times.length - uses] + windowMs - now }
+      return { entry, verdict }
+    })
   }
 
   /** The number of keys held, for tests of the sweep. */

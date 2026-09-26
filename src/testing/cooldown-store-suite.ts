@@ -30,7 +30,8 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
  * The cases cover what a shared store most often gets wrong: calls within a window, a sliding window
  * rather than fixed buckets, `retryAfterMs` counted from the oldest call still in the window, each key
  * counted on its own, calls made in the same millisecond kept apart, and several concurrent calls at the
- * limit where exactly one may pass. They use real time, since a store's clock may be its server's, with
+ * limit where exactly one may pass; for a store that overrides `peekMany`, a peek that records nothing and
+ * refuses with the wait `consume` gives. They use real time, since a store's clock may be its server's, with
  * windows short enough that the suite takes a few seconds. Each case asks `factory` for a store and counts
  * under keys of its own, so a store over a database that outlives the run can be checked again.
  *
@@ -163,10 +164,66 @@ export function testCooldownStore(
 
       expect(verdicts.filter(verdict => verdict.allowed).length).toBe(1)
     })
+
+    // The default peekMany allows every call, leaving the check to consumeMany, so these hold for a store
+    // that overrides it
+    test('peeks without recording: allowed below the limit, however often, for a store that overrides peekMany', async store => {
+      if (!overridesPeekMany(store)) return
+      const limit = { uses: 2, windowMs: 2_000 }
+      const entry = { key: key('peek-free'), limit }
+      for (let peek = 0; peek < 5; peek++) expect(await store.peekMany([entry])).toEqual({ allowed: true, retryAfterMs: 0 })
+
+      expect((await store.consume(entry.key, limit)).allowed).toBe(true)
+      expect((await store.consume(entry.key, limit)).allowed).toBe(true)
+    })
+
+    test('peeks a refusal with the wait consume gives, and still records nothing, for a store that overrides peekMany', async store => {
+      if (!overridesPeekMany(store)) return
+      const limit = { uses: 1, windowMs: 2_000 }
+      const entry = { key: key('peek-taken'), limit }
+      await store.consume(entry.key, limit)
+      const consumed = await store.consume(entry.key, limit)
+
+      const peeked = await store.peekMany([entry])
+      expect(peeked.allowed).toBe(false)
+      expect(peeked.blocked).toBe(0)
+      // Asked after consume, so its wait is at most consume's, and at most a little less
+      expect(peeked.retryAfterMs).toBeLessThanOrEqual(consumed.retryAfterMs)
+      expect(peeked.retryAfterMs).toBeGreaterThanOrEqual(consumed.retryAfterMs - 250)
+
+      await sleep(limit.windowMs + 50)
+      expect(await store.peekMany([entry])).toEqual({ allowed: true, retryAfterMs: 0 })
+    })
+
+    test('peeks a batch as consumeMany would, naming the longest wait, for a store that overrides peekMany', async store => {
+      if (!overridesPeekMany(store)) return
+      const short = { uses: 1, windowMs: 1_000 }
+      const long = { uses: 1, windowMs: 2_000 }
+      const batch = [
+        { key: key('peek-batch-free'), limit: short },
+        { key: key('peek-batch-short'), limit: short },
+        { key: key('peek-batch-long'), limit: long },
+      ]
+      await store.consume(batch[1].key, short)
+      await store.consume(batch[2].key, long)
+
+      const peeked = await store.peekMany(batch)
+      expect(peeked.allowed).toBe(false)
+      expect(peeked.blocked).toBe(2)
+      expect(peeked.retryAfterMs).toBeGreaterThan(short.windowMs)
+      expect(peeked.retryAfterMs).toBeLessThanOrEqual(long.windowMs)
+      // Nothing recorded against the free key by the refused peek, nor by the one before
+      expect((await store.consume(batch[0].key, short)).allowed).toBe(true)
+    })
   })
 }
 
 /** Whether a store overrides `consumeMany`, as a store that counts a batch at once does. */
 function overridesConsumeMany(store: CooldownStore): boolean {
   return store.consumeMany !== CooldownStore.prototype.consumeMany
+}
+
+/** Whether a store overrides `peekMany`, as a store that can check a batch without recording it does. */
+function overridesPeekMany(store: CooldownStore): boolean {
+  return store.peekMany !== CooldownStore.prototype.peekMany
 }

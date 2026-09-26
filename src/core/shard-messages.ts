@@ -4,8 +4,8 @@ import type { CooldownBatchVerdict, CooldownEntry } from '@src/common/cooldown-s
 export type ShardMessage =
   | { meocord: 'shutdown' }
   | { meocord: 'fatal'; code: string; message: string }
-  /** A shard's call, for the manager to count against every cooldown the handler has. */
-  | { meocord: 'cooldown'; id: string; entries: CooldownEntry[] }
+  /** A shard's call, for the manager to count against every cooldown the handler has, or only check with `peek`. */
+  | { meocord: 'cooldown'; id: string; entries: CooldownEntry[]; peek?: true }
   /** The manager's answer to the call with the same `id`: its verdict, or why its store failed. */
   | { meocord: 'cooldown-verdict'; id: string; verdict: CooldownBatchVerdict }
   | { meocord: 'cooldown-verdict'; id: string; error: string }

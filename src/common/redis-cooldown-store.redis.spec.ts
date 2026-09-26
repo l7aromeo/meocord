@@ -2,10 +2,13 @@ import { randomUUID } from 'node:crypto'
 import { Redis } from 'ioredis'
 import { createClient } from 'redis'
 import { ChatInputCommandInteraction } from 'discord.js'
+import { Container } from 'inversify'
 import { vi } from 'vitest'
 import { CooldownStore, CooldownStoreError, Logger, RedisCooldownStore } from '@src/common/index.js'
 import { Command, Controller, Cooldown, MeoCord } from '@src/decorator/index.js'
 import { CommandType } from '@src/enum/index.js'
+import { HandlerExecutionContext } from '@src/common/execution-context.js'
+import { COOLDOWN_POLICY, handlerCooldowns, peekCooldowns } from '@src/core/cooldown-runner.js'
 import { createMockInteraction, MeoCordTestingModule, testCooldownStore } from '@src/testing/index.js'
 
 /**
@@ -96,6 +99,24 @@ describe.skipIf(!url)('RedisCooldownStore on a Redis server', () => {
         await ioredis.call('CLIENT', 'UNPAUSE')
       }
     })
+
+    it('refuses a peek the paused server does not answer in time, as it refuses a call', async () => {
+      const container = new Container()
+      container.bind(CooldownStore).toConstantValue(new viaNodeRedis())
+      container.bind(COOLDOWN_POLICY).toConstantValue({ failure: 'deny', timeoutMs: 200 })
+      const context = new HandlerExecutionContext({ controller: DailyController, methodName: 'daily', args: [call()] })
+      const peek = () => peekCooldowns(container, DailyController, 'daily', handlerCooldowns(DailyController.prototype, 'daily'), () => context)
+
+      await expect(peek()).resolves.toBeUndefined()
+      await ioredis.call('CLIENT', 'PAUSE', '1500', 'ALL')
+      try {
+        const error = await peek().catch((failure: unknown) => failure)
+        expect(error).toBeInstanceOf(CooldownStoreError)
+        expect((error as CooldownStoreError).timedOut).toBe(true)
+      } finally {
+        await ioredis.call('CLIENT', 'UNPAUSE')
+      }
+    })
   })
 
   it('gives every key it writes an expiry no longer than its window', async () => {
@@ -106,6 +127,18 @@ describe.skipIf(!url)('RedisCooldownStore on a Redis server', () => {
     const ttl = await ioredis.pttl(`${prefix}expiry`)
     expect(ttl).toBeGreaterThan(0)
     expect(ttl).toBeLessThanOrEqual(3_000)
+  })
+
+  it('writes nothing when it peeks: no key, and no expiry changed', async () => {
+    const store = new viaIoredis()
+    const limit = { uses: 1, windowMs: 3_000 }
+    await store.peekMany([{ key: 'peek-only', limit }])
+    expect(await ioredis.exists(`${prefix}peek-only`)).toBe(0)
+
+    await store.consume('peek-held', limit)
+    await ioredis.pexpire(`${prefix}peek-held`, 60_000)
+    await store.peekMany([{ key: 'peek-held', limit }])
+    expect(await ioredis.pttl(`${prefix}peek-held`)).toBeGreaterThan(3_000)
   })
 
   it('loads its script after the server flushes it, through EVALSHA', async () => {

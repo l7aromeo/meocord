@@ -63,6 +63,23 @@ describe('ShardedCooldownStore', () => {
     expect((await manager.consume('second', limit)).allowed).toBe(true)
   })
 
+  it("peeks a handler's cooldowns in the manager in one message, recording nothing there", async () => {
+    const manager = new MemoryCooldownStore()
+    const channel = loopback(manager)
+    const sent: ShardMessage[] = []
+    const store = shardedCooldownStoreOn({ ...channel, send: message => (sent.push(message), channel.send(message)) })
+    await manager.consume('minute', limit)
+
+    const peeked = await store.peekMany([
+      { key: 'second', limit },
+      { key: 'minute', limit },
+    ])
+
+    expect(peeked).toMatchObject({ allowed: false, blocked: 1 })
+    expect(sent).toEqual([expect.objectContaining({ meocord: 'cooldown', peek: true })])
+    expect((await manager.consume('second', limit)).allowed).toBe(true)
+  })
+
   // A manager that does not answer is a store failure, for @MeoCord({ cooldownStoreFailure }) to decide
   it('fails a call the manager never answers, once it has waited long enough to let it go', async () => {
     vi.useFakeTimers()

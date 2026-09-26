@@ -5,6 +5,7 @@ import {
   type CooldownLimit,
   CooldownStore,
   type CooldownVerdict,
+  longestRefusal,
 } from '@src/common/cooldown-store.js'
 
 /**
@@ -74,6 +75,36 @@ return {1, 0, -1}
 `
 
 const SCRIPT_SHA = createHash('sha1').update(SCRIPT).digest('hex')
+
+/**
+ * The same check as SCRIPT, writing nothing: calls newer than the window are counted in place rather than
+ * trimmed, and a key at its limit reports the wait until its oldest call in the window leaves it.
+ *
+ * KEYS the keys; ARGV uses and windowMs for each key in turn. Replies as SCRIPT does.
+ */
+const PEEK_SCRIPT = `local time = redis.call('TIME')
+local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
+local blocked, wait = 0, 0
+for i, key in ipairs(KEYS) do
+  local uses = tonumber(ARGV[i * 2 - 1])
+  local window = tonumber(ARGV[i * 2])
+  local count = redis.call('ZCOUNT', key, '(' .. (now - window), '+inf')
+  if count >= uses then
+    local total = redis.call('ZCARD', key)
+    local oldest = redis.call('ZRANGE', key, total - uses, total - uses, 'WITHSCORES')
+    local retry = math.max(tonumber(oldest[2]) + window - now, 1)
+    if retry > wait then
+      blocked, wait = i, retry
+    end
+  end
+end
+if blocked > 0 then
+  return {0, wait, blocked - 1}
+end
+return {1, 0, -1}
+`
+
+const PEEK_SCRIPT_SHA = createHash('sha1').update(PEEK_SCRIPT).digest('hex')
 
 const DEFAULT_PREFIX = 'meocord:cooldown:'
 
@@ -169,28 +200,54 @@ export class RedisCooldownStore extends CooldownStore {
    */
   async consumeMany(entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
     if (entries.length === 0) return { allowed: true, retryAfterMs: 0 }
-    const keys = entries.map(({ key }) => `${this.prefix}${this.options.hashTag === 'handler' ? handlerTagged(key) : key}`)
-    const args = [randomUUID(), ...entries.flatMap(({ limit: { uses, windowMs } }) => [String(uses), String(windowMs)])]
+    const args = [randomUUID(), ...limitsOf(entries)]
     try {
-      return verdictOf(await this.run(keys, args), entries.length)
+      return verdictOf(await this.run(SCRIPT, SCRIPT_SHA, this.keysOf(entries), args), entries.length)
     } catch (error) {
       if (entries.length === 1 || !messageOf(error).includes('CROSSSLOT')) throw error
       return super.consumeMany(entries)
     }
   }
 
-  private async run(keys: string[], args: string[]): Promise<unknown> {
-    const { evalsha } = this.options
-    if (!evalsha) return this.evaluate(SCRIPT, keys, args)
+  /**
+   * Checks every entry as {@link consumeMany} would, recording nothing, as one read-only script: one round
+   * trip. On Redis Cluster, where a handler's keys sit in different slots, each key is checked by a script
+   * of its own, together; `hashTag: 'handler'` keeps them in one slot.
+   *
+   * @param entries - The keys and limits to check.
+   * @returns Whether every entry allows a call now, and if not, how long until it would and which refused.
+   */
+  async peekMany(entries: readonly CooldownEntry[]): Promise<CooldownBatchVerdict> {
+    if (entries.length === 0) return { allowed: true, retryAfterMs: 0 }
     try {
-      return await evalsha(SCRIPT_SHA, keys, args)
+      return verdictOf(await this.run(PEEK_SCRIPT, PEEK_SCRIPT_SHA, this.keysOf(entries), limitsOf(entries)), entries.length)
+    } catch (error) {
+      if (entries.length === 1 || !messageOf(error).includes('CROSSSLOT')) throw error
+      const verdicts = await Promise.all(entries.map(entry => this.peekMany([entry])))
+      return longestRefusal(verdicts) ?? { allowed: true, retryAfterMs: 0 }
+    }
+  }
+
+  private keysOf(entries: readonly CooldownEntry[]): string[] {
+    return entries.map(({ key }) => `${this.prefix}${this.options.hashTag === 'handler' ? handlerTagged(key) : key}`)
+  }
+
+  private async run(script: string, sha: string, keys: string[], args: string[]): Promise<unknown> {
+    const { evalsha } = this.options
+    if (!evalsha) return this.evaluate(script, keys, args)
+    try {
+      return await evalsha(sha, keys, args)
     } catch (error) {
       // The server has not seen the script since it started, or its scripts were flushed: EVAL loads it.
       if (!messageOf(error).includes('NOSCRIPT')) throw error
-      return this.evaluate(SCRIPT, keys, args)
+      return this.evaluate(script, keys, args)
     }
   }
 }
+
+/** Each entry's uses and windowMs, in turn, as the scripts read them from ARGV. */
+const limitsOf = (entries: readonly CooldownEntry[]): string[] =>
+  entries.flatMap(({ limit: { uses, windowMs } }) => [String(uses), String(windowMs)])
 
 /** A key with its handler part, `Controller.method`, as a Redis Cluster hash tag: `{Controller.method}#0:user:1`. */
 function handlerTagged(key: string): string {
