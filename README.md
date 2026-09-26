@@ -950,7 +950,7 @@ declare module 'meocord/interface' {
 
 ### Flags and lists
 
-A flag, `{--name}`, may be given anywhere after the command's first word, apart from the words the pattern matches. One before it, as in `!--bots purge 5`, is not read, and the message names no command. Without a type it is `true` when given and `false` when not; with one, `{--name:type}`, it takes a value, `--name=value`, and is required unless it ends in `?`. A typed rest, `{name:type...}`, is a list: each word, or "quoted words", becomes a value of the type.
+A flag, `{--name}`, may be given anywhere after the command's first word, apart from the words the pattern matches. One before it, as in `!--bots purge 5`, is not read, and the message names no command, whatever other handlers the bot has. A pattern that begins with a param has no command word, so its flags may come anywhere, as in `!--ping ana` for `{target} {--ping}`. Without a type it is `true` when given and `false` when not; with one, `{--name:type}`, it takes a value, `--name=value`, and is required unless it ends in `?`. A typed rest, `{name:type...}`, is a list: each word, or "quoted words", becomes a value of the type.
 
 ```typescript
 import { type GuildMember, type Message, type User } from 'discord.js'
